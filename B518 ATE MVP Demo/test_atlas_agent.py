@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, template_center
+from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -51,6 +51,12 @@ class AtlasAgentTests(unittest.TestCase):
         encoded = base64.b64decode(opencv_image_to_tk_png(bgr))
         decoded = cv2.imdecode(np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR)
         self.assertEqual(tuple(decoded[0, 0]), (200, 178, 156))
+
+    def test_template_preview_geometry_is_bounded_and_never_upscaled(self):
+        scale, width, height = preview_geometry(2000, 1562, 900, 520)
+        self.assertEqual((scale, width, height), (520 / 1562, 666, 520))
+        scale, width, height = preview_geometry(100, 50, 900, 520)
+        self.assertEqual((scale, width, height), (1.0, 100, 50))
 
     def test_nearest_timestamp_folder_uses_system_time(self):
         with tempfile.TemporaryDirectory() as directory:

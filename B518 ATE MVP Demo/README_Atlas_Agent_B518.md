@@ -77,6 +77,9 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 截圖），以滑鼠框選範圍並儲存為 PNG。通用流程可命名為 `test_window.png`、
 `barcode_field.png`、`start_button.png`；B482 流程可使用 `b482/dfu2_window.png`、
 `b482/dfu2_sn_input.png`、`b482/dfu2_ok.png` 或 `b482/bt_start_all.png`。
+模板視窗請使用內建的「縮小預覽／放大預覽」按鈕；預覽尺寸受到上限保護，且不使用
+macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以避免 Tk／AppKit 建立過大的
+影像表面而造成記憶體問題。
 
 ### B482 客戶 Demo 設定
 

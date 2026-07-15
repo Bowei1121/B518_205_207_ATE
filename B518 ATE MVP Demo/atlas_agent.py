@@ -235,6 +235,14 @@ def opencv_image_to_tk_png(image) -> str:
     return base64.b64encode(data.tobytes()).decode("ascii")
 
 
+def preview_geometry(image_width: int, image_height: int, viewport_width: int, viewport_height: int) -> tuple[float, int, int]:
+    """Fit a preview inside a bounded Tk canvas; never upscale source pixels."""
+    if min(image_width, image_height, viewport_width, viewport_height) <= 0:
+        raise AgentError("影像或預覽尺寸無效")
+    scale = min(viewport_width / image_width, viewport_height / image_height, 1.0)
+    return scale, max(1, round(image_width * scale)), max(1, round(image_height * scale))
+
+
 class FolderMonitor(threading.Thread):
     def __init__(self, csv_root: Path, log_root: Path, sns: Iterable[str], on_log: Callable[[str], None], on_result: Callable[[TestResult], None], stop: threading.Event) -> None:
         super().__init__(daemon=True)
@@ -361,31 +369,40 @@ class SerialLink:
 
 class TemplateMakerDialog:
     """Crop a repeatable OpenCV template from a screenshot without extra GUI libs."""
-    MAX_WIDTH, MAX_HEIGHT = 900, 520
+    PREVIEW_SIZES = ((700, 400), (900, 520), (1200, 700))
+    MAX_SOURCE_PIXELS = 24_000_000
 
     def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path) -> None:
         self.window = tk.Toplevel(parent)
         self.window.title("製作圖像匹配模板")
         self.window.transient(parent)
+        # macOS 15's Tk/AppKit path can abort while native window zoom creates
+        # a new focus surface. Use bounded in-app preview sizes instead.
+        self.window.resizable(False, False)
         self.template_root, self.screenshot_root = template_root, screenshot_root
         self.image_path: Optional[Path] = None
         self.original = None
         self.scale = 1.0
+        self.preview_index = 1
+        self.shown_width = self.shown_height = 0
         self.start: Optional[tuple[int, int]] = None
         self.selection: Optional[tuple[int, int, int, int]] = None
         self.photo = None
         controls = ttk.Frame(self.window, padding=10); controls.pack(fill="x")
         ttk.Button(controls, text="選擇截圖", command=self.choose_image).pack(side="left")
         ttk.Button(controls, text="使用最新截圖", command=self.use_latest).pack(side="left", padx=5)
+        ttk.Button(controls, text="縮小預覽", command=lambda: self.change_preview_size(-1)).pack(side="left", padx=(10, 0))
+        ttk.Button(controls, text="放大預覽", command=lambda: self.change_preview_size(1)).pack(side="left", padx=5)
         ttk.Label(controls, text="模板檔名：").pack(side="left", padx=(12, 0))
         self.name = tk.StringVar(value="test_window.png")
         ttk.Entry(controls, textvariable=self.name, width=32).pack(side="left", fill="x", expand=True)
-        self.canvas = tk.Canvas(self.window, width=self.MAX_WIDTH, height=self.MAX_HEIGHT, bg="#333", cursor="crosshair")
+        width, height = self.PREVIEW_SIZES[self.preview_index]
+        self.canvas = tk.Canvas(self.window, width=width, height=height, bg="#333", cursor="crosshair", highlightthickness=0)
         self.canvas.pack(padx=10, pady=(0, 5))
         self.canvas.bind("<ButtonPress-1>", self.begin)
         self.canvas.bind("<B1-Motion>", self.drag)
         self.canvas.bind("<ButtonRelease-1>", self.end)
-        self.info = tk.StringVar(value="選擇截圖後，以滑鼠拖曳框選模板區域。")
+        self.info = tk.StringVar(value="選擇截圖後，以滑鼠拖曳框選模板區域；請使用本視窗的「放大預覽」。")
         ttk.Label(self.window, textvariable=self.info).pack(padx=10, anchor="w")
         footer = ttk.Frame(self.window, padding=10); footer.pack(fill="x")
         ttk.Button(footer, text="儲存模板", command=self.save).pack(side="right")
@@ -412,32 +429,60 @@ class TemplateMakerDialog:
         image = cv2.imread(str(path))
         if image is None:
             messagebox.showerror(TITLE, "無法讀取圖片", parent=self.window); return
-        self.image_path, self.original = path, image
         height, width = image.shape[:2]
-        self.scale = min(self.MAX_WIDTH / width, self.MAX_HEIGHT / height, 1.0)
-        shown = cv2.resize(image, (round(width * self.scale), round(height * self.scale))) if self.scale != 1 else image
+        if width * height > self.MAX_SOURCE_PIXELS:
+            messagebox.showerror(TITLE, "截圖過大，請先縮小至 2400 萬像素以下再製作模板。", parent=self.window); return
+        self.image_path, self.original = path, image
+        self.selection = None
+        self.render_preview()
+
+    def change_preview_size(self, direction: int) -> None:
+        target = max(0, min(len(self.PREVIEW_SIZES) - 1, self.preview_index + direction))
+        if target == self.preview_index:
+            return
+        self.preview_index = target
+        if self.original is not None:
+            self.selection = None
+            self.render_preview()
+
+    def render_preview(self) -> None:
+        assert self.original is not None
+        height, width = self.original.shape[:2]
+        viewport_width, viewport_height = self.PREVIEW_SIZES[self.preview_index]
+        self.scale, self.shown_width, self.shown_height = preview_geometry(width, height, viewport_width, viewport_height)
+        shown = cv2.resize(self.original, (self.shown_width, self.shown_height), interpolation=cv2.INTER_AREA) if self.scale != 1 else self.original
+        # Delete the native image before creating the next one; repeated loads
+        # must not leave AppKit image surfaces allocated.
+        self.canvas.delete("all")
+        self.photo = None
+        self.canvas.config(width=viewport_width, height=viewport_height)
         try:
             self.photo = tk.PhotoImage(data=opencv_image_to_tk_png(shown))
-        except AgentError as exc:
+        except (AgentError, tk.TclError) as exc:
             messagebox.showerror(TITLE, str(exc), parent=self.window); return
-        self.canvas.delete("all"); self.canvas.config(width=shown.shape[1], height=shown.shape[0])
         self.canvas.create_image(0, 0, image=self.photo, anchor="nw", tags="image")
-        self.selection = None; self.info.set(f"{path.name}；請拖曳框選區域。")
+        self.info.set(f"{self.image_path.name}；預覽 {self.shown_width} × {self.shown_height} px；請拖曳框選區域。")
+
+    def clamp_to_image(self, event: tk.Event) -> tuple[int, int]:
+        return min(max(event.x, 0), self.shown_width), min(max(event.y, 0), self.shown_height)
 
     def begin(self, event: tk.Event) -> None:
         if self.original is None: return
-        self.start = (event.x, event.y); self.canvas.delete("selection")
+        if not (0 <= event.x <= self.shown_width and 0 <= event.y <= self.shown_height):
+            return
+        self.start = self.clamp_to_image(event); self.canvas.delete("selection")
 
     def drag(self, event: tk.Event) -> None:
         if self.start is None: return
+        x, y = self.clamp_to_image(event)
         self.canvas.delete("selection")
-        self.canvas.create_rectangle(*self.start, event.x, event.y, outline="#ff2d2d", width=2, tags="selection")
+        self.canvas.create_rectangle(*self.start, x, y, outline="#ff2d2d", width=2, tags="selection")
 
     def end(self, event: tk.Event) -> None:
         if self.start is None: return
-        x1, y1 = self.start; x2, y2 = event.x, event.y; self.start = None
-        left, right = sorted((max(0, x1), min(self.canvas.winfo_width(), x2)))
-        top, bottom = sorted((max(0, y1), min(self.canvas.winfo_height(), y2)))
+        x1, y1 = self.start; x2, y2 = self.clamp_to_image(event); self.start = None
+        left, right = sorted((x1, x2))
+        top, bottom = sorted((y1, y2))
         if right - left < 8 or bottom - top < 8:
             self.selection = None; self.info.set("選取範圍太小，請重新框選。 "); return
         self.selection = (round(left / self.scale), round(top / self.scale), round(right / self.scale), round(bottom / self.scale))
