@@ -86,6 +86,8 @@ macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以�
 選 `generic`，則使用根目錄下的 `test_window.png`、`barcode_field.png`、`start_button.png`。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
+自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML
+人機的不同解析度；專案內建 B482 模板才使用原始 1011×600 參考區域。
 
 ### B482 客戶 Demo 設定
 

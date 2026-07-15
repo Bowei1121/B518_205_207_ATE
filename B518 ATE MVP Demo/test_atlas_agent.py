@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, write_local_demo_results
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, template_match, write_local_demo_results
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -158,6 +158,16 @@ class AtlasAgentTests(unittest.TestCase):
             cv2.imwrite(str(screen_file), screen)
             cv2.imwrite(str(template_file), screen[40:70, 60:100])
             self.assertEqual(template_center(screen_file, template_file), (80, 55))
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_template_larger_than_search_region_has_actionable_error(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            screen_file, template_file = Path(directory) / "screen.png", Path(directory) / "template.png"
+            cv2.imwrite(str(screen_file), np.zeros((50, 50, 3), dtype=np.uint8))
+            cv2.imwrite(str(template_file), np.zeros((60, 20, 3), dtype=np.uint8))
+            with self.assertRaisesRegex(AgentError, "大於搜尋區域"):
+                template_match(screen_file, template_file)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_b482_templates_locate_provided_ui(self):

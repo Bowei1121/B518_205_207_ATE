@@ -241,6 +241,11 @@ def template_match(image: Path, template: Path, threshold: float = 0.80,
         x, y, width, height = region
         screen = screen[y:y + height, x:x + width]
         offset_x, offset_y = x, y
+    screen_height, screen_width = screen.shape[:2]
+    needle_height, needle_width = needle.shape[:2]
+    if not screen_width or not screen_height or needle_width > screen_width or needle_height > screen_height:
+        raise AgentError(f"模板 {template.name} 尺寸 {needle_width}×{needle_height} 大於搜尋區域 "
+                         f"{screen_width}×{screen_height}；請裁小模板或調整螢幕／模板解析度")
     result = cv2.matchTemplate(screen, needle, cv2.TM_CCOEFF_NORMED)
     _, score, _, point = cv2.minMaxLoc(result)
     if score < threshold:
@@ -736,9 +741,17 @@ class AtlasAgentApp:
             self.events.put(("log", f"使用截圖：{shot.name}（共找到 {len(shots)} 張螢幕截圖）"))
             window_center = (window_rect[0] + window_rect[2] // 2, window_rect[1] + window_rect[3] // 2)
             # Template matching inside the window prevents matching a stale/other app control.
-            if "window_size" in profile:
+            bundled_templates = Path(__file__).with_name("templates").resolve()
+            using_bundled_templates = templates.resolve() == bundled_templates
+            if "window_size" in profile and using_bundled_templates:
                 width, height = profile["window_size"]
                 region = (window_rect[0], window_rect[1], width, height)
+            elif "window_size" in profile:
+                # A user-created template may come from a Retina display or a
+                # full-screen HTML HMI. Its pixels do not share the 1011×600
+                # B482 reference resolution, so search that screenshot only.
+                region = None
+                self.events.put(("log", "使用自訂 B482 模板：依整張匹配到的螢幕搜尋控制項"))
             else:
                 region = window_rect
             if station == "DFU":
