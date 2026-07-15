@@ -134,6 +134,14 @@ def accepted_ack(station: str, sns: Iterable[str]) -> str:
     return f"ACK:ACCEPTED,{station}," + ",".join(sns)
 
 
+def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
+    """Create one compact RESULT line, preserving the received SN order."""
+    ordered = list(sns)
+    if not ordered or any(sn not in statuses for sn in ordered):
+        raise AgentError("批次結果尚未完整")
+    return "RESULT:" + ";".join(f"{sn},{statuses[sn]}" for sn in ordered)
+
+
 def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None) -> Optional[Path]:
     """Return the latest valid timestamp directory nearest to current system time."""
     if not sn_dir.is_dir():
@@ -450,6 +458,8 @@ class AtlasAgentApp:
         self.monitor: Optional[FolderMonitor] = None
         self.sns: list[str] = []
         self.batch_number = 0
+        self.batch_results: dict[str, str] = {}
+        self.reported_batch_number: Optional[int] = None
         self.port = tk.StringVar(value=pref.port)
         self.csv_path = tk.StringVar(value=pref.csv_path)
         self.log_path = tk.StringVar(value=pref.log_path)
@@ -542,20 +552,22 @@ class AtlasAgentApp:
             sns = parse_barcodes(payload)
         except AgentError as exc:
             messagebox.showerror(TITLE, str(exc)); return None
-        self.stop_monitor(); self.sns = sns; self.sn_display.configure(text="當前 SN：" + "、".join(sns))
+        self.stop_monitor(); self.sns = sns; self.batch_results = {}; self.reported_batch_number = None
+        self.sn_display.configure(text="當前 SN：" + "、".join(sns))
         self.batch_number += 1
         batch_number = self.batch_number
         if self.station.get() in ("DFU", "BT"):
             threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number), daemon=True).start()
         else:
-            self.start_monitor(root, sns)
+            self.start_monitor(root, sns, batch_number)
         return sns
 
-    def start_monitor(self, root: Path, sns: list[str]) -> None:
+    def start_monitor(self, root: Path, sns: list[str], batch_number: int) -> None:
         self.monitor_stop = threading.Event()
         log_root = Path(self.log_path.get()).expanduser()
         if not log_root.is_dir(): log_root = root
-        self.monitor = FolderMonitor(root, log_root, sns, lambda item: self.events.put(("log", item)), lambda result: self.events.put(("result", result)), self.monitor_stop)
+        self.monitor = FolderMonitor(root, log_root, sns, lambda item: self.events.put(("log", item)),
+                                     lambda result: self.events.put(("result", (batch_number, result))), self.monitor_stop)
         self.monitor.start()
 
     def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int) -> None:
@@ -647,21 +659,27 @@ class AtlasAgentApp:
                 elif kind == "begin_monitor":
                     root, sns, batch_number = item
                     if batch_number == self.batch_number:
-                        self.start_monitor(root, sns)
+                        self.start_monitor(root, sns, batch_number)
                     else:
                         self.append("略過已被新批次取代的影像流程")
                 elif kind == "start_failed":
                     station, batch_number = item
                     if batch_number == self.batch_number and self.link.connection:
                         self.safe_send(f"NACK:START_FAILED,{station}")
-                else:
-                    result = item; assert isinstance(result, TestResult)
+                elif kind == "result":
+                    batch_number, result = item; assert isinstance(result, TestResult)
+                    if batch_number != self.batch_number:
+                        self.append(f"略過舊批次結果：{result.sn}")
+                        continue
                     self.append(f"{result.sn}: {result.status} — {result.detail}")
-                    report = f"RESULT:{result.sn},{result.status},{result.detail}"
-                    if self.link.connection:
-                        self.safe_send(report)
-                    else:
-                        self.append("未連線 Arduino，略過上報：" + report)
+                    self.batch_results[result.sn] = result.status
+                    if self.reported_batch_number != batch_number and all(sn in self.batch_results for sn in self.sns):
+                        report = batch_result_report(self.sns, self.batch_results)
+                        self.reported_batch_number = batch_number
+                        if self.link.connection:
+                            self.safe_send(report)
+                        else:
+                            self.append("未連線 Arduino，略過上報：" + report)
         except queue.Empty: pass
         self.root.after(100, self.process_events)
 

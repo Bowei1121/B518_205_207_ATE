@@ -44,16 +44,18 @@ CSV 根路徑/<SN>/YYYYMMDD_HH-MM-SS.<任意雜湊>/system/records.csv
 
 Agent 每 0.25 秒檢查每個當前 SN，只使用和 Mac 系統時間最接近的有效時間戳資料
 夾，避免誤取舊的重工結果。`records.csv` 的 `status` 欄任一 `FAIL` 即上報 FAIL，
-全部 PASS 才上報 PASS；新增的 `device.log` 會即時顯示在畫面中。結果經 USB CDC
-送出 `RESULT:<SN>,<PASS|FAIL>,<說明>`，由 Arduino 回送給 TCP 上位機。
+全部 PASS 才上報 PASS；新增的 `device.log` 會即時顯示在畫面中。所有當前 SN 都完成後，
+Agent 才經 USB CDC 送出一行批次結果，例如
+`RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL`，由 Arduino 回送給 TCP 上位機。
 
 ### TCP／LabVIEW 交握訊框
 
 所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。上位機傳入一個
 有效批次後，Agent 會立刻回覆 `ACK:ACCEPTED,<DFU|FCT|BT>,<SN...>\r\n`；格式或設定
 無效則回覆 `NACK:REJECTED\r\n`。DFU／BT 若影像啟動失敗，會回覆
-`NACK:START_FAILED,<DFU|BT>\r\n`。最終每一個 SN 都以
-`RESULT:<SN>,<PASS|FAIL>,<說明>\r\n` 回傳。LabVIEW 可用 TCP Read 的 CRLF 模式逐行讀取。
+`NACK:START_FAILED,<DFU|BT>\r\n`。所有 SN 均有最終結果後，才回覆一行
+`RESULT:<SN1>,<PASS|FAIL>;<SN2>,<PASS|FAIL>...\r\n`。LabVIEW 可用 TCP Read 的 CRLF
+模式逐行讀取。
 
 偏好資料存於 `~/Library/Application Support/AtlasAgentB518/preferences.json`，包含
 串口、CSV／Log 路徑與工站。
@@ -100,5 +102,5 @@ FCT 可按「Simulate Fixture Insert」。模擬器會先寫入 `device.log` 的
 
 交付資料夾內的 `B518_Arduino_MVP_Test` 是建議燒錄的整合韌體：它同時提供
 Ethernet TCP bridge、USB CDC、Keyboard 與 Mouse HID。上位機→Mac 可直接使用
-`SN1,SN2,...\r\n`（也相容 `DATA:` 訊框；**建議 CRLF 結尾**），Mac→上位機使用
-`RESULT:<SN>,<PASS|FAIL>,<說明>\r\n`；網路按鈕對 Arduino 使用 `GET_IP`／`NET_SET:x.x.x.x`。
+`SN1,SN2,...\r\n`（也相容 `DATA:` 訊框；**建議 CRLF 結尾**），Mac→上位機使用批次
+`RESULT:<SN>,<PASS|FAIL>;...\r\n`；網路按鈕對 Arduino 使用 `GET_IP`／`NET_SET:x.x.x.x`。

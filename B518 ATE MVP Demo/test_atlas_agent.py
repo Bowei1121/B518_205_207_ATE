@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, parse_barcodes, parse_records, template_center
+from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, parse_barcodes, parse_records, template_center
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -37,6 +37,11 @@ class AtlasAgentTests(unittest.TestCase):
 
     def test_accepted_batch_ack_has_station_and_sns(self):
         self.assertEqual(accepted_ack("FCT", ["SN001", "SN002"]), "ACK:ACCEPTED,FCT,SN001,SN002")
+
+    def test_batch_result_report_is_compact_and_preserves_sn_order(self):
+        report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],
+                                     {"SN004": "FAIL", "SN002": "PASS", "SN001": "PASS", "SN003": "PASS"})
+        self.assertEqual(report, "RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL")
 
     def test_nearest_timestamp_folder_uses_system_time(self):
         with tempfile.TemporaryDirectory() as directory:

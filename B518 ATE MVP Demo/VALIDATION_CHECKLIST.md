@@ -9,7 +9,8 @@ Arduino HID 或 B482 實機已通過。
 - [ ] 執行 `python3 b482_demo_server.py --csv-root "$HOME/Desktop/AtlasDemoCSV"`。
 - [ ] 開啟 `http://127.0.0.1:8080`，確認 DFU、FCT、BT 均可操作，且 Slot checkbox 未勾選時為 `NOTEST`。
 - [ ] 開啟 Atlas Agent，CSV 根路徑設為 `~/Desktop/AtlasDemoCSV`，工站選 FCT；在 Agent 手動輸入
-  `LOCAL001,LOCAL002` 並開始，確認 `device.log` 出現、兩個 `RESULT` 分別顯示。
+  `LOCAL001,LOCAL002` 並開始，確認 `device.log` 出現、最終顯示一行
+  `RESULT:LOCAL001,PASS;LOCAL002,PASS`。
 - [ ] 確認一個 CSV 的 `status` 含 `FAIL` 時，Agent 顯示且回報 `FAIL`。
 
 ## 2. Arduino 與 TCP／LabVIEW 驗證
@@ -19,8 +20,8 @@ Arduino HID 或 B482 實機已通過。
 - [ ] 在 LabVIEW TCP Write 發送 `DATA:SN001,SN002\r\n` 至 Arduino 的 TCP port。
 - [ ] 在 LabVIEW TCP Read 啟用 **CRLF terminated**；預期立刻收到
   `ACK:ACCEPTED,<工站>,SN001,SN002\r\n`。
-- [ ] 測試結束後，預期每一 SN 收到一行
-  `RESULT:<SN>,PASS|FAIL,<說明>\r\n`。
+- [ ] 全部 SN 測試結束後，預期收到一行批次結果，例如
+  `RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL\r\n`。
 - [ ] 故意給無效 CSV 根路徑或不合法批次；預期收到 `NACK:REJECTED\r\n`。
 
 ## 3. B482 DFU／BT 實機驗證
@@ -36,6 +37,6 @@ Arduino HID 或 B482 實機已通過。
 ## 4. Demo 完成條件
 
 - [ ] Agent 無要求或使用 macOS Accessibility、Automation、AppleScript 權限。
-- [ ] LabVIEW 收到每批 `ACK`（或適當 `NACK`）與每個 SN 的最終 `RESULT`。
+- [ ] LabVIEW 收到每批 `ACK`（或適當 `NACK`）與一行完整批次 `RESULT`。
 - [ ] 結果只取與 Mac 當下時間最接近的時間戳資料夾，不取舊重工資料。
 - [ ] 偏好設定重啟後仍保留：CDC port、CSV 路徑、Log 路徑、模板路徑、截圖路徑與工站。
