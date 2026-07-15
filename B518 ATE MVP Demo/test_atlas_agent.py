@@ -1,12 +1,13 @@
 import base64
 import csv
+import os
 import tempfile
 import threading
 import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, write_local_demo_results
+from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, write_local_demo_results
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -129,6 +130,14 @@ class AtlasAgentTests(unittest.TestCase):
             shot = Path(directory) / "截圖 2026-07-15 13.52.04.png"
             shot.touch()
             self.assertEqual(latest_screenshot(Path(directory), 0), shot)
+
+    def test_all_new_multi_display_screenshots_are_returned_newest_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = root / "Screen Shot left.png", root / "Screen Shot right.png"
+            first.touch(); second.touch()
+            os.utime(first, (10, 10)); os.utime(second, (20, 20))
+            self.assertEqual(new_screenshots(root, 1), [second, first])
 
     def test_preferences_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:

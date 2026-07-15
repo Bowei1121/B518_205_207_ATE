@@ -81,6 +81,12 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以避免 Tk／AppKit 建立過大的
 影像表面而造成記憶體問題。
 
+「OpenCV 模板路徑」可指定任意**根資料夾**。若 DFU 畫面設定為 `b482_dfu2`，根資料夾
+內必須有 `b482/dfu2_window.png`、`b482/dfu2_sn_input.png` 與 `b482/dfu2_ok.png`；若
+選 `generic`，則使用根目錄下的 `test_window.png`、`barcode_field.png`、`start_button.png`。
+雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
+測試人機完整放在單一螢幕，不要跨越兩個顯示器。
+
 ### B482 客戶 Demo 設定
 
 本次提供的 B482 畫面已配置在 `templates/b482/`。選 DFU 時，請選 `b482_dfu2`：

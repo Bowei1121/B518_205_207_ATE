@@ -211,15 +211,21 @@ def parse_records(records: Path) -> tuple[str, str]:
     return "UNKNOWN", "status 尚未完成或存在未知值"
 
 
-def latest_screenshot(desktop: Path, after: float) -> Optional[Path]:
-    """Find the screenshot produced by the Arduino after SCREENSHOT was sent."""
+def new_screenshots(desktop: Path, after: float) -> list[Path]:
+    """Find all post-command screenshots, including every macOS display."""
     def is_screenshot_name(path: Path) -> bool:
         normalized = re.sub(r"[ _-]", "", path.name.lower())
         return "screenshot" in normalized or "截圖" in path.name
 
     images = [p for p in desktop.iterdir() if p.is_file() and is_screenshot_name(p)
               and p.suffix.lower() in (".png", ".jpg", ".jpeg") and p.stat().st_mtime >= after]
-    return max(images, key=lambda p: p.stat().st_mtime) if images else None
+    return sorted(images, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def latest_screenshot(desktop: Path, after: float) -> Optional[Path]:
+    """Compatibility helper that returns the newest candidate only."""
+    candidates = new_screenshots(desktop, after)
+    return candidates[0] if candidates else None
 
 
 def template_match(image: Path, template: Path, threshold: float = 0.80,
@@ -695,22 +701,39 @@ class AtlasAgentApp:
     def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
+            if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
+                raise AgentError("B482 DFU_1 畫面尚未確認 SN 輸入方式；請選擇 b482_dfu2 或 generic")
+            profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
+            templates = Path(self.template_path.get()).expanduser()
+            required = [profile["window"], profile["barcode"]] if station == "DFU" else [profile["window"], profile["start"]]
+            required.append(profile["ok"] if station == "DFU" and profile["input_mode"] == "ok_each" else profile.get("start", ""))
+            missing = [item for item in required if item and not (templates / item).is_file()]
+            if missing:
+                expected = "、".join(str(Path(item)) for item in missing)
+                raise AgentError(f"缺少 {station} 模板：{expected}\n目前模板根路徑：{templates}\n請用「製作模板」儲存為上述相對檔名。")
             before = time.time(); self.link.send("SCREENSHOT")
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir(): raise AgentError("請選擇有效的螢幕截圖路徑")
             self.events.put(("log", f"等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
             time.sleep(SCREENSHOT_SETTLE_SECONDS)
             deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-            shot = None
-            while time.monotonic() < deadline and shot is None:
-                shot = latest_screenshot(screenshot_dir, before); time.sleep(.25)
-            if shot is None: raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
-            if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
-                raise AgentError("B482 DFU_1 畫面尚未確認 SN 輸入方式；請選擇 b482_dfu2 或 generic")
-            profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
-            templates = Path(self.template_path.get()).expanduser()
+            shots: list[Path] = []
+            while time.monotonic() < deadline and not shots:
+                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            if not shots: raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
             window = templates / profile["window"]
-            window_rect = template_match(shot, window)
+            shot = None
+            match_errors: list[str] = []
+            for candidate in shots:
+                try:
+                    window_rect = template_match(candidate, window)
+                    shot = candidate
+                    break
+                except AgentError as exc:
+                    match_errors.append(f"{candidate.name}: {exc}")
+            if shot is None:
+                raise AgentError("所有新截圖均找不到測試視窗模板。\n" + "\n".join(match_errors))
+            self.events.put(("log", f"使用截圖：{shot.name}（共找到 {len(shots)} 張螢幕截圖）"))
             window_center = (window_rect[0] + window_rect[2] // 2, window_rect[1] + window_rect[3] // 2)
             # Template matching inside the window prevents matching a stale/other app control.
             if "window_size" in profile:

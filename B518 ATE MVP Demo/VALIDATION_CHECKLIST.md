@@ -27,6 +27,7 @@ Arduino HID 或 B482 實機已通過。
 ## 3. B482 DFU／BT 實機驗證
 
 - [ ] Mac 的截圖儲存位置設為 Agent 的「螢幕截圖路徑」，例如 `~/Desktop/ScreenShot`。
+- [ ] 雙螢幕時，將 HTML 測試人機完整置於單一螢幕；Agent 會在所有新截圖中尋找模板。
 - [ ] 確認 Arduino `SCREENSHOT` 能觸發 Command+Shift+3；確認檔案最晚在 15 秒內出現。
 - [ ] 用 Agent 的「製作模板」自真實截圖裁切穩定區塊；不要裁切 PASS／FAIL／TESTING 狀態格。
 - [ ] DFU_2：送入 1–4 個 SN，確認每個 SN 皆輸入左下欄位並按 `OK`，再確認測試資料夾開始建立。
