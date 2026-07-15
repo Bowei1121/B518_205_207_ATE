@@ -17,6 +17,37 @@ python3 arduino_mouse_validator.py --list-ports
 python3 arduino_mouse_validator.py --port /dev/cu.usbmodem1101
 ```
 
+## 圖形介面（GUI）
+
+若要以視窗操作，執行：
+
+```bash
+python3 arduino_mouse_validator.py --gui
+```
+
+視窗會列出可用的 USB CDC 序列埠，固定以 `115200` baud 開啟。選取 Arduino 後可使用：
+
+- **開始完整驗證**：依序送出 `S`、確認 ACK 與滑鼠移動、送出 `P`、確認 ACK 與停止。
+- **手動送出 S**：只傳送開始命令，適合確認 Arduino 韌體反應。
+- **送出 P／中止驗證**：手動傳送停止命令；在完整驗證途中也可作為緊急停止。
+
+所有 USB CDC 收發與驗證結果會顯示在「執行紀錄」。完整驗證取樣期間請勿碰觸滑鼠，並讓游標保留在螢幕中央附近。
+
+## 打包為 macOS `.app`
+
+圖形介面版必須以 `arduino_mouse_validator_gui.py` 作為打包入口；若直接打包主程式，預設會執行命令列模式，而 `--windowed` 會把命令列輸出隱藏。
+
+```bash
+python3 -m pip install --user pyinstaller
+pyinstaller --noconfirm --clean \
+  --name ArduinoMouseValidator \
+  --windowed \
+  --collect-all serial \
+  arduino_mouse_validator_gui.py
+```
+
+完成後開啟 `dist/ArduinoMouseValidator.app`。每次修改 Python 程式後都要重新執行上述打包指令。
+
 如果電腦只接一個序列裝置，通常可直接讓程式自動選擇：
 
 ```bash
