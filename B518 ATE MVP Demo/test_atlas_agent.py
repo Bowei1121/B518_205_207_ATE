@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center
+from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, write_local_demo_results
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -43,6 +43,13 @@ class AtlasAgentTests(unittest.TestCase):
         report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],
                                      {"SN004": "FAIL", "SN002": "PASS", "SN001": "PASS", "SN003": "PASS"})
         self.assertEqual(report, "RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL")
+
+    def test_local_demo_writes_atlas_files_for_four_sns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = write_local_demo_results(root, ["SN001", "SN002", "SN003", "SN004"], "DFU", True, threading.Event(), delay=0)
+            self.assertEqual([parse_records(item)[0] for item in records], ["PASS", "PASS", "PASS", "FAIL"])
+            self.assertTrue(all(item.parent.joinpath("device.log").is_file() for item in records))
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_template_preview_keeps_opencv_bgr_colour_channels(self):

@@ -8,8 +8,8 @@ Arduino HID 或 B482 實機已通過。
 - [ ] 在 `B518 ATE MVP Demo` 執行 `python3 -m unittest -v test_atlas_agent.py`；預期全部通過。
 - [ ] 執行 `python3 b482_demo_server.py --csv-root "$HOME/Desktop/AtlasDemoCSV"`。
 - [ ] 開啟 `http://127.0.0.1:8080`，確認 DFU、FCT、BT 均可操作，且 Slot checkbox 未勾選時為 `NOTEST`。
-- [ ] 開啟 Atlas Agent，CSV 根路徑設為 `~/Desktop/AtlasDemoCSV`，工站選 FCT；在 Agent 手動輸入
-  `LOCAL001,LOCAL002` 並開始，確認 `device.log` 出現、最終顯示一行
+- [ ] 開啟 Atlas Agent，CSV 根路徑設為 `~/Desktop/AtlasDemoCSV`，工站任選；在 Agent 手動輸入
+  `LOCAL001,LOCAL002` 並按「本機模擬」，確認 `device.log` 出現、最終顯示一行
   `RESULT:LOCAL001,PASS;LOCAL002,PASS`。
 - [ ] 確認一個 CSV 的 `status` 含 `FAIL` 時，Agent 顯示且回報 `FAIL`。
 

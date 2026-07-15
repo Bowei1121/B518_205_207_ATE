@@ -142,6 +142,31 @@ def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
     return "RESULT:" + ";".join(f"{sn},{statuses[sn]}" for sn in ordered)
 
 
+def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
+                             stop: threading.Event, delay: float = 0.75) -> list[Path]:
+    """Create Atlas-shaped result files for a no-hardware local demonstration."""
+    serials = list(sns)
+    systems: list[tuple[str, Path]] = []
+    for index, sn in enumerate(serials, start=1):
+        stamp = datetime.now().strftime("%Y%m%d_%H-%M-%S")
+        system = csv_root / sn / f"{stamp}.LOCALDEMO{index:02d}" / "system"
+        system.mkdir(parents=True, exist_ok=True)
+        (system / "device.log").write_text(f"{station} local demo started for {sn}\nTESTING\n", encoding="utf-8")
+        systems.append((sn, system))
+    if stop.wait(delay):
+        return []
+    records: list[Path] = []
+    for index, (sn, system) in enumerate(systems, start=1):
+        status = "FAIL" if fail_last and index == len(systems) else "PASS"
+        record = system / "records.csv"
+        with record.open("w", encoding="utf-8", newline="") as source:
+            csv.writer(source).writerows([["test", "status"], [f"{station}_LOCAL_DEMO", status]])
+        with (system / "device.log").open("a", encoding="utf-8") as source:
+            source.write(f"TEST COMPLETE: {status}\n")
+        records.append(record)
+    return records
+
+
 def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None) -> Optional[Path]:
     """Return the latest valid timestamp directory nearest to current system time."""
     if not sn_dir.is_dir():
@@ -527,6 +552,7 @@ class AtlasAgentApp:
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
         self.sn_text = tk.StringVar()
         self.ip_text = tk.StringVar()
+        self.demo_fail_last = tk.BooleanVar(value=False)
         self._build()
         self.refresh_ports()
         self.root.after(100, self.process_events)
@@ -565,7 +591,9 @@ class AtlasAgentApp:
         batch = ttk.LabelFrame(panel, text="當前測試條碼（由 Arduino TCP→USB CDC 收到；也可手動驗證）", padding=8); batch.pack(fill="x", pady=10)
         ttk.Entry(batch, textvariable=self.sn_text).pack(side="left", fill="x", expand=True)
         ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).pack(side="left", padx=(5, 0))
+        ttk.Button(batch, text="本機模擬", command=lambda: self.start_local_demo(self.sn_text.get())).pack(side="left", padx=(5, 0))
         ttk.Button(batch, text="停止監聽", command=self.stop_monitor).pack(side="left", padx=(5, 0))
+        ttk.Checkbutton(panel, text="本機模擬最後一台 FAIL（僅寫入目前 CSV 根路徑）", variable=self.demo_fail_last).pack(anchor="w")
         self.sn_display = ttk.Label(panel, text="尚無測試中的 SN", anchor="w"); self.sn_display.pack(fill="x")
         ip = ttk.LabelFrame(panel, text="Arduino 網路設定", padding=8); ip.pack(fill="x", pady=10)
         ttk.Label(ip, textvariable=self.ip_text).pack(side="left", fill="x", expand=True)
@@ -603,22 +631,58 @@ class AtlasAgentApp:
         try: self.link.send(command); self.append("TX: " + command)
         except AgentError as exc: messagebox.showerror(TITLE, str(exc))
 
-    def start_batch(self, payload: str) -> Optional[list[str]]:
+    def validate_batch(self, payload: str) -> Optional[tuple[Path, list[str]]]:
         try:
             root = Path(self.csv_path.get()).expanduser()
             if not root.is_dir(): raise AgentError("請選擇有效的 CSV 根路徑")
             sns = parse_barcodes(payload)
         except AgentError as exc:
             messagebox.showerror(TITLE, str(exc)); return None
+        return root, sns
+
+    def prepare_batch(self, payload: str) -> Optional[tuple[Path, list[str], int]]:
+        validated = self.validate_batch(payload)
+        if validated is None:
+            return None
+        root, sns = validated
         self.stop_monitor(); self.sns = sns; self.batch_results = {}; self.reported_batch_number = None
         self.sn_display.configure(text="當前 SN：" + "、".join(sns))
         self.batch_number += 1
-        batch_number = self.batch_number
+        return root, sns, self.batch_number
+
+    def start_batch(self, payload: str) -> Optional[list[str]]:
+        prepared = self.prepare_batch(payload)
+        if prepared is None:
+            return None
+        root, sns, batch_number = prepared
         if self.station.get() in ("DFU", "BT"):
             threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number), daemon=True).start()
         else:
             self.start_monitor(root, sns, batch_number)
         return sns
+
+    def start_local_demo(self, payload: str) -> None:
+        validated = self.validate_batch(payload)
+        if validated is None:
+            return
+        root, sns = validated
+        if not messagebox.askyesno(TITLE, f"將在下列 CSV 根路徑建立本機模擬資料：\n{root}\n\n不會使用 Arduino 或影像匹配。", parent=self.root):
+            return
+        prepared = self.prepare_batch(payload)
+        if prepared is None:
+            return
+        root, sns, batch_number = prepared
+        station = self.station.get()
+        fail_last = self.demo_fail_last.get()
+        self.start_monitor(root, sns, batch_number)
+
+        def run() -> None:
+            try:
+                write_local_demo_results(root, sns, station, fail_last, self.monitor_stop)
+            except OSError as exc:
+                self.events.put(("log", f"本機模擬寫入失敗：{exc}"))
+        threading.Thread(target=run, daemon=True).start()
+        self.append(f"本機模擬已啟動：{station}／{', '.join(sns)}")
 
     def start_monitor(self, root: Path, sns: list[str], batch_number: int) -> None:
         self.monitor_stop = threading.Event()

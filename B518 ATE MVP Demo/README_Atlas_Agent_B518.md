@@ -101,6 +101,11 @@ FCT 可按「Simulate Fixture Insert」。模擬器會先寫入 `device.log` 的
 後寫入每個 SN 的 `records.csv`。使用 Agent 時，CSV 根路徑設成同一個 `AtlasDemoCSV`。
 這是客戶展示用 HMI，不需要也不會使用 macOS Automation／Accessibility 權限。
 
+也可直接在 Agent 手動輸入 1–4 個 SN 後按「本機模擬」。此模式會先要求確認，接著在目前
+選擇的 CSV 根路徑建立 Atlas 格式的 `device.log` 與 `records.csv`，不使用 Arduino、截圖或
+OpenCV。請選擇專用的 Demo 資料夾，不要指向正式量產資料夾；可勾選「本機模擬最後一台 FAIL」
+驗證批次 `RESULT`。
+
 ## Arduino TCP bridge
 
 交付資料夾內的 `B518_Arduino_MVP_Test` 是建議燒錄的整合韌體：它同時提供
