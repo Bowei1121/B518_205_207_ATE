@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, template_center, template_match, write_local_demo_results
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -51,6 +51,12 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(hid_success_reply("M_MOVE:100,200"), "OK:M_MOVE")
         self.assertEqual(hid_success_reply("M_CLICK:L"), "OK:M_CLICK:L")
         self.assertEqual(hid_success_reply("K_WRITE:SN001"), "OK:K_WRITE")
+
+    def test_root_level_template_is_compatible_with_b482_subfolder_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.joinpath("dfu2_window.png").touch()
+            self.assertEqual(resolve_template_path(root, "b482/dfu2_window.png"), root / "dfu2_window.png")
 
     def test_batch_result_report_is_compact_and_preserves_sn_order(self):
         report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],

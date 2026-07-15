@@ -78,6 +78,8 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 截圖），以滑鼠框選範圍並儲存為 PNG。通用流程可命名為 `test_window.png`、
 `barcode_field.png`、`start_button.png`；B482 流程可使用 `b482/dfu2_window.png`、
 `b482/dfu2_sn_input.png`、`b482/dfu2_ok.png` 或 `b482/bt_start_all.png`。
+「製作模板」的檔名下拉選單會依目前工站與畫面設定預先列出正確名稱；DFU_2 請依序
+選擇並儲存三個 `b482/dfu2_*.png` 檔案。
 模板視窗請使用內建的「縮小預覽／放大預覽」按鈕；預覽尺寸受到上限保護，且不使用
 macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以避免 Tk／AppKit 建立過大的
 影像表面而造成記憶體問題。
@@ -85,6 +87,8 @@ macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以�
 「OpenCV 模板路徑」可指定任意**根資料夾**。若 DFU 畫面設定為 `b482_dfu2`，根資料夾
 內必須有 `b482/dfu2_window.png`、`b482/dfu2_sn_input.png` 與 `b482/dfu2_ok.png`；若
 選 `generic`，則使用根目錄下的 `test_window.png`、`barcode_field.png`、`start_button.png`。
+相容既有作法：根目錄直接有 `dfu2_window.png` 等同名檔案時，Agent 也會自動使用；但
+任意名稱（例如 `123.png`）無法判斷模板用途，仍須改成下拉選單列出的名稱。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
 自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML

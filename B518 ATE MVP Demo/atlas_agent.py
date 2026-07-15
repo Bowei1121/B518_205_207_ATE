@@ -160,6 +160,15 @@ def hid_success_reply(command: str) -> str:
     return "OK:" + command.split(":", 1)[0]
 
 
+def resolve_template_path(template_root: Path, required_name: str) -> Path:
+    """Use the documented subfolder first, then support older root-level templates."""
+    expected = template_root / required_name
+    if expected.is_file():
+        return expected
+    root_level = template_root / Path(required_name).name
+    return root_level if root_level.is_file() else expected
+
+
 def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
                              stop: threading.Event, delay: float = 0.75) -> list[Path]:
     """Create Atlas-shaped result files for a no-hardware local demonstration."""
@@ -426,7 +435,8 @@ class TemplateMakerDialog:
     PREVIEW_SIZES = ((700, 400), (900, 520), (1200, 700))
     MAX_SOURCE_PIXELS = 24_000_000
 
-    def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path) -> None:
+    def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path,
+                 suggested_names: Iterable[str] = ("test_window.png",)) -> None:
         self.window = tk.Toplevel(parent)
         self.window.title("製作圖像匹配模板")
         self.window.transient(parent)
@@ -434,6 +444,7 @@ class TemplateMakerDialog:
         # a new focus surface. Use bounded in-app preview sizes instead.
         self.window.resizable(False, False)
         self.template_root, self.screenshot_root = template_root, screenshot_root
+        self.suggested_names = list(suggested_names) or ["test_window.png"]
         self.image_path: Optional[Path] = None
         self.original = None
         self.scale = 1.0
@@ -448,8 +459,9 @@ class TemplateMakerDialog:
         ttk.Button(controls, text="縮小預覽", command=lambda: self.change_preview_size(-1)).pack(side="left", padx=(10, 0))
         ttk.Button(controls, text="放大預覽", command=lambda: self.change_preview_size(1)).pack(side="left", padx=5)
         ttk.Label(controls, text="模板檔名：").pack(side="left", padx=(12, 0))
-        self.name = tk.StringVar(value="test_window.png")
-        ttk.Entry(controls, textvariable=self.name, width=32).pack(side="left", fill="x", expand=True)
+        self.name = tk.StringVar(value=self.suggested_names[0])
+        ttk.Combobox(controls, textvariable=self.name, values=self.suggested_names,
+                     width=32).pack(side="left", fill="x", expand=True)
         width, height = self.PREVIEW_SIZES[self.preview_index]
         self.canvas = tk.Canvas(self.window, width=width, height=height, bg="#333", cursor="crosshair", highlightthickness=0)
         self.canvas.pack(padx=10, pady=(0, 5))
@@ -647,7 +659,11 @@ class AtlasAgentApp:
         screenshot_root = Path(self.screenshot_path.get()).expanduser()
         if not screenshot_root.is_dir():
             messagebox.showerror(TITLE, "請先選擇有效的螢幕截圖路徑"); return
-        TemplateMakerDialog(self.root, template_root, screenshot_root)
+        station = self.station.get()
+        profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
+        suggested = [profile["window"]]
+        suggested.extend(profile[key] for key in ("barcode", "ok", "start") if key in profile)
+        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested)
 
     def append(self, text: str) -> None:
         self.output.configure(state="normal"); self.output.insert("end", text + "\n"); self.output.see("end"); self.output.configure(state="disabled")
@@ -750,10 +766,14 @@ class AtlasAgentApp:
             templates = Path(self.template_path.get()).expanduser()
             required = [profile["window"], profile["barcode"]] if station == "DFU" else [profile["window"], profile["start"]]
             required.append(profile["ok"] if station == "DFU" and profile["input_mode"] == "ok_each" else profile.get("start", ""))
-            missing = [item for item in required if item and not (templates / item).is_file()]
+            resolved = {item: resolve_template_path(templates, item) for item in required if item}
+            missing = [item for item in required if item and not resolved[item].is_file()]
             if missing:
                 expected = "、".join(str(Path(item)) for item in missing)
                 raise AgentError(f"缺少 {station} 模板：{expected}\n目前模板根路徑：{templates}\n請用「製作模板」儲存為上述相對檔名。")
+            root_fallbacks = [item for item, path in resolved.items() if path.parent == templates and Path(item).parent != Path(".")]
+            if root_fallbacks:
+                self.events.put(("log", "相容模式：使用模板根目錄檔案「" + "、".join(root_fallbacks) + "」"))
             before = time.time(); self.link.send("SCREENSHOT")
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir(): raise AgentError("請選擇有效的螢幕截圖路徑")
@@ -764,7 +784,7 @@ class AtlasAgentApp:
             while time.monotonic() < deadline and not shots:
                 shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
             if not shots: raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
-            window = templates / profile["window"]
+            window = resolved[profile["window"]]
             shot = None
             match_errors: list[str] = []
             for candidate in shots:
@@ -793,9 +813,9 @@ class AtlasAgentApp:
             else:
                 region = window_rect
             if station == "DFU":
-                barcode = template_center(shot, templates / profile["barcode"], region=region)
+                barcode = template_center(shot, resolved[profile["barcode"]], region=region)
                 if profile["input_mode"] == "ok_each":
-                    button = template_center(shot, templates / profile["ok"], region=region)
+                    button = template_center(shot, resolved[profile["ok"]], region=region)
                     self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button))
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，SN 欄位 {barcode}，OK {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
@@ -804,11 +824,11 @@ class AtlasAgentApp:
                         commands.append("K_WRITE:" + sn)
                         if index < len(sns) - 1:
                             commands.append("K_KEY:TAB")
-                    button = template_center(shot, templates / profile["start"], region=region)
+                    button = template_center(shot, resolved[profile["start"]], region=region)
                     self.send_hid_sequence(commands + absolute_click_commands(button))
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
-                button = template_center(shot, templates / profile["start"], region=region)
+                button = template_center(shot, resolved[profile["start"]], region=region)
                 self.send_hid_sequence(absolute_click_commands(button))
                 self.events.put(("log", f"BT：視窗定位 {window_center}，Start All {button}；啟動監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
