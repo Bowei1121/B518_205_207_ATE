@@ -1,3 +1,4 @@
+import base64
 import csv
 import tempfile
 import threading
@@ -5,7 +6,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, parse_barcodes, parse_records, template_center
+from atlas_agent import FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, accepted_ack, batch_result_report, cv2, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, opencv_image_to_tk_png, parse_barcodes, parse_records, template_center
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -42,6 +43,14 @@ class AtlasAgentTests(unittest.TestCase):
         report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],
                                      {"SN004": "FAIL", "SN002": "PASS", "SN001": "PASS", "SN003": "PASS"})
         self.assertEqual(report, "RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL")
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_template_preview_keeps_opencv_bgr_colour_channels(self):
+        import numpy as np
+        bgr = np.array([[[200, 178, 156]]], dtype=np.uint8)
+        encoded = base64.b64decode(opencv_image_to_tk_png(bgr))
+        decoded = cv2.imdecode(np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR)
+        self.assertEqual(tuple(decoded[0, 0]), (200, 178, 156))
 
     def test_nearest_timestamp_folder_uses_system_time(self):
         with tempfile.TemporaryDirectory() as directory:

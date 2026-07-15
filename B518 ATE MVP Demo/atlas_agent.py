@@ -223,6 +223,18 @@ def template_center(image: Path, template: Path, threshold: float = 0.80,
     return x + width // 2, y + height // 2
 
 
+def opencv_image_to_tk_png(image) -> str:
+    """Encode an OpenCV BGR image for Tk without swapping red/blue channels."""
+    if cv2 is None:
+        raise AgentError("顯示模板預覽需要 opencv-python")
+    # cv2.imencode expects BGR, exactly the representation returned by imread.
+    # Converting it to RGB first would make the PNG encoder swap the channels.
+    ok, data = cv2.imencode(".png", image)
+    if not ok:
+        raise AgentError("無法轉換圖片")
+    return base64.b64encode(data.tobytes()).decode("ascii")
+
+
 class FolderMonitor(threading.Thread):
     def __init__(self, csv_root: Path, log_root: Path, sns: Iterable[str], on_log: Callable[[str], None], on_result: Callable[[TestResult], None], stop: threading.Event) -> None:
         super().__init__(daemon=True)
@@ -404,9 +416,10 @@ class TemplateMakerDialog:
         height, width = image.shape[:2]
         self.scale = min(self.MAX_WIDTH / width, self.MAX_HEIGHT / height, 1.0)
         shown = cv2.resize(image, (round(width * self.scale), round(height * self.scale))) if self.scale != 1 else image
-        ok, data = cv2.imencode(".png", cv2.cvtColor(shown, cv2.COLOR_BGR2RGB))
-        if not ok: messagebox.showerror(TITLE, "無法轉換圖片", parent=self.window); return
-        self.photo = tk.PhotoImage(data=base64.b64encode(data.tobytes()).decode("ascii"))
+        try:
+            self.photo = tk.PhotoImage(data=opencv_image_to_tk_png(shown))
+        except AgentError as exc:
+            messagebox.showerror(TITLE, str(exc), parent=self.window); return
         self.canvas.delete("all"); self.canvas.config(width=shown.shape[1], height=shown.shape[0])
         self.canvas.create_image(0, 0, image=self.photo, anchor="nw", tags="image")
         self.selection = None; self.info.set(f"{path.name}；請拖曳框選區域。")
