@@ -66,7 +66,8 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 專案 `templates/`）；精確裁切規則見該資料夾的說明。截圖必須由 Arduino 取得並存到
 桌面，檔名包含 `ScreenShot`。`opencv-python` 已列入 `requirements.txt`。DFU_2 對每個 SN
 都會依序執行「`M_RESET` 回左上角 → 移到 SN 框 → 點擊 → 輸入 SN → `M_RESET` 回左上角 →
-移到 OK → 點擊」；所有 SN 都送入畫面後才開始監聽 CSV。
+移到 OK → 點擊」；Agent 會逐一等待 Arduino 回覆每個 HID 指令成功，確認最後一筆 OK
+點擊完成後才開始監聽 CSV。
 
 「螢幕截圖路徑」預設為 `~/Desktop`，也可選擇例如 `~/Desktop/ScreenShot`。DFU／BT
 送出 `SCREENSHOT` 後會先等待 5 秒，最長等待共 15 秒，再在該資料夾尋找新產生的

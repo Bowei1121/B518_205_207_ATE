@@ -151,6 +151,15 @@ def absolute_click_commands(target: tuple[int, int]) -> list[str]:
     return ["M_RESET", f"M_MOVE:{target[0]},{target[1]}", "M_CLICK:L"]
 
 
+def hid_success_reply(command: str) -> str:
+    """Map an Agent HID command to the Arduino completion reply."""
+    if command.startswith("M_CLICK:") or command.startswith("K_KEY:"):
+        return "OK:" + command
+    if command == "M_RESET":
+        return "OK:M_RESET"
+    return "OK:" + command.split(":", 1)[0]
+
+
 def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
                              stop: threading.Event, delay: float = 0.75) -> list[Path]:
     """Create Atlas-shaped result files for a no-hardware local demonstration."""
@@ -556,6 +565,7 @@ class AtlasAgentApp:
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self.hid_replies: queue.Queue[str] = queue.Queue()
         self.link = SerialLink(lambda line: self.events.put(("serial", line)))
         self.monitor_stop = threading.Event()
         self.monitor: Optional[FolderMonitor] = None
@@ -712,6 +722,25 @@ class AtlasAgentApp:
                                      lambda result: self.events.put(("result", (batch_number, result))), self.monitor_stop)
         self.monitor.start()
 
+    def send_hid_sequence(self, commands: Iterable[str], timeout: float = 8.0) -> None:
+        """Wait for every Arduino HID completion before proceeding to CSV monitoring."""
+        while True:
+            try: self.hid_replies.get_nowait()
+            except queue.Empty: break
+        for command in commands:
+            expected = hid_success_reply(command)
+            self.link.send(command)
+            deadline = time.monotonic() + timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AgentError(f"等待 Arduino 執行 {command} 逾時")
+                reply = self.hid_replies.get(timeout=remaining)
+                if reply == expected:
+                    break
+                if reply.startswith("ERR:"):
+                    raise AgentError(f"Arduino 執行 {command} 失敗：{reply}")
+
     def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
@@ -767,24 +796,20 @@ class AtlasAgentApp:
                 barcode = template_center(shot, templates / profile["barcode"], region=region)
                 if profile["input_mode"] == "ok_each":
                     button = template_center(shot, templates / profile["ok"], region=region)
-                    for command in dfu_ok_each_commands(sns, barcode, button):
-                        self.link.send(command)
+                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button))
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，SN 欄位 {barcode}，OK {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
-                    for command in absolute_click_commands(barcode):
-                        self.link.send(command)
+                    commands = absolute_click_commands(barcode)
                     for index, sn in enumerate(sns):
-                        self.link.send("K_WRITE:" + sn)
+                        commands.append("K_WRITE:" + sn)
                         if index < len(sns) - 1:
-                            self.link.send("K_KEY:TAB")
+                            commands.append("K_KEY:TAB")
                     button = template_center(shot, templates / profile["start"], region=region)
-                    for command in absolute_click_commands(button):
-                        self.link.send(command)
+                    self.send_hid_sequence(commands + absolute_click_commands(button))
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
                 button = template_center(shot, templates / profile["start"], region=region)
-                for command in absolute_click_commands(button):
-                    self.link.send(command)
+                self.send_hid_sequence(absolute_click_commands(button))
                 self.events.put(("log", f"BT：視窗定位 {window_center}，Start All {button}；啟動監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
         except Exception as exc:
@@ -808,6 +833,7 @@ class AtlasAgentApp:
                 kind, item = self.events.get_nowait()
                 if kind == "serial":
                     line = str(item); self.append("RX: " + line)
+                    self.hid_replies.put(line)
                     payload = incoming_barcode_payload(line)
                     if payload is not None:
                         try:
