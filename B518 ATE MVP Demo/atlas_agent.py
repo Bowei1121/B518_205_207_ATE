@@ -129,17 +129,26 @@ def incoming_barcode_payload(line: str) -> Optional[str]:
     return value if RAW_SN_BATCH.fullmatch(value) else None
 
 
-def accepted_ack(station: str, sns: Iterable[str]) -> str:
-    """Immediate TCP-level acknowledgement for a validated test batch."""
-    return f"ACK:ACCEPTED,{station}," + ",".join(sns)
-
-
 def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
     """Create one compact RESULT line, preserving the received SN order."""
     ordered = list(sns)
     if not ordered or any(sn not in statuses for sn in ordered):
         raise AgentError("批次結果尚未完整")
     return "RESULT:" + ";".join(f"{sn},{statuses[sn]}" for sn in ordered)
+
+
+def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: tuple[int, int]) -> list[str]:
+    """Build DFU_2 HID commands, resetting the relative mouse before every target."""
+    commands: list[str] = []
+    for sn in sns:
+        commands.extend(("M_RESET", f"M_MOVE:{barcode[0]},{barcode[1]}", "M_CLICK:L", f"K_WRITE:{sn}",
+                         "M_RESET", f"M_MOVE:{button[0]},{button[1]}", "M_CLICK:L"))
+    return commands
+
+
+def absolute_click_commands(target: tuple[int, int]) -> list[str]:
+    """Move from the top-left origin to a screen coordinate and left click."""
+    return ["M_RESET", f"M_MOVE:{target[0]},{target[1]}", "M_CLICK:L"]
 
 
 def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
@@ -758,28 +767,24 @@ class AtlasAgentApp:
                 barcode = template_center(shot, templates / profile["barcode"], region=region)
                 if profile["input_mode"] == "ok_each":
                     button = template_center(shot, templates / profile["ok"], region=region)
-                    for sn in sns:
-                        self.link.send(f"M_MOVE:{barcode[0]},{barcode[1]}")
-                        self.link.send("M_CLICK:L")
-                        self.link.send("K_WRITE:" + sn)
-                        self.link.send(f"M_MOVE:{button[0]},{button[1]}")
-                        self.link.send("M_CLICK:L")
-                    self.events.put(("log", f"DFU：視窗定位 {window_center}，SN 欄位 {barcode}，OK {button}；啟動監聽"))
+                    for command in dfu_ok_each_commands(sns, barcode, button):
+                        self.link.send(command)
+                    self.events.put(("log", f"DFU：視窗定位 {window_center}，SN 欄位 {barcode}，OK {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
-                    self.link.send(f"M_MOVE:{barcode[0]},{barcode[1]}")
-                    self.link.send("M_CLICK:L")
+                    for command in absolute_click_commands(barcode):
+                        self.link.send(command)
                     for index, sn in enumerate(sns):
                         self.link.send("K_WRITE:" + sn)
                         if index < len(sns) - 1:
                             self.link.send("K_KEY:TAB")
                     button = template_center(shot, templates / profile["start"], region=region)
-                    self.link.send(f"M_MOVE:{button[0]},{button[1]}")
-                    self.link.send("M_CLICK:L")
+                    for command in absolute_click_commands(button):
+                        self.link.send(command)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
                 button = template_center(shot, templates / profile["start"], region=region)
-                self.link.send(f"M_MOVE:{button[0]},{button[1]}")
-                self.link.send("M_CLICK:L")
+                for command in absolute_click_commands(button):
+                    self.link.send(command)
                 self.events.put(("log", f"BT：視窗定位 {window_center}，Start All {button}；啟動監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
         except Exception as exc:
@@ -806,11 +811,7 @@ class AtlasAgentApp:
                     payload = incoming_barcode_payload(line)
                     if payload is not None:
                         try:
-                            sns = self.start_batch(payload)
-                            if sns:
-                                self.safe_send(accepted_ack(self.station.get(), sns))
-                            else:
-                                self.safe_send("NACK:REJECTED")
+                            self.start_batch(payload)
                         except Exception as exc: self.append("ERR: 無法啟動批次：" + str(exc))
                     elif line.startswith("IP:") or "IP=" in line: self.ip_text.set(line)
                 elif kind == "log": self.append(str(item))

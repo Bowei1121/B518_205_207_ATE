@@ -50,23 +50,23 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 
 ### TCP／LabVIEW 交握訊框
 
-所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。上位機傳入一個
-有效批次後，Agent 會立刻回覆 `ACK:ACCEPTED,<DFU|FCT|BT>,<SN...>\r\n`；格式或設定
-無效則回覆 `NACK:REJECTED\r\n`。DFU／BT 若影像啟動失敗，會回覆
-`NACK:START_FAILED,<DFU|BT>\r\n`。所有 SN 均有最終結果後，才回覆一行
+所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。有效批次被接收後
+不會先回覆 ACK；DFU／BT 必須完成影像操作，並在所有 SN 的 CSV 結果都完成後，才回覆一行
 `RESULT:<SN1>,<PASS|FAIL>;<SN2>,<PASS|FAIL>...\r\n`。LabVIEW 可用 TCP Read 的 CRLF
-模式逐行讀取。
+模式逐行讀取。若批次無效或 DFU／BT 影像啟動失敗，則回覆相對應的 `NACK` 錯誤訊息。
 
 偏好資料存於 `~/Library/Application Support/AtlasAgentB518/preferences.json`，包含
 串口、CSV／Log 路徑與工站。
 
 ## DFU／BT OpenCV 定位協定
 
-本 MVP 透過 `SCREENSHOT`、`M_MOVE:x,y`、`M_CLICK:L`、`K_WRITE:<文字>`
+本 MVP 透過 `SCREENSHOT`、`M_RESET`、`M_MOVE:x,y`、`M_CLICK:L`、`K_WRITE:<文字>`
 與 `K_KEY:TAB` CDC 指令由 Arduino HID 執行動作。`template_center()` 以 OpenCV 執行模板匹配；整合時請
 把測試程式視窗、條碼框與開始按鈕的 PNG 模板放入介面所選的模板資料夾（預設為
 專案 `templates/`）；精確裁切規則見該資料夾的說明。截圖必須由 Arduino 取得並存到
-桌面，檔名包含 `ScreenShot`。`opencv-python` 已列入 `requirements.txt`。
+桌面，檔名包含 `ScreenShot`。`opencv-python` 已列入 `requirements.txt`。DFU_2 對每個 SN
+都會依序執行「`M_RESET` 回左上角 → 移到 SN 框 → 點擊 → 輸入 SN → `M_RESET` 回左上角 →
+移到 OK → 點擊」；所有 SN 都送入畫面後才開始監聽 CSV。
 
 「螢幕截圖路徑」預設為 `~/Desktop`，也可選擇例如 `~/Desktop/ScreenShot`。DFU／BT
 送出 `SCREENSHOT` 後會先等待 5 秒，最長等待共 15 秒，再在該資料夾尋找新產生的
