@@ -6,3 +6,4 @@ dist/
 __pycache__/
 *.pyc
 Atlas Agent B518 ATE.spec
+Atlas HID Calibration B518.spec

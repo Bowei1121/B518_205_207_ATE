@@ -141,6 +141,8 @@ void processUsbFrame() {
     Serial.println("OK:M_RESET");
   } else if (startsWith("M_MOVE:", commandLength)) {
     handleMouseMove(commandLength);
+  } else if (startsWith("M_DELTA:", commandLength)) {
+    handleMouseDelta(commandLength);
   } else if (equalsCommand("M_CLICK:L", commandLength)) {
     mouseClick(MOUSE_LEFT);
     Serial.println("OK:M_CLICK:L");
@@ -333,6 +335,25 @@ void handleMouseMove(size_t commandLength) {
   mouseReset();
   moveMouseBy(x, y);
   Serial.println("OK:M_MOVE");
+}
+
+void handleMouseDelta(size_t commandLength) {
+  const size_t prefixLength = strlen("M_DELTA:");
+  size_t comma = prefixLength;
+  while (comma < commandLength && usbFrame[comma] != ',') comma++;
+
+  int32_t x, y;
+  if (comma == commandLength ||
+      !parseInteger(usbFrame + prefixLength, comma - prefixLength, x) ||
+      !parseInteger(usbFrame + comma + 1, commandLength - comma - 1, y)) {
+    Serial.println("ERR:M_DELTA_FORMAT");
+    return;
+  }
+
+  // Unlike M_MOVE, calibration deliberately does not reset to the origin.
+  // This makes an arrow press a visible, repeatable relative HID movement.
+  moveMouseBy(x, y);
+  Serial.println("OK:M_DELTA");
 }
 
 void handleScroll(size_t commandLength) {

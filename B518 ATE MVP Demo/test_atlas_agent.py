@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
+from hid_calibration import delta_command, parse_step
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -57,6 +58,15 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(hid_coordinate((100, 200), 1, 1, 1440, 0), (1540, 200))
         with self.assertRaises(AgentError):
             hid_coordinate((1, 1), 0, 1)
+
+    def test_calibration_arrow_keys_generate_signed_relative_hid_delta(self):
+        self.assertEqual(parse_step("5"), 5)
+        self.assertEqual(delta_command("Right", 5), "M_DELTA:5,0")
+        self.assertEqual(delta_command("Left", 5), "M_DELTA:-5,0")
+        self.assertEqual(delta_command("Up", 5), "M_DELTA:0,-5")
+        self.assertEqual(delta_command("Down", 5), "M_DELTA:0,5")
+        with self.assertRaises(ValueError):
+            parse_step("0")
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_match_overlay_is_saved_with_match_annotations(self):

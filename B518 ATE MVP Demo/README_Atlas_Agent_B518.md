@@ -105,6 +105,17 @@ Arduino 的 HID 座標。
 X／Y 比例改為 `0.5` 再測試；外接或雙螢幕的測試人機若不是主螢幕，可用 X／Y 偏移補上
 該螢幕在 Mac 桌面座標中的起點。預設比例 `1.0`、偏移 `0`。
 
+### Arduino HID 距離校正工具
+
+`hid_calibration.py` 是不依賴測試流程的獨立校正 UI。執行 `python3 hid_calibration.py`
+（或 `bash build_hid_calibration_app.sh` 後開啟 `dist/Atlas HID Calibration B518.app`），選擇
+Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設定 Step 後按鍵盤方向鍵
+或畫面方向按鈕，Arduino 會以 `M_DELTA:X,Y` 相對移動指定距離。
+
+例：OpenCV 疊圖顯示按鈕中心為 `(1000,1000)`，校正工具從 Home 以累計 `(500,500)`
+才到達同一位置，則將 Agent 的 X／Y 比例設定為 `0.5`。使用前必須重新燒錄
+`B518_Arduino_MVP_Test.ino`，使 Arduino 支援 `M_DELTA` 指令。
+
 ### B482 客戶 Demo 設定
 
 本次提供的 B482 畫面已配置在 `templates/b482/`。選 DFU 時，請選 `b482_dfu2`：
