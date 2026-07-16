@@ -168,7 +168,9 @@ def absolute_click_commands(target: tuple[int, int]) -> list[str]:
 
 def click_commands(target: tuple[int, int], mode: str) -> list[str]:
     if mode == "absolute":
-        return [f"M_ABS:{target[0]},{target[1]}", "M_ABS_CLICK:L"]
+        # macOS accepts this report for cursor positioning, but a standard
+        # relative-mouse button report is required for a reliable UI click.
+        return [f"M_ABS:{target[0]},{target[1]}", "M_CLICK:L"]
     return absolute_click_commands(target)
 
 
@@ -1028,6 +1030,10 @@ class AtlasAgentApp:
 
             matches = [(match_label("window", rectangle_center(window_rect)), window_rect, target_for(rectangle_center(window_rect)))]
             if station == "DFU":
+                # Bring the HMI/browser to the foreground before the first
+                # input click. The matched title region is deliberately a
+                # non-interactive, safe part of the test window.
+                focus_commands = click_commands(target_for(window_center), hid_mode)
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
@@ -1038,10 +1044,10 @@ class AtlasAgentApp:
                     button = target_for(button_source)
                     matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
-                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
-                    self.events.put(("log", f"DFU（{hid_mode}）：截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
+                    self.send_hid_sequence(focus_commands + dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
+                    self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
-                    commands = click_commands(barcode, hid_mode)
+                    commands = focus_commands + click_commands(barcode, hid_mode)
                     for index, sn in enumerate(sns):
                         commands.append("K_WRITE:" + sn)
                         if index < len(sns) - 1:

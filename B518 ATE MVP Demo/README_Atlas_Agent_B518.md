@@ -120,6 +120,9 @@ X／Y 比例改為 `0.5` 再測試；外接或雙螢幕的測試人機若不是�
 燒錄 Arduino 韌體，並以實機確認 macOS 將該絕對 HID 裝置對應到正確桌面。
 匹配疊圖在 absolute 模式會分別顯示 `px`（影像像素）、`logical`（螢幕邏輯座標）與
 `target`（0–32767 絕對 HID report）；最後一項不是螢幕像素，數值較大屬正常現象。
+DFU 在第一個 SN 前會先點擊匹配到的測試視窗標題安全區取得前景焦點；absolute 模式以
+絕對 HID 負責定位，但使用標準相對 Mouse report 的按鍵狀態執行點擊，確保 macOS 的
+輸入框與按鈕收到 click 事件。
 
 ### Arduino HID 距離校正工具
 
