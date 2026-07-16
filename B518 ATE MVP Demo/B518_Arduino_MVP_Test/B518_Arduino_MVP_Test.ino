@@ -375,7 +375,7 @@ bool startsWith(const char *prefix, size_t commandLength) {
   return commandLength >= length && memcmp(usbFrame, prefix, length) == 0;
 }
 
-bool parseInteger(const char *text, size_t length, int32_t &result) {
+bool parseIntegerWithLimit(const char *text, size_t length, int32_t &result, int32_t maximum) {
   if (length == 0) return false;
   bool negative = false;
   size_t index = 0;
@@ -388,11 +388,15 @@ bool parseInteger(const char *text, size_t length, int32_t &result) {
   for (; index < length; ++index) {
     if (text[index] < '0' || text[index] > '9') return false;
     int32_t digit = text[index] - '0';
-    if (value > (HID_VALUE_MAX - digit) / 10) return false;
+    if (value > (maximum - digit) / 10) return false;
     value = value * 10 + digit;
   }
   result = negative ? -value : value;
   return true;
+}
+
+bool parseInteger(const char *text, size_t length, int32_t &result) {
+  return parseIntegerWithLimit(text, length, result, HID_VALUE_MAX);
 }
 
 void handleMouseMove(size_t commandLength) {
@@ -440,8 +444,8 @@ void handleAbsoluteMove(size_t commandLength) {
 
   int32_t x, y;
   if (comma == commandLength ||
-      !parseInteger(usbFrame + prefixLength, comma - prefixLength, x) ||
-      !parseInteger(usbFrame + comma + 1, commandLength - comma - 1, y) ||
+      !parseIntegerWithLimit(usbFrame + prefixLength, comma - prefixLength, x, ABSOLUTE_HID_MAX) ||
+      !parseIntegerWithLimit(usbFrame + comma + 1, commandLength - comma - 1, y, ABSOLUTE_HID_MAX) ||
       x < 0 || y < 0 || x > ABSOLUTE_HID_MAX || y > ABSOLUTE_HID_MAX) {
     Serial.println("ERR:M_ABS_FORMAT");
     return;

@@ -12,6 +12,7 @@ import csv
 import json
 import queue
 import re
+import struct
 import threading
 import time
 from dataclasses import dataclass
@@ -219,6 +220,31 @@ def screenshot_scale_for_displays(pixel_size: tuple[int, int],
     return None
 
 
+def png_retina_scale(image_path: Path) -> Optional[tuple[float, float]]:
+    """Read a macOS PNG pHYs chunk; ScreenShot PNGs normally encode 72/144 DPI."""
+    try:
+        with image_path.open("rb") as source:
+            if source.read(8) != b"\x89PNG\r\n\x1a\n":
+                return None
+            while True:
+                length_data = source.read(4)
+                if len(length_data) != 4:
+                    return None
+                length = struct.unpack(">I", length_data)[0]
+                kind = source.read(4)
+                data = source.read(length)
+                source.read(4)  # CRC
+                if kind == b"pHYs" and len(data) == 9 and data[8] == 1:
+                    pixels_x, pixels_y = struct.unpack(">II", data[:8])
+                    dpi_x, dpi_y = pixels_x * .0254, pixels_y * .0254
+                    if dpi_x > 0 and dpi_y > 0:
+                        return 72 / dpi_x, 72 / dpi_y
+                if kind == b"IDAT":
+                    return None
+    except OSError:
+        return None
+
+
 def macos_screenshot_scale(image_path: Path) -> Optional[tuple[float, float]]:
     """Derive Retina/non-Retina pixel-to-logical scale for a screenshot's display."""
     if cv2 is None or AppKit is None:
@@ -231,7 +257,7 @@ def macos_screenshot_scale(image_path: Path) -> Optional[tuple[float, float]]:
     for screen in AppKit.NSScreen.screens():
         frame = screen.frame()
         displays.append((float(frame.size.width), float(frame.size.height), float(screen.backingScaleFactor())))
-    return screenshot_scale_for_displays((width, height), displays)
+    return screenshot_scale_for_displays((width, height), displays) or png_retina_scale(image_path)
 
 
 def rectangle_center(rectangle: tuple[int, int, int, int]) -> tuple[int, int]:
@@ -251,7 +277,7 @@ def write_match_overlay(image_path: Path, matches: Iterable[tuple[str, tuple[int
         cv2.rectangle(image, (x, y), (x + width, y + height), (0, 255, 0), 3)
         center = (x + width // 2, y + height // 2)
         cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 28, 2)
-        text = f"{label} px={center[0]},{center[1]} HID={hid_point[0]},{hid_point[1]}"
+        text = f"{label} px={center[0]},{center[1]} target={hid_point[0]},{hid_point[1]}"
         cv2.putText(image, text, (x, max(24, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, .65, (0, 0, 255), 2, cv2.LINE_AA)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(output_path), image):
@@ -987,21 +1013,30 @@ class AtlasAgentApp:
                 self.events.put(("log", "使用自訂 B482 模板：依整張匹配到的螢幕搜尋控制項"))
             else:
                 region = window_rect
+            def logical_for(source: tuple[int, int]) -> tuple[int, int]:
+                return hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
+
             def target_for(source: tuple[int, int]) -> tuple[int, int]:
-                logical = hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
+                logical = logical_for(source)
                 return absolute_hid_report_coordinate(logical, absolute_width, absolute_height) if hid_mode == "absolute" else logical
 
-            matches = [("window", window_rect, target_for(rectangle_center(window_rect)))]
+            def match_label(name: str, source: tuple[int, int]) -> str:
+                logical = logical_for(source)
+                if hid_mode == "absolute":
+                    return f"{name} logical={logical[0]},{logical[1]} ABS"
+                return f"{name} HID"
+
+            matches = [(match_label("window", rectangle_center(window_rect)), window_rect, target_for(rectangle_center(window_rect)))]
             if station == "DFU":
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
-                matches.append(("SN input", barcode_rect, barcode))
+                matches.append((match_label("SN input", barcode_source), barcode_rect, barcode))
                 if profile["input_mode"] == "ok_each":
                     button_rect = template_match(shot, resolved[profile["ok"]], region=region)
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
-                    matches.append(("OK", button_rect, button))
+                    matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU（{hid_mode}）：截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
@@ -1014,7 +1049,7 @@ class AtlasAgentApp:
                     button_rect = template_match(shot, resolved[profile["start"]], region=region)
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
-                    matches.append(("Start", button_rect, button))
+                    matches.append((match_label("Start", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
@@ -1022,7 +1057,7 @@ class AtlasAgentApp:
                 button_rect = template_match(shot, resolved[profile["start"]], region=region)
                 button_source = rectangle_center(button_rect)
                 button = target_for(button_source)
-                matches.append(("Start All", button_rect, button))
+                matches.append((match_label("Start All", button_source), button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
                 self.send_hid_sequence(click_commands(button, hid_mode), delay=delay)
                 self.events.put(("log", f"BT：截圖 Start All {button_source} → HID {button}；啟動監聽"))

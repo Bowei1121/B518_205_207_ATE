@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -72,6 +72,16 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(screenshot_scale_for_displays((2880, 1800), displays), (.5, .5))
         self.assertEqual(screenshot_scale_for_displays((1920, 1080), displays), (1.0, 1.0))
         self.assertIsNone(screenshot_scale_for_displays((1000, 1000), displays))
+
+    def test_png_retina_scale_reads_macos_phys_dpi_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "retina.png"
+            # Signature + pHYs (5669 pixels/meter is approximately 144 DPI).
+            payload = (5669).to_bytes(4, "big") + (5669).to_bytes(4, "big") + b"\x01"
+            image.write_bytes(b"\x89PNG\r\n\x1a\n" + len(payload).to_bytes(4, "big") + b"pHYs" + payload + b"\0\0\0\0")
+            scale_x, scale_y = png_retina_scale(image)
+            self.assertAlmostEqual(scale_x, .5, places=3)
+            self.assertAlmostEqual(scale_y, .5, places=3)
 
     def test_calibration_arrow_keys_generate_signed_relative_hid_delta(self):
         self.assertEqual(parse_step("5"), 5)
