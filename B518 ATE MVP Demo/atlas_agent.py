@@ -83,6 +83,9 @@ class Preferences:
     hid_scale_y: float = 1.0
     hid_offset_x: float = 0.0
     hid_offset_y: float = 0.0
+    hid_mode: str = "relative"
+    absolute_width: int = 1440
+    absolute_height: int = 900
 
     @classmethod
     def load(cls, path: Path) -> "Preferences":
@@ -142,12 +145,12 @@ def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
     return "RESULT:" + ";".join(f"{sn},{statuses[sn]}" for sn in ordered)
 
 
-def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: tuple[int, int]) -> list[str]:
+def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: tuple[int, int],
+                         mode: str = "relative") -> list[str]:
     """Build DFU_2 HID commands, resetting the relative mouse before every target."""
     commands: list[str] = []
     for sn in sns:
-        commands.extend(("M_RESET", f"M_MOVE:{barcode[0]},{barcode[1]}", "M_CLICK:L", f"K_WRITE:{sn}",
-                         "M_RESET", f"M_MOVE:{button[0]},{button[1]}", "M_CLICK:L"))
+        commands.extend(click_commands(barcode, mode) + [f"K_WRITE:{sn}"] + click_commands(button, mode))
     return commands
 
 
@@ -156,9 +159,15 @@ def absolute_click_commands(target: tuple[int, int]) -> list[str]:
     return ["M_RESET", f"M_MOVE:{target[0]},{target[1]}", "M_CLICK:L"]
 
 
+def click_commands(target: tuple[int, int], mode: str) -> list[str]:
+    if mode == "absolute":
+        return [f"M_ABS:{target[0]},{target[1]}", "M_ABS_CLICK:L"]
+    return absolute_click_commands(target)
+
+
 def hid_success_reply(command: str) -> str:
     """Map an Agent HID command to the Arduino completion reply."""
-    if command.startswith("M_CLICK:") or command.startswith("K_KEY:"):
+    if command.startswith("M_CLICK:") or command.startswith("M_ABS_CLICK:") or command.startswith("K_KEY:"):
         return "OK:" + command
     if command == "M_RESET":
         return "OK:M_RESET"
@@ -180,6 +189,16 @@ def hid_coordinate(point: tuple[int, int], scale_x: float, scale_y: float,
     if scale_x <= 0 or scale_y <= 0:
         raise AgentError("HID X／Y 比例必須大於 0")
     return round(point[0] * scale_x + offset_x), round(point[1] * scale_y + offset_y)
+
+
+def absolute_hid_report_coordinate(point: tuple[int, int], width: int, height: int) -> tuple[int, int]:
+    """Map a logical virtual-desktop point to the 16-bit absolute HID range."""
+    if width < 2 or height < 2:
+        raise AgentError("絕對 HID 虛擬桌面寬高必須至少為 2")
+    x, y = point
+    if not 0 <= x < width or not 0 <= y < height:
+        raise AgentError(f"絕對 HID 座標 {point} 超出虛擬桌面 {width}×{height}；請調整比例、偏移或桌面寬高")
+    return round(x * 32767 / (width - 1)), round(y * 32767 / (height - 1))
 
 
 def rectangle_center(rectangle: tuple[int, int, int, int]) -> tuple[int, int]:
@@ -633,6 +652,9 @@ class AtlasAgentApp:
         self.hid_scale_y = tk.StringVar(value=str(pref.hid_scale_y))
         self.hid_offset_x = tk.StringVar(value=str(pref.hid_offset_x))
         self.hid_offset_y = tk.StringVar(value=str(pref.hid_offset_y))
+        self.hid_mode = tk.StringVar(value=pref.hid_mode if pref.hid_mode in ("relative", "absolute") else "relative")
+        self.absolute_width = tk.StringVar(value=str(pref.absolute_width))
+        self.absolute_height = tk.StringVar(value=str(pref.absolute_height))
         self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
@@ -680,6 +702,15 @@ class AtlasAgentApp:
         ttk.Entry(calibration, textvariable=self.hid_offset_x, width=6).pack(side="left", padx=4)
         ttk.Entry(calibration, textvariable=self.hid_offset_y, width=6).pack(side="left", padx=4)
         ttk.Button(calibration, text="查看匹配疊圖", command=self.show_match_overlay).pack(side="right")
+        absolute = ttk.Frame(panel); absolute.pack(fill="x", pady=(4, 0))
+        ttk.Label(absolute, text="HID 模式：").pack(side="left")
+        ttk.Combobox(absolute, textvariable=self.hid_mode, values=("relative", "absolute"), width=10,
+                     state="readonly").pack(side="left")
+        ttk.Label(absolute, text="  absolute 虛擬桌面寬 × 高（邏輯點）：").pack(side="left")
+        ttk.Entry(absolute, textvariable=self.absolute_width, width=7).pack(side="left", padx=(4, 0))
+        ttk.Label(absolute, text="×").pack(side="left", padx=2)
+        ttk.Entry(absolute, textvariable=self.absolute_height, width=7).pack(side="left")
+        ttk.Label(absolute, text="  例：單一 Retina 1440×900", foreground="#555").pack(side="left", padx=8)
         profile = ttk.Frame(panel); profile.pack(fill="x", pady=(8, 0))
         ttk.Label(profile, text="DFU 畫面設定：").pack(side="left")
         ttk.Combobox(profile, textvariable=self.dfu_profile, width=30, state="readonly",
@@ -709,17 +740,23 @@ class AtlasAgentApp:
         selected = filedialog.askdirectory(initialdir=variable.get() or str(Path.home()))
         if selected: variable.set(selected)
 
-    def hid_settings(self) -> tuple[float, float, float, float, float]:
+    def hid_settings(self) -> tuple[float, float, float, float, float, str, int, int]:
         try:
             delay = float(self.hid_delay.get())
             scale_x, scale_y = float(self.hid_scale_x.get()), float(self.hid_scale_y.get())
             offset_x, offset_y = float(self.hid_offset_x.get()), float(self.hid_offset_y.get())
+            absolute_width, absolute_height = int(self.absolute_width.get()), int(self.absolute_height.get())
         except ValueError as exc:
             raise AgentError("HID 延遲、比例與偏移必須是數字") from exc
         if delay < 0:
             raise AgentError("HID 每步延遲不可小於 0")
         hid_coordinate((0, 0), scale_x, scale_y, offset_x, offset_y)
-        return delay, scale_x, scale_y, offset_x, offset_y
+        mode = self.hid_mode.get()
+        if mode not in ("relative", "absolute"):
+            raise AgentError("HID 模式必須是 relative 或 absolute")
+        if mode == "absolute":
+            absolute_hid_report_coordinate((0, 0), absolute_width, absolute_height)
+        return delay, scale_x, scale_y, offset_x, offset_y, mode, absolute_width, absolute_height
 
     def show_match_overlay(self) -> None:
         if not self.overlay_path.is_file():
@@ -856,7 +893,7 @@ class AtlasAgentApp:
         try:
             if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
                 raise AgentError("B482 DFU_1 畫面尚未確認 SN 輸入方式；請選擇 b482_dfu2 或 generic")
-            delay, scale_x, scale_y, offset_x, offset_y = self.hid_settings()
+            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
             profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
             templates = Path(self.template_path.get()).expanduser()
             required = [profile["window"], profile["barcode"]] if station == "DFU" else [profile["window"], profile["start"]]
@@ -907,40 +944,44 @@ class AtlasAgentApp:
                 self.events.put(("log", "使用自訂 B482 模板：依整張匹配到的螢幕搜尋控制項"))
             else:
                 region = window_rect
-            matches = [("window", window_rect, hid_coordinate(rectangle_center(window_rect), scale_x, scale_y, offset_x, offset_y))]
+            def target_for(source: tuple[int, int]) -> tuple[int, int]:
+                logical = hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
+                return absolute_hid_report_coordinate(logical, absolute_width, absolute_height) if hid_mode == "absolute" else logical
+
+            matches = [("window", window_rect, target_for(rectangle_center(window_rect)))]
             if station == "DFU":
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
-                barcode = hid_coordinate(barcode_source, scale_x, scale_y, offset_x, offset_y)
+                barcode = target_for(barcode_source)
                 matches.append(("SN input", barcode_rect, barcode))
                 if profile["input_mode"] == "ok_each":
                     button_rect = template_match(shot, resolved[profile["ok"]], region=region)
                     button_source = rectangle_center(button_rect)
-                    button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                    button = target_for(button_source)
                     matches.append(("OK", button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
-                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button), delay=delay)
-                    self.events.put(("log", f"DFU：截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
+                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
+                    self.events.put(("log", f"DFU（{hid_mode}）：截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
-                    commands = absolute_click_commands(barcode)
+                    commands = click_commands(barcode, hid_mode)
                     for index, sn in enumerate(sns):
                         commands.append("K_WRITE:" + sn)
                         if index < len(sns) - 1:
                             commands.append("K_KEY:TAB")
                     button_rect = template_match(shot, resolved[profile["start"]], region=region)
                     button_source = rectangle_center(button_rect)
-                    button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                    button = target_for(button_source)
                     matches.append(("Start", button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
-                    self.send_hid_sequence(commands + absolute_click_commands(button), delay=delay)
+                    self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
                 button_rect = template_match(shot, resolved[profile["start"]], region=region)
                 button_source = rectangle_center(button_rect)
-                button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                button = target_for(button_source)
                 matches.append(("Start All", button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
-                self.send_hid_sequence(absolute_click_commands(button), delay=delay)
+                self.send_hid_sequence(click_commands(button, hid_mode), delay=delay)
                 self.events.put(("log", f"BT：截圖 Start All {button_source} → HID {button}；啟動監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
         except Exception as exc:
@@ -1001,14 +1042,15 @@ class AtlasAgentApp:
 
     def close(self) -> None:
         try:
-            delay, scale_x, scale_y, offset_x, offset_y = self.hid_settings()
+            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
         except AgentError:
-            delay, scale_x, scale_y, offset_x, offset_y = .5, 1.0, 1.0, 0.0, 0.0
+            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = .5, 1.0, 1.0, 0.0, 0.0, "relative", 1440, 900
         Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
                     template_path=self.template_path.get(), station=self.station.get(),
                     dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
                     hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
-                    hid_offset_x=offset_x, hid_offset_y=offset_y).save(self.pref_file)
+                    hid_offset_x=offset_x, hid_offset_y=offset_y, hid_mode=hid_mode,
+                    absolute_width=absolute_width, absolute_height=absolute_height).save(self.pref_file)
         self.stop_monitor(); self.link.close(); self.root.destroy()
 
 

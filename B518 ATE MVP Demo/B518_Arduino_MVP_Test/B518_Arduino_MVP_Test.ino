@@ -11,6 +11,7 @@
 #include <EEPROM.h>
 #include <Keyboard.h>
 #include <Mouse.h>
+#include <HID.h>
 
 // -------- Network configuration: change these values for the installation.
 const byte DEFAULT_IP[] = {192, 168, 1, 100};
@@ -26,6 +27,77 @@ const size_t USB_FRAME_MAX = 256;
 const int16_t MOUSE_RESET_DISTANCE = 3000;
 const uint8_t MOUSE_STEP = 120;  // HID Mouse.move uses a signed 8-bit delta.
 const int32_t HID_VALUE_MAX = 10000;
+const uint16_t ABSOLUTE_HID_MAX = 32767;
+
+// A second HID pointer report uses absolute, 16-bit X/Y values. macOS does
+// not apply regular mouse acceleration to an absolute pointing report, which
+// makes image-match coordinates repeatable. Report ID 1 remains the legacy
+// relative Mouse library; Keyboard uses report ID 2; this uses report ID 3.
+static const uint8_t absolutePointerDescriptor[] = {
+  0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
+  0x09, 0x02,                    // USAGE (Mouse)
+  0xA1, 0x01,                    // COLLECTION (Application)
+  0x09, 0x01,                    //   USAGE (Pointer)
+  0xA1, 0x00,                    //   COLLECTION (Physical)
+  0x85, 0x03,                    //     REPORT_ID (3)
+  0x05, 0x09,                    //     USAGE_PAGE (Button)
+  0x19, 0x01,                    //     USAGE_MINIMUM (Button 1)
+  0x29, 0x03,                    //     USAGE_MAXIMUM (Button 3)
+  0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
+  0x25, 0x01,                    //     LOGICAL_MAXIMUM (1)
+  0x95, 0x03,                    //     REPORT_COUNT (3)
+  0x75, 0x01,                    //     REPORT_SIZE (1)
+  0x81, 0x02,                    //     INPUT (Data,Var,Abs)
+  0x95, 0x01,                    //     REPORT_COUNT (1)
+  0x75, 0x05,                    //     REPORT_SIZE (5)
+  0x81, 0x03,                    //     INPUT (Cnst,Var,Abs)
+  0x05, 0x01,                    //     USAGE_PAGE (Generic Desktop)
+  0x09, 0x30,                    //     USAGE (X)
+  0x09, 0x31,                    //     USAGE (Y)
+  0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
+  0x26, 0xFF, 0x7F,              //     LOGICAL_MAXIMUM (32767)
+  0x35, 0x00,                    //     PHYSICAL_MINIMUM (0)
+  0x46, 0xFF, 0x7F,              //     PHYSICAL_MAXIMUM (32767)
+  0x75, 0x10,                    //     REPORT_SIZE (16)
+  0x95, 0x02,                    //     REPORT_COUNT (2)
+  0x81, 0x02,                    //     INPUT (Data,Var,Abs)
+  0xC0,                          //   END_COLLECTION
+  0xC0                           // END_COLLECTION
+};
+
+struct __attribute__((packed)) AbsolutePointerReport {
+  uint8_t buttons;
+  uint16_t x;
+  uint16_t y;
+};
+
+class AbsolutePointer {
+public:
+  AbsolutePointer() : x(0), y(0), buttons(0) {
+    static HIDSubDescriptor node(absolutePointerDescriptor, sizeof(absolutePointerDescriptor));
+    HID().AppendDescriptor(&node);
+  }
+
+  void move(uint16_t newX, uint16_t newY) {
+    x = newX; y = newY; send();
+  }
+
+  void click(uint8_t button) {
+    buttons = button; send(); delay(15);
+    buttons = 0; send();
+  }
+
+private:
+  uint16_t x, y;
+  uint8_t buttons;
+
+  void send() {
+    AbsolutePointerReport report = {buttons, x, y};
+    HID().SendReport(3, &report, sizeof(report));
+  }
+};
+
+AbsolutePointer absolutePointer;
 
 struct NetworkSettings {
   uint8_t magic0;
@@ -143,6 +215,11 @@ void processUsbFrame() {
     handleMouseMove(commandLength);
   } else if (startsWith("M_DELTA:", commandLength)) {
     handleMouseDelta(commandLength);
+  } else if (startsWith("M_ABS:", commandLength)) {
+    handleAbsoluteMove(commandLength);
+  } else if (equalsCommand("M_ABS_CLICK:L", commandLength)) {
+    absolutePointer.click(MOUSE_LEFT);
+    Serial.println("OK:M_ABS_CLICK:L");
   } else if (equalsCommand("M_CLICK:L", commandLength)) {
     mouseClick(MOUSE_LEFT);
     Serial.println("OK:M_CLICK:L");
@@ -354,6 +431,24 @@ void handleMouseDelta(size_t commandLength) {
   // This makes an arrow press a visible, repeatable relative HID movement.
   moveMouseBy(x, y);
   Serial.println("OK:M_DELTA");
+}
+
+void handleAbsoluteMove(size_t commandLength) {
+  const size_t prefixLength = strlen("M_ABS:");
+  size_t comma = prefixLength;
+  while (comma < commandLength && usbFrame[comma] != ',') comma++;
+
+  int32_t x, y;
+  if (comma == commandLength ||
+      !parseInteger(usbFrame + prefixLength, comma - prefixLength, x) ||
+      !parseInteger(usbFrame + comma + 1, commandLength - comma - 1, y) ||
+      x < 0 || y < 0 || x > ABSOLUTE_HID_MAX || y > ABSOLUTE_HID_MAX) {
+    Serial.println("ERR:M_ABS_FORMAT");
+    return;
+  }
+
+  absolutePointer.move((uint16_t)x, (uint16_t)y);
+  Serial.println("OK:M_ABS");
 }
 
 void handleScroll(size_t commandLength) {

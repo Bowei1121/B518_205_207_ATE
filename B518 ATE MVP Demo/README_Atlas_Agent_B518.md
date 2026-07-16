@@ -105,6 +105,13 @@ Arduino 的 HID 座標。
 X／Y 比例改為 `0.5` 再測試；外接或雙螢幕的測試人機若不是主螢幕，可用 X／Y 偏移補上
 該螢幕在 Mac 桌面座標中的起點。預設比例 `1.0`、偏移 `0`。
 
+當相對 `Mouse.move()` 受到 macOS 游標加速度影響而出現「step=1 五次不等於 step=5
+一次」時，將 HID 模式改為 `absolute`。此模式會將「比例與偏移」換算後的邏輯桌面座標，
+映射為 Arduino 第二個絕對 HID 指標的 `0–32767` 範圍；設定「虛擬桌面寬 × 高」為 macOS
+顯示器排列後的邏輯總尺寸。單一 2880×1800 Retina 截圖通常填 `1440×900`，比例先填
+`0.5`。雙螢幕請使用 X/Y 偏移指定目標螢幕在虛擬桌面中的起點。absolute 模式需要重新
+燒錄 Arduino 韌體，並以實機確認 macOS 將該絕對 HID 裝置對應到正確桌面。
+
 ### Arduino HID 距離校正工具
 
 `hid_calibration.py` 是不依賴測試流程的獨立校正 UI。執行 `python3 hid_calibration.py`

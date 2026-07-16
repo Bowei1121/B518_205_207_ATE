@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -47,11 +47,19 @@ class AtlasAgentTests(unittest.TestCase):
     def test_absolute_click_returns_to_origin_before_relative_hid_move(self):
         self.assertEqual(absolute_click_commands((80, 55)), ["M_RESET", "M_MOVE:80,55", "M_CLICK:L"])
 
+    def test_absolute_hid_mode_uses_raw_absolute_report_without_mouse_reset(self):
+        self.assertEqual(absolute_hid_report_coordinate((0, 0), 1440, 900), (0, 0))
+        self.assertEqual(absolute_hid_report_coordinate((1439, 899), 1440, 900), (32767, 32767))
+        self.assertEqual(click_commands((4915, 22632), "absolute"), ["M_ABS:4915,22632", "M_ABS_CLICK:L"])
+        with self.assertRaises(AgentError):
+            absolute_hid_report_coordinate((1440, 0), 1440, 900)
+
     def test_hid_command_completion_replies(self):
         self.assertEqual(hid_success_reply("M_RESET"), "OK:M_RESET")
         self.assertEqual(hid_success_reply("M_MOVE:100,200"), "OK:M_MOVE")
         self.assertEqual(hid_success_reply("M_CLICK:L"), "OK:M_CLICK:L")
         self.assertEqual(hid_success_reply("K_WRITE:SN001"), "OK:K_WRITE")
+        self.assertEqual(hid_success_reply("M_ABS_CLICK:L"), "OK:M_ABS_CLICK:L")
 
     def test_hid_coordinate_supports_retina_scale_and_monitor_offset(self):
         self.assertEqual(hid_coordinate((1440, 900), .5, .5), (720, 450))

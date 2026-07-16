@@ -22,6 +22,8 @@ UNO R4 WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W5100 TCP 
 | `M_RESET\n` | 向左上盲移 3000 × 3000，相對定位歸零。 |
 | `M_MOVE:X,Y\n` | 先歸零，再右移 X、下移 Y。X/Y 只能是 0 到 10000 的整數。 |
 | `M_DELTA:X,Y\n` | 不歸零，直接相對移動 X、Y steps；可使用負值，供座標校正工具的方向鍵測試。 |
+| `M_ABS:X,Y\n` | 使用第二個絕對 HID 指標移到 0–32767 的 X/Y；不受一般相對滑鼠加速度影響。 |
+| `M_ABS_CLICK:L\n` | 在目前絕對 HID 位置按左鍵。 |
 | `M_CLICK:L\n` / `M_CLICK:R\n` | 左／右鍵點擊。 |
 | `M_SCROLL:V\n` | 滾輪移動 V；正數向上、負數向下。 |
 | `K_TYPE:string\n` | 輸入可列印 ASCII 字串，然後送 Enter。 |
@@ -64,7 +66,7 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 1. 用 Arduino IDE 開啟 `B518_Arduino_MVP_Test.ino`，選取 **Arduino UNO R4 WiFi** 並燒錄。
 2. 關閉 IDE 的 Serial Monitor，避免它佔用 Mac 的 CDC port。
 3. 在 Mac 找出 port，例如 `ls /dev/cu.usbmodem*`，再用序列工具以 115200 baud 開啟。
-4. 發送 `GET_IP`，應得到 `IP:...`。接著測試 `M_MOVE:100,100`、`M_DELTA:5,0`、`M_CLICK:L`，最後才測試 `K_TYPE:...`。
+4. 發送 `GET_IP`，應得到 `IP:...`。接著測試 `M_MOVE:100,100`、`M_DELTA:5,0`、`M_ABS:16384,16384`、`M_ABS_CLICK:L`，最後才測試 `K_TYPE:...`。
 5. 從上位機對設定 IP 的 TCP port 連線，測試 TCP → USB 與 USB 非控制資料 → TCP 是否位元組一致。
 
 ## 已知 MVP 限制
