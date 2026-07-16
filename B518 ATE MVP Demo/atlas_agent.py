@@ -34,6 +34,11 @@ try:
 except ImportError:
     cv2 = None
 
+try:
+    import AppKit
+except ImportError:
+    AppKit = None
+
 VERSION = "0.1.0"
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
 TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
@@ -86,6 +91,7 @@ class Preferences:
     hid_mode: str = "relative"
     absolute_width: int = 1440
     absolute_height: int = 900
+    auto_scale: bool = True
 
     @classmethod
     def load(cls, path: Path) -> "Preferences":
@@ -199,6 +205,33 @@ def absolute_hid_report_coordinate(point: tuple[int, int], width: int, height: i
     if not 0 <= x < width or not 0 <= y < height:
         raise AgentError(f"絕對 HID 座標 {point} 超出虛擬桌面 {width}×{height}；請調整比例、偏移或桌面寬高")
     return round(x * 32767 / (width - 1)), round(y * 32767 / (height - 1))
+
+
+def screenshot_scale_for_displays(pixel_size: tuple[int, int],
+                                  displays: Iterable[tuple[float, float, float]]) -> Optional[tuple[float, float]]:
+    """Find a display whose logical size × backing scale equals a screenshot."""
+    pixel_width, pixel_height = pixel_size
+    for logical_width, logical_height, backing_scale in displays:
+        expected_width = round(logical_width * backing_scale)
+        expected_height = round(logical_height * backing_scale)
+        if abs(expected_width - pixel_width) <= 2 and abs(expected_height - pixel_height) <= 2:
+            return logical_width / pixel_width, logical_height / pixel_height
+    return None
+
+
+def macos_screenshot_scale(image_path: Path) -> Optional[tuple[float, float]]:
+    """Derive Retina/non-Retina pixel-to-logical scale for a screenshot's display."""
+    if cv2 is None or AppKit is None:
+        return None
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return None
+    height, width = image.shape[:2]
+    displays = []
+    for screen in AppKit.NSScreen.screens():
+        frame = screen.frame()
+        displays.append((float(frame.size.width), float(frame.size.height), float(screen.backingScaleFactor())))
+    return screenshot_scale_for_displays((width, height), displays)
 
 
 def rectangle_center(rectangle: tuple[int, int, int, int]) -> tuple[int, int]:
@@ -655,6 +688,7 @@ class AtlasAgentApp:
         self.hid_mode = tk.StringVar(value=pref.hid_mode if pref.hid_mode in ("relative", "absolute") else "relative")
         self.absolute_width = tk.StringVar(value=str(pref.absolute_width))
         self.absolute_height = tk.StringVar(value=str(pref.absolute_height))
+        self.auto_scale = tk.BooleanVar(value=pref.auto_scale)
         self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
@@ -698,6 +732,7 @@ class AtlasAgentApp:
         ttk.Entry(calibration, textvariable=self.hid_scale_x, width=6).pack(side="left", padx=4)
         ttk.Label(calibration, text="Y 比例").pack(side="left")
         ttk.Entry(calibration, textvariable=self.hid_scale_y, width=6).pack(side="left", padx=4)
+        ttk.Checkbutton(calibration, text="自動比例", variable=self.auto_scale).pack(side="left", padx=(4, 8))
         ttk.Label(calibration, text="X／Y 偏移").pack(side="left", padx=(8, 0))
         ttk.Entry(calibration, textvariable=self.hid_offset_x, width=6).pack(side="left", padx=4)
         ttk.Entry(calibration, textvariable=self.hid_offset_y, width=6).pack(side="left", padx=4)
@@ -929,6 +964,14 @@ class AtlasAgentApp:
             if shot is None:
                 raise AgentError("所有新截圖均找不到測試視窗模板。\n" + "\n".join(match_errors))
             self.events.put(("log", f"使用截圖：{shot.name}（共找到 {len(shots)} 張螢幕截圖）"))
+            if self.auto_scale.get():
+                automatic_scale = macos_screenshot_scale(shot)
+                if automatic_scale:
+                    scale_x, scale_y = automatic_scale
+                    self.events.put(("auto_scale", automatic_scale))
+                    self.events.put(("log", f"自動比例：截圖 {scale_x:g} × {scale_y:g}（依 macOS 顯示器邏輯尺寸）"))
+                else:
+                    self.events.put(("log", "自動比例：未找到與截圖尺寸相符的顯示器，保留手動比例"))
             window_center = (window_rect[0] + window_rect[2] // 2, window_rect[1] + window_rect[3] // 2)
             # Template matching inside the window prevents matching a stale/other app control.
             bundled_templates = Path(__file__).with_name("templates").resolve()
@@ -1013,6 +1056,10 @@ class AtlasAgentApp:
                         except Exception as exc: self.append("ERR: 無法啟動批次：" + str(exc))
                     elif line.startswith("IP:") or "IP=" in line: self.ip_text.set(line)
                 elif kind == "log": self.append(str(item))
+                elif kind == "auto_scale":
+                    scale_x, scale_y = item
+                    self.hid_scale_x.set(f"{scale_x:g}")
+                    self.hid_scale_y.set(f"{scale_y:g}")
                 elif kind == "begin_monitor":
                     root, sns, batch_number = item
                     if batch_number == self.batch_number:
@@ -1050,7 +1097,8 @@ class AtlasAgentApp:
                     dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
                     hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
                     hid_offset_x=offset_x, hid_offset_y=offset_y, hid_mode=hid_mode,
-                    absolute_width=absolute_width, absolute_height=absolute_height).save(self.pref_file)
+                    absolute_width=absolute_width, absolute_height=absolute_height,
+                    auto_scale=self.auto_scale.get()).save(self.pref_file)
         self.stop_monitor(); self.link.close(); self.root.destroy()
 
 

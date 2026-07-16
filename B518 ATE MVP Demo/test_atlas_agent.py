@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -66,6 +66,12 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(hid_coordinate((100, 200), 1, 1, 1440, 0), (1540, 200))
         with self.assertRaises(AgentError):
             hid_coordinate((1, 1), 0, 1)
+
+    def test_auto_scale_uses_matching_retina_display_pixel_dimensions(self):
+        displays = [(1440, 900, 2.0), (1920, 1080, 1.0)]
+        self.assertEqual(screenshot_scale_for_displays((2880, 1800), displays), (.5, .5))
+        self.assertEqual(screenshot_scale_for_displays((1920, 1080), displays), (1.0, 1.0))
+        self.assertIsNone(screenshot_scale_for_displays((1000, 1000), displays))
 
     def test_calibration_arrow_keys_generate_signed_relative_hid_delta(self):
         self.assertEqual(parse_step("5"), 5)
