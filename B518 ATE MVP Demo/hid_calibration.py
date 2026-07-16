@@ -30,25 +30,33 @@ def parse_step(value: str) -> int:
 
 
 def delta_command(direction: str, step: int) -> str:
+    x, y = direction_delta(direction, step)
+    return f"M_DELTA:{x},{y}"
+
+
+def direction_delta(direction: str, step: int) -> tuple[int, int]:
     deltas = {"Left": (-step, 0), "Right": (step, 0), "Up": (0, -step), "Down": (0, step)}
     if direction not in deltas:
         raise ValueError(f"不支援的方向：{direction}")
-    x, y = deltas[direction]
-    return f"M_DELTA:{x},{y}"
+    return deltas[direction]
 
 
 class HidCalibrationApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title(TITLE)
-        root.geometry("540x410")
-        root.resizable(False, False)
+        root.geometry("760x500")
+        root.minsize(680, 460)
         self.connection = None
         self.stop = threading.Event()
         self.events: queue.Queue[str] = queue.Queue()
         self.port = tk.StringVar()
         self.step = tk.StringVar(value="5")
         self.status = tk.StringVar(value="請選擇 Arduino USB CDC 並連線")
+        self.position_x = 0
+        self.position_y = 0
+        self.position = tk.StringVar()
+        self.update_position()
         self.build()
         self.refresh_ports()
         root.bind("<KeyPress-Left>", lambda event: self.key_move("Left"))
@@ -61,12 +69,17 @@ class HidCalibrationApp:
     def build(self) -> None:
         panel = ttk.Frame(self.root, padding=16); panel.pack(fill="both", expand=True)
         connection = ttk.LabelFrame(panel, text="Arduino USB CDC", padding=10); connection.pack(fill="x")
-        ttk.Label(connection, text="串口：").pack(side="left")
-        self.port_menu = ttk.Combobox(connection, textvariable=self.port, width=35, state="readonly")
-        self.port_menu.pack(side="left", fill="x", expand=True)
-        ttk.Button(connection, text="重新掃描", command=self.refresh_ports).pack(side="left", padx=5)
-        ttk.Button(connection, text="連線", command=self.connect).pack(side="left")
-        ttk.Button(connection, text="中斷", command=self.disconnect).pack(side="left", padx=(5, 0))
+        connection.columnconfigure(1, weight=1)
+        ttk.Label(connection, text="串口：").grid(row=0, column=0, sticky="w")
+        self.port_menu = ttk.Combobox(connection, textvariable=self.port, state="readonly")
+        self.port_menu.grid(row=0, column=1, sticky="ew", padx=(4, 8))
+        ttk.Button(connection, text="重新掃描", command=self.refresh_ports).grid(row=0, column=2, padx=3)
+        ttk.Button(connection, text="連線", command=self.connect).grid(row=0, column=3, padx=3)
+        ttk.Button(connection, text="中斷", command=self.disconnect).grid(row=0, column=4, padx=(3, 0))
+
+        coordinate = ttk.LabelFrame(panel, text="目前 Arduino 控制座標", padding=10); coordinate.pack(fill="x", pady=(12, 0))
+        ttk.Label(coordinate, textvariable=self.position, font=("TkDefaultFont", 20, "bold")).pack(side="left")
+        ttk.Label(coordinate, text="從 Home 的 (0, 0) 累積；右／下為正值。", foreground="#555").pack(side="left", padx=14)
 
         controls = ttk.LabelFrame(panel, text="相對距離測試", padding=12); controls.pack(fill="x", pady=12)
         ttk.Label(controls, text="Step 距離：").grid(row=0, column=0, sticky="w")
@@ -81,7 +94,7 @@ class HidCalibrationApp:
 
         ttk.Label(panel, textvariable=self.status).pack(anchor="w")
         ttk.Label(panel, text="通訊紀錄：").pack(anchor="w", pady=(8, 0))
-        self.output = tk.Text(panel, height=9, state="disabled", wrap="word")
+        self.output = tk.Text(panel, height=8, state="disabled", wrap="word")
         self.output.pack(fill="both", expand=True)
 
     def refresh_ports(self) -> None:
@@ -122,29 +135,41 @@ class HidCalibrationApp:
                 if not self.stop.is_set(): self.events.put("ERR: " + str(exc))
                 return
 
-    def send(self, command: str) -> None:
+    def send(self, command: str) -> bool:
         if not self.connection:
-            messagebox.showwarning(TITLE, "請先連線 Arduino"); return
+            messagebox.showwarning(TITLE, "請先連線 Arduino"); return False
         try:
             self.connection.write((command + "\r\n").encode("utf-8"))
             self.connection.flush()
             self.append("TX: " + command)
+            return True
         except Exception as exc:
             self.append("ERR: 傳送失敗：" + str(exc))
+            return False
 
     def home(self) -> None:
-        self.send("M_RESET")
+        if self.send("M_RESET"):
+            self.position_x = self.position_y = 0
+            self.update_position()
 
     def move(self, direction: str) -> None:
         try:
-            command = delta_command(direction, parse_step(self.step.get()))
+            step = parse_step(self.step.get())
+            command = delta_command(direction, step)
+            delta_x, delta_y = direction_delta(direction, step)
         except ValueError as exc:
             messagebox.showerror(TITLE, str(exc)); return
-        self.send(command)
+        if self.send(command):
+            self.position_x += delta_x
+            self.position_y += delta_y
+            self.update_position()
 
     def key_move(self, direction: str) -> str:
         self.move(direction)
         return "break"
+
+    def update_position(self) -> None:
+        self.position.set(f"({self.position_x}, {self.position_y})")
 
     def append(self, message: str) -> None:
         self.output.configure(state="normal")

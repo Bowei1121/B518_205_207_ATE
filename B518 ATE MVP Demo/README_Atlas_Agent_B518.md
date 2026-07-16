@@ -111,6 +111,8 @@ X／Y 比例改為 `0.5` 再測試；外接或雙螢幕的測試人機若不是�
 （或 `bash build_hid_calibration_app.sh` 後開啟 `dist/Atlas HID Calibration B518.app`），選擇
 Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設定 Step 後按鍵盤方向鍵
 或畫面方向按鈕，Arduino 會以 `M_DELTA:X,Y` 相對移動指定距離。
+工具會顯示從 Home 累積的「目前 Arduino 控制座標」：Home 為 `(0,0)`，右／下遞增，
+左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。
 
 例：OpenCV 疊圖顯示按鈕中心為 `(1000,1000)`，校正工具從 Home 以累計 `(500,500)`
 才到達同一位置，則將 Agent 的 X／Y 比例設定為 `0.5`。使用前必須重新燒錄

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
-from hid_calibration import delta_command, parse_step
+from hid_calibration import delta_command, direction_delta, parse_step
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -65,6 +65,7 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(delta_command("Left", 5), "M_DELTA:-5,0")
         self.assertEqual(delta_command("Up", 5), "M_DELTA:0,-5")
         self.assertEqual(delta_command("Down", 5), "M_DELTA:0,5")
+        self.assertEqual(direction_delta("Left", 5), (-5, 0))
         with self.assertRaises(ValueError):
             parse_step("0")
 
