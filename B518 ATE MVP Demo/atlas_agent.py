@@ -78,6 +78,11 @@ class Preferences:
     station: str = "DFU"
     dfu_profile: str = "b482_dfu2"
     screenshot_path: str = ""
+    hid_delay: float = 0.5
+    hid_scale_x: float = 1.0
+    hid_scale_y: float = 1.0
+    hid_offset_x: float = 0.0
+    hid_offset_y: float = 0.0
 
     @classmethod
     def load(cls, path: Path) -> "Preferences":
@@ -167,6 +172,39 @@ def resolve_template_path(template_root: Path, required_name: str) -> Path:
         return expected
     root_level = template_root / Path(required_name).name
     return root_level if root_level.is_file() else expected
+
+
+def hid_coordinate(point: tuple[int, int], scale_x: float, scale_y: float,
+                   offset_x: float = 0.0, offset_y: float = 0.0) -> tuple[int, int]:
+    """Convert screenshot pixels to Arduino HID screen coordinates."""
+    if scale_x <= 0 or scale_y <= 0:
+        raise AgentError("HID X／Y 比例必須大於 0")
+    return round(point[0] * scale_x + offset_x), round(point[1] * scale_y + offset_y)
+
+
+def rectangle_center(rectangle: tuple[int, int, int, int]) -> tuple[int, int]:
+    x, y, width, height = rectangle
+    return x + width // 2, y + height // 2
+
+
+def write_match_overlay(image_path: Path, matches: Iterable[tuple[str, tuple[int, int, int, int], tuple[int, int]]],
+                        output_path: Path) -> Path:
+    """Save a diagnostic image with OpenCV match boxes and converted HID points."""
+    if cv2 is None:
+        raise AgentError("製作匹配疊圖需要 opencv-python")
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise AgentError(f"無法讀取截圖：{image_path}")
+    for label, (x, y, width, height), hid_point in matches:
+        cv2.rectangle(image, (x, y), (x + width, y + height), (0, 255, 0), 3)
+        center = (x + width // 2, y + height // 2)
+        cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 28, 2)
+        text = f"{label} px={center[0]},{center[1]} HID={hid_point[0]},{hid_point[1]}"
+        cv2.putText(image, text, (x, max(24, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, .65, (0, 0, 255), 2, cv2.LINE_AA)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(output_path), image):
+        raise AgentError(f"無法儲存匹配疊圖：{output_path}")
+    return output_path
 
 
 def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
@@ -573,7 +611,7 @@ class AtlasAgentApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(TITLE)
-        self.root.geometry("940x650")
+        self.root.geometry("940x720")
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -590,6 +628,12 @@ class AtlasAgentApp:
         self.log_path = tk.StringVar(value=pref.log_path)
         self.template_path = tk.StringVar(value=pref.template_path or str(Path(__file__).with_name("templates")))
         self.screenshot_path = tk.StringVar(value=pref.screenshot_path or str(Path.home() / "Desktop"))
+        self.hid_delay = tk.StringVar(value=str(pref.hid_delay))
+        self.hid_scale_x = tk.StringVar(value=str(pref.hid_scale_x))
+        self.hid_scale_y = tk.StringVar(value=str(pref.hid_scale_y))
+        self.hid_offset_x = tk.StringVar(value=str(pref.hid_offset_x))
+        self.hid_offset_y = tk.StringVar(value=str(pref.hid_offset_y))
+        self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
         self.sn_text = tk.StringVar()
@@ -625,6 +669,17 @@ class AtlasAgentApp:
         ttk.Label(row, text="螢幕截圖路徑：").pack(side="left")
         ttk.Entry(row, textvariable=self.screenshot_path).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="選擇", command=lambda: self.choose_dir(self.screenshot_path)).pack(side="left", padx=(4, 0))
+        calibration = ttk.Frame(panel); calibration.pack(fill="x", pady=(8, 0))
+        ttk.Label(calibration, text="驗證 HID：每步延遲(s)").pack(side="left")
+        ttk.Entry(calibration, textvariable=self.hid_delay, width=6).pack(side="left", padx=(4, 10))
+        ttk.Label(calibration, text="X 比例").pack(side="left")
+        ttk.Entry(calibration, textvariable=self.hid_scale_x, width=6).pack(side="left", padx=4)
+        ttk.Label(calibration, text="Y 比例").pack(side="left")
+        ttk.Entry(calibration, textvariable=self.hid_scale_y, width=6).pack(side="left", padx=4)
+        ttk.Label(calibration, text="X／Y 偏移").pack(side="left", padx=(8, 0))
+        ttk.Entry(calibration, textvariable=self.hid_offset_x, width=6).pack(side="left", padx=4)
+        ttk.Entry(calibration, textvariable=self.hid_offset_y, width=6).pack(side="left", padx=4)
+        ttk.Button(calibration, text="查看匹配疊圖", command=self.show_match_overlay).pack(side="right")
         profile = ttk.Frame(panel); profile.pack(fill="x", pady=(8, 0))
         ttk.Label(profile, text="DFU 畫面設定：").pack(side="left")
         ttk.Combobox(profile, textvariable=self.dfu_profile, width=30, state="readonly",
@@ -653,6 +708,42 @@ class AtlasAgentApp:
     def choose_dir(self, variable: tk.StringVar) -> None:
         selected = filedialog.askdirectory(initialdir=variable.get() or str(Path.home()))
         if selected: variable.set(selected)
+
+    def hid_settings(self) -> tuple[float, float, float, float, float]:
+        try:
+            delay = float(self.hid_delay.get())
+            scale_x, scale_y = float(self.hid_scale_x.get()), float(self.hid_scale_y.get())
+            offset_x, offset_y = float(self.hid_offset_x.get()), float(self.hid_offset_y.get())
+        except ValueError as exc:
+            raise AgentError("HID 延遲、比例與偏移必須是數字") from exc
+        if delay < 0:
+            raise AgentError("HID 每步延遲不可小於 0")
+        hid_coordinate((0, 0), scale_x, scale_y, offset_x, offset_y)
+        return delay, scale_x, scale_y, offset_x, offset_y
+
+    def show_match_overlay(self) -> None:
+        if not self.overlay_path.is_file():
+            messagebox.showinfo(TITLE, "尚無匹配疊圖；請先執行一次 DFU 或 BT 開始流程。", parent=self.root)
+            return
+        if cv2 is None:
+            messagebox.showerror(TITLE, "查看匹配疊圖需要 opencv-python", parent=self.root); return
+        image = cv2.imread(str(self.overlay_path))
+        if image is None:
+            messagebox.showerror(TITLE, "無法讀取匹配疊圖", parent=self.root); return
+        height, width = image.shape[:2]
+        scale, shown_width, shown_height = preview_geometry(width, height, 1100, 650)
+        shown = cv2.resize(image, (shown_width, shown_height), interpolation=cv2.INTER_AREA) if scale != 1 else image
+        dialog = tk.Toplevel(self.root)
+        dialog.title("OpenCV 匹配疊圖（綠框＝模板；紅十字＝截圖座標）")
+        dialog.transient(self.root); dialog.resizable(False, False)
+        try:
+            photo = tk.PhotoImage(data=opencv_image_to_tk_png(shown))
+        except (AgentError, tk.TclError) as exc:
+            dialog.destroy(); messagebox.showerror(TITLE, str(exc), parent=self.root); return
+        label = ttk.Label(dialog, image=photo)
+        label.image = photo  # Keep the Tk image alive until this dialog closes.
+        label.pack(padx=10, pady=10)
+        ttk.Label(dialog, text=f"原圖 {width} × {height} px；檔案：{self.overlay_path}").pack(padx=10, pady=(0, 10))
 
     def open_template_maker(self) -> None:
         template_root = Path(self.template_path.get()).expanduser()
@@ -738,12 +829,13 @@ class AtlasAgentApp:
                                      lambda result: self.events.put(("result", (batch_number, result))), self.monitor_stop)
         self.monitor.start()
 
-    def send_hid_sequence(self, commands: Iterable[str], timeout: float = 8.0) -> None:
+    def send_hid_sequence(self, commands: Iterable[str], delay: float = 0.0, timeout: float = 8.0) -> None:
         """Wait for every Arduino HID completion before proceeding to CSV monitoring."""
+        sequence = list(commands)
         while True:
             try: self.hid_replies.get_nowait()
             except queue.Empty: break
-        for command in commands:
+        for index, command in enumerate(sequence):
             expected = hid_success_reply(command)
             self.link.send(command)
             deadline = time.monotonic() + timeout
@@ -756,12 +848,15 @@ class AtlasAgentApp:
                     break
                 if reply.startswith("ERR:"):
                     raise AgentError(f"Arduino 執行 {command} 失敗：{reply}")
+            if delay and index < len(sequence) - 1:
+                time.sleep(delay)
 
     def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
             if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
                 raise AgentError("B482 DFU_1 畫面尚未確認 SN 輸入方式；請選擇 b482_dfu2 或 generic")
+            delay, scale_x, scale_y, offset_x, offset_y = self.hid_settings()
             profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
             templates = Path(self.template_path.get()).expanduser()
             required = [profile["window"], profile["barcode"]] if station == "DFU" else [profile["window"], profile["start"]]
@@ -812,25 +907,41 @@ class AtlasAgentApp:
                 self.events.put(("log", "使用自訂 B482 模板：依整張匹配到的螢幕搜尋控制項"))
             else:
                 region = window_rect
+            matches = [("window", window_rect, hid_coordinate(rectangle_center(window_rect), scale_x, scale_y, offset_x, offset_y))]
             if station == "DFU":
-                barcode = template_center(shot, resolved[profile["barcode"]], region=region)
+                barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
+                barcode_source = rectangle_center(barcode_rect)
+                barcode = hid_coordinate(barcode_source, scale_x, scale_y, offset_x, offset_y)
+                matches.append(("SN input", barcode_rect, barcode))
                 if profile["input_mode"] == "ok_each":
-                    button = template_center(shot, resolved[profile["ok"]], region=region)
-                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button))
-                    self.events.put(("log", f"DFU：視窗定位 {window_center}，SN 欄位 {barcode}，OK {button}；全部 SN 輸入完成，啟動監聽"))
+                    button_rect = template_match(shot, resolved[profile["ok"]], region=region)
+                    button_source = rectangle_center(button_rect)
+                    button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                    matches.append(("OK", button_rect, button))
+                    write_match_overlay(shot, matches, self.overlay_path)
+                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button), delay=delay)
+                    self.events.put(("log", f"DFU：截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
                     commands = absolute_click_commands(barcode)
                     for index, sn in enumerate(sns):
                         commands.append("K_WRITE:" + sn)
                         if index < len(sns) - 1:
                             commands.append("K_KEY:TAB")
-                    button = template_center(shot, resolved[profile["start"]], region=region)
-                    self.send_hid_sequence(commands + absolute_click_commands(button))
+                    button_rect = template_match(shot, resolved[profile["start"]], region=region)
+                    button_source = rectangle_center(button_rect)
+                    button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                    matches.append(("Start", button_rect, button))
+                    write_match_overlay(shot, matches, self.overlay_path)
+                    self.send_hid_sequence(commands + absolute_click_commands(button), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
-                button = template_center(shot, resolved[profile["start"]], region=region)
-                self.send_hid_sequence(absolute_click_commands(button))
-                self.events.put(("log", f"BT：視窗定位 {window_center}，Start All {button}；啟動監聽"))
+                button_rect = template_match(shot, resolved[profile["start"]], region=region)
+                button_source = rectangle_center(button_rect)
+                button = hid_coordinate(button_source, scale_x, scale_y, offset_x, offset_y)
+                matches.append(("Start All", button_rect, button))
+                write_match_overlay(shot, matches, self.overlay_path)
+                self.send_hid_sequence(absolute_click_commands(button), delay=delay)
+                self.events.put(("log", f"BT：截圖 Start All {button_source} → HID {button}；啟動監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
         except Exception as exc:
             self.events.put(("log", f"{station} 影像流程失敗：{exc}"))
@@ -889,9 +1000,15 @@ class AtlasAgentApp:
         self.root.after(100, self.process_events)
 
     def close(self) -> None:
+        try:
+            delay, scale_x, scale_y, offset_x, offset_y = self.hid_settings()
+        except AgentError:
+            delay, scale_x, scale_y, offset_x, offset_y = .5, 1.0, 1.0, 0.0, 0.0
         Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
                     template_path=self.template_path.get(), station=self.station.get(),
-                    dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get()).save(self.pref_file)
+                    dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
+                    hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
+                    hid_offset_x=offset_x, hid_offset_y=offset_y).save(self.pref_file)
         self.stop_monitor(); self.link.close(); self.root.destroy()
 
 

@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, batch_result_report, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, preview_geometry, resolve_template_path, template_center, template_match, write_local_demo_results, write_match_overlay
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -51,6 +51,22 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(hid_success_reply("M_MOVE:100,200"), "OK:M_MOVE")
         self.assertEqual(hid_success_reply("M_CLICK:L"), "OK:M_CLICK:L")
         self.assertEqual(hid_success_reply("K_WRITE:SN001"), "OK:K_WRITE")
+
+    def test_hid_coordinate_supports_retina_scale_and_monitor_offset(self):
+        self.assertEqual(hid_coordinate((1440, 900), .5, .5), (720, 450))
+        self.assertEqual(hid_coordinate((100, 200), 1, 1, 1440, 0), (1540, 200))
+        with self.assertRaises(AgentError):
+            hid_coordinate((1, 1), 0, 1)
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_match_overlay_is_saved_with_match_annotations(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, overlay = root / "source.png", root / "overlay.png"
+            cv2.imwrite(str(source), np.zeros((60, 80, 3), dtype=np.uint8))
+            self.assertEqual(write_match_overlay(source, [("OK", (10, 20, 20, 10), (20, 25))], overlay), overlay)
+            self.assertTrue(overlay.is_file())
 
     def test_root_level_template_is_compatible_with_b482_subfolder_name(self):
         with tempfile.TemporaryDirectory() as directory:
