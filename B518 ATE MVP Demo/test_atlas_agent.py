@@ -3,11 +3,12 @@ import csv
 import os
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -189,6 +190,37 @@ class AtlasAgentTests(unittest.TestCase):
             monitor.start(); monitor.join(0.2); stop.set(); monitor.join(1)
             self.assertIn("separate root log", logs)
             self.assertEqual([item.status for item in results], ["PASS"])
+
+    def test_monitor_ignores_records_created_before_batch_start(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            system = root / "SN001" / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            system.mkdir(parents=True)
+            record = system / "records.csv"
+            record.write_text("case,status\na,PASS\n", encoding="utf-8")
+            old_time = time.time() - 10
+            os.utime(system.parent, (old_time, old_time)); os.utime(record, (old_time, old_time))
+            results, stop = [], threading.Event()
+            monitor = FolderMonitor(root, root, ["SN001"], lambda _: None, results.append, stop, created_after=time.time())
+            monitor.start(); monitor.join(.2); stop.set(); monitor.join(1)
+            self.assertEqual(results, [])
+
+    def test_monitor_reports_pending_sns_as_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            timed_out, stop = [], threading.Event()
+            monitor = FolderMonitor(Path(directory), Path(directory), ["SN001", "SN002"], lambda _: None,
+                                    lambda _: None, stop, timeout_seconds=.05, on_timeout=timed_out.append)
+            monitor.start(); monitor.join(1)
+            self.assertEqual(timed_out, [["SN001", "SN002"]])
+
+    def test_delete_screenshots_only_removes_given_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected, other = root / "截圖 one.png", root / "other.png"
+            selected.touch(); other.touch()
+            deleted, failed = delete_screenshots([selected])
+            self.assertEqual(deleted, [selected]); self.assertEqual(failed, [])
+            self.assertFalse(selected.exists()); self.assertTrue(other.exists())
 
     def test_screenshot_accepts_macos_screen_shot_filename(self):
         with tempfile.TemporaryDirectory() as directory:

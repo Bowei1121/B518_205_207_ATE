@@ -93,6 +93,7 @@ class Preferences:
     absolute_width: int = 1440
     absolute_height: int = 900
     auto_scale: bool = True
+    result_timeout_seconds: float = 300.0
 
     @classmethod
     def load(cls, path: Path) -> "Preferences":
@@ -312,7 +313,7 @@ def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, f
     return records
 
 
-def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None) -> Optional[Path]:
+def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None, created_after: Optional[float] = None) -> Optional[Path]:
     """Return the latest valid timestamp directory nearest to current system time."""
     if not sn_dir.is_dir():
         return None
@@ -323,12 +324,29 @@ def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None) -> Op
         if not child.is_dir() or not match:
             continue
         try:
+            if created_after is not None and child.stat().st_mtime <= created_after:
+                continue
+        except OSError:
+            continue
+        try:
             stamp = datetime.strptime(match.group(1), "%Y%m%d_%H-%M-%S")
         except ValueError:
             continue
         choices.append((abs((stamp - now).total_seconds()), stamp, child))
     # Nearest prevents stale rework selection; timestamp breaks same-distance ties.
     return min(choices, key=lambda item: (item[0], -item[1].timestamp()))[2] if choices else None
+
+
+def delete_screenshots(paths: Iterable[Path]) -> tuple[list[Path], list[Path]]:
+    """Delete only screenshots generated for the current visual-start request."""
+    deleted, failed = [], []
+    for path in paths:
+        try:
+            path.unlink()
+            deleted.append(path)
+        except OSError:
+            failed.append(path)
+    return deleted, failed
 
 
 def locate_records(folder: Path) -> Optional[Path]:
@@ -425,17 +443,23 @@ def preview_geometry(image_width: int, image_height: int, viewport_width: int, v
 
 
 class FolderMonitor(threading.Thread):
-    def __init__(self, csv_root: Path, log_root: Path, sns: Iterable[str], on_log: Callable[[str], None], on_result: Callable[[TestResult], None], stop: threading.Event) -> None:
+    def __init__(self, csv_root: Path, log_root: Path, sns: Iterable[str], on_log: Callable[[str], None], on_result: Callable[[TestResult], None], stop: threading.Event,
+                 created_after: float = 0.0, timeout_seconds: float = 0.0,
+                 on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
         super().__init__(daemon=True)
         self.csv_root, self.log_root, self.sns, self.on_log, self.on_result, self.stop = csv_root, log_root, list(sns), on_log, on_result, stop
         self.reported: set[Path] = set()
+        self.reported_sns: set[str] = set()
         self.log_positions: dict[Path, int] = {}
+        self.created_after, self.timeout_seconds, self.on_timeout = created_after, timeout_seconds, on_timeout
 
     def run(self) -> None:
-        self.on_log("監聽已啟動：" + ", ".join(self.sns))
+        self.on_log("監聽已啟動：" + ", ".join(self.sns) + f"；僅接受開始後建立的資料" +
+                    (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
+        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
             for sn in self.sns:
-                folder = nearest_timestamp_folder(self.csv_root / sn)
+                folder = nearest_timestamp_folder(self.csv_root / sn, created_after=self.created_after)
                 if folder is None:
                     continue
                 # Separate log roots are supported, but the CSV folder name is
@@ -444,6 +468,12 @@ class FolderMonitor(threading.Thread):
                 if not log_file.is_file(): log_file = folder / "system" / "device.log"
                 self._render_log(log_file)
                 records = locate_records(folder)
+                if records:
+                    try:
+                        if records.stat().st_mtime <= self.created_after:
+                            continue
+                    except OSError:
+                        continue
                 if records and records not in self.reported:
                     try:
                         status, detail = parse_records(records)
@@ -452,7 +482,15 @@ class FolderMonitor(threading.Thread):
                         continue
                     if status != "UNKNOWN":
                         self.reported.add(records)
+                        self.reported_sns.add(sn)
                         self.on_result(TestResult(sn, status, folder, records, detail))
+            if deadline is not None and time.monotonic() >= deadline:
+                pending = [sn for sn in self.sns if sn not in self.reported_sns]
+                if pending:
+                    self.on_log("測試結果逾時：" + "、".join(pending))
+                    if self.on_timeout:
+                        self.on_timeout(pending)
+                return
             # Polling is deliberately permission-free and has no FSEvents setup.
             if self.stop.wait(0.25):
                 break
@@ -691,7 +729,7 @@ class AtlasAgentApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(TITLE)
-        self.root.geometry("940x720")
+        self.root.geometry("940x760")
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -717,6 +755,7 @@ class AtlasAgentApp:
         self.absolute_width = tk.StringVar(value=str(pref.absolute_width))
         self.absolute_height = tk.StringVar(value=str(pref.absolute_height))
         self.auto_scale = tk.BooleanVar(value=pref.auto_scale)
+        self.result_timeout = tk.StringVar(value=str(pref.result_timeout_seconds))
         self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
@@ -779,6 +818,10 @@ class AtlasAgentApp:
         ttk.Combobox(profile, textvariable=self.dfu_profile, width=30, state="readonly",
                      values=("b482_dfu2", "generic", "b482_dfu1_manual")).pack(side="left")
         ttk.Label(profile, text="  B482 DFU_2：每個 SN 輸入後按 OK；DFU_1 尚待確認輸入步驟。").pack(side="left")
+        timeout = ttk.Frame(panel); timeout.pack(fill="x", pady=(6, 0))
+        ttk.Label(timeout, text="測試結果逾時(s)：").pack(side="left")
+        ttk.Entry(timeout, textvariable=self.result_timeout, width=8).pack(side="left", padx=4)
+        ttk.Label(timeout, text="0 表示不逾時；逾時的未完成 SN 回報 TIMEOUT。", foreground="#555").pack(side="left")
         batch = ttk.LabelFrame(panel, text="當前測試條碼（由 Arduino TCP→USB CDC 收到；也可手動驗證）", padding=8); batch.pack(fill="x", pady=10)
         ttk.Entry(batch, textvariable=self.sn_text).pack(side="left", fill="x", expand=True)
         ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).pack(side="left", padx=(5, 0))
@@ -877,25 +920,31 @@ class AtlasAgentApp:
             messagebox.showerror(TITLE, str(exc)); return None
         return root, sns
 
-    def prepare_batch(self, payload: str) -> Optional[tuple[Path, list[str], int]]:
+    def prepare_batch(self, payload: str) -> Optional[tuple[Path, list[str], int, float, float]]:
         validated = self.validate_batch(payload)
         if validated is None:
             return None
+        try:
+            result_timeout = float(self.result_timeout.get())
+            if result_timeout < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數"); return None
         root, sns = validated
         self.stop_monitor(); self.sns = sns; self.batch_results = {}; self.reported_batch_number = None
         self.sn_display.configure(text="當前 SN：" + "、".join(sns))
         self.batch_number += 1
-        return root, sns, self.batch_number
+        return root, sns, self.batch_number, time.time(), result_timeout
 
     def start_batch(self, payload: str) -> Optional[list[str]]:
         prepared = self.prepare_batch(payload)
         if prepared is None:
             return None
-        root, sns, batch_number = prepared
+        root, sns, batch_number, created_after, result_timeout = prepared
         if self.station.get() in ("DFU", "BT"):
-            threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number), daemon=True).start()
+            threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number, created_after, result_timeout), daemon=True).start()
         else:
-            self.start_monitor(root, sns, batch_number)
+            self.start_monitor(root, sns, batch_number, created_after, result_timeout)
         return sns
 
     def start_local_demo(self, payload: str) -> None:
@@ -908,10 +957,10 @@ class AtlasAgentApp:
         prepared = self.prepare_batch(payload)
         if prepared is None:
             return
-        root, sns, batch_number = prepared
+        root, sns, batch_number, created_after, result_timeout = prepared
         station = self.station.get()
         fail_last = self.demo_fail_last.get()
-        self.start_monitor(root, sns, batch_number)
+        self.start_monitor(root, sns, batch_number, created_after, result_timeout)
 
         def run() -> None:
             try:
@@ -921,12 +970,14 @@ class AtlasAgentApp:
         threading.Thread(target=run, daemon=True).start()
         self.append(f"本機模擬已啟動：{station}／{', '.join(sns)}")
 
-    def start_monitor(self, root: Path, sns: list[str], batch_number: int) -> None:
+    def start_monitor(self, root: Path, sns: list[str], batch_number: int, created_after: float, result_timeout: float) -> None:
         self.monitor_stop = threading.Event()
         log_root = Path(self.log_path.get()).expanduser()
         if not log_root.is_dir(): log_root = root
         self.monitor = FolderMonitor(root, log_root, sns, lambda item: self.events.put(("log", item)),
-                                     lambda result: self.events.put(("result", (batch_number, result))), self.monitor_stop)
+                                     lambda result: self.events.put(("result", (batch_number, result))), self.monitor_stop,
+                                     created_after, result_timeout,
+                                     lambda pending: self.events.put(("timeout", (batch_number, pending))))
         self.monitor.start()
 
     def send_hid_sequence(self, commands: Iterable[str], delay: float = 0.0, timeout: float = 8.0) -> None:
@@ -951,7 +1002,15 @@ class AtlasAgentApp:
             if delay and index < len(sequence) - 1:
                 time.sleep(delay)
 
-    def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int) -> None:
+    def delete_processed_screenshots(self, shots: Iterable[Path]) -> None:
+        deleted, failed = delete_screenshots(shots)
+        if deleted:
+            self.events.put(("log", "已刪除本次分析截圖：" + "、".join(item.name for item in deleted)))
+        if failed:
+            self.events.put(("log", "無法刪除截圖：" + "、".join(item.name for item in failed)))
+
+    def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int,
+                     created_after: float, result_timeout: float) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
             if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
@@ -1044,6 +1103,7 @@ class AtlasAgentApp:
                     button = target_for(button_source)
                     matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
+                    self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(focus_commands + dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
@@ -1057,6 +1117,7 @@ class AtlasAgentApp:
                     button = target_for(button_source)
                     matches.append((match_label("Start", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
+                    self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
@@ -1065,9 +1126,10 @@ class AtlasAgentApp:
                 button = target_for(button_source)
                 matches.append((match_label("Start All", button_source), button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
+                self.delete_processed_screenshots(shots)
                 self.send_hid_sequence(click_commands(button, hid_mode), delay=delay)
                 self.events.put(("log", f"BT：截圖 Start All {button_source} → HID {button}；啟動監聽"))
-            self.events.put(("begin_monitor", (csv_root, sns, batch_number)))
+            self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
         except Exception as exc:
             self.events.put(("log", f"{station} 影像流程失敗：{exc}"))
             self.events.put(("start_failed", (station, batch_number)))
@@ -1082,6 +1144,16 @@ class AtlasAgentApp:
             if len(parts) != 4 or any(not p.isdigit() or not 0 <= int(p) <= 255 for p in parts):
                 messagebox.showerror(TITLE, "IPv4 格式不正確"); return
             self.safe_send("NET_SET:" + value)
+
+    def report_if_batch_complete(self, batch_number: int) -> None:
+        if self.reported_batch_number == batch_number or not all(sn in self.batch_results for sn in self.sns):
+            return
+        report = batch_result_report(self.sns, self.batch_results)
+        self.reported_batch_number = batch_number
+        if self.link.connection:
+            self.safe_send(report)
+        else:
+            self.append("未連線 Arduino，略過上報：" + report)
 
     def process_events(self) -> None:
         try:
@@ -1102,9 +1174,9 @@ class AtlasAgentApp:
                     self.hid_scale_x.set(f"{scale_x:g}")
                     self.hid_scale_y.set(f"{scale_y:g}")
                 elif kind == "begin_monitor":
-                    root, sns, batch_number = item
+                    root, sns, batch_number, created_after, result_timeout = item
                     if batch_number == self.batch_number:
-                        self.start_monitor(root, sns, batch_number)
+                        self.start_monitor(root, sns, batch_number, created_after, result_timeout)
                     else:
                         self.append("略過已被新批次取代的影像流程")
                 elif kind == "start_failed":
@@ -1118,13 +1190,17 @@ class AtlasAgentApp:
                         continue
                     self.append(f"{result.sn}: {result.status} — {result.detail}")
                     self.batch_results[result.sn] = result.status
-                    if self.reported_batch_number != batch_number and all(sn in self.batch_results for sn in self.sns):
-                        report = batch_result_report(self.sns, self.batch_results)
-                        self.reported_batch_number = batch_number
-                        if self.link.connection:
-                            self.safe_send(report)
-                        else:
-                            self.append("未連線 Arduino，略過上報：" + report)
+                    self.report_if_batch_complete(batch_number)
+                elif kind == "timeout":
+                    batch_number, pending = item
+                    if batch_number != self.batch_number:
+                        continue
+                    for sn in pending:
+                        if sn not in self.batch_results:
+                            self.batch_results[sn] = "TIMEOUT"
+                            self.append(f"{sn}: TIMEOUT — 等待結果逾時")
+                    self.monitor = None
+                    self.report_if_batch_complete(batch_number)
         except queue.Empty: pass
         self.root.after(100, self.process_events)
 
@@ -1133,13 +1209,17 @@ class AtlasAgentApp:
             delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
         except AgentError:
             delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = .5, 1.0, 1.0, 0.0, 0.0, "relative", 1440, 900
+        try:
+            result_timeout = max(0.0, float(self.result_timeout.get()))
+        except ValueError:
+            result_timeout = 300.0
         Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
                     template_path=self.template_path.get(), station=self.station.get(),
                     dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
                     hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
                     hid_offset_x=offset_x, hid_offset_y=offset_y, hid_mode=hid_mode,
                     absolute_width=absolute_width, absolute_height=absolute_height,
-                    auto_scale=self.auto_scale.get()).save(self.pref_file)
+                    auto_scale=self.auto_scale.get(), result_timeout_seconds=result_timeout).save(self.pref_file)
         self.stop_monitor(); self.link.close(); self.root.destroy()
 
 
