@@ -183,7 +183,7 @@ python3 b482_demo_server.py --csv-root "$HOME/Desktop/AtlasDemoCSV"
 ```
 
 再開啟 `http://127.0.0.1:8080`。DFU_2 可逐筆輸入 SN 並按 `OK`，BT 可按 `Start All`，
-FCT 可按「Simulate Fixture Insert」。模擬器會先寫入 `device.log` 的 TESTING，再於兩秒
+FCT 可按「Simulate Fixture Insert」。模擬器會先寫入 `device.log` 的 TESTING，再於 30 秒
 後寫入每個 SN 的 `records.csv`。使用 Agent 時，CSV 根路徑設成同一個 `AtlasDemoCSV`。
 這是客戶展示用 HMI，不需要也不會使用 macOS Automation／Accessibility 權限。
 

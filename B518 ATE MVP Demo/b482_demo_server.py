@@ -51,7 +51,9 @@ class Simulator:
             system.mkdir(parents=True, exist_ok=True)
             (system / "device.log").write_text(f"{station_line(state['station'])}\nSN={sn}\nTESTING\n", encoding="utf-8")
             folders[sn] = system
-        time.sleep(2)
+        # Keep TESTING visible long enough to validate BT's screenshot-based
+        # STATUS polling before the simulated instrument publishes its result.
+        time.sleep(30)
         for index, sn in enumerate(sns):
             result = "FAIL" if fail_last and index == len(sns) - 1 else "PASS"
             system = folders[sn]
