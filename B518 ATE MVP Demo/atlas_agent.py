@@ -592,7 +592,8 @@ class TemplateMakerDialog:
     MAX_SOURCE_PIXELS = 24_000_000
 
     def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path,
-                 suggested_names: Iterable[str] = ("test_window.png",)) -> None:
+                 suggested_names: Iterable[str] = ("test_window.png",),
+                 capture_screenshot: Optional[Callable[[], Path]] = None) -> None:
         self.window = tk.Toplevel(parent)
         self.window.title("製作圖像匹配模板")
         self.window.transient(parent)
@@ -601,6 +602,8 @@ class TemplateMakerDialog:
         self.window.resizable(False, False)
         self.template_root, self.screenshot_root = template_root, screenshot_root
         self.suggested_names = list(suggested_names) or ["test_window.png"]
+        self.capture_screenshot = capture_screenshot
+        self.capture_results: queue.Queue[tuple[bool, object]] = queue.Queue()
         self.image_path: Optional[Path] = None
         self.original = None
         self.scale = 1.0
@@ -612,6 +615,8 @@ class TemplateMakerDialog:
         controls = ttk.Frame(self.window, padding=10); controls.pack(fill="x")
         ttk.Button(controls, text="選擇截圖", command=self.choose_image).pack(side="left")
         ttk.Button(controls, text="使用最新截圖", command=self.use_latest).pack(side="left", padx=5)
+        self.capture_button = ttk.Button(controls, text="擷取螢幕截圖", command=self.capture_new_screenshot)
+        self.capture_button.pack(side="left", padx=5)
         ttk.Button(controls, text="縮小預覽", command=lambda: self.change_preview_size(-1)).pack(side="left", padx=(10, 0))
         ttk.Button(controls, text="放大預覽", command=lambda: self.change_preview_size(1)).pack(side="left", padx=5)
         ttk.Label(controls, text="模板檔名：").pack(side="left", padx=(12, 0))
@@ -644,6 +649,42 @@ class TemplateMakerDialog:
             messagebox.showerror(TITLE, f"無法讀取截圖資料夾：{exc}", parent=self.window)
         except AgentError as exc:
             messagebox.showerror(TITLE, str(exc), parent=self.window)
+
+    def capture_new_screenshot(self) -> None:
+        if self.capture_screenshot is None:
+            messagebox.showerror(TITLE, "目前沒有可用的 Arduino 擷取功能", parent=self.window); return
+        self.capture_button.state(["disabled"])
+        self.info.set("Arduino 正在擷取螢幕截圖，等待 macOS 完成儲存…")
+
+        def run() -> None:
+            try:
+                image = self.capture_screenshot()
+                self.capture_results.put((True, image))
+            except Exception as exc:
+                self.capture_results.put((False, str(exc)))
+        threading.Thread(target=run, daemon=True).start()
+        self.window.after(100, self._poll_capture)
+
+    def _poll_capture(self) -> None:
+        try:
+            success, value = self.capture_results.get_nowait()
+        except queue.Empty:
+            if self.window.winfo_exists():
+                self.window.after(100, self._poll_capture)
+            return
+        if success:
+            self._captured_screenshot(value)
+        else:
+            self._capture_failed(str(value))
+
+    def _captured_screenshot(self, image: Path) -> None:
+        self.capture_button.state(["!disabled"])
+        self.load(image)
+
+    def _capture_failed(self, message: str) -> None:
+        self.capture_button.state(["!disabled"])
+        self.info.set("擷取截圖失敗")
+        messagebox.showerror(TITLE, message, parent=self.window)
 
     def load(self, path: Path) -> None:
         if cv2 is None:
@@ -897,7 +938,26 @@ class AtlasAgentApp:
         profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
         suggested.extend(profile[key] for key in ("barcode", "ok", "start") if key in profile)
-        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested)
+        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested, self.capture_template_screenshot)
+
+    def capture_template_screenshot(self) -> Path:
+        """Ask Arduino for a fresh screenshot and return the newest generated file."""
+        screenshot_root = Path(self.screenshot_path.get()).expanduser()
+        if not screenshot_root.is_dir():
+            raise AgentError("請先選擇有效的螢幕截圖路徑")
+        before = time.time()
+        self.link.send("SCREENSHOT")
+        self.events.put(("log", "TX: SCREENSHOT（製作模板）"))
+        time.sleep(SCREENSHOT_SETTLE_SECONDS)
+        deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
+        shots: list[Path] = []
+        while time.monotonic() < deadline and not shots:
+            shots = new_screenshots(screenshot_root, before)
+            time.sleep(.25)
+        if not shots:
+            raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+        self.events.put(("log", f"模板截圖完成：{shots[0].name}（共 {len(shots)} 張）"))
+        return shots[0]
 
     def append(self, text: str) -> None:
         self.output.configure(state="normal"); self.output.insert("end", text + "\n"); self.output.see("end"); self.output.configure(state="disabled")
