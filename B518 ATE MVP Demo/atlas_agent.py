@@ -579,13 +579,13 @@ class BtStatusMonitor(threading.Thread):
     one-second interval is measured *after a fresh image has been analysed*,
     rather than repeatedly analysing an old image.
     """
-    def __init__(self, screenshot_root: Path, window_template: Path, status_templates: dict[str, Path],
+    def __init__(self, screenshot_root: Path, status_templates: dict[str, Path],
                  sns: list[str], slots: list[int], request_screenshot: Callable[[], None],
                  on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
                  delete_shots: Callable[[Iterable[Path]], None], stop: threading.Event,
                  timeout_seconds: float = 0.0, on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
         super().__init__(daemon=True)
-        self.screenshot_root, self.window_template, self.status_templates = screenshot_root, window_template, status_templates
+        self.screenshot_root, self.status_templates = screenshot_root, status_templates
         self.sns, self.slots, self.request_screenshot = sns, slots, request_screenshot
         self.on_log, self.on_result, self.delete_shots, self.stop = on_log, on_result, delete_shots, stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
@@ -631,8 +631,11 @@ class BtStatusMonitor(threading.Thread):
         errors: list[str] = []
         for shot in shots:
             try:
-                window = template_match(shot, self.window_template)
-                statuses = bt_statuses_from_screen(shot, self.status_templates, window)
+                # The BT window template is needed only once to find the Start
+                # button.  During a test the browser can resize/reflow, while
+                # the status-cell templates remain sufficient and avoid a
+                # false failure caused by the decorative "BT" title.
+                statuses = bt_statuses_from_screen(shot, self.status_templates)
                 selected = shot
                 break
             except AgentError as exc:
@@ -1205,7 +1208,7 @@ class AtlasAgentApp:
         self.monitor.start()
 
     def start_bt_status_monitor(self, sns: list[str], slots: list[int], batch_number: int, result_timeout: float,
-                                window_template: Path, status_templates: dict[str, Path]) -> None:
+                                status_templates: dict[str, Path]) -> None:
         screenshot_root = Path(self.screenshot_path.get()).expanduser()
         if not screenshot_root.is_dir():
             self.append("BT STATUS 監聽未啟動：請選擇有效的螢幕截圖路徑")
@@ -1216,7 +1219,7 @@ class AtlasAgentApp:
             self.link.send("SCREENSHOT")
             self.events.put(("log", "TX: SCREENSHOT（BT STATUS）"))
 
-        self.monitor = BtStatusMonitor(screenshot_root, window_template, status_templates, sns, slots, request,
+        self.monitor = BtStatusMonitor(screenshot_root, status_templates, sns, slots, request,
                                        lambda item: self.events.put(("log", item)),
                                        lambda result: self.events.put(("result", (batch_number, result))),
                                        self.delete_processed_screenshots, self.monitor_stop, result_timeout,
@@ -1381,7 +1384,7 @@ class AtlasAgentApp:
                 self.events.put(("log", f"BT：截圖 {button_label} {button_source} → HID {button}；啟動畫面 STATUS 監聽"))
             if station == "BT":
                 slots = [bt_slot] if bt_slot else list(range(1, len(sns) + 1))
-                self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout, resolved[profile["window"]],
+                self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout,
                                                                {state: resolved[name] for state, name in profile["status"].items()})))
             else:
                 self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
@@ -1435,9 +1438,9 @@ class AtlasAgentApp:
                     else:
                         self.append("略過已被新批次取代的影像流程")
                 elif kind == "begin_bt_status_monitor":
-                    sns, slots, batch_number, result_timeout, window_template, status_templates = item
+                    sns, slots, batch_number, result_timeout, status_templates = item
                     if batch_number == self.batch_number:
-                        self.start_bt_status_monitor(sns, slots, batch_number, result_timeout, window_template, status_templates)
+                        self.start_bt_status_monitor(sns, slots, batch_number, result_timeout, status_templates)
                     else:
                         self.append("略過已被新批次取代的 BT 影像流程")
                 elif kind == "start_failed":
