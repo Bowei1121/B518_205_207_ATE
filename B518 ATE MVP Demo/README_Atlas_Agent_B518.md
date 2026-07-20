@@ -32,8 +32,8 @@ chmod +x build_macos_app.sh
 `SN1,SN2,...\r\n`；每一批條碼**建議以 CRLF 結尾**，可直接搭配 LabVIEW 的 CRLF
 偵測模式，也能避免 TCP 串流分段時誤讀。Agent 仍相容 LF-only，並相容可選的
 `DATA:SN1,SN2,...\r\n`／`SN:SN1,SN2,...\r\n` 訊框；收到完整一行後立刻
-顯示 1–4 個 SN 並依工站啟動流程。FCT 直接開始監聽；DFU／BT 則請 Arduino 截圖，
-再依影像匹配結果輸入條碼或點擊按鈕。
+顯示 1–4 個 SN 並依工站啟動流程。FCT 直接開始監聽；DFU 請 Arduino 截圖後輸入條碼；
+BT 則截圖後點擊按鈕，並從畫面 STATUS 判定結果，不依賴 Atlas CSV 路徑。
 
 資料夾結構應為：
 
@@ -57,7 +57,8 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 ### TCP／LabVIEW 交握訊框
 
 所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。有效批次被接收後
-不會先回覆 ACK；DFU／BT 必須完成影像操作，並在所有 SN 的 CSV 結果都完成後，才回覆一行
+不會先回覆 ACK；DFU 必須完成影像操作並等待 CSV 結果；BT 必須完成影像操作並等待畫面
+STATUS 的 PASS／FAIL，才回覆一行
 `RESULT:<SN1>,<PASS|FAIL>;<SN2>,<PASS|FAIL>...\r\n`。LabVIEW 可用 TCP Read 的 CRLF
 模式逐行讀取。若批次無效或 DFU／BT 影像啟動失敗，則回覆相對應的 `NACK` 錯誤訊息。
 
@@ -83,7 +84,7 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 程式內「OpenCV 模板路徑」旁的「製作模板」可直接從截圖資料夾選取圖片（或使用最新
 截圖），以滑鼠框選範圍並儲存為 PNG。通用流程可命名為 `test_window.png`、
 `barcode_field.png`、`start_button.png`；B482 流程可使用 `b482/dfu2_window.png`、
-`b482/dfu2_sn_input.png`、`b482/dfu2_ok.png` 或 `b482/bt_start_all.png`。
+`b482/dfu2_sn_input.png`、`b482/dfu2_ok.png` 或 BT 的 `b482/bt_*.png`。
 「製作模板」的檔名下拉選單會依目前工站與畫面設定預先列出正確名稱；DFU_2 請依序
 選擇並儲存三個 `b482/dfu2_*.png` 檔案。
 製作模板視窗的「擷取螢幕截圖」會透過已連線的 Arduino 發送 `SCREENSHOT`，等待 macOS
@@ -98,6 +99,26 @@ macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以�
 選 `generic`，則使用根目錄下的 `test_window.png`、`barcode_field.png`、`start_button.png`。
 相容既有作法：根目錄直接有 `dfu2_window.png` 等同名檔案時，Agent 也會自動使用；但
 任意名稱（例如 `123.png`）無法判斷模板用途，仍須改成下拉選單列出的名稱。
+
+### BT 畫面 STATUS 判定
+
+BT 不使用 Atlas CSV。請在 BT 初始畫面選「製作模板」，分別框選**一個完整 STATUS 格**
+（包含背景與文字），並依下列名稱儲存：
+
+```
+b482/bt_window.png
+b482/bt_start_all.png
+b482/bt_start_1.png ... b482/bt_start_4.png
+b482/bt_status_pass.png
+b482/bt_status_fail.png
+b482/bt_status_testing.png
+b482/bt_status_notset.png
+```
+
+輸入 1–4 個 SN（多筆時依 slot 1～4 排列）後，按「開始流程」會點 `Start All`；按「BT Start 1`～
+`BT Start 4` 則只啟動、回報對應 slot 的 SN；個別測試也可只輸入一個 SN。啟動後每次由 Arduino 產生新截圖，Agent 讀取
+四列 STATUS，截圖分析完即刪除；下一次擷取至少間隔 1 秒。macOS 截圖本身可能延後數秒才
+真正落檔，因此無須、也不能用需要 Screen Recording 權限的方式強制固定每秒取得新影像。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
 自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML
@@ -150,8 +171,8 @@ Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設
 
 本次提供的 B482 畫面已配置在 `templates/b482/`。選 DFU 時，請選 `b482_dfu2`：
 Agent 會依序填入左下 SN 欄、點擊 `OK`，讓測試程式把 SN 搬入各 Slot。FCT 將在治具
-推入後直接監聽；BT 則定位並點擊底部 `Start All`。PASS／FAIL／NOTSET／TESTING
-狀態格不作為影像模板，因此顏色差異不會影響定位。
+推入後直接監聽；BT 可定位並點擊 `Start All` 或 `Start 1`～`Start 4`，後續以 STATUS
+格的 PASS／FAIL 模板判讀結果。
 
 ### 無硬體本機 Demo：HTML B482 HMI
 

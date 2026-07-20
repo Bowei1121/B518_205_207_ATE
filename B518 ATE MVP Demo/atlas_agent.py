@@ -66,6 +66,10 @@ VISUAL_PROFILES = {
     },
     "b482_bt": {
         "window": "b482/bt_window.png", "start": "b482/bt_start_all.png",
+        "starts": {1: "b482/bt_start_1.png", 2: "b482/bt_start_2.png",
+                   3: "b482/bt_start_3.png", 4: "b482/bt_start_4.png"},
+        "status": {"PASS": "b482/bt_status_pass.png", "FAIL": "b482/bt_status_fail.png",
+                   "TESTING": "b482/bt_status_testing.png", "NOTSET": "b482/bt_status_notset.png"},
         "window_size": (1568, 727),
     },
 }
@@ -422,6 +426,61 @@ def template_center(image: Path, template: Path, threshold: float = 0.80,
     return x + width // 2, y + height // 2
 
 
+def template_matches(image: Path, template: Path, threshold: float = 0.80,
+                     region: Optional[tuple[int, int, int, int]] = None) -> list[tuple[int, int, int, int, float]]:
+    """Return distinct occurrences of one template, ordered by match confidence."""
+    if cv2 is None:
+        raise AgentError("BT STATUS 辨識需要 opencv-python")
+    screen, needle = cv2.imread(str(image)), cv2.imread(str(template))
+    if screen is None or needle is None:
+        raise AgentError(f"無法讀取截圖或模板：{template}")
+    offset_x = offset_y = 0
+    if region:
+        x, y, width, height = region
+        screen = screen[y:y + height, x:x + width]
+        offset_x, offset_y = x, y
+    screen_height, screen_width = screen.shape[:2]
+    needle_height, needle_width = needle.shape[:2]
+    if not screen_width or not screen_height or needle_width > screen_width or needle_height > screen_height:
+        return []
+    result = cv2.matchTemplate(screen, needle, cv2.TM_CCOEFF_NORMED)
+    ys, xs = (result >= threshold).nonzero()
+    candidates = sorted(((float(result[y, x]), int(x), int(y)) for y, x in zip(ys, xs)), reverse=True)
+    found: list[tuple[int, int, int, int, float]] = []
+    # A single cell gives many adjacent high-score points.  Keep only one
+    # representative per overlapping template rectangle (non-max suppression).
+    for score, x, y in candidates:
+        if any(x < old_x + old_w and x + needle_width > old_x and y < old_y + old_h and y + needle_height > old_y
+               for old_x, old_y, old_w, old_h, _ in found):
+            continue
+        found.append((offset_x + x, offset_y + y, needle_width, needle_height, score))
+    return found
+
+
+def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
+                            region: Optional[tuple[int, int, int, int]] = None) -> list[str]:
+    """Read the four top-to-bottom BT STATUS cells from state-specific templates."""
+    hits: list[tuple[int, int, str, float]] = []
+    for status, template in status_templates.items():
+        for x, y, width, height, score in template_matches(image, template, region=region):
+            hits.append((y + height // 2, x + width // 2, status, score))
+    if not hits:
+        raise AgentError("找不到任何 BT STATUS 模板")
+    # A crop that includes the cell background and text creates one match per
+    # row.  Sort by y to preserve slot 1→4 order, retaining the best hit when
+    # two state templates overlap around the same row.
+    rows: list[tuple[int, int, str, float]] = []
+    for hit in sorted(hits):
+        if rows and abs(hit[0] - rows[-1][0]) <= 12:
+            if hit[3] > rows[-1][3]:
+                rows[-1] = hit
+        else:
+            rows.append(hit)
+    if len(rows) < 4:
+        raise AgentError(f"BT STATUS 僅辨識到 {len(rows)} 列；請確認四個狀態模板均從同一解析度畫面裁切")
+    return [row[2] for row in rows[:4]]
+
+
 def opencv_image_to_tk_png(image) -> str:
     """Encode an OpenCV BGR image for Tk without swapping red/blue channels."""
     if cv2 is None:
@@ -511,6 +570,85 @@ class FolderMonitor(threading.Thread):
                 self.on_log(content.rstrip())
         except OSError:
             pass
+
+
+class BtStatusMonitor(threading.Thread):
+    """Permission-free BT result monitor using Arduino-created screenshots.
+
+    macOS may defer writing a screenshot for several seconds.  Therefore the
+    one-second interval is measured *after a fresh image has been analysed*,
+    rather than repeatedly analysing an old image.
+    """
+    def __init__(self, screenshot_root: Path, window_template: Path, status_templates: dict[str, Path],
+                 sns: list[str], slots: list[int], request_screenshot: Callable[[], None],
+                 on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
+                 delete_shots: Callable[[Iterable[Path]], None], stop: threading.Event,
+                 timeout_seconds: float = 0.0, on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
+        super().__init__(daemon=True)
+        self.screenshot_root, self.window_template, self.status_templates = screenshot_root, window_template, status_templates
+        self.sns, self.slots, self.request_screenshot = sns, slots, request_screenshot
+        self.on_log, self.on_result, self.delete_shots, self.stop = on_log, on_result, delete_shots, stop
+        self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.reported: set[str] = set()
+
+    def run(self) -> None:
+        self.on_log("BT 畫面 STATUS 監聽已啟動：" + "、".join(self.sns) + "；每張新截圖分析後間隔 1 秒")
+        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+        while not self.stop.is_set():
+            before = time.time()
+            try:
+                self.request_screenshot()
+                shots = self._wait_for_screenshots(before)
+                if not shots:
+                    self.on_log("BT：等待螢幕截圖逾時，將重試")
+                else:
+                    self._analyse_screenshots(shots)
+                    if all(sn in self.reported for sn in self.sns):
+                        return
+            except Exception as exc:
+                self.on_log(f"BT STATUS 畫面分析失敗：{exc}")
+            if deadline is not None and time.monotonic() >= deadline:
+                pending = [sn for sn in self.sns if sn not in self.reported]
+                if pending and self.on_timeout:
+                    self.on_timeout(pending)
+                return
+            if self.stop.wait(1.0):
+                return
+
+    def _wait_for_screenshots(self, before: float) -> list[Path]:
+        # Do not assume that a five-second macOS thumbnail delay is exact.
+        deadline = time.monotonic() + SCREENSHOT_TIMEOUT_SECONDS
+        while not self.stop.is_set() and time.monotonic() < deadline:
+            shots = new_screenshots(self.screenshot_root, before)
+            if shots:
+                return shots
+            self.stop.wait(.25)
+        return []
+
+    def _analyse_screenshots(self, shots: list[Path]) -> None:
+        selected: Optional[Path] = None
+        statuses: list[str] = []
+        errors: list[str] = []
+        for shot in shots:
+            try:
+                window = template_match(shot, self.window_template)
+                statuses = bt_statuses_from_screen(shot, self.status_templates, window)
+                selected = shot
+                break
+            except AgentError as exc:
+                errors.append(f"{shot.name}: {exc}")
+        # The images have been read regardless of matching outcome and are not
+        # retained on the locked-down production Mac.
+        self.delete_shots(shots)
+        if selected is None:
+            raise AgentError("；".join(errors) or "沒有可分析的 BT 截圖")
+        summary = ", ".join(f"slot{index + 1}={status}" for index, status in enumerate(statuses))
+        self.on_log(f"BT STATUS：{summary}")
+        for sn, slot in zip(self.sns, self.slots):
+            status = statuses[slot - 1]
+            if status in ("PASS", "FAIL") and sn not in self.reported:
+                self.reported.add(sn)
+                self.on_result(TestResult(sn, status, selected.parent, selected, f"BT 畫面 slot{slot} STATUS={status}"))
 
 
 class SerialLineFramer:
@@ -777,7 +915,7 @@ class AtlasAgentApp:
         self.hid_replies: queue.Queue[str] = queue.Queue()
         self.link = SerialLink(lambda line: self.events.put(("serial", line)))
         self.monitor_stop = threading.Event()
-        self.monitor: Optional[FolderMonitor] = None
+        self.monitor: Optional[threading.Thread] = None
         self.sns: list[str] = []
         self.batch_number = 0
         self.batch_results: dict[str, str] = {}
@@ -866,6 +1004,9 @@ class AtlasAgentApp:
         batch = ttk.LabelFrame(panel, text="當前測試條碼（由 Arduino TCP→USB CDC 收到；也可手動驗證）", padding=8); batch.pack(fill="x", pady=10)
         ttk.Entry(batch, textvariable=self.sn_text).pack(side="left", fill="x", expand=True)
         ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).pack(side="left", padx=(5, 0))
+        self.bt_channel_buttons = ttk.Frame(batch); self.bt_channel_buttons.pack(side="left", padx=(5, 0))
+        for slot in range(1, 5):
+            ttk.Button(self.bt_channel_buttons, text=f"BT Start {slot}", command=lambda n=slot: self.start_bt_channel(n)).pack(side="left", padx=2)
         ttk.Button(batch, text="本機模擬", command=lambda: self.start_local_demo(self.sn_text.get())).pack(side="left", padx=(5, 0))
         ttk.Button(batch, text="停止監聽", command=self.stop_monitor).pack(side="left", padx=(5, 0))
         ttk.Checkbutton(panel, text="本機模擬最後一台 FAIL（僅寫入目前 CSV 根路徑）", variable=self.demo_fail_last).pack(anchor="w")
@@ -938,6 +1079,9 @@ class AtlasAgentApp:
         profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
         suggested.extend(profile[key] for key in ("barcode", "ok", "start") if key in profile)
+        if station == "BT":
+            suggested.extend(profile["starts"].values())
+            suggested.extend(profile["status"].values())
         TemplateMakerDialog(self.root, template_root, screenshot_root, suggested, self.capture_template_screenshot)
 
     def capture_template_screenshot(self) -> Path:
@@ -973,8 +1117,10 @@ class AtlasAgentApp:
 
     def validate_batch(self, payload: str) -> Optional[tuple[Path, list[str]]]:
         try:
-            root = Path(self.csv_path.get()).expanduser()
-            if not root.is_dir(): raise AgentError("請選擇有效的 CSV 根路徑")
+            root_text = self.csv_path.get().strip()
+            root = Path(root_text).expanduser() if root_text else Path(".")
+            if self.station.get() != "BT" and not root.is_dir():
+                raise AgentError("請選擇有效的 CSV 根路徑")
             sns = parse_barcodes(payload)
         except AgentError as exc:
             messagebox.showerror(TITLE, str(exc)); return None
@@ -996,16 +1142,34 @@ class AtlasAgentApp:
         self.batch_number += 1
         return root, sns, self.batch_number, time.time(), result_timeout
 
-    def start_batch(self, payload: str) -> Optional[list[str]]:
+    def start_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[list[str]]:
+        if self.station.get() == "BT" and bt_slot is not None:
+            try:
+                requested_sns = parse_barcodes(payload)
+            except AgentError as exc:
+                messagebox.showerror(TITLE, str(exc)); return None
+            if len(requested_sns) != 1 and len(requested_sns) < bt_slot:
+                messagebox.showerror(TITLE, f"BT Start {bt_slot} 需要輸入第 {bt_slot} 個 SN（以逗號排列 slot 1～4）")
+                return None
         prepared = self.prepare_batch(payload)
         if prepared is None:
             return None
         root, sns, batch_number, created_after, result_timeout = prepared
+        if self.station.get() == "BT" and bt_slot is not None:
+            sns = [sns[0] if len(sns) == 1 else sns[bt_slot - 1]]
+            self.sns = sns
+            self.sn_display.configure(text=f"當前 SN：{sns[0]}（BT slot {bt_slot}）")
         if self.station.get() in ("DFU", "BT"):
-            threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number, created_after, result_timeout), daemon=True).start()
+            threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number, created_after, result_timeout, bt_slot), daemon=True).start()
         else:
             self.start_monitor(root, sns, batch_number, created_after, result_timeout)
         return sns
+
+    def start_bt_channel(self, slot: int) -> None:
+        if self.station.get() != "BT":
+            messagebox.showinfo(TITLE, "請先將工站切換為 BT，再使用個別通道 Start 按鈕。", parent=self.root)
+            return
+        self.start_batch(self.sn_text.get(), bt_slot=slot)
 
     def start_local_demo(self, payload: str) -> None:
         validated = self.validate_batch(payload)
@@ -1040,6 +1204,25 @@ class AtlasAgentApp:
                                      lambda pending: self.events.put(("timeout", (batch_number, pending))))
         self.monitor.start()
 
+    def start_bt_status_monitor(self, sns: list[str], slots: list[int], batch_number: int, result_timeout: float,
+                                window_template: Path, status_templates: dict[str, Path]) -> None:
+        screenshot_root = Path(self.screenshot_path.get()).expanduser()
+        if not screenshot_root.is_dir():
+            self.append("BT STATUS 監聽未啟動：請選擇有效的螢幕截圖路徑")
+            return
+        self.monitor_stop = threading.Event()
+
+        def request() -> None:
+            self.link.send("SCREENSHOT")
+            self.events.put(("log", "TX: SCREENSHOT（BT STATUS）"))
+
+        self.monitor = BtStatusMonitor(screenshot_root, window_template, status_templates, sns, slots, request,
+                                       lambda item: self.events.put(("log", item)),
+                                       lambda result: self.events.put(("result", (batch_number, result))),
+                                       self.delete_processed_screenshots, self.monitor_stop, result_timeout,
+                                       lambda pending: self.events.put(("timeout", (batch_number, pending))))
+        self.monitor.start()
+
     def send_hid_sequence(self, commands: Iterable[str], delay: float = 0.0, timeout: float = 8.0) -> None:
         """Wait for every Arduino HID completion before proceeding to CSV monitoring."""
         sequence = list(commands)
@@ -1070,7 +1253,7 @@ class AtlasAgentApp:
             self.events.put(("log", "無法刪除截圖：" + "、".join(item.name for item in failed)))
 
     def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int,
-                     created_after: float, result_timeout: float) -> None:
+                     created_after: float, result_timeout: float, bt_slot: Optional[int] = None) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
             if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
@@ -1078,8 +1261,13 @@ class AtlasAgentApp:
             delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
             profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
             templates = Path(self.template_path.get()).expanduser()
-            required = [profile["window"], profile["barcode"]] if station == "DFU" else [profile["window"], profile["start"]]
-            required.append(profile["ok"] if station == "DFU" and profile["input_mode"] == "ok_each" else profile.get("start", ""))
+            if station == "DFU":
+                required = [profile["window"], profile["barcode"]]
+            else:
+                start_template = profile["starts"][bt_slot] if bt_slot else profile["start"]
+                required = [profile["window"], start_template, *profile["status"].values()]
+            if station == "DFU" and profile["input_mode"] == "ok_each":
+                required.append(profile["ok"])
             resolved = {item: resolve_template_path(templates, item) for item in required if item}
             missing = [item for item in required if item and not resolved[item].is_file()]
             if missing:
@@ -1181,15 +1369,22 @@ class AtlasAgentApp:
                     self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
-                button_rect = template_match(shot, resolved[profile["start"]], region=region)
+                selected_start = profile["starts"][bt_slot] if bt_slot else profile["start"]
+                button_rect = template_match(shot, resolved[selected_start], region=region)
                 button_source = rectangle_center(button_rect)
                 button = target_for(button_source)
-                matches.append((match_label("Start All", button_source), button_rect, button))
+                button_label = f"Start {bt_slot}" if bt_slot else "Start All"
+                matches.append((match_label(button_label, button_source), button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
                 self.delete_processed_screenshots(shots)
                 self.send_hid_sequence(click_commands(button, hid_mode), delay=delay)
-                self.events.put(("log", f"BT：截圖 Start All {button_source} → HID {button}；啟動監聽"))
-            self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
+                self.events.put(("log", f"BT：截圖 {button_label} {button_source} → HID {button}；啟動畫面 STATUS 監聽"))
+            if station == "BT":
+                slots = [bt_slot] if bt_slot else list(range(1, len(sns) + 1))
+                self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout, resolved[profile["window"]],
+                                                               {state: resolved[name] for state, name in profile["status"].items()})))
+            else:
+                self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
         except Exception as exc:
             self.events.put(("log", f"{station} 影像流程失敗：{exc}"))
             self.events.put(("start_failed", (station, batch_number)))
@@ -1239,6 +1434,12 @@ class AtlasAgentApp:
                         self.start_monitor(root, sns, batch_number, created_after, result_timeout)
                     else:
                         self.append("略過已被新批次取代的影像流程")
+                elif kind == "begin_bt_status_monitor":
+                    sns, slots, batch_number, result_timeout, window_template, status_templates = item
+                    if batch_number == self.batch_number:
+                        self.start_bt_status_monitor(sns, slots, batch_number, result_timeout, window_template, status_templates)
+                    else:
+                        self.append("略過已被新批次取代的 BT 影像流程")
                 elif kind == "start_failed":
                     station, batch_number = item
                     if batch_number == self.batch_number and self.link.connection:

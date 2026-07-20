@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -261,6 +261,26 @@ class AtlasAgentTests(unittest.TestCase):
             cv2.imwrite(str(screen_file), screen)
             cv2.imwrite(str(template_file), screen[40:70, 60:100])
             self.assertEqual(template_center(screen_file, template_file), (80, 55))
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_bt_status_templates_read_four_rows_in_slot_order(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screen = np.full((180, 180, 3), 255, dtype=np.uint8)
+            colors = {"PASS": (0, 239, 0), "FAIL": (0, 0, 255), "TESTING": (0, 255, 255), "NOTSET": (241, 75, 240)}
+            statuses = ["TESTING", "PASS", "FAIL", "NOTSET"]
+            templates = {}
+            for index, status in enumerate(statuses):
+                y = 20 + index * 35
+                screen[y:y + 20, 80:130] = colors[status]
+                screen[y + 4:y + 16, 96:114] = (255, 255, 255)  # non-uniform crop detail
+                template = root / f"{status}.png"
+                cv2.imwrite(str(template), screen[y:y + 20, 80:130])
+                templates[status] = template
+            image = root / "screen.png"; cv2.imwrite(str(image), screen)
+            self.assertEqual(bt_statuses_from_screen(image, templates), statuses)
+            self.assertEqual(len(template_matches(image, templates["PASS"])), 1)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_template_larger_than_search_region_has_actionable_error(self):
