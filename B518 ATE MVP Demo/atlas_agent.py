@@ -520,6 +520,25 @@ def normalize_ocr_sn(value: str) -> str:
     return re.sub(r"\s+", "", value).upper()
 
 
+def vision_rectangle_components(rectangle: object) -> tuple[float, float, float, float]:
+    """Return a Vision CGRect as x, y, width, height across PyObjC versions.
+
+    Older PyObjC versions exposed a CGRect as a flat four-value tuple, while
+    current versions expose it as ``((x, y), (width, height))``.  Keep the
+    OCR pipeline independent of that bridge representation.
+    """
+    try:
+        if len(rectangle) == 4:  # type: ignore[arg-type]
+            x, y, width, height = rectangle  # type: ignore[misc]
+        elif len(rectangle) == 2:  # type: ignore[arg-type]
+            (x, y), (width, height) = rectangle  # type: ignore[misc]
+        else:
+            raise ValueError("unexpected component count")
+        return float(x), float(y), float(width), float(height)
+    except (TypeError, ValueError) as exc:
+        raise AgentError(f"無法解析 Vision OCR 座標：{rectangle!r}") from exc
+
+
 def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]) -> list[str]:
     """Assign OCR text to each status row by its y position left of STATUS."""
     candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in ocr_texts
@@ -574,7 +593,7 @@ def recognize_text_vision(image: Path) -> list[OcrText]:
             if not candidates:
                 continue
             text = str(candidates[0].string())
-            x, y, box_width, box_height = observation.boundingBox()
+            x, y, box_width, box_height = vision_rectangle_components(observation.boundingBox())
             results.append(OcrText(text, (round(x * width), round((1 - y - box_height) * height),
                                           round(box_width * width), round(box_height * height))))
 

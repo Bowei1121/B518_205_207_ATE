@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -131,6 +131,12 @@ class AtlasAgentTests(unittest.TestCase):
         text = [OcrText(f" bt-demo-00{index + 1} ", (550, 102 + index * 60, 150, 26)) for index in range(4)]
         self.assertEqual(pair_bt_sn_text(rows, text), ["BT-DEMO-001", "BT-DEMO-002", "BT-DEMO-003", "BT-DEMO-004"])
         self.assertEqual(normalize_ocr_sn(" sn 001 "), "SN001")
+
+    def test_vision_ocr_rectangle_accepts_legacy_and_current_pyobjc_shapes(self):
+        self.assertEqual(vision_rectangle_components((.1, .2, .3, .4)), (.1, .2, .3, .4))
+        self.assertEqual(vision_rectangle_components(((.1, .2), (.3, .4))), (.1, .2, .3, .4))
+        with self.assertRaises(AgentError):
+            vision_rectangle_components((.1, .2))
 
     def test_bt_ocr_sn_pairing_keeps_missing_slot_empty_for_manual_review(self):
         rows = [BtStatusRow("TESTING", (800, 100, 120, 30)), BtStatusRow("TESTING", (800, 160, 120, 30))]
