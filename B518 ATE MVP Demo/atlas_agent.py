@@ -73,7 +73,8 @@ VISUAL_PROFILES = {
     },
     "b482_dfu2": {
         "window": "b482/dfu2_window.png", "barcode": "b482/dfu2_sn_input.png",
-        "ok": "b482/dfu2_ok.png", "window_size": (1011, 600), "input_mode": "ok_each",
+        "ok": "b482/dfu2_ok.png", "checkbox_checked": "b482/slot_checkbox_checked.png",
+        "checkbox_unchecked": "b482/slot_checkbox_unchecked.png", "window_size": (1011, 600), "input_mode": "ok_each",
     },
     "b482_bt": {
         "window": "b482/bt_window.png", "start": "b482/bt_start_all.png",
@@ -83,6 +84,16 @@ VISUAL_PROFILES = {
                    "TESTING": "b482/bt_status_testing.png", "NOTSET": "b482/bt_status_notset.png"},
         "window_size": (1568, 727),
     },
+}
+
+# FCT does not need a Start-button template: the fixture starts the real test.
+# These two small crops identify the four native checkbox controls before a
+# sparse JOB begins.  They are shared with DFU_2 because the simulated HMI uses
+# the same checkbox rendering; create them from the target HMI when necessary.
+FCT_CHECKBOX_TEMPLATES = {
+    "window": "b482/fct_window.png",
+    "checked": "b482/slot_checkbox_checked.png",
+    "unchecked": "b482/slot_checkbox_unchecked.png",
 }
 
 
@@ -569,6 +580,34 @@ def template_matches(image: Path, template: Path, threshold: float = 0.80,
             continue
         found.append((offset_x + x, offset_y + y, needle_width, needle_height, score))
     return found
+
+
+def slot_checkbox_states(image: Path, checked_template: Path, unchecked_template: Path,
+                         region: Optional[tuple[int, int, int, int]] = None) -> list[tuple[bool, tuple[int, int, int, int]]]:
+    """Return the four horizontal slot checkbox states and their rectangles.
+
+    A checked and an unchecked checkbox need separate templates.  Matching both
+    states means the Agent only clicks controls whose current state differs from
+    the sparse JOB assignment, rather than blindly toggling slot 2/3.
+    """
+    hits: list[tuple[int, int, bool, tuple[int, int, int, int], float]] = []
+    for checked, template in ((True, checked_template), (False, unchecked_template)):
+        for x, y, width, height, score in template_matches(image, template, region=region):
+            hits.append((x + width // 2, y + height // 2, checked, (x, y, width, height), score))
+    if not hits:
+        raise AgentError("找不到任何 Slot 測試 checkbox 模板")
+    # In the unlikely event both templates overlap at the same location, retain
+    # the better score.  The HMI cards are arranged left-to-right as slot 1..4.
+    rows: list[tuple[int, int, bool, tuple[int, int, int, int], float]] = []
+    for hit in sorted(hits, key=lambda item: item[0]):
+        if rows and abs(hit[0] - rows[-1][0]) <= max(hit[3][2], rows[-1][3][2]):
+            if hit[4] > rows[-1][4]:
+                rows[-1] = hit
+        else:
+            rows.append(hit)
+    if len(rows) != 4:
+        raise AgentError(f"Slot checkbox 僅辨識到 {len(rows)} 個；請從同一張、同一解析度 HMI 截圖製作 checked / unchecked 模板")
+    return [(item[2], item[3]) for item in rows]
 
 
 def bt_status_rows_from_screen(image: Path, status_templates: dict[str, Path],
@@ -1402,9 +1441,13 @@ class AtlasAgentApp:
         if not screenshot_root.is_dir():
             messagebox.showerror(TITLE, "請先選擇有效的螢幕截圖路徑"); return
         station = self.station.get()
+        if station == "FCT":
+            TemplateMakerDialog(self.root, template_root, screenshot_root,
+                                list(FCT_CHECKBOX_TEMPLATES.values()), self.capture_template_screenshot)
+            return
         profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
-        suggested.extend(profile[key] for key in ("barcode", "ok", "start") if key in profile)
+        suggested.extend(profile[key] for key in ("barcode", "ok", "start", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
             suggested.extend(profile["status"].values())
@@ -1502,6 +1545,14 @@ class AtlasAgentApp:
         if command.station in ("DFU", "BT"):
             threading.Thread(target=self.visual_start,
                              args=(command.station, command.sns, command.slots, root, batch_number,
+                                   created_after, result_timeout), daemon=True).start()
+        elif command.slots != [1, 2, 3, 4]:
+            # A full FCT tray uses the normal fixture workflow.  A sparse JOB
+            # must first synchronize the visible checkbox state with the
+            # requested slots, otherwise a fixture insertion can test stale
+            # slot 2/3 selections.
+            threading.Thread(target=self.configure_fct_sparse_slots,
+                             args=(command.slots, root, command.sns, batch_number,
                                    created_after, result_timeout), daemon=True).start()
         else:
             self.start_monitor(root, command.sns, batch_number, created_after, result_timeout)
@@ -1636,6 +1687,67 @@ class AtlasAgentApp:
         if failed:
             self.events.put(("log", "無法刪除截圖：" + "、".join(item.name for item in failed)))
 
+    def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
+                                   created_after: float, result_timeout: float) -> None:
+        """Set FCT's four visible test checkboxes before beginning file monitoring."""
+        try:
+            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
+            templates = Path(self.template_path.get()).expanduser()
+            resolved = {name: resolve_template_path(templates, item) for name, item in FCT_CHECKBOX_TEMPLATES.items()}
+            missing = [FCT_CHECKBOX_TEMPLATES[name] for name, path in resolved.items() if not path.is_file()]
+            if missing:
+                raise AgentError("缺少 FCT sparse slot 模板：" + "、".join(missing) +
+                                 f"\n目前模板根路徑：{templates}\n請切換 FCT 後用「製作模板」建立 fct_window、slot_checkbox_checked、slot_checkbox_unchecked。")
+            screenshot_dir = Path(self.screenshot_path.get()).expanduser()
+            if not screenshot_dir.is_dir():
+                raise AgentError("請選擇有效的螢幕截圖路徑")
+            before = time.time(); self.link.send("SCREENSHOT")
+            self.events.put(("log", f"FCT sparse slot：等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
+            time.sleep(SCREENSHOT_SETTLE_SECONDS)
+            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
+            shots: list[Path] = []
+            while time.monotonic() < deadline and not shots:
+                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            if not shots:
+                raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+            shot = None; window_rect = None; states = None; errors: list[str] = []
+            for candidate in shots:
+                try:
+                    candidate_window = template_match(candidate, resolved["window"])
+                    candidate_states = slot_checkbox_states(candidate, resolved["checked"], resolved["unchecked"])
+                    shot, window_rect, states = candidate, candidate_window, candidate_states
+                    break
+                except AgentError as exc:
+                    errors.append(f"{candidate.name}: {exc}")
+            if shot is None or window_rect is None or states is None:
+                raise AgentError("所有新截圖均無法定位 FCT 視窗與四個 checkbox。\n" + "\n".join(errors))
+            if self.auto_scale.get():
+                automatic_scale = macos_screenshot_scale(shot)
+                if automatic_scale:
+                    scale_x, scale_y = automatic_scale; self.events.put(("auto_scale", automatic_scale))
+            def target_for(source: tuple[int, int]) -> tuple[int, int]:
+                logical = hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
+                return absolute_hid_report_coordinate(logical, absolute_width, absolute_height) if hid_mode == "absolute" else logical
+            focus = target_for(rectangle_center(window_rect))
+            commands = click_commands(focus, hid_mode)
+            changes: list[str] = []
+            for index, (is_checked, rectangle) in enumerate(states, start=1):
+                required = index in slots
+                if is_checked != required:
+                    commands.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+                    changes.append(f"slot{index}={'勾選' if required else '取消'}")
+            write_match_overlay(shot, [("FCT window", window_rect, focus),
+                                       *((f"slot{index} {'checked' if checked else 'unchecked'}", rect,
+                                          target_for(rectangle_center(rect)))
+                                         for index, (checked, rect) in enumerate(states, start=1))], self.overlay_path)
+            self.delete_processed_screenshots(shots)
+            self.send_hid_sequence(commands, delay=delay)
+            self.events.put(("log", "FCT sparse slot 已同步：" + ("、".join(changes) if changes else "checkbox 已符合 JOB") + "；啟動 CSV 監聽"))
+            self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
+        except Exception as exc:
+            self.events.put(("log", f"FCT sparse slot 流程失敗：{exc}"))
+            self.events.put(("start_failed", ("FCT", batch_number)))
+
     def visual_start(self, station: str, sns: list[str], slots: list[int], csv_root: Path, batch_number: int,
                      created_after: float, result_timeout: float) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
@@ -1647,6 +1759,8 @@ class AtlasAgentApp:
             templates = Path(self.template_path.get()).expanduser()
             if station == "DFU":
                 required = [profile["window"], profile["barcode"]]
+                if slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                    required.extend((profile["checkbox_checked"], profile["checkbox_unchecked"]))
             else:
                 start_templates = ([profile["start"]] if slots == [1, 2, 3, 4]
                                    else [profile["starts"][slot] for slot in slots])
@@ -1726,6 +1840,19 @@ class AtlasAgentApp:
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
                 focus_commands = click_commands(target_for(window_center), hid_mode)
+                checkbox_commands: list[str] = []
+                checkbox_changes: list[str] = []
+                if slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                    states = slot_checkbox_states(shot, resolved[profile["checkbox_checked"]],
+                                                   resolved[profile["checkbox_unchecked"]], region=region)
+                    for index, (is_checked, rectangle) in enumerate(states, start=1):
+                        required_checked = index in slots
+                        target = target_for(rectangle_center(rectangle))
+                        matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
+                                                    rectangle_center(rectangle)), rectangle, target))
+                        if is_checked != required_checked:
+                            checkbox_commands.extend(click_commands(target, hid_mode))
+                            checkbox_changes.append(f"slot{index}={'勾選' if required_checked else '取消'}")
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
@@ -1737,11 +1864,10 @@ class AtlasAgentApp:
                     matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.delete_processed_screenshots(shots)
-                    if slots != list(range(1, len(slots) + 1)):
-                        self.events.put(("log", "DFU_2 sparse slot：請確認測試 HMI 僅勾選 " +
-                                         "、".join(f"slot{slot}" for slot in slots) +
-                                         "；SN 將依勾選順序逐筆按 OK"))
-                    self.send_hid_sequence(focus_commands + dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
+                    self.send_hid_sequence(focus_commands + checkbox_commands +
+                                           dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
+                    if checkbox_changes:
+                        self.events.put(("log", "DFU_2 sparse slot 已同步：" + "、".join(checkbox_changes)))
                     self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
                     commands = focus_commands + click_commands(barcode, hid_mode)

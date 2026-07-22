@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -334,6 +334,22 @@ class AtlasAgentTests(unittest.TestCase):
             self.assertEqual(len(template_matches(image, templates["PASS"])), 1)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_slot_checkbox_states_returns_four_left_to_right_states(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screen = np.full((80, 240, 3), 255, dtype=np.uint8)
+            checked = np.zeros((14, 14, 3), dtype=np.uint8); checked[2:12, 2:12] = (0, 160, 0)
+            unchecked = np.zeros((14, 14, 3), dtype=np.uint8); unchecked[2:12, 2:12] = (0, 0, 180)
+            expected = [True, False, True, False]
+            for index, value in enumerate(expected):
+                x = 15 + index * 55
+                screen[30:44, x:x + 14] = checked if value else unchecked
+            image, checked_file, unchecked_file = root / "screen.png", root / "checked.png", root / "unchecked.png"
+            cv2.imwrite(str(image), screen); cv2.imwrite(str(checked_file), checked); cv2.imwrite(str(unchecked_file), unchecked)
+            self.assertEqual([value for value, _ in slot_checkbox_states(image, checked_file, unchecked_file)], expected)
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_template_larger_than_search_region_has_actionable_error(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
@@ -353,6 +369,7 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(template_center(ui / "B482_DFU_2.jpg", b482 / "dfu2_ok.png"), (951, 552))
         self.assertEqual(template_center(ui / "B482_BT.jpg", b482 / "bt_start_all.png"), (824, 690))
         self.assertEqual(VISUAL_PROFILES["b482_dfu2"]["input_mode"], "ok_each")
+        self.assertIn("checkbox_checked", VISUAL_PROFILES["b482_dfu2"])
 
 
 if __name__ == "__main__": unittest.main()

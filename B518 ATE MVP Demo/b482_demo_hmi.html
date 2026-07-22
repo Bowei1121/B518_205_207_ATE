@@ -15,6 +15,9 @@
 <div class="footer"><label class="hint"><input type="checkbox" id="failLast"> 模擬最後一台 FAIL</label></div><div id="log" class="log">Simulator ready.</div>
 <script>
 const colors=['c0','c1','c2','c3'];let dfuSlots=Array(4).fill(''),fctSlots=['FCTDEMO001','FCTDEMO002','FCTDEMO003','FCTDEMO004'],dfuChecked=[true,true,true,true],fctChecked=[true,true,true,true],batch=null;
+// BT 的單通道按鈕可平行啟動。每一個按鈕有自己的 server batch，
+// 但畫面仍合併顯示四個 slot 的最新狀態。
+const activeBtSns=new Set(),btBatches=new Set(),btStatuses={};
 function stateFor(checked,sn){return !checked?'NOTEST':sn?'NOTSET':'NOTSET'}
 function row(sn,i,status,withGroup=true){return `<tr><td>${i+1}</td>${withGroup?'<td>group0</td>':''}<td class="slot">slot${i+1}</td><td>${sn||''}</td><td class="state ${status.toLowerCase()}">${status}</td><td>${status==='TESTING'?'Running':status==='PASS'||status==='FAIL'?'Complete':''}</td></tr>`}
 function card(sn,i,checked,kind){return `<div class="card ${colors[i]}"><div class="card-top"><span>slot${i+1}</span><label><input type="checkbox" ${checked?'checked':''} onchange="toggleSlot('${kind}',${i},this.checked)"> 測試</label></div><div class="sn-display">SN: ${sn||'—'}</div></div>`}
@@ -25,10 +28,13 @@ function toggleSlot(kind,i,checked){if(kind==='dfu')dfuChecked[i]=checked;else f
 function clearDfu(){dfuSlots=Array(4).fill('');snInput.value='';renderDfu()}
 function addSn(){let sn=snInput.value.trim(),index=dfuSlots.findIndex((value,i)=>dfuChecked[i]&&!value);if(!sn||index<0)return;dfuSlots[index]=sn;snInput.value='';renderDfu();let sns=dfuSlots.filter((value,i)=>dfuChecked[i]&&value);if(sns.length===dfuChecked.filter(Boolean).length&&sns.length)start('DFU',sns)}
 function startFct(){start('FCT',fctSlots.filter((value,i)=>fctChecked[i]))}
-function startBt(n){start('BT',n?[`BTDEMO00${n}`]:['BTDEMO001','BTDEMO002','BTDEMO003','BTDEMO004'])}
+function startBt(n){let requested=n?[`BTDEMO00${n}`]:['BTDEMO001','BTDEMO002','BTDEMO003','BTDEMO004'];startBtBatch(requested.filter(sn=>!activeBtSns.has(sn)))}
+async function startBtBatch(sns){if(!sns.length){log('BT slot 已在測試中，略過重複啟動。');return}sns.forEach(sn=>activeBtSns.add(sn));try{let r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station:'BT',sns,fail_last:document.querySelector('#failLast').checked})});let data=await r.json();if(data.error){sns.forEach(sn=>activeBtSns.delete(sn));log(data.error);return}btBatches.add(data.batch);log(`BT started: ${sns.join(', ')}`);updateBt(data.status);pollBt(data.batch,sns)}catch(error){sns.forEach(sn=>activeBtSns.delete(sn));log('BT 啟動失敗：'+error)}}
 async function start(station,sns){if(batch||!sns.length)return;let r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station,sns,fail_last:document.querySelector('#failLast').checked})});let data=await r.json();if(data.error){log(data.error);return}batch=data.batch;log(`${station} started: ${sns.join(', ')}`);update(data);poll()}
-function update(data){if(data.station==='DFU')renderDfu(data.status);else if(data.station==='FCT')renderFct(data.status);else renderBt(data.status);summary.textContent=Object.values(data.status).join(' / ')}
+function updateBt(status){Object.assign(btStatuses,status);renderBt(btStatuses);summary.textContent=Object.values(btStatuses).join(' / ')}
+function update(data){if(data.station==='DFU'){renderDfu(data.status);summary.textContent=Object.values(data.status).join(' / ')}else if(data.station==='FCT'){renderFct(data.status);summary.textContent=Object.values(data.status).join(' / ')}else updateBt(data.status)}
 async function poll(){let r=await fetch('/api/status?batch='+encodeURIComponent(batch)),d=await r.json();update(d);if(Object.values(d.status).includes('TESTING'))setTimeout(poll,350);else{log('Test complete: '+JSON.stringify(d.status));batch=null}}
+async function pollBt(id,sns){let r=await fetch('/api/status?batch='+encodeURIComponent(id)),d=await r.json();updateBt(d.status);if(Object.values(d.status).includes('TESTING'))setTimeout(()=>pollBt(id,sns),350);else{log('BT complete: '+JSON.stringify(d.status));btBatches.delete(id);sns.forEach(sn=>activeBtSns.delete(sn))}}
 function log(t){let e=document.querySelector('#log');e.textContent+=`\n${t}`;e.scrollTop=e.scrollHeight}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab,.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector('#'+b.dataset.panel).classList.add('active');title.textContent=b.textContent});renderDfu();renderFct();renderBt();
 </script></body></html>
