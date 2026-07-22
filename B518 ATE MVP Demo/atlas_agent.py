@@ -24,6 +24,8 @@ from typing import Callable, Iterable, Optional
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from build_version import VERSION
+
 try:
     import serial
     from serial.tools import list_ports
@@ -48,7 +50,6 @@ except ImportError:
     Vision = None
     NSURL = None
 
-VERSION = "0.1.0"
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
 TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without

@@ -20,6 +20,9 @@ Accessibility、AppleScript、CGEvent 或任何 Mac 端鍵盤／滑鼠控制；�
 
 在具備網路與 Python 套件安裝權限的建置電腦上執行：
 
+每次執行建置腳本會自動遞增共用版本號的 patch 段，例如 `V0.1.0` 變為 `V0.1.1`；
+Mac App 視窗標題與 `Info.plist`、Windows 上位機模擬器標題均使用此版本號。
+
 ```bash
 chmod +x build_macos_app.sh
 ./build_macos_app.sh

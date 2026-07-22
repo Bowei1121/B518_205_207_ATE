@@ -8,11 +8,17 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from bump_build_version import bump_version
 from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
 class AtlasAgentTests(unittest.TestCase):
+    def test_build_version_bumps_patch_without_touching_other_values(self):
+        updated, version = bump_version('VERSION = "3.14.15"\n')
+        self.assertEqual(version, "3.14.16")
+        self.assertEqual(updated, 'VERSION = "3.14.16"\n')
+
     def test_barcodes(self):
         self.assertEqual(parse_barcodes("DATA:A, B,C"), ["A", "B", "C"])
         with self.assertRaises(Exception): parse_barcodes("A,B,C,D,E")

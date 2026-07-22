@@ -20,7 +20,9 @@ from typing import Callable, Optional
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-TITLE = "B518 ATE 上位機模擬器 V0.1.0"
+from build_version import VERSION
+
+TITLE = f"B518 ATE 上位機模擬器 V{VERSION}"
 DEFAULT_IP = "192.168.1.100"
 DEFAULT_PORT = 5000
 SN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")

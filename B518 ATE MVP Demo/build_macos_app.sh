@@ -18,6 +18,15 @@ fi
 # clearing an inaccessible cache under ~/Library on locked-down build Macs.
 export PYINSTALLER_CONFIG_DIR="$PWD/.pyinstaller"
 
+# Do not replace an app bundle while this user's previous build is open.  That
+# can leave the executable and Info.plist from different versions.  The check
+# occurs before the version bump so only a real build increments the version.
+APP_EXECUTABLE="$PWD/dist/Atlas Agent B518 ATE.app/Contents/MacOS/Atlas Agent B518 ATE"
+if command -v pgrep >/dev/null && pgrep -f "$APP_EXECUTABLE" >/dev/null 2>/dev/null; then
+  echo "Atlas Agent B518 ATE is still running. Close it before building."
+  exit 3
+fi
+
 # A locked-down build account may have no writable user site-packages.  Do not
 # invoke pip (which may still attempt a user-site write) when every build
 # dependency is already importable.
@@ -25,6 +34,8 @@ if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, Vision'; then
   echo "Missing build dependencies; installing from requirements.txt..."
   "$PYTHON" -m pip install -r requirements.txt pyinstaller
 fi
+BUILD_VERSION="$("$PYTHON" bump_build_version.py)"
+echo "Building Atlas Agent B518 ATE V$BUILD_VERSION"
 "$PYTHON" -m PyInstaller --noconfirm --clean --windowed \
   --name "Atlas Agent B518 ATE" \
   --add-data "templates:templates" \
@@ -33,9 +44,9 @@ fi
   --collect-all Vision \
   atlas_agent.py
 
-plutil -replace CFBundleShortVersionString -string "0.1.0" "dist/Atlas Agent B518 ATE.app/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$BUILD_VERSION" "dist/Atlas Agent B518 ATE.app/Contents/Info.plist"
 # PyInstaller's generated plist has no CFBundleVersion, so this must insert
 # rather than replace the key.
-plutil -insert CFBundleVersion -string "0.1.0" "dist/Atlas Agent B518 ATE.app/Contents/Info.plist"
+plutil -insert CFBundleVersion -string "$BUILD_VERSION" "dist/Atlas Agent B518 ATE.app/Contents/Info.plist"
 
-echo "Built: $(pwd)/dist/Atlas Agent B518 ATE.app"
+echo "Built V$BUILD_VERSION: $(pwd)/dist/Atlas Agent B518 ATE.app"
