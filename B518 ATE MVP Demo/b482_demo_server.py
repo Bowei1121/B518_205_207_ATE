@@ -71,6 +71,14 @@ def station_line(station: str) -> str:
 class Handler(SimpleHTTPRequestHandler):
     simulator: Simulator
 
+    def end_headers(self) -> None:
+        # Safari can retain a previously opened local HMI document in its page
+        # cache.  The simulator is edited frequently during validation, so
+        # always serve the current HTML rather than an old Start-button script.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def do_POST(self) -> None:
         if urlparse(self.path).path != "/api/start":
             self.send_error(HTTPStatus.NOT_FOUND); return
