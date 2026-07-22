@@ -7,21 +7,28 @@
 
 1. 確認 Arduino、Windows 電腦與 Mac mini 在同一網段，且 Mac Agent 已用 USB CDC 連上 Arduino。
 2. 在上位機填入 Arduino IP／port，按「連線」。Arduino MVP 同時間只支援一個 TCP client。
-3. 在 Slot 1～4 輸入 1 至 4 個 SN，按「發送測試條碼」。程式會確實送出：
+3. 選擇 DFU、FCT 或 BT，輸入或產生唯一 JOB ID。
+4. 在 Slot 1～4 輸入 1 至 4 個 SN；空白 slot 不會送出，也不會重新編號。按「發送測試條碼」後會送出：
 
    ```text
-   SN001,SN002,SN003,SN004\r\n
+   BT:JOB=20260722-001;1=SN001,3=SN003,4=SN004\r\n
    ```
 
-4. 保持 TCP 連線。測試完成後收到：
+5. Agent 接單後立即回傳：
 
    ```text
-   RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL\r\n
+   ACK:BT:JOB=20260722-001\r\n
+   ```
+
+6. 保持 TCP 連線。測試完成後收到：
+
+   ```text
+   RESULT:BT:JOB=20260722-001;1=SN001,PASS;3=SN003,PASS;4=SN004,FAIL\r\n
    ```
 
    程式會將各 Slot 結果更新為 PASS、FAIL、TIMEOUT 或 UNKNOWN，並保留原始通訊紀錄。
 
-IP／port 會保存在 Windows 的 `%APPDATA%\B518UpperComputerSimulator\preferences.json`。
+IP／port／工站會保存在 Windows 的 `%APPDATA%\B518UpperComputerSimulator\preferences.json`。
 
 ## Windows 建置
 

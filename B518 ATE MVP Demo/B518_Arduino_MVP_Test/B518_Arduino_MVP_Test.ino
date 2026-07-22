@@ -23,7 +23,10 @@ const uint8_t W5100_CS_PIN = 10;
 const uint8_t SD_CS_PIN = 4;  // Prevent an Ethernet shield SD card from using SPI.
 
 // -------- Protocol and HID configuration.
-const size_t USB_FRAME_MAX = 256;
+// A four-slot RESULT containing JOB ID, slot numbers and long SNs can exceed
+// the legacy 256-byte buffer. 768 bytes covers the documented four × 128-char
+// SN maximum while remaining small relative to the UNO R4's SRAM.
+const size_t USB_FRAME_MAX = 768;
 const int16_t MOUSE_RESET_DISTANCE = 3000;
 const uint8_t MOUSE_STEP = 120;  // HID Mouse.move uses a signed 8-bit delta.
 const int32_t HID_VALUE_MAX = 10000;

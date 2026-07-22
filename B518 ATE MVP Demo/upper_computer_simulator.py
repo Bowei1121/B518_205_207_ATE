@@ -13,6 +13,7 @@ import re
 import socket
 import threading
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -34,6 +35,14 @@ class ProtocolError(ValueError):
 class Preferences:
     ip: str = DEFAULT_IP
     port: int = DEFAULT_PORT
+    station: str = "DFU"
+
+
+@dataclass(frozen=True)
+class ResultFrame:
+    station: str
+    job_id: str
+    results: dict[int, tuple[str, str]]
 
 
 def preference_file() -> Path:
@@ -53,37 +62,55 @@ def save_preferences(path: Path, pref: Preferences) -> None:
     path.write_text(json.dumps(asdict(pref), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def make_batch(sns: list[str]) -> tuple[list[str], bytes]:
-    """Return non-empty SNs and the exact TCP CRLF frame."""
-    values = [item.strip() for item in sns if item.strip()]
-    if not 1 <= len(values) <= 4:
+def make_batch(station: str, job_id: str, sns: list[str]) -> tuple[dict[int, str], bytes]:
+    """Return explicit slot assignments and the exact TCP CRLF JOB frame."""
+    station, job_id = station.strip().upper(), job_id.strip()
+    if station not in ("DFU", "FCT", "BT"):
+        raise ProtocolError("工站必須是 DFU、FCT 或 BT")
+    if not SN_PATTERN.fullmatch(job_id) or len(job_id) > 64:
+        raise ProtocolError("JOB ID 只可使用英數、點、底線或連字號，最多 64 字元")
+    assignments = {index: value for index, item in enumerate(sns, start=1) if (value := item.strip())}
+    values = list(assignments.values())
+    if not 1 <= len(assignments) <= 4:
         raise ProtocolError("請輸入 1 至 4 個條碼")
     if len(set(values)) != len(values):
         raise ProtocolError("同一批條碼不可重複")
     if any(not SN_PATTERN.fullmatch(item) for item in values):
         raise ProtocolError("條碼只可使用英數、點、底線或連字號，且不可含空白")
-    return values, (",".join(values) + "\r\n").encode("utf-8")
+    payload = ",".join(f"{slot}={sn}" for slot, sn in assignments.items())
+    return assignments, f"{station}:JOB={job_id};{payload}\r\n".encode("utf-8")
 
 
-def parse_result_frame(line: str) -> Optional[dict[str, str]]:
+def parse_result_frame(line: str) -> Optional[ResultFrame]:
     """Parse one RESULT frame; non-result bridge diagnostics return None."""
     line = line.strip()
     if not line.startswith("RESULT:"):
         return None
-    payload = line[7:]
-    if not payload:
+    try:
+        header, payload = line[7:].split(";", 1)
+        station, job_field = header.split(":", 1)
+    except ValueError as exc:
+        raise ProtocolError("RESULT 缺少工站、JOB 或 slot 結果") from exc
+    station = station.upper()
+    if station not in ("DFU", "FCT", "BT") or not job_field.upper().startswith("JOB="):
+        raise ProtocolError("RESULT 工站或 JOB 欄位錯誤")
+    job_id = job_field[4:].strip()
+    if not SN_PATTERN.fullmatch(job_id) or not payload:
         raise ProtocolError("RESULT 沒有任何 SN 結果")
-    parsed: dict[str, str] = {}
+    parsed: dict[int, tuple[str, str]] = {}
+    seen_sns: set[str] = set()
     for item in payload.split(";"):
         try:
-            sn, status = (part.strip() for part in item.split(",", 1))
+            slot_sn, status = (part.strip() for part in item.split(",", 1))
+            slot_text, sn = (part.strip() for part in slot_sn.split("=", 1))
+            slot = int(slot_text)
         except ValueError as exc:
             raise ProtocolError(f"RESULT 格式錯誤：{item}") from exc
         status = status.upper()
-        if not SN_PATTERN.fullmatch(sn) or status not in RESULT_STATUSES or sn in parsed:
+        if not 1 <= slot <= 4 or not SN_PATTERN.fullmatch(sn) or status not in RESULT_STATUSES or slot in parsed or sn in seen_sns:
             raise ProtocolError(f"RESULT 欄位無效：{item}")
-        parsed[sn] = status
-    return parsed
+        parsed[slot] = (sn, status); seen_sns.add(sn)
+    return ResultFrame(station, job_id, parsed)
 
 
 class TcpClient:
@@ -156,6 +183,8 @@ class UpperComputerApp:
         self.pref_path = preference_file()
         pref = load_preferences(self.pref_path)
         self.ip, self.port = tk.StringVar(value=pref.ip), tk.StringVar(value=str(pref.port))
+        self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
+        self.job_id = tk.StringVar(value=self.new_job_id())
         self.sns = [tk.StringVar() for _ in range(4)]
         self.statuses = [tk.StringVar(value="—") for _ in range(4)]
         self.connection_status = tk.StringVar(value="未連線")
@@ -174,6 +203,14 @@ class UpperComputerApp:
         ttk.Button(network, text="中斷", command=self.disconnect).grid(row=0, column=5)
         ttk.Label(network, textvariable=self.connection_status).grid(row=1, column=0, columnspan=6, sticky="w", pady=(7, 0))
 
+        job = ttk.Frame(panel); job.pack(fill="x", pady=(12, 0))
+        ttk.Label(job, text="工站：").pack(side="left")
+        ttk.Combobox(job, textvariable=self.station, values=("DFU", "FCT", "BT"), width=8,
+                     state="readonly").pack(side="left")
+        ttk.Label(job, text="  JOB ID：").pack(side="left")
+        ttk.Entry(job, textvariable=self.job_id).pack(side="left", fill="x", expand=True)
+        ttk.Button(job, text="產生新 JOB", command=lambda: self.job_id.set(self.new_job_id())).pack(side="left", padx=(6, 0))
+
         batch = ttk.LabelFrame(panel, text="測試條碼（最多四台）", padding=10); batch.pack(fill="x", pady=(12, 0))
         ttk.Label(batch, text="#").grid(row=0, column=0, padx=(0, 8))
         ttk.Label(batch, text="SN 條碼").grid(row=0, column=1, sticky="w")
@@ -186,7 +223,7 @@ class UpperComputerApp:
         buttons = ttk.Frame(panel); buttons.pack(fill="x", pady=12)
         ttk.Button(buttons, text="發送測試條碼", command=self.send_batch).pack(side="left")
         ttk.Button(buttons, text="清除", command=self.clear).pack(side="left", padx=6)
-        ttk.Label(buttons, text="送出格式：SN1,SN2,...\\r\\n", foreground="#555").pack(side="right")
+        ttk.Label(buttons, text="送出格式：STATION:JOB=id;slot=SN,...\\r\\n", foreground="#555").pack(side="right")
 
         ttk.Label(panel, text="TCP 通訊紀錄：").pack(anchor="w")
         self.log = tk.Text(panel, height=16, wrap="word", state="disabled")
@@ -194,6 +231,10 @@ class UpperComputerApp:
 
     def append(self, text: str) -> None:
         self.log.configure(state="normal"); self.log.insert("end", text + "\n"); self.log.see("end"); self.log.configure(state="disabled")
+
+    @staticmethod
+    def new_job_id() -> str:
+        return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 
     def connect(self) -> None:
         try:
@@ -215,12 +256,12 @@ class UpperComputerApp:
 
     def send_batch(self) -> None:
         try:
-            values, frame = make_batch([item.get() for item in self.sns])
+            assignments, frame = make_batch(self.station.get(), self.job_id.get(), [item.get() for item in self.sns])
             self.client.send(frame)
         except (ProtocolError, OSError) as exc:
             messagebox.showerror(TITLE, str(exc)); return
-        for index, value in enumerate(self.sns):
-            self.statuses[index].set("TESTING" if value.get().strip() in values else "—")
+        for index, status in enumerate(self.statuses, start=1):
+            status.set("WAIT ACK" if index in assignments else "—")
         self.append("TX: " + frame.decode("utf-8").rstrip("\r\n") + " [CRLF]")
 
     def clear(self) -> None:
@@ -238,9 +279,18 @@ class UpperComputerApp:
                     except ProtocolError as exc:
                         self.append("RESULT 判讀失敗：" + str(exc)); continue
                     if result:
-                        for sn, status in zip(self.sns, self.statuses):
-                            if sn.get().strip() in result:
-                                status.set(result[sn.get().strip()])
+                        if result.station != self.station.get() or result.job_id != self.job_id.get().strip():
+                            self.append(f"忽略非當前 JOB 的 RESULT：{result.station}/{result.job_id}")
+                            continue
+                        for slot, (sn, status_value) in result.results.items():
+                            expected = self.sns[slot - 1].get().strip()
+                            if expected != sn:
+                                self.append(f"RESULT slot{slot} SN 不符：預期 {expected}，收到 {sn}")
+                            self.statuses[slot - 1].set(status_value)
+                    elif line == f"ACK:{self.station.get()}:JOB={self.job_id.get().strip()}":
+                        for index, status in enumerate(self.statuses):
+                            if self.sns[index].get().strip():
+                                status.set("TESTING")
                 elif kind == "log": self.append(str(item))
                 elif kind == "disconnected":
                     self.connection_status.set("TCP 已由對端中斷")
@@ -250,7 +300,7 @@ class UpperComputerApp:
 
     def close(self) -> None:
         try:
-            save_preferences(self.pref_path, Preferences(self.ip.get().strip(), int(self.port.get())))
+            save_preferences(self.pref_path, Preferences(self.ip.get().strip(), int(self.port.get()), self.station.get()))
         except (OSError, ValueError):
             pass
         self.client.close(); self.root.destroy()

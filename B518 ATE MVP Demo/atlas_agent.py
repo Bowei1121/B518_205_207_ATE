@@ -55,6 +55,8 @@ TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
 # adding a DATA: frame.  Keep the raw payload acceptance narrow enough that a
 # CDC control reply (OK:, IP:, ERR:) can never accidentally start a test.
 RAW_SN_BATCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\s*,\s*[A-Za-z0-9][A-Za-z0-9._-]{0,127}){0,3}$")
+SN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+JOB_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 DEFAULT_BAUD = 115200
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
@@ -148,6 +150,21 @@ class BtSnReview:
     results: dict[str, str]
 
 
+@dataclass(frozen=True)
+class TestCommand:
+    station: str
+    job_id: str
+    assignments: tuple[tuple[int, str], ...]
+
+    @property
+    def slots(self) -> list[int]:
+        return [slot for slot, _ in self.assignments]
+
+    @property
+    def sns(self) -> list[str]:
+        return [sn for _, sn in self.assignments]
+
+
 def parse_barcodes(payload: str) -> list[str]:
     """Accept DATA:SN1,SN2 and plain SN1,SN2; reject malformed batches."""
     payload = payload.strip()
@@ -177,6 +194,39 @@ def incoming_barcode_payload(line: str) -> Optional[str]:
     return value if RAW_SN_BATCH.fullmatch(value) else None
 
 
+def parse_test_command(line: str) -> TestCommand:
+    """Parse STATION:JOB=id;slot=SN,... and preserve explicit slot mapping."""
+    value = line.strip()
+    try:
+        header, assignment_text = value.split(";", 1)
+        station, job_field = header.split(":", 1)
+    except ValueError as exc:
+        raise AgentError("工作指令格式應為 STATION:JOB=id;slot=SN,...") from exc
+    station = station.upper()
+    if station not in ("DFU", "FCT", "BT") or not job_field.upper().startswith("JOB="):
+        raise AgentError("工作指令的工站或 JOB 欄位無效")
+    job_id = job_field[4:].strip()
+    if not JOB_PATTERN.fullmatch(job_id):
+        raise AgentError("JOB ID 只可使用英數、點、底線或連字號，最多 64 字元")
+    assignments: list[tuple[int, str]] = []
+    for item in assignment_text.split(","):
+        try:
+            slot_text, sn = (part.strip() for part in item.split("=", 1))
+            slot = int(slot_text)
+        except (TypeError, ValueError) as exc:
+            raise AgentError(f"slot 指派格式錯誤：{item}") from exc
+        if not 1 <= slot <= 4 or not SN_PATTERN.fullmatch(sn):
+            raise AgentError(f"slot 或 SN 無效：{item}")
+        assignments.append((slot, sn))
+    if not 1 <= len(assignments) <= 4:
+        raise AgentError("工作指令必須包含 1 至 4 個 slot")
+    if len({slot for slot, _ in assignments}) != len(assignments):
+        raise AgentError("工作指令不可重複指定 slot")
+    if len({sn for _, sn in assignments}) != len(assignments):
+        raise AgentError("同一 JOB 的 SN 不可重複")
+    return TestCommand(station, job_id, tuple(sorted(assignments)))
+
+
 def arduino_ip_reply(line: str) -> Optional[str]:
     """Extract a valid IPv4 address from supported Arduino network replies."""
     value = line.strip()
@@ -195,12 +245,16 @@ def arduino_ip_reply(line: str) -> Optional[str]:
     return candidate
 
 
-def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
-    """Create one compact RESULT line, preserving the received SN order."""
-    ordered = list(sns)
-    if not ordered or any(sn not in statuses for sn in ordered):
+def batch_result_report(station: str, job_id: str, assignments: Iterable[tuple[int, str]],
+                        statuses: dict[str, str]) -> str:
+    """Create a slot-aware RESULT line for one station JOB."""
+    ordered = list(assignments)
+    if station not in ("DFU", "FCT", "BT") or not JOB_PATTERN.fullmatch(job_id):
+        raise AgentError("批次結果的工站或 JOB ID 無效")
+    if not ordered or any(sn not in statuses for _, sn in ordered):
         raise AgentError("批次結果尚未完整")
-    return "RESULT:" + ";".join(f"{sn},{statuses[sn]}" for sn in ordered)
+    return f"RESULT:{station}:JOB={job_id};" + ";".join(
+        f"{slot}={sn},{statuses[sn]}" for slot, sn in ordered)
 
 
 def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: tuple[int, int],
@@ -209,6 +263,19 @@ def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: t
     commands: list[str] = []
     for sn in sns:
         commands.extend(click_commands(barcode, mode) + [f"K_WRITE:{sn}"] + click_commands(button, mode))
+    return commands
+
+
+def dfu_tab_slot_commands(assignments: Iterable[tuple[int, str]]) -> list[str]:
+    """Type sparse generic-DFU slots, using Tab to preserve empty positions."""
+    commands: list[str] = []
+    current_slot = 1
+    for slot, sn in assignments:
+        if not current_slot <= slot <= 4:
+            raise AgentError("DFU generic slot 必須遞增且介於 1～4")
+        commands.extend(["K_KEY:TAB"] * (slot - current_slot))
+        commands.append("K_WRITE:" + sn)
+        current_slot = slot
     return commands
 
 
@@ -1131,6 +1198,9 @@ class AtlasAgentApp:
         self.monitor_stop = threading.Event()
         self.monitor: Optional[threading.Thread] = None
         self.sns: list[str] = []
+        self.slots: list[int] = []
+        self.current_job_id = ""
+        self.current_station = "DFU"
         self.batch_number = 0
         self.batch_results: dict[str, str] = {}
         self.reported_batch_number: Optional[int] = None
@@ -1151,6 +1221,7 @@ class AtlasAgentApp:
         self.result_timeout = tk.StringVar(value=str(pref.result_timeout_seconds))
         self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
+        self.current_station = self.station.get()
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
         self.sn_text = tk.StringVar()
         self.ip_text = tk.StringVar()
@@ -1372,19 +1443,38 @@ class AtlasAgentApp:
         try: self.link.send(command); self.append("TX: " + command)
         except AgentError as exc: messagebox.showerror(TITLE, str(exc))
 
-    def validate_batch(self, payload: str) -> Optional[tuple[Path, list[str]]]:
+    def command_from_payload(self, payload: str, bt_slot: Optional[int] = None) -> TestCommand:
+        value = payload.strip()
+        if re.match(r"^(DFU|FCT|BT):", value, re.IGNORECASE):
+            if bt_slot is not None:
+                raise AgentError("結構化 JOB 指令不可再指定手動 BT slot")
+            return parse_test_command(value)
+        sns = parse_barcodes(value)
+        if bt_slot is not None:
+            if len(sns) != 1 and len(sns) < bt_slot:
+                raise AgentError(f"BT Start {bt_slot} 需要輸入第 {bt_slot} 個 SN（以逗號排列 slot 1～4）")
+            sns = [sns[0] if len(sns) == 1 else sns[bt_slot - 1]]
+            slots = [bt_slot]
+        else:
+            slots = list(range(1, len(sns) + 1))
+        job_id = "LOCAL-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        return TestCommand(self.station.get(), job_id, tuple(zip(slots, sns)))
+
+    def validate_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand]]:
         try:
             root_text = self.csv_path.get().strip()
             root = Path(root_text).expanduser() if root_text else Path(".")
             if self.station.get() != "BT" and not root.is_dir():
                 raise AgentError("請選擇有效的 CSV 根路徑")
-            sns = parse_barcodes(payload)
+            command = self.command_from_payload(payload, bt_slot)
+            if command.station != self.station.get():
+                raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
         except AgentError as exc:
             messagebox.showerror(TITLE, str(exc)); return None
-        return root, sns
+        return root, command
 
-    def prepare_batch(self, payload: str) -> Optional[tuple[Path, list[str], int, float, float]]:
-        validated = self.validate_batch(payload)
+    def prepare_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand, int, float, float]]:
+        validated = self.validate_batch(payload, bt_slot)
         if validated is None:
             return None
         try:
@@ -1393,34 +1483,28 @@ class AtlasAgentApp:
                 raise ValueError
         except ValueError:
             messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數"); return None
-        root, sns = validated
-        self.stop_monitor(); self.sns = sns; self.batch_results = {}; self.reported_batch_number = None
-        self.sn_display.configure(text="當前 SN：" + "、".join(sns))
+        root, command = validated
+        self.stop_monitor()
+        self.sns, self.slots = command.sns, command.slots
+        self.current_job_id, self.current_station = command.job_id, command.station
+        self.batch_results = {}; self.reported_batch_number = None
+        self.sn_display.configure(text=f"當前 JOB：{command.job_id}；" + "、".join(
+            f"slot{slot}={sn}" for slot, sn in command.assignments))
         self.batch_number += 1
-        return root, sns, self.batch_number, time.time(), result_timeout
+        return root, command, self.batch_number, time.time(), result_timeout
 
     def start_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[list[str]]:
-        if self.station.get() == "BT" and bt_slot is not None:
-            try:
-                requested_sns = parse_barcodes(payload)
-            except AgentError as exc:
-                messagebox.showerror(TITLE, str(exc)); return None
-            if len(requested_sns) != 1 and len(requested_sns) < bt_slot:
-                messagebox.showerror(TITLE, f"BT Start {bt_slot} 需要輸入第 {bt_slot} 個 SN（以逗號排列 slot 1～4）")
-                return None
-        prepared = self.prepare_batch(payload)
+        prepared = self.prepare_batch(payload, bt_slot)
         if prepared is None:
             return None
-        root, sns, batch_number, created_after, result_timeout = prepared
-        if self.station.get() == "BT" and bt_slot is not None:
-            sns = [sns[0] if len(sns) == 1 else sns[bt_slot - 1]]
-            self.sns = sns
-            self.sn_display.configure(text=f"當前 SN：{sns[0]}（BT slot {bt_slot}）")
-        if self.station.get() in ("DFU", "BT"):
-            threading.Thread(target=self.visual_start, args=(self.station.get(), sns, root, batch_number, created_after, result_timeout, bt_slot), daemon=True).start()
+        root, command, batch_number, created_after, result_timeout = prepared
+        if command.station in ("DFU", "BT"):
+            threading.Thread(target=self.visual_start,
+                             args=(command.station, command.sns, command.slots, root, batch_number,
+                                   created_after, result_timeout), daemon=True).start()
         else:
-            self.start_monitor(root, sns, batch_number, created_after, result_timeout)
-        return sns
+            self.start_monitor(root, command.sns, batch_number, created_after, result_timeout)
+        return command.sns
 
     def start_bt_channel(self, slot: int) -> None:
         if self.station.get() != "BT":
@@ -1432,13 +1516,15 @@ class AtlasAgentApp:
         validated = self.validate_batch(payload)
         if validated is None:
             return
-        root, sns = validated
+        root, command = validated
+        sns = command.sns
         if not messagebox.askyesno(TITLE, f"將在下列 CSV 根路徑建立本機模擬資料：\n{root}\n\n不會使用 Arduino 或影像匹配。", parent=self.root):
             return
         prepared = self.prepare_batch(payload)
         if prepared is None:
             return
-        root, sns, batch_number, created_after, result_timeout = prepared
+        root, command, batch_number, created_after, result_timeout = prepared
+        sns = command.sns
         station = self.station.get()
         fail_last = self.demo_fail_last.get()
         self.start_monitor(root, sns, batch_number, created_after, result_timeout)
@@ -1549,8 +1635,8 @@ class AtlasAgentApp:
         if failed:
             self.events.put(("log", "無法刪除截圖：" + "、".join(item.name for item in failed)))
 
-    def visual_start(self, station: str, sns: list[str], csv_root: Path, batch_number: int,
-                     created_after: float, result_timeout: float, bt_slot: Optional[int] = None) -> None:
+    def visual_start(self, station: str, sns: list[str], slots: list[int], csv_root: Path, batch_number: int,
+                     created_after: float, result_timeout: float) -> None:
         """Ask Arduino HID for screenshot/actions; no Mac input API is invoked here."""
         try:
             if station == "DFU" and self.dfu_profile.get() == "b482_dfu1_manual":
@@ -1561,8 +1647,9 @@ class AtlasAgentApp:
             if station == "DFU":
                 required = [profile["window"], profile["barcode"]]
             else:
-                start_template = profile["starts"][bt_slot] if bt_slot else profile["start"]
-                required = [profile["window"], start_template, *profile["status"].values()]
+                start_templates = ([profile["start"]] if slots == [1, 2, 3, 4]
+                                   else [profile["starts"][slot] for slot in slots])
+                required = [profile["window"], *start_templates, *profile["status"].values()]
             if station == "DFU" and profile["input_mode"] == "ok_each":
                 required.append(profile["ok"])
             resolved = {item: resolve_template_path(templates, item) for item in required if item}
@@ -1649,14 +1736,15 @@ class AtlasAgentApp:
                     matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.delete_processed_screenshots(shots)
+                    if slots != list(range(1, len(slots) + 1)):
+                        self.events.put(("log", "DFU_2 sparse slot：請確認測試 HMI 僅勾選 " +
+                                         "、".join(f"slot{slot}" for slot in slots) +
+                                         "；SN 將依勾選順序逐筆按 OK"))
                     self.send_hid_sequence(focus_commands + dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
                     commands = focus_commands + click_commands(barcode, hid_mode)
-                    for index, sn in enumerate(sns):
-                        commands.append("K_WRITE:" + sn)
-                        if index < len(sns) - 1:
-                            commands.append("K_KEY:TAB")
+                    commands.extend(dfu_tab_slot_commands(zip(slots, sns)))
                     button_rect = template_match(shot, resolved[profile["start"]], region=region)
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
@@ -1666,22 +1754,29 @@ class AtlasAgentApp:
                     self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
             else:
-                selected_start = profile["starts"][bt_slot] if bt_slot else profile["start"]
-                button_rect = template_match(shot, resolved[selected_start], region=region)
-                button_source = rectangle_center(button_rect)
-                button = target_for(button_source)
-                button_label = f"Start {bt_slot}" if bt_slot else "Start All"
-                matches.append((match_label(button_label, button_source), button_rect, button))
+                use_start_all = slots == [1, 2, 3, 4]
+                selected_starts = ([("Start All", profile["start"])] if use_start_all else
+                                   [(f"Start {slot}", profile["starts"][slot]) for slot in slots])
+                buttons: list[tuple[str, tuple[int, int]]] = []
+                for button_label, template_name in selected_starts:
+                    button_rect = template_match(shot, resolved[template_name], region=region)
+                    button_source = rectangle_center(button_rect)
+                    button = target_for(button_source)
+                    buttons.append((button_label, button))
+                    matches.append((match_label(button_label, button_source), button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
                 self.delete_processed_screenshots(shots)
                 # Click the harmless BT title first.  This brings the Safari/
                 # instrument window to the foreground so the following Start
                 # click is not lost to another focused application.
                 focus = target_for(rectangle_center(window_rect))
-                self.send_hid_sequence(click_commands(focus, hid_mode) + click_commands(button, hid_mode), delay=delay)
-                self.events.put(("log", f"BT：已點擊測試畫面取得焦點；截圖 {button_label} {button_source} → HID {button}；啟動畫面 STATUS 監聽"))
+                commands = click_commands(focus, hid_mode)
+                for _, button in buttons:
+                    commands.extend(click_commands(button, hid_mode))
+                self.send_hid_sequence(commands, delay=delay)
+                self.events.put(("log", "BT：已點擊測試畫面取得焦點並啟動 " +
+                                 "、".join(label for label, _ in buttons) + "；啟動畫面 STATUS 監聽"))
             if station == "BT":
-                slots = [bt_slot] if bt_slot else list(range(1, len(sns) + 1))
                 self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout,
                                                                {state: resolved[name] for state, name in profile["status"].items()})))
             else:
@@ -1704,12 +1799,39 @@ class AtlasAgentApp:
     def report_if_batch_complete(self, batch_number: int) -> None:
         if self.reported_batch_number == batch_number or not all(sn in self.batch_results for sn in self.sns):
             return
-        report = batch_result_report(self.sns, self.batch_results)
+        report = batch_result_report(self.current_station, self.current_job_id,
+                                     zip(self.slots, self.sns), self.batch_results)
         self.reported_batch_number = batch_number
+        self.monitor = None
         if self.link.connection:
             self.safe_send(report)
         else:
             self.append("未連線 Arduino，略過上報：" + report)
+
+    def remote_batch_active(self) -> bool:
+        return bool(self.sns) and self.reported_batch_number != self.batch_number
+
+    def accept_remote_command(self, line: str) -> None:
+        try:
+            command = parse_test_command(line)
+        except AgentError as exc:
+            self.append("工作指令拒絕：" + str(exc))
+            self.safe_send("NACK:INVALID_COMMAND")
+            return
+        nack_header = f"NACK:{command.station}:JOB={command.job_id};"
+        if command.station != self.station.get():
+            self.append(f"拒絕 JOB {command.job_id}：指令工站 {command.station} 與本機 {self.station.get()} 不符")
+            self.safe_send(nack_header + "WRONG_STATION")
+            return
+        if self.remote_batch_active():
+            self.append(f"拒絕 JOB {command.job_id}：目前 JOB {self.current_job_id} 尚未完成")
+            self.safe_send(nack_header + "BUSY")
+            return
+        accepted = self.start_batch(line)
+        if accepted is None:
+            self.safe_send(nack_header + "REJECTED")
+            return
+        self.safe_send(f"ACK:{command.station}:JOB={command.job_id}")
 
     def process_events(self) -> None:
         try:
@@ -1718,15 +1840,20 @@ class AtlasAgentApp:
                 if kind == "serial":
                     line = str(item); self.append("RX: " + line)
                     self.hid_replies.put(line)
-                    payload = incoming_barcode_payload(line)
-                    if payload is not None:
+                    if re.match(r"^(DFU|FCT|BT):", line, re.IGNORECASE):
                         try:
-                            self.start_batch(payload)
+                            self.accept_remote_command(line)
                         except Exception as exc: self.append("ERR: 無法啟動批次：" + str(exc))
                     else:
-                        ip = arduino_ip_reply(line)
-                        if ip:
-                            self.ip_text.set("IP:" + ip)
+                        payload = incoming_barcode_payload(line)
+                        if payload is not None:
+                            try:
+                                self.start_batch(payload)
+                            except Exception as exc: self.append("ERR: 無法啟動批次：" + str(exc))
+                        else:
+                            ip = arduino_ip_reply(line)
+                            if ip:
+                                self.ip_text.set("IP:" + ip)
                 elif kind == "log": self.append(str(item))
                 elif kind == "auto_scale":
                     scale_x, scale_y = item
@@ -1754,7 +1881,7 @@ class AtlasAgentApp:
                     if actual_sns is None:
                         self.append("BT SN 覆核取消：不回傳 RESULT，改送 NACK:BT_SN_MISMATCH")
                         if self.link.connection:
-                            self.safe_send("NACK:BT_SN_MISMATCH")
+                            self.safe_send(f"NACK:BT:JOB={self.current_job_id};BT_SN_MISMATCH")
                         self.reported_batch_number = batch_number
                         continue
                     self.append("BT SN 覆核確認：以設備 SN 回傳：" + "、".join(actual_sns))
@@ -1765,7 +1892,8 @@ class AtlasAgentApp:
                 elif kind == "start_failed":
                     station, batch_number = item
                     if batch_number == self.batch_number and self.link.connection:
-                        self.safe_send(f"NACK:START_FAILED,{station}")
+                        self.safe_send(f"NACK:{station}:JOB={self.current_job_id};START_FAILED")
+                        self.reported_batch_number = batch_number
                 elif kind == "result":
                     batch_number, result = item; assert isinstance(result, TestResult)
                     if batch_number != self.batch_number:

@@ -16,13 +16,13 @@ Arduino HID 或 B482 實機已通過。
 ## 2. Arduino 與 TCP／LabVIEW 驗證
 
 - [ ] 將 `B518_Arduino_MVP_Test/B518_Arduino_MVP_Test.ino` 燒錄到 UNO R4 WiFi，接上 W5100 與 Mac mini。
-- [ ] 在 Agent 選擇對應 `/dev/cu.usbmodem*`，連線後按「查詢 IP」；預期顯示 `IP:x.x.x.x`。
-- [ ] 在 LabVIEW TCP Write 發送 `DATA:SN001,SN002\r\n` 至 Arduino 的 TCP port。
+- [ ] 在 Agent 選擇對應 `/dev/cu.usbmodem*` 並連線；程式會自動查詢，預期顯示 `IP:x.x.x.x`。
+- [ ] 在 LabVIEW TCP Write 發送 `DFU:JOB=JOB-1;1=SN001,3=SN003\r\n` 至 Arduino 的 TCP port。
 - [ ] 在 LabVIEW TCP Read 啟用 **CRLF terminated**；預期立刻收到
-  `ACK:ACCEPTED,<工站>,SN001,SN002\r\n`。
+  `ACK:DFU:JOB=JOB-1\r\n`。
 - [ ] 全部 SN 測試結束後，預期收到一行批次結果，例如
-  `RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL\r\n`。
-- [ ] 故意給無效 CSV 根路徑或不合法批次；預期收到 `NACK:REJECTED\r\n`。
+  `RESULT:DFU:JOB=JOB-1;1=SN001,PASS;3=SN003,FAIL\r\n`。
+- [ ] 在 JOB-1 尚未完成時送 JOB-2；預期收到 `NACK:DFU:JOB=JOB-2;BUSY\r\n`。
 
 ## 3. B482 DFU／BT 實機驗證
 

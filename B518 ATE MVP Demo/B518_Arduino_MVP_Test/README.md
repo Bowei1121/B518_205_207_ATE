@@ -52,14 +52,15 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 ## TCP 透明橋接規則
 
 - 上位機連線到設定的 TCP port 後，**所有 TCP bytes** 原封不動寫到 Mac 的 USB CDC serial。
-  Atlas Agent 的條碼批次必須是完整的一行，例如 `SN1,SN2\r\n`；TCP 沒有訊息邊界，CRLF 用來避免
-  資料分段時誤判成單一 SN，且可直接使用 LabVIEW 的 CRLF 偵測模式。
+  Atlas Agent 的 JOB 必須是完整的一行，例如 `BT:JOB=JOB-1;1=SN1,3=SN3\r\n`；TCP 沒有訊息
+  邊界，CRLF 用來避免資料分段時誤判，且可直接使用 LabVIEW 的 CRLF 偵測模式。
 - Mac 傳入 USB CDC 的一個換行框架若不是上表控制指令，就會**包含原始 CR/LF 在內**原封不動傳至 TCP client。
-- USB 端需以 LF 封包；這是為了能先辨識並攔截 `GET_IP` 與 HID 控制指令。單一框架上限 256 bytes。超過上限會丟棄到下一個 LF，並回覆 `ERR:FRAME_TOO_LONG`。
+- USB 端需以 LF 封包；這是為了能先辨識並攔截 `GET_IP` 與 HID 控制指令。單一框架上限 768 bytes，可容納四個長 SN 的 RESULT。超過上限會丟棄到下一個 LF，並回覆 `ERR:FRAME_TOO_LONG`。
 - MVP 同時間只服務一個 TCP client；目前連線結束後才會接受下一個 client。
 - 當 Mac 傳的是非控制資料且沒有 TCP client，Arduino 回覆 `ERR:TCP_NOT_CONNECTED`，該資料不會被緩存或重送。
 
-韌體不會輸出開機診斷或 `DATA:`／ACK 前綴，避免污染透明資料流。請讓 Mac 上位程式區分自己的控制回覆 (`IP:`、`OK:`、`ERR:`) 與 TCP payload；若 TCP payload 可能使用這些前綴，建議在上位協議增加訊框或改用獨立 CDC channel（MVP 範圍外）。
+韌體本身不會新增開機診斷、DATA 或 ACK 前綴，避免污染透明資料流；業務 ACK／RESULT 由
+Mac Agent 產生。請讓 Mac 程式區分 Arduino 控制回覆 (`IP:`、`OK:`、`ERR:`) 與 TCP payload。
 
 ## 燒錄與快速測試
 

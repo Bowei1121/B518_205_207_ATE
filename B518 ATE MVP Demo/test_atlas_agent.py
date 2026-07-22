@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -50,6 +50,11 @@ class AtlasAgentTests(unittest.TestCase):
             dfu_ok_each_commands(["SN001", "SN002"], (100, 200), (300, 400)),
             ["M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_WRITE:SN001", "M_RESET", "M_MOVE:300,400", "M_CLICK:L",
              "M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_WRITE:SN002", "M_RESET", "M_MOVE:300,400", "M_CLICK:L"])
+
+    def test_generic_dfu_tabs_over_unpopulated_slots(self):
+        self.assertEqual(dfu_tab_slot_commands([(1, "SN001"), (3, "SN003"), (4, "SN004")]),
+                         ["K_WRITE:SN001", "K_KEY:TAB", "K_KEY:TAB", "K_WRITE:SN003",
+                          "K_KEY:TAB", "K_WRITE:SN004"])
 
     def test_absolute_click_returns_to_origin_before_relative_hid_move(self):
         self.assertEqual(absolute_click_commands((80, 55)), ["M_RESET", "M_MOVE:80,55", "M_CLICK:L"])
@@ -119,9 +124,18 @@ class AtlasAgentTests(unittest.TestCase):
             self.assertEqual(resolve_template_path(root, "b482/dfu2_window.png"), root / "dfu2_window.png")
 
     def test_batch_result_report_is_compact_and_preserves_sn_order(self):
-        report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],
-                                     {"SN004": "FAIL", "SN002": "PASS", "SN001": "PASS", "SN003": "PASS"})
-        self.assertEqual(report, "RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL")
+        report = batch_result_report("BT", "20260722-001", [(1, "SN001"), (3, "SN003"), (4, "SN004")],
+                                     {"SN004": "FAIL", "SN001": "PASS", "SN003": "PASS"})
+        self.assertEqual(report, "RESULT:BT:JOB=20260722-001;1=SN001,PASS;3=SN003,PASS;4=SN004,FAIL")
+
+    def test_station_job_command_preserves_sparse_slots(self):
+        command = parse_test_command("FCT:JOB=20260722-001;1=SN001,3=SN003,4=SN004")
+        self.assertEqual(command.station, "FCT")
+        self.assertEqual(command.job_id, "20260722-001")
+        self.assertEqual(command.slots, [1, 3, 4])
+        self.assertEqual(command.sns, ["SN001", "SN003", "SN004"])
+        with self.assertRaises(AgentError):
+            parse_test_command("BT:JOB=X;1=SN001,1=SN002")
 
     def test_bt_ignores_stale_final_status_until_testing_has_been_seen(self):
         seen = set()

@@ -32,12 +32,23 @@ chmod +x build_macos_app.sh
 憑證的建置流程完成簽署與 notarization。不要為此開啟 Automation 或 Accessibility
 權限。
 
-選取 Arduino USB CDC 埠和 CSV 根路徑後，Arduino 會透明轉送上位機 TCP 的
-`SN1,SN2,...\r\n`；每一批條碼**建議以 CRLF 結尾**，可直接搭配 LabVIEW 的 CRLF
-偵測模式，也能避免 TCP 串流分段時誤讀。Agent 仍相容 LF-only，並相容可選的
-`DATA:SN1,SN2,...\r\n`／`SN:SN1,SN2,...\r\n` 訊框；收到完整一行後立刻
-顯示 1–4 個 SN 並依工站啟動流程。FCT 直接開始監聽；DFU 請 Arduino 截圖後輸入條碼；
-BT 則截圖後點擊按鈕，並從畫面 STATUS 判定結果，不依賴 Atlas CSV 路徑。
+選取 Arduino USB CDC 埠和 CSV 根路徑後，Arduino 會透明轉送上位機 TCP 的 JOB 指令：
+
+```
+DFU:JOB=20260722-001;1=SN001,3=SN003,4=SN004\r\n
+FCT:JOB=20260722-002;1=SN101,2=SN102\r\n
+BT:JOB=20260722-003;1=SN201,3=SN203,4=SN204\r\n
+```
+
+slot 1～4 可不連續，空料位置直接省略。每一行以 CRLF 結尾，可直接搭配 LabVIEW 的
+CRLF 偵測模式，也能避免 TCP 串流分段時誤讀。Agent 收到有效 JOB 後先驗證工站、JOB ID、
+slot 與 SN；若本機已有未完成 JOB，回覆 `NACK:<工站>:JOB=<id>;BUSY`，不會中斷舊測試。
+FCT 直接開始監聽；DFU 請 Arduino 截圖後依 slot 順序輸入條碼；BT 四個 slot 全滿時按
+Start All，未滿時逐一點擊指定的 Start 1～4，並只監控指定 slot。
+
+DFU generic 的多輸入框流程會依 slot 差距送出 Tab，略過空料位置。DFU_2 是「單一 SN
+輸入框＋OK 後搬到下一個已勾選 slot」的設備流程；使用不連續 slot JOB 前，測試 HMI 的
+checkbox 必須與 JOB 指定的 slot 一致，Agent 會依勾選順序輸入 SN 並在 Log 顯示提示。
 
 資料夾結構應為：
 
@@ -50,7 +61,8 @@ Agent 每 0.25 秒檢查每個當前 SN，只使用和 Mac 系統時間最接近
 夾，避免誤取舊的重工結果。`records.csv` 的 `status` 欄任一 `FAIL` 即上報 FAIL，
 全部 PASS 才上報 PASS；新增的 `device.log` 會即時顯示在畫面中。所有當前 SN 都完成後，
 Agent 才經 USB CDC 送出一行批次結果，例如
-`RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL`，由 Arduino 回送給 TCP 上位機。
+`RESULT:DFU:JOB=20260722-001;1=SN001,PASS;3=SN003,PASS;4=SN004,FAIL`，
+由 Arduino 回送給 TCP 上位機。
 
 監聽啟動時會記錄按下「開始流程」的時間，只接受該時間之後建立的時間戳資料夾與
 `records.csv`，不會讀取上一批或重工留下的檔案。主畫面的「測試結果逾時(s)」預設 300 秒；
@@ -60,11 +72,17 @@ Agent 才經 USB CDC 送出一行批次結果，例如
 
 ### TCP／LabVIEW 交握訊框
 
-所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。有效批次被接收後
-不會先回覆 ACK；DFU 必須完成影像操作並等待 CSV 結果；BT 必須完成影像操作並等待畫面
-STATUS 的 PASS／FAIL，才回覆一行
-`RESULT:<SN1>,<PASS|FAIL>;<SN2>,<PASS|FAIL>...\r\n`。LabVIEW 可用 TCP Read 的 CRLF
-模式逐行讀取。若批次無效或 DFU／BT 影像啟動失敗，則回覆相對應的 `NACK` 錯誤訊息。
+所有上位機與 Agent 的業務訊息使用 UTF-8、以 CRLF (`\r\n`) 結尾。有效 JOB 被接收後
+立即回覆 `ACK:<工站>:JOB=<id>\r\n`；ACK 代表 Agent 已接單，不代表測試完成。DFU/FCT
+等待 CSV 結果；BT 等待所有指定 slot 走過 TESTING 並完成 PASS／FAIL，才回覆：
+
+```
+RESULT:<工站>:JOB=<id>;<slot>=<SN>,<PASS|FAIL|TIMEOUT>;...\r\n
+```
+
+LabVIEW 可用 TCP Read 的 CRLF 模式逐行讀取。工站不符、設備忙碌、指令無效或影像啟動
+失敗會回覆帶 JOB ID 的 `NACK`。舊的純 `SN1,SN2,...` 格式只保留給 HMI 手動驗證；正式
+上位機流程應一律使用包含工站、JOB ID 與 slot 的新格式。
 
 偏好資料存於 `~/Library/Application Support/AtlasAgentB518/preferences.json`，包含
 串口、CSV／Log 路徑與工站。
@@ -208,5 +226,6 @@ OpenCV。請選擇專用的 Demo 資料夾，不要指向正式量產資料夾�
 
 交付資料夾內的 `B518_Arduino_MVP_Test` 是建議燒錄的整合韌體：它同時提供
 Ethernet TCP bridge、USB CDC、Keyboard 與 Mouse HID。上位機→Mac 可直接使用
-`SN1,SN2,...\r\n`（也相容 `DATA:` 訊框；**建議 CRLF 結尾**），Mac→上位機使用批次
-`RESULT:<SN>,<PASS|FAIL>;...\r\n`；網路按鈕對 Arduino 使用 `GET_IP`／`NET_SET:x.x.x.x`。
+`STATION:JOB=<id>;<slot>=<SN>,...\r\n`，Mac→上位機依序使用
+`ACK:<STATION>:JOB=<id>\r\n` 與 `RESULT:<STATION>:JOB=<id>;<slot>=<SN>,<status>;...\r\n`；
+網路設定對 Arduino 使用 `GET_IP`／`NET_SET:x.x.x.x`。
