@@ -168,6 +168,12 @@ class AtlasAgentTests(unittest.TestCase):
         rows = [BtStatusRow("TESTING", (800, 100, 120, 30)), BtStatusRow("TESTING", (800, 160, 120, 30))]
         self.assertEqual(pair_bt_sn_text(rows, [OcrText("SN001", (550, 102, 150, 26))]), ["SN001", ""])
 
+    def test_bt_ocr_sn_pairing_ignores_slot_labels_and_prefers_sn_column(self):
+        rows = [BtStatusRow("TESTING", (800, 100 + index * 60, 120, 30)) for index in range(2)]
+        text = [OcrText("slot1", (350, 102, 60, 26)), OcrText("BTDEMO001", (580, 102, 150, 26)),
+                OcrText("slot2", (350, 162, 60, 26)), OcrText("BTDEMO002", (580, 162, 150, 26))]
+        self.assertEqual(pair_bt_sn_text(rows, text), ["BTDEM0001", "BTDEM0002"])
+
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

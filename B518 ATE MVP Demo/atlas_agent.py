@@ -671,9 +671,10 @@ def vision_rectangle_components(rectangle: object) -> tuple[float, float, float,
 
 
 def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]) -> list[str]:
-    """Assign OCR text to each status row by its y position left of STATUS."""
+    """Assign OCR SN text to each STATUS row, preferring the adjacent SN column."""
     candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in ocr_texts
-                  if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))]
+                  if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))
+                  and not re.fullmatch(r"SLOT[1-4]", normalize_ocr_sn(item.text))]
     machine_sns: list[str] = []
     for row in status_rows:
         status_x, status_y, status_width, status_height = row.rectangle
@@ -684,7 +685,11 @@ def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]
         if not nearby:
             machine_sns.append("")
             continue
-        machine_sns.append(min(nearby, key=lambda item: abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center)).text)
+        # Both the SLOT label and its SN have the same vertical position.
+        # The SN column is immediately to the left of STATUS, so select the
+        # rightmost candidate rather than relying on Vision's return order.
+        machine_sns.append(max(nearby, key=lambda item: (item.rectangle[0] + item.rectangle[2] / 2,
+                                                          -abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center))).text)
     return machine_sns
 
 
@@ -950,7 +955,12 @@ class BtStatusMonitor(threading.Thread):
             except AgentError as exc:
                 self.machine_sns = ["" for _ in self.sns]
                 self.on_log("BT SN OCR 失敗：" + str(exc))
-            self.sn_mismatch = self.machine_sns != self.sns
+            # Apply the documented O→0 OCR normalization to both values for
+            # comparison.  Production barcodes exclude O; this additionally
+            # keeps the older BTDEMO simulator names from becoming false
+            # mismatches solely because Vision saw their letter O as digit 0.
+            expected_for_comparison = [normalize_ocr_sn(sn) for sn in self.sns]
+            self.sn_mismatch = self.machine_sns != expected_for_comparison
             self.on_log("BT SN 比對：" + "；".join(
                 f"slot{slot} 上位機={expected or '（空）'}／設備={actual or '（未辨識）'}"
                 for slot, expected, actual in zip(self.slots, self.sns, self.machine_sns)))
@@ -1687,6 +1697,54 @@ class AtlasAgentApp:
         if failed:
             self.events.put(("log", "無法刪除截圖：" + "、".join(item.name for item in failed)))
 
+    def ensure_slot_checkbox_states(self, slots: list[int], screenshot_dir: Path, window_template: Path,
+                                    checked_template: Path, unchecked_template: Path,
+                                    target_for: Callable[[tuple[int, int]], tuple[int, int]],
+                                    hid_mode: str, delay: float) -> None:
+        """Verify sparse-slot checkbox state after HID clicks, correcting once.
+
+        Sending a click command is not evidence that a browser accepted it.
+        Read a new Arduino screenshot after the click and refuse to continue to
+        barcode entry unless all four visible controls match the JOB exactly.
+        """
+        for attempt in range(2):
+            before = time.time(); self.link.send("SCREENSHOT")
+            self.events.put(("log", f"驗證 Slot checkbox（第 {attempt + 1} 次截圖）…"))
+            time.sleep(SCREENSHOT_SETTLE_SECONDS)
+            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
+            shots: list[Path] = []
+            while time.monotonic() < deadline and not shots:
+                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            if not shots:
+                raise AgentError(f"驗證 Slot checkbox 時等待螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+            selected = None; states = None; errors: list[str] = []
+            for shot in shots:
+                try:
+                    template_match(shot, window_template)
+                    selected, states = shot, slot_checkbox_states(shot, checked_template, unchecked_template)
+                    break
+                except AgentError as exc:
+                    errors.append(f"{shot.name}: {exc}")
+            self.delete_processed_screenshots(shots)
+            if selected is None or states is None:
+                raise AgentError("無法驗證四個 Slot checkbox。" + "；".join(errors))
+            mismatches = [(index, rectangle, required) for index, (checked, rectangle) in enumerate(states, start=1)
+                          for required in (index in slots,) if checked != required]
+            current = "、".join(f"slot{index}={'勾選' if checked else '取消'}" for index, (checked, _) in enumerate(states, start=1))
+            if not mismatches:
+                self.events.put(("log", "Slot checkbox 驗證成功：" + current))
+                return
+            if attempt:
+                raise AgentError("Slot checkbox 驗證失敗，HMI 實際狀態為：" + current +
+                                 "；已停止，未輸入任何條碼。請檢查 checkbox 模板與 HMI 焦點。")
+            self.events.put(("log", "Slot checkbox 尚未符合 JOB，補正：" + "、".join(
+                f"slot{index}={'勾選' if required else '取消'}" for index, _, required in mismatches)))
+            commands: list[str] = []
+            for _, rectangle, _ in mismatches:
+                commands.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+            self.send_hid_sequence(commands, delay=delay)
+        raise AgentError("Slot checkbox 驗證流程異常")
+
     def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
                                    created_after: float, result_timeout: float) -> None:
         """Set FCT's four visible test checkboxes before beginning file monitoring."""
@@ -1742,6 +1800,8 @@ class AtlasAgentApp:
                                          for index, (checked, rect) in enumerate(states, start=1))], self.overlay_path)
             self.delete_processed_screenshots(shots)
             self.send_hid_sequence(commands, delay=delay)
+            self.ensure_slot_checkbox_states(slots, screenshot_dir, resolved["window"], resolved["checked"],
+                                             resolved["unchecked"], target_for, hid_mode, delay)
             self.events.put(("log", "FCT sparse slot 已同步：" + ("、".join(changes) if changes else "checkbox 已符合 JOB") + "；啟動 CSV 監聽"))
             self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
         except Exception as exc:
@@ -1840,19 +1900,14 @@ class AtlasAgentApp:
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
                 focus_commands = click_commands(target_for(window_center), hid_mode)
-                checkbox_commands: list[str] = []
-                checkbox_changes: list[str] = []
-                if slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                sparse_checkbox_job = slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each"
+                if sparse_checkbox_job:
                     states = slot_checkbox_states(shot, resolved[profile["checkbox_checked"]],
                                                    resolved[profile["checkbox_unchecked"]], region=region)
                     for index, (is_checked, rectangle) in enumerate(states, start=1):
-                        required_checked = index in slots
                         target = target_for(rectangle_center(rectangle))
                         matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
                                                     rectangle_center(rectangle)), rectangle, target))
-                        if is_checked != required_checked:
-                            checkbox_commands.extend(click_commands(target, hid_mode))
-                            checkbox_changes.append(f"slot{index}={'勾選' if required_checked else '取消'}")
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
@@ -1864,10 +1919,13 @@ class AtlasAgentApp:
                     matches.append((match_label("OK", button_source), button_rect, button))
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.delete_processed_screenshots(shots)
-                    self.send_hid_sequence(focus_commands + checkbox_commands +
-                                           dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
-                    if checkbox_changes:
-                        self.events.put(("log", "DFU_2 sparse slot 已同步：" + "、".join(checkbox_changes)))
+                    self.send_hid_sequence(focus_commands, delay=delay)
+                    if sparse_checkbox_job:
+                        self.ensure_slot_checkbox_states(slots, screenshot_dir, window,
+                                                         resolved[profile["checkbox_checked"]],
+                                                         resolved[profile["checkbox_unchecked"]],
+                                                         target_for, hid_mode, delay)
+                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
                     commands = focus_commands + click_commands(barcode, hid_mode)
