@@ -13,6 +13,7 @@ import json
 import queue
 import re
 import struct
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -39,6 +40,13 @@ try:
     import AppKit
 except ImportError:
     AppKit = None
+
+try:
+    import Vision
+    from Foundation import NSURL
+except ImportError:
+    Vision = None
+    NSURL = None
 
 VERSION = "0.1.0"
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
@@ -118,6 +126,26 @@ class TestResult:
     folder: Path
     records: Path
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class BtStatusRow:
+    status: str
+    rectangle: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class OcrText:
+    text: str
+    rectangle: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class BtSnReview:
+    expected_sns: list[str]
+    machine_sns: list[str]
+    slots: list[int]
+    results: dict[str, str]
 
 
 def parse_barcodes(payload: str) -> list[str]:
@@ -457,28 +485,113 @@ def template_matches(image: Path, template: Path, threshold: float = 0.80,
     return found
 
 
-def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
-                            region: Optional[tuple[int, int, int, int]] = None) -> list[str]:
-    """Read the four top-to-bottom BT STATUS cells from state-specific templates."""
-    hits: list[tuple[int, int, str, float]] = []
+def bt_status_rows_from_screen(image: Path, status_templates: dict[str, Path],
+                               region: Optional[tuple[int, int, int, int]] = None) -> list[BtStatusRow]:
+    """Read the four top-to-bottom BT STATUS cells and retain their geometry."""
+    hits: list[tuple[int, int, str, tuple[int, int, int, int], float]] = []
     for status, template in status_templates.items():
         for x, y, width, height, score in template_matches(image, template, region=region):
-            hits.append((y + height // 2, x + width // 2, status, score))
+            hits.append((y + height // 2, x + width // 2, status, (x, y, width, height), score))
     if not hits:
         raise AgentError("找不到任何 BT STATUS 模板")
     # A crop that includes the cell background and text creates one match per
     # row.  Sort by y to preserve slot 1→4 order, retaining the best hit when
     # two state templates overlap around the same row.
-    rows: list[tuple[int, int, str, float]] = []
+    rows: list[tuple[int, int, str, tuple[int, int, int, int], float]] = []
     for hit in sorted(hits):
         if rows and abs(hit[0] - rows[-1][0]) <= 12:
-            if hit[3] > rows[-1][3]:
+            if hit[4] > rows[-1][4]:
                 rows[-1] = hit
         else:
             rows.append(hit)
     if len(rows) < 4:
         raise AgentError(f"BT STATUS 僅辨識到 {len(rows)} 列；請確認四個狀態模板均從同一解析度畫面裁切")
-    return [row[2] for row in rows[:4]]
+    return [BtStatusRow(row[2], row[3]) for row in rows[:4]]
+
+
+def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
+                            region: Optional[tuple[int, int, int, int]] = None) -> list[str]:
+    """Compatibility helper that returns only STATUS names."""
+    return [row.status for row in bt_status_rows_from_screen(image, status_templates, region)]
+
+
+def normalize_ocr_sn(value: str) -> str:
+    """Conservative OCR normalization; never guesses or substitutes characters."""
+    return re.sub(r"\s+", "", value).upper()
+
+
+def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]) -> list[str]:
+    """Assign OCR text to each status row by its y position left of STATUS."""
+    candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in ocr_texts
+                  if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))]
+    machine_sns: list[str] = []
+    for row in status_rows:
+        status_x, status_y, status_width, status_height = row.rectangle
+        row_center = status_y + status_height / 2
+        nearby = [item for item in candidates
+                  if item.rectangle[0] + item.rectangle[2] / 2 < status_x
+                  and abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center) <= max(48, status_height * 1.5)]
+        if not nearby:
+            machine_sns.append("")
+            continue
+        machine_sns.append(min(nearby, key=lambda item: abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center)).text)
+    return machine_sns
+
+
+def recognize_text_vision(image: Path) -> list[OcrText]:
+    """Read screenshot text with macOS Vision; no screen-recording permission is used."""
+    if Vision is None or NSURL is None:
+        raise AgentError("缺少 macOS Vision OCR；請重新建置並安裝 pyobjc-framework-Vision")
+    if cv2 is None:
+        raise AgentError("Vision OCR 需要 opencv-python 取得截圖尺寸")
+    pixels = cv2.imread(str(image))
+    if pixels is None:
+        raise AgentError(f"無法讀取 OCR 截圖：{image}")
+    height, width = pixels.shape[:2]
+    recognition_image = image
+    coordinate_scale = 1.0
+    temporary_image: Optional[Path] = None
+    # Vision can reject a large Retina screenshot before it reaches OCR.  The
+    # text remains clear at this size; coordinates are converted back below.
+    maximum_dimension = 800
+    if max(width, height) > maximum_dimension:
+        coordinate_scale = maximum_dimension / max(width, height)
+        scaled = cv2.resize(pixels, (round(width * coordinate_scale), round(height * coordinate_scale)), interpolation=cv2.INTER_AREA)
+        handle = tempfile.NamedTemporaryFile(prefix="atlas_bt_ocr_", suffix=".png", delete=False)
+        handle.close(); temporary_image = Path(handle.name)
+        if not cv2.imwrite(str(temporary_image), scaled):
+            temporary_image.unlink(missing_ok=True)
+            raise AgentError("無法建立 Vision OCR 暫存影像")
+        recognition_image = temporary_image
+        height, width = scaled.shape[:2]
+    results = []
+
+    def completed(request, error) -> None:
+        if error is not None:
+            return
+        for observation in request.results() or []:
+            candidates = observation.topCandidates_(1)
+            if not candidates:
+                continue
+            text = str(candidates[0].string())
+            x, y, box_width, box_height = observation.boundingBox()
+            results.append(OcrText(text, (round(x * width), round((1 - y - box_height) * height),
+                                          round(box_width * width), round(box_height * height))))
+
+    try:
+        request = Vision.VNRecognizeTextRequest.alloc().initWithCompletionHandler_(completed)
+        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        request.setUsesLanguageCorrection_(False)
+        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(NSURL.fileURLWithPath_(str(recognition_image)), {})
+        success, error = handler.performRequests_error_([request], None)
+        if not success:
+            raise AgentError("macOS Vision OCR 失敗：" + str(error or "未知錯誤"))
+        if coordinate_scale != 1.0:
+            return [OcrText(item.text, tuple(round(value / coordinate_scale) for value in item.rectangle)) for item in results]
+        return results
+    finally:
+        if temporary_image is not None:
+            temporary_image.unlink(missing_ok=True)
 
 
 def bt_completed_results(sns: list[str], slots: list[int], statuses: list[str], testing_seen: set[str]) -> dict[str, str]:
@@ -606,15 +719,18 @@ class BtStatusMonitor(threading.Thread):
     def __init__(self, screenshot_root: Path, status_templates: dict[str, Path],
                  sns: list[str], slots: list[int], request_screenshot: Callable[[], None],
                  on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
+                 on_review: Callable[[BtSnReview], None],
                  delete_shots: Callable[[Iterable[Path]], None], stop: threading.Event,
                  timeout_seconds: float = 0.0, on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
         super().__init__(daemon=True)
         self.screenshot_root, self.status_templates = screenshot_root, status_templates
         self.sns, self.slots, self.request_screenshot = sns, slots, request_screenshot
-        self.on_log, self.on_result, self.delete_shots, self.stop = on_log, on_result, delete_shots, stop
+        self.on_log, self.on_result, self.on_review, self.delete_shots, self.stop = on_log, on_result, on_review, delete_shots, stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
         self.reported: set[str] = set()
         self.testing_seen: set[str] = set()
+        self.machine_sns: Optional[list[str]] = None
+        self.sn_mismatch = False
 
     def run(self) -> None:
         self.on_log("BT 畫面 STATUS 監聽已啟動：" + "、".join(self.sns) + "；先等待 TESTING，再接受 PASS／FAIL；每張新截圖分析後間隔 1 秒")
@@ -627,8 +743,7 @@ class BtStatusMonitor(threading.Thread):
                 if not shots:
                     self.on_log("BT：等待螢幕截圖逾時，將重試")
                 else:
-                    self._analyse_screenshots(shots)
-                    if all(sn in self.reported for sn in self.sns):
+                    if self._analyse_screenshots(shots):
                         return
             except Exception as exc:
                 self.on_log(f"BT STATUS 畫面分析失敗：{exc}")
@@ -650,9 +765,10 @@ class BtStatusMonitor(threading.Thread):
             self.stop.wait(.25)
         return []
 
-    def _analyse_screenshots(self, shots: list[Path]) -> None:
+    def _analyse_screenshots(self, shots: list[Path]) -> bool:
         selected: Optional[Path] = None
         statuses: list[str] = []
+        status_rows: list[BtStatusRow] = []
         errors: list[str] = []
         for shot in shots:
             try:
@@ -660,15 +776,14 @@ class BtStatusMonitor(threading.Thread):
                 # button.  During a test the browser can resize/reflow, while
                 # the status-cell templates remain sufficient and avoid a
                 # false failure caused by the decorative "BT" title.
-                statuses = bt_statuses_from_screen(shot, self.status_templates)
+                status_rows = bt_status_rows_from_screen(shot, self.status_templates)
+                statuses = [row.status for row in status_rows]
                 selected = shot
                 break
             except AgentError as exc:
                 errors.append(f"{shot.name}: {exc}")
-        # The images have been read regardless of matching outcome and are not
-        # retained on the locked-down production Mac.
-        self.delete_shots(shots)
         if selected is None:
+            self.delete_shots(shots)
             raise AgentError("；".join(errors) or "沒有可分析的 BT 截圖")
         summary = ", ".join(f"slot{index + 1}={status}" for index, status in enumerate(statuses))
         self.on_log(f"BT STATUS：{summary}")
@@ -678,11 +793,33 @@ class BtStatusMonitor(threading.Thread):
             self.on_log("BT：等待所有指定 slot 進入新一輪 TESTING：" + "、".join(waiting))
         elif any(statuses[slot - 1] == "TESTING" for slot in self.slots):
             self.on_log("BT：所有指定 slot 已開始，等待全部 TESTING 結束")
+        if len(self.testing_seen) == len(self.sns) and self.machine_sns is None:
+            try:
+                all_machine_sns = pair_bt_sn_text(status_rows, recognize_text_vision(selected))
+                self.machine_sns = [all_machine_sns[slot - 1] for slot in self.slots]
+            except AgentError as exc:
+                self.machine_sns = ["" for _ in self.sns]
+                self.on_log("BT SN OCR 失敗：" + str(exc))
+            self.sn_mismatch = self.machine_sns != self.sns
+            self.on_log("BT SN 比對：" + "；".join(
+                f"slot{slot} 上位機={expected or '（空）'}／設備={actual or '（未辨識）'}"
+                for slot, expected, actual in zip(self.slots, self.sns, self.machine_sns)))
+            self.on_log("BT SN 比對結果：" + ("不符，完成後等待人工覆核" if self.sn_mismatch else "一致"))
+        # The images have now been read (including OCR if needed) and are not
+        # retained on the locked-down production Mac.
+        self.delete_shots(shots)
+        if not completed:
+            return False
+        if self.sn_mismatch:
+            assert self.machine_sns is not None
+            self.on_review(BtSnReview(self.sns, self.machine_sns, self.slots, completed))
+            return True
         for sn, slot in zip(self.sns, self.slots):
             if sn in completed and sn not in self.reported:
                 self.reported.add(sn)
                 status = completed[sn]
                 self.on_result(TestResult(sn, status, selected.parent, selected, f"BT 畫面 slot{slot} STATUS={status}"))
+        return all(sn in self.reported for sn in self.sns)
 
 
 class SerialLineFramer:
@@ -1253,9 +1390,49 @@ class AtlasAgentApp:
         self.monitor = BtStatusMonitor(screenshot_root, status_templates, sns, slots, request,
                                        lambda item: self.events.put(("log", item)),
                                        lambda result: self.events.put(("result", (batch_number, result))),
+                                       lambda review: self.events.put(("bt_sn_review", (batch_number, review))),
                                        self.delete_processed_screenshots, self.monitor_stop, result_timeout,
                                        lambda pending: self.events.put(("timeout", (batch_number, pending))))
         self.monitor.start()
+
+    def review_bt_sn_mismatch(self, review: BtSnReview) -> Optional[list[str]]:
+        """Ask a human to confirm/correct machine SNs after BT has finished."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("BT SN 不符人工覆核")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        result: dict[str, Optional[list[str]]] = {"sns": None}
+        frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="BT 已完成測試，但設備畫面 SN 與上位機 SN 不一致。\n請核對設備實際 SN；確認後將以此處 SN 回傳 RESULT。",
+                  foreground="#9b1c1c").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+        for column, label in enumerate(("Slot", "上位機 SN", "設備 OCR SN（可修正）", "測試結果")):
+            ttk.Label(frame, text=label).grid(row=1, column=column, sticky="w", padx=(0, 12), pady=(0, 4))
+        fields: list[tk.StringVar] = []
+        for index, (slot, expected, actual) in enumerate(zip(review.slots, review.expected_sns, review.machine_sns), start=2):
+            field = tk.StringVar(value=actual)
+            fields.append(field)
+            ttk.Label(frame, text=f"slot{slot}").grid(row=index, column=0, sticky="w")
+            ttk.Label(frame, text=expected or "（空）").grid(row=index, column=1, sticky="w", padx=(0, 12))
+            ttk.Entry(frame, textvariable=field, width=30).grid(row=index, column=2, sticky="ew", padx=(0, 12), pady=3)
+            ttk.Label(frame, text=review.results.get(expected, "—")).grid(row=index, column=3, sticky="w")
+
+        def confirm() -> None:
+            try:
+                values = [normalize_ocr_sn(item.get()) for item in fields]
+                parsed = parse_barcodes(",".join(values))
+                if len(parsed) != len(values) or len(set(parsed)) != len(parsed):
+                    raise AgentError("設備實際 SN 必須完整且不可重複")
+            except AgentError as exc:
+                messagebox.showerror(TITLE, str(exc), parent=dialog); return
+            result["sns"] = parsed
+            dialog.destroy()
+
+        buttons = ttk.Frame(frame); buttons.grid(row=len(fields) + 2, column=0, columnspan=4, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="取消並回報 NACK", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="確認並以設備 SN 回報", command=confirm).pack(side="right", padx=6)
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        dialog.grab_set(); self.root.wait_window(dialog)
+        return result["sns"]
 
     def send_hid_sequence(self, commands: Iterable[str], delay: float = 0.0, timeout: float = 8.0) -> None:
         """Wait for every Arduino HID completion before proceeding to CSV monitoring."""
@@ -1478,6 +1655,24 @@ class AtlasAgentApp:
                         self.start_bt_status_monitor(sns, slots, batch_number, result_timeout, status_templates)
                     else:
                         self.append("略過已被新批次取代的 BT 影像流程")
+                elif kind == "bt_sn_review":
+                    batch_number, review = item; assert isinstance(review, BtSnReview)
+                    if batch_number != self.batch_number:
+                        self.append("略過舊批次的 BT SN 覆核")
+                        continue
+                    actual_sns = self.review_bt_sn_mismatch(review)
+                    self.monitor = None
+                    if actual_sns is None:
+                        self.append("BT SN 覆核取消：不回傳 RESULT，改送 NACK:BT_SN_MISMATCH")
+                        if self.link.connection:
+                            self.safe_send("NACK:BT_SN_MISMATCH")
+                        self.reported_batch_number = batch_number
+                        continue
+                    self.append("BT SN 覆核確認：以設備 SN 回傳：" + "、".join(actual_sns))
+                    self.sns, self.batch_results = actual_sns, {}
+                    for expected, actual in zip(review.expected_sns, actual_sns):
+                        self.batch_results[actual] = review.results[expected]
+                    self.report_if_batch_complete(batch_number)
                 elif kind == "start_failed":
                     station, batch_number = item
                     if batch_number == self.batch_number and self.link.connection:

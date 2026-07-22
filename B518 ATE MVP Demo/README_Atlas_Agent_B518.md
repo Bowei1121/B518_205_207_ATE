@@ -122,6 +122,11 @@ b482/bt_status_notset.png
 BT 在 Start 前會先點擊匹配到的 BT 標題取得測試畫面焦點；結果監聽會先確認指定 slot 至少
 出現一次 `TESTING`，並等待**所有指定 slot 的 TESTING 都結束**後，才一起接受 PASS／FAIL，
 避免前一批殘留結果或尚未完成的單一 slot 被誤回傳。
+在所有指定 slot 都首次出現 `TESTING` 後，Agent 以 macOS Vision OCR 讀取同張截圖的設備 SN，
+並逐 slot 與上位機 SN 比對。若不符、缺值或 OCR 無法讀取，測試仍會完成，但 RESULT 前必須由
+操作員在覆核視窗確認或修正設備實際 SN；確認後只回傳設備 SN，取消則回傳
+`NACK:BT_SN_MISMATCH`。Vision OCR 只分析 Arduino 已存下的截圖，不需要 Screen Recording、
+Accessibility 或軟體鍵鼠控制權限。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
 自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML
