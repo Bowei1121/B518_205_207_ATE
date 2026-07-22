@@ -1,6 +1,5 @@
 pyserial>=3.5,<4
 opencv-python>=4.8,<5
-# The MVP build machine uses Python 3.8; PyObjC 10.3.2 is the newest release
-# that supports it, and every PyObjC framework must use the same release.
-pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"
-pyobjc-framework-Vision==10.3.2; sys_platform == "darwin"
+# Python 3.12 uses the current matching PyObjC framework release.
+pyobjc-framework-Cocoa>=12,<13; sys_platform == "darwin"
+pyobjc-framework-Vision>=12,<13; sys_platform == "darwin"

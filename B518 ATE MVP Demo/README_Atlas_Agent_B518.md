@@ -7,10 +7,14 @@ Accessibility、AppleScript、CGEvent 或任何 Mac 端鍵盤／滑鼠控制；�
 ## 執行
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 atlas_agent.py
-python3 -m unittest -v test_atlas_agent.py
+/usr/local/opt/python@3.12/bin/python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt pyinstaller
+.venv/bin/python atlas_agent.py
+.venv/bin/python -m unittest -v test_atlas_agent.py test_upper_computer_simulator.py
 ```
+
+開發與建置環境固定使用 Python 3.12 的 `.venv`，不要使用系統或 Anaconda 的 `python3`。
 
 ## 打包 macOS App
 
