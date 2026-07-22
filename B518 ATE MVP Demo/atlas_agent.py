@@ -481,6 +481,30 @@ def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
     return [row[2] for row in rows[:4]]
 
 
+def bt_completed_results(sns: list[str], slots: list[int], statuses: list[str], testing_seen: set[str]) -> dict[str, str]:
+    """Return final BT results only after the entire selected batch has ended.
+
+    A BT HMI often retains the previous PASS/FAIL until its next run starts.
+    Requiring TESTING is the protocol guard that separates a new test from
+    that stale screen state.
+    """
+    selected: dict[str, str] = {}
+    for sn, slot in zip(sns, slots):
+        if not 1 <= slot <= len(statuses):
+            raise AgentError(f"BT slot {slot} 不在畫面 STATUS 範圍內")
+        current = statuses[slot - 1]
+        selected[sn] = current
+        if current == "TESTING":
+            testing_seen.add(sn)
+    # Never return a partial batch: stale results are possible before TESTING,
+    # and early PASS/FAIL is not a final batch result while another slot runs.
+    if any(sn not in testing_seen for sn in sns) or any(status == "TESTING" for status in selected.values()):
+        return {}
+    if any(status not in ("PASS", "FAIL") for status in selected.values()):
+        return {}
+    return selected
+
+
 def opencv_image_to_tk_png(image) -> str:
     """Encode an OpenCV BGR image for Tk without swapping red/blue channels."""
     if cv2 is None:
@@ -590,9 +614,10 @@ class BtStatusMonitor(threading.Thread):
         self.on_log, self.on_result, self.delete_shots, self.stop = on_log, on_result, delete_shots, stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
         self.reported: set[str] = set()
+        self.testing_seen: set[str] = set()
 
     def run(self) -> None:
-        self.on_log("BT 畫面 STATUS 監聽已啟動：" + "、".join(self.sns) + "；每張新截圖分析後間隔 1 秒")
+        self.on_log("BT 畫面 STATUS 監聽已啟動：" + "、".join(self.sns) + "；先等待 TESTING，再接受 PASS／FAIL；每張新截圖分析後間隔 1 秒")
         deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
             before = time.time()
@@ -647,10 +672,16 @@ class BtStatusMonitor(threading.Thread):
             raise AgentError("；".join(errors) or "沒有可分析的 BT 截圖")
         summary = ", ".join(f"slot{index + 1}={status}" for index, status in enumerate(statuses))
         self.on_log(f"BT STATUS：{summary}")
+        completed = bt_completed_results(self.sns, self.slots, statuses, self.testing_seen)
+        waiting = [sn for sn in self.sns if sn not in self.testing_seen]
+        if waiting:
+            self.on_log("BT：等待所有指定 slot 進入新一輪 TESTING：" + "、".join(waiting))
+        elif any(statuses[slot - 1] == "TESTING" for slot in self.slots):
+            self.on_log("BT：所有指定 slot 已開始，等待全部 TESTING 結束")
         for sn, slot in zip(self.sns, self.slots):
-            status = statuses[slot - 1]
-            if status in ("PASS", "FAIL") and sn not in self.reported:
+            if sn in completed and sn not in self.reported:
                 self.reported.add(sn)
+                status = completed[sn]
                 self.on_result(TestResult(sn, status, selected.parent, selected, f"BT 畫面 slot{slot} STATUS={status}"))
 
 
@@ -1380,8 +1411,12 @@ class AtlasAgentApp:
                 matches.append((match_label(button_label, button_source), button_rect, button))
                 write_match_overlay(shot, matches, self.overlay_path)
                 self.delete_processed_screenshots(shots)
-                self.send_hid_sequence(click_commands(button, hid_mode), delay=delay)
-                self.events.put(("log", f"BT：截圖 {button_label} {button_source} → HID {button}；啟動畫面 STATUS 監聽"))
+                # Click the harmless BT title first.  This brings the Safari/
+                # instrument window to the foreground so the following Start
+                # click is not lost to another focused application.
+                focus = target_for(rectangle_center(window_rect))
+                self.send_hid_sequence(click_commands(focus, hid_mode) + click_commands(button, hid_mode), delay=delay)
+                self.events.put(("log", f"BT：已點擊測試畫面取得焦點；截圖 {button_label} {button_source} → HID {button}；啟動畫面 STATUS 監聽"))
             if station == "BT":
                 slots = [bt_slot] if bt_slot else list(range(1, len(sns) + 1))
                 self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout,

@@ -119,6 +119,9 @@ b482/bt_status_notset.png
 `BT Start 4` 則只啟動、回報對應 slot 的 SN；個別測試也可只輸入一個 SN。啟動後每次由 Arduino 產生新截圖，Agent 讀取
 四列 STATUS，截圖分析完即刪除；下一次擷取至少間隔 1 秒。macOS 截圖本身可能延後數秒才
 真正落檔，因此無須、也不能用需要 Screen Recording 權限的方式強制固定每秒取得新影像。
+BT 在 Start 前會先點擊匹配到的 BT 標題取得測試畫面焦點；結果監聽會先確認指定 slot 至少
+出現一次 `TESTING`，並等待**所有指定 slot 的 TESTING 都結束**後，才一起接受 PASS／FAIL，
+避免前一批殘留結果或尚未完成的單一 slot 被誤回傳。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
 自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML

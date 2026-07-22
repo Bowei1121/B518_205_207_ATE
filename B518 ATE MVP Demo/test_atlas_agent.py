@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -116,6 +116,15 @@ class AtlasAgentTests(unittest.TestCase):
         report = batch_result_report(["SN001", "SN002", "SN003", "SN004"],
                                      {"SN004": "FAIL", "SN002": "PASS", "SN001": "PASS", "SN003": "PASS"})
         self.assertEqual(report, "RESULT:SN001,PASS;SN002,PASS;SN003,PASS;SN004,FAIL")
+
+    def test_bt_ignores_stale_final_status_until_testing_has_been_seen(self):
+        seen = set()
+        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "FAIL", "NOTSET", "NOTSET"], seen), {})
+        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["TESTING", "TESTING", "NOTSET", "NOTSET"], seen), {})
+        self.assertEqual(seen, {"SN001", "SN002"})
+        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "TESTING", "NOTSET", "NOTSET"], seen), {})
+        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "FAIL", "NOTSET", "NOTSET"], seen),
+                         {"SN001": "PASS", "SN002": "FAIL"})
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:
