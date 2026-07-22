@@ -177,6 +177,24 @@ def incoming_barcode_payload(line: str) -> Optional[str]:
     return value if RAW_SN_BATCH.fullmatch(value) else None
 
 
+def arduino_ip_reply(line: str) -> Optional[str]:
+    """Extract a valid IPv4 address from supported Arduino network replies."""
+    value = line.strip()
+    candidate: Optional[str] = None
+    if value.startswith("IP:"):
+        candidate = value[3:].strip()
+    elif value.startswith("OK:NET_SET:"):
+        candidate = value[len("OK:NET_SET:"):].strip()
+    elif "IP=" in value:
+        candidate = value.rsplit("IP=", 1)[1].strip()
+    if candidate is None:
+        return None
+    parts = candidate.split(".")
+    if len(parts) != 4 or any(not part.isdigit() or not 0 <= int(part) <= 255 for part in parts):
+        return None
+    return candidate
+
+
 def batch_result_report(sns: Iterable[str], statuses: dict[str, str]) -> str:
     """Create one compact RESULT line, preserving the received SN order."""
     ordered = list(sns)
@@ -516,8 +534,14 @@ def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
 
 
 def normalize_ocr_sn(value: str) -> str:
-    """Conservative OCR normalization; never guesses or substitutes characters."""
-    return re.sub(r"\s+", "", value).upper()
+    """Normalize BT OCR serials for the agreed customer barcode alphabet.
+
+    Customer serial numbers intentionally exclude the letter ``O`` while
+    retaining digits 0–9.  Vision therefore reading an ``O`` is the known,
+    deterministic OCR representation of ``0``; convert only that character.
+    ``I`` remains untouched so the software never guesses 1 from I.
+    """
+    return re.sub(r"\s+", "", value).upper().replace("O", "0")
 
 
 def vision_rectangle_components(rectangle: object) -> tuple[float, float, float, float]:
@@ -1098,7 +1122,7 @@ class AtlasAgentApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(TITLE)
-        self.root.geometry("940x760")
+        self.root.geometry("940x700")
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -1161,27 +1185,10 @@ class AtlasAgentApp:
         ttk.Label(row, text="螢幕截圖路徑：").pack(side="left")
         ttk.Entry(row, textvariable=self.screenshot_path).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="選擇", command=lambda: self.choose_dir(self.screenshot_path)).pack(side="left", padx=(4, 0))
-        calibration = ttk.Frame(panel); calibration.pack(fill="x", pady=(8, 0))
-        ttk.Label(calibration, text="驗證 HID：每步延遲(s)").pack(side="left")
-        ttk.Entry(calibration, textvariable=self.hid_delay, width=6).pack(side="left", padx=(4, 10))
-        ttk.Label(calibration, text="X 比例").pack(side="left")
-        ttk.Entry(calibration, textvariable=self.hid_scale_x, width=6).pack(side="left", padx=4)
-        ttk.Label(calibration, text="Y 比例").pack(side="left")
-        ttk.Entry(calibration, textvariable=self.hid_scale_y, width=6).pack(side="left", padx=4)
-        ttk.Checkbutton(calibration, text="自動比例", variable=self.auto_scale).pack(side="left", padx=(4, 8))
-        ttk.Label(calibration, text="X／Y 偏移").pack(side="left", padx=(8, 0))
-        ttk.Entry(calibration, textvariable=self.hid_offset_x, width=6).pack(side="left", padx=4)
-        ttk.Entry(calibration, textvariable=self.hid_offset_y, width=6).pack(side="left", padx=4)
-        ttk.Button(calibration, text="查看匹配疊圖", command=self.show_match_overlay).pack(side="right")
-        absolute = ttk.Frame(panel); absolute.pack(fill="x", pady=(4, 0))
-        ttk.Label(absolute, text="HID 模式：").pack(side="left")
-        ttk.Combobox(absolute, textvariable=self.hid_mode, values=("relative", "absolute"), width=10,
-                     state="readonly").pack(side="left")
-        ttk.Label(absolute, text="  absolute 虛擬桌面寬 × 高（邏輯點）：").pack(side="left")
-        ttk.Entry(absolute, textvariable=self.absolute_width, width=7).pack(side="left", padx=(4, 0))
-        ttk.Label(absolute, text="×").pack(side="left", padx=2)
-        ttk.Entry(absolute, textvariable=self.absolute_height, width=7).pack(side="left")
-        ttk.Label(absolute, text="  例：單一 Retina 1440×900", foreground="#555").pack(side="left", padx=8)
+        hid = ttk.Frame(panel); hid.pack(fill="x", pady=(8, 0))
+        ttk.Button(hid, text="設定 HID", command=self.open_hid_settings).pack(side="left")
+        ttk.Label(hid, text="設定滑鼠模式、比例、偏移與每步延遲", foreground="#555").pack(side="left", padx=8)
+        ttk.Button(hid, text="查看匹配疊圖", command=self.show_match_overlay).pack(side="right")
         profile = ttk.Frame(panel); profile.pack(fill="x", pady=(8, 0))
         ttk.Label(profile, text="DFU 畫面設定：").pack(side="left")
         ttk.Combobox(profile, textvariable=self.dfu_profile, width=30, state="readonly",
@@ -1203,7 +1210,6 @@ class AtlasAgentApp:
         self.sn_display = ttk.Label(panel, text="尚無測試中的 SN", anchor="w"); self.sn_display.pack(fill="x")
         ip = ttk.LabelFrame(panel, text="Arduino 網路設定", padding=8); ip.pack(fill="x", pady=10)
         ttk.Label(ip, textvariable=self.ip_text).pack(side="left", fill="x", expand=True)
-        ttk.Button(ip, text="查詢 IP", command=lambda: self.safe_send("GET_IP")).pack(side="left")
         ttk.Button(ip, text="修改 IP", command=self.change_ip).pack(side="left", padx=(5, 0))
         ttk.Label(panel, text="即時 device.log / 通訊紀錄：").pack(anchor="w")
         self.output = tk.Text(panel, height=22, wrap="word", state="disabled")
@@ -1219,22 +1225,80 @@ class AtlasAgentApp:
         if selected: variable.set(selected)
 
     def hid_settings(self) -> tuple[float, float, float, float, float, str, int, int]:
+        return self.parse_hid_settings_values(self.hid_delay.get(), self.hid_scale_x.get(), self.hid_scale_y.get(),
+                                              self.hid_offset_x.get(), self.hid_offset_y.get(), self.hid_mode.get(),
+                                              self.absolute_width.get(), self.absolute_height.get())
+
+    @staticmethod
+    def parse_hid_settings_values(delay_text: str, scale_x_text: str, scale_y_text: str,
+                                  offset_x_text: str, offset_y_text: str, mode: str,
+                                  absolute_width_text: str, absolute_height_text: str) -> tuple[float, float, float, float, float, str, int, int]:
         try:
-            delay = float(self.hid_delay.get())
-            scale_x, scale_y = float(self.hid_scale_x.get()), float(self.hid_scale_y.get())
-            offset_x, offset_y = float(self.hid_offset_x.get()), float(self.hid_offset_y.get())
-            absolute_width, absolute_height = int(self.absolute_width.get()), int(self.absolute_height.get())
+            delay = float(delay_text)
+            scale_x, scale_y = float(scale_x_text), float(scale_y_text)
+            offset_x, offset_y = float(offset_x_text), float(offset_y_text)
+            absolute_width, absolute_height = int(absolute_width_text), int(absolute_height_text)
         except ValueError as exc:
             raise AgentError("HID 延遲、比例與偏移必須是數字") from exc
         if delay < 0:
             raise AgentError("HID 每步延遲不可小於 0")
         hid_coordinate((0, 0), scale_x, scale_y, offset_x, offset_y)
-        mode = self.hid_mode.get()
         if mode not in ("relative", "absolute"):
             raise AgentError("HID 模式必須是 relative 或 absolute")
         if mode == "absolute":
             absolute_hid_report_coordinate((0, 0), absolute_width, absolute_height)
         return delay, scale_x, scale_y, offset_x, offset_y, mode, absolute_width, absolute_height
+
+    def open_hid_settings(self) -> None:
+        """Keep advanced HID calibration out of the compact main HMI."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("HID 設定")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Arduino HID 控制設定", font=("TkDefaultFont", 14, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text="這些值只影響 Arduino 的滑鼠 HID 指令，不會使用 macOS 軟體鍵盤／滑鼠控制。", foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        delay = tk.StringVar(value=self.hid_delay.get())
+        scale_x, scale_y = tk.StringVar(value=self.hid_scale_x.get()), tk.StringVar(value=self.hid_scale_y.get())
+        offset_x, offset_y = tk.StringVar(value=self.hid_offset_x.get()), tk.StringVar(value=self.hid_offset_y.get())
+        mode = tk.StringVar(value=self.hid_mode.get())
+        absolute_width, absolute_height = tk.StringVar(value=self.absolute_width.get()), tk.StringVar(value=self.absolute_height.get())
+        auto_scale = tk.BooleanVar(value=self.auto_scale.get())
+
+        ttk.Label(frame, text="每步延遲（秒）：").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=delay, width=10).grid(row=2, column=1, sticky="w")
+        ttk.Checkbutton(frame, text="依截圖／顯示器自動計算比例", variable=auto_scale).grid(row=2, column=2, columnspan=2, sticky="w", padx=(16, 0))
+        ttk.Label(frame, text="X / Y 比例：").grid(row=3, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=scale_x, width=10).grid(row=3, column=1, sticky="w")
+        ttk.Entry(frame, textvariable=scale_y, width=10).grid(row=3, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(frame, text="X / Y 偏移：").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=offset_x, width=10).grid(row=4, column=1, sticky="w")
+        ttk.Entry(frame, textvariable=offset_y, width=10).grid(row=4, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(frame, text="HID 模式：").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Combobox(frame, textvariable=mode, values=("relative", "absolute"), width=12, state="readonly").grid(row=5, column=1, sticky="w")
+        ttk.Label(frame, text="absolute 虛擬桌面（邏輯點）：").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=absolute_width, width=10).grid(row=6, column=1, sticky="w")
+        ttk.Label(frame, text="×").grid(row=6, column=2, sticky="w", padx=(8, 2))
+        ttk.Entry(frame, textvariable=absolute_height, width=10).grid(row=6, column=3, sticky="w")
+        ttk.Label(frame, text="例：單一 Retina 顯示器為 1440 × 900", foreground="#555").grid(row=7, column=0, columnspan=4, sticky="w", pady=(3, 0))
+
+        def save() -> None:
+            try:
+                self.parse_hid_settings_values(delay.get(), scale_x.get(), scale_y.get(), offset_x.get(), offset_y.get(),
+                                               mode.get(), absolute_width.get(), absolute_height.get())
+            except AgentError as exc:
+                messagebox.showerror(TITLE, str(exc), parent=dialog); return
+            self.hid_delay.set(delay.get()); self.hid_scale_x.set(scale_x.get()); self.hid_scale_y.set(scale_y.get())
+            self.hid_offset_x.set(offset_x.get()); self.hid_offset_y.set(offset_y.get()); self.hid_mode.set(mode.get())
+            self.absolute_width.set(absolute_width.get()); self.absolute_height.set(absolute_height.get())
+            self.auto_scale.set(auto_scale.get())
+            dialog.destroy()
+
+        buttons = ttk.Frame(frame); buttons.grid(row=8, column=0, columnspan=4, sticky="e", pady=(14, 0))
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="套用", command=save).pack(side="right", padx=(0, 6))
+        dialog.grab_set()
 
     def show_match_overlay(self) -> None:
         if not self.overlay_path.is_file():
@@ -1298,7 +1362,10 @@ class AtlasAgentApp:
 
     def connect(self) -> None:
         try:
-            self.link.connect(self.port.get().strip()); self.append("USB CDC 已連線")
+            self.link.connect(self.port.get().strip())
+            self.append("USB CDC 已連線；自動查詢 Arduino IP")
+            self.ip_text.set("IP：查詢中…")
+            self.safe_send("GET_IP")
         except (AgentError, OSError) as exc: messagebox.showerror(TITLE, str(exc))
 
     def safe_send(self, command: str) -> None:
@@ -1656,7 +1723,10 @@ class AtlasAgentApp:
                         try:
                             self.start_batch(payload)
                         except Exception as exc: self.append("ERR: 無法啟動批次：" + str(exc))
-                    elif line.startswith("IP:") or "IP=" in line: self.ip_text.set(line)
+                    else:
+                        ip = arduino_ip_reply(line)
+                        if ip:
+                            self.ip_text.set("IP:" + ip)
                 elif kind == "log": self.append(str(item))
                 elif kind == "auto_scale":
                     scale_x, scale_y = item

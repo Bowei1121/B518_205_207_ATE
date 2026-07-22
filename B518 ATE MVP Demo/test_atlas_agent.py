@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -38,6 +38,12 @@ class AtlasAgentTests(unittest.TestCase):
         link.connection = FakeSerial()
         link.send("RESULT:SN001,PASS,ok\n")
         self.assertEqual(link.connection.written, b"RESULT:SN001,PASS,ok\r\n")
+
+    def test_arduino_network_replies_update_the_same_ip_display(self):
+        self.assertEqual(arduino_ip_reply("IP:192.168.1.100"), "192.168.1.100")
+        self.assertEqual(arduino_ip_reply("OK:NET_SET:192.168.1.101"), "192.168.1.101")
+        self.assertEqual(arduino_ip_reply("EVT: IP=192.168.1.102"), "192.168.1.102")
+        self.assertIsNone(arduino_ip_reply("OK:NET_SET:999.1.1.1"))
 
     def test_dfu_each_sn_returns_to_origin_before_input_and_ok(self):
         self.assertEqual(
@@ -128,9 +134,9 @@ class AtlasAgentTests(unittest.TestCase):
 
     def test_bt_ocr_sn_text_is_matched_to_the_corresponding_status_row(self):
         rows = [BtStatusRow("TESTING", (800, 100 + index * 60, 120, 30)) for index in range(4)]
-        text = [OcrText(f" bt-demo-00{index + 1} ", (550, 102 + index * 60, 150, 26)) for index in range(4)]
-        self.assertEqual(pair_bt_sn_text(rows, text), ["BT-DEMO-001", "BT-DEMO-002", "BT-DEMO-003", "BT-DEMO-004"])
-        self.assertEqual(normalize_ocr_sn(" sn 001 "), "SN001")
+        text = [OcrText(f" bt-abcd-00{index + 1} ", (550, 102 + index * 60, 150, 26)) for index in range(4)]
+        self.assertEqual(pair_bt_sn_text(rows, text), ["BT-ABCD-001", "BT-ABCD-002", "BT-ABCD-003", "BT-ABCD-004"])
+        self.assertEqual(normalize_ocr_sn(" sn O01 "), "SN001")
 
     def test_vision_ocr_rectangle_accepts_legacy_and_current_pyobjc_shapes(self):
         self.assertEqual(vision_rectangle_components((.1, .2, .3, .4)), (.1, .2, .3, .4))
