@@ -213,6 +213,40 @@ strong { color: #183b4b; }
 }
 .step h3 { margin: 0 0 8px; }
 
+.manual-figure {
+  overflow: hidden;
+  margin: 18px 0 22px;
+  border: 1px solid #c8d4d9;
+  border-radius: 12px;
+  background: #eef2f3;
+  box-shadow: 0 8px 22px rgba(19, 48, 62, .09);
+}
+.manual-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #dfe6e9;
+}
+.manual-figure.is-compact img {
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+}
+.manual-figure figcaption {
+  padding: 11px 14px;
+  border-top: 1px solid #c8d4d9;
+  color: #4d6069;
+  background: #f8fafb;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.figure-label {
+  display: inline-block;
+  margin-right: 7px;
+  color: var(--navy);
+  font-weight: 900;
+}
+
 .callout {
   margin: 18px 0;
   padding: 15px 17px;
@@ -399,6 +433,7 @@ pre code { padding: 0; color: inherit; background: transparent; font-size: inher
   .hero p, .eyebrow, .pill { color: #333; }
   .page-shell { display: block; width: 100%; margin: 18px 0; }
   section { box-shadow: none; break-inside: avoid; margin: 0 0 16px; padding: 18px; }
+  .manual-figure { box-shadow: none; break-inside: avoid; }
   a { color: #000; text-decoration: none; }
   pre { color: #000; background: #f2f2f2; border: 1px solid #ccc; }
 }

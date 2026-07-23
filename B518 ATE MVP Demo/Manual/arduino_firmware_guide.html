@@ -95,29 +95,56 @@
           <div class="step">
             <h3>開啟 Boards Manager</h3>
             <p>點左側「Boards Manager」圖示，或選單 <strong>Tools → Board → Boards Manager…</strong>。</p>
+            <figure class="manual-figure">
+              <img src="assets/arduino/02-uno-r4-board-package.png" width="1286" height="723" loading="lazy" alt="Arduino IDE Boards Manager 顯示已安裝 Arduino UNO R4 Boards">
+              <figcaption><span class="figure-label">圖 3-1</span>在 Boards Manager 確認 Arduino 官方的 <strong>Arduino UNO R4 Boards</strong> 已安裝。</figcaption>
+            </figure>
           </div>
           <div class="step">
             <h3>安裝 UNO R4 board package</h3>
             <p>搜尋 <code>UNO R4</code>，找到 Arduino 官方的 <strong>Arduino UNO R4 Boards</strong> 並按 Install。部分較舊介面可能顯示平台家族名稱 <strong>Arduino Renesas UNO</strong>。</p>
           </div>
           <div class="step">
+            <h3>從 Tools 選單找到目標板型</h3>
+            <p>開啟 <strong>Tools → Board → Arduino UNO R4 Boards</strong>，清單中可以找到 <strong>Arduino UNO R4 Minima</strong> 與 <strong>Arduino UNO R4 WiFi</strong>。請依實際硬體型號選擇；本專案目前 B518 Demo 與下方實機截圖使用的是 <strong>UNO R4 WiFi</strong>。</p>
+            <figure class="manual-figure is-compact">
+              <img src="assets/arduino/01-tools-board-menu.png" width="676" height="356" loading="lazy" alt="Arduino IDE Tools 選單展開 Arduino UNO R4 Boards 並顯示 Minima 與 WiFi 板型">
+              <figcaption><span class="figure-label">圖 3-2</span>Tools 選單中的 UNO R4 板型清單；畫面勾選的是 WiFi，Minima 位於同一清單。</figcaption>
+            </figure>
+          </div>
+          <div class="step">
             <h3>確認 Ethernet 函式庫</h3>
             <p>開啟 Library Manager，搜尋 <strong>Ethernet</strong>，確認已安裝 Arduino 官方 Ethernet library。<code>SPI</code>、<code>EEPROM</code>、<code>Keyboard</code>、<code>Mouse</code> 與 <code>HID</code> 由板卡核心提供。</p>
           </div>
         </div>
-        <div class="callout warning"><span class="callout-title">不要選錯板卡</span>UNO R4 WiFi 不是舊款 Arduino Uno（AVR），也不是 UNO WiFi Rev2。板卡選錯時可能編譯失敗或 HID 功能不相容。</div>
+        <div class="callout warning"><span class="callout-title">不要選錯板卡</span>UNO R4 Minima、UNO R4 WiFi、舊款 Arduino Uno（AVR）與 UNO WiFi Rev2 是不同目標。選錯時可能編譯失敗、無法燒錄或 HID 功能不相容；請以開發板絲印型號為準。</div>
       </section>
 
       <section id="open-project">
         <h2>4. 載入本專案 Arduino 程式</h2>
         <div class="steps">
-          <div class="step"><h3>開啟 sketch</h3><p>選擇 <strong>File → Open…</strong>，開啟：</p><pre><code>B518 ATE MVP Demo/B518_Arduino_MVP_Test/B518_Arduino_MVP_Test.ino</code></pre></div>
+          <div class="step">
+            <h3>從 File 選單開啟 sketch</h3>
+            <p>選擇 <strong>File → Open…</strong>，再開啟：</p>
+            <pre><code>B518 ATE MVP Demo/B518_Arduino_MVP_Test/B518_Arduino_MVP_Test.ino</code></pre>
+            <figure class="manual-figure is-compact">
+              <img src="assets/arduino/03-file-open-menu.png" width="376" height="236" loading="lazy" alt="Arduino IDE File 選單中的開啟命令">
+              <figcaption><span class="figure-label">圖 4-1</span>使用 File（檔案）→ Open…（開啟…）選取本專案的 <code>.ino</code> 韌體檔。</figcaption>
+            </figure>
+          </div>
           <div class="step"><h3>確認網路參數</h3><p>程式最上方預設如下。量產板可先保留預設 IP，燒錄後再由 Atlas Agent 的「修改 IP」設定唯一位址。</p><pre><code>DEFAULT_IP       = 192.168.1.100
 TCP_LISTEN_PORT  = 5000
 W5100_CS_PIN     = 10
 SD_CS_PIN        = 4</code></pre></div>
           <div class="step"><h3>接上硬體</h3><p>將 W5100 Shield 正確疊接在 UNO R4 WiFi，USB-C 接到燒錄電腦。初次配置多片 Arduino 時，先不要把所有預設 IP 相同的板子一起接到 switch。</p></div>
-          <div class="step"><h3>選擇 Board 與 Port</h3><p>點 IDE 上方 Board Selector，選擇 <strong>Arduino UNO R4 WiFi</strong>，再選擇新出現的 USB port。無法分辨時，拔掉 USB 觀察哪個 port 消失，再重新插入。</p></div>
+          <div class="step">
+            <h3>選擇 Board 與 Port</h3>
+            <p>點 IDE 上方 Board Selector，選擇與實際硬體相同的 <strong>Arduino UNO R4 WiFi</strong> 或 <strong>Arduino UNO R4 Minima</strong>，再選擇新出現的 USB port。無法分辨時，拔掉 USB 觀察哪個 port 消失，再重新插入。</p>
+            <figure class="manual-figure">
+              <img src="assets/arduino/04-board-port-selector.png" width="1285" height="723" loading="lazy" alt="Arduino IDE Board Selector 顯示 Arduino UNO R4 WiFi 與 USB port">
+              <figcaption><span class="figure-label">圖 4-2</span>Board Selector 必須同時對應正確板型與 USB port。圖中範例為 UNO R4 WiFi、<code>/dev/cu.usbmodem14201</code>。</figcaption>
+            </figure>
+          </div>
         </div>
       </section>
 
@@ -128,6 +155,10 @@ SD_CS_PIN        = 4</code></pre></div>
           <li>等待下方 Output 完成編譯。</li>
           <li>看到類似 <code>Sketch uses ... bytes</code>，且沒有紅色 error，即代表編譯成功。</li>
         </ol>
+        <figure class="manual-figure">
+          <img src="assets/arduino/05-verify-compile.png" width="1295" height="734" loading="lazy" alt="Arduino IDE 左上角 Verify 編譯按鈕及成功顯示記憶體用量的 Output">
+          <figcaption><span class="figure-label">圖 5-1</span>先按左上角圓形勾選符號 Verify（編譯）。下方 Output 顯示程式與記憶體用量且沒有紅色錯誤，代表編譯通過。</figcaption>
+        </figure>
         <div class="callout success"><span class="callout-title">成功判定</span>Output 沒有 <code>Compilation error</code>，並顯示程式與記憶體使用量。</div>
       </section>
 
@@ -135,8 +166,23 @@ SD_CS_PIN        = 4</code></pre></div>
         <h2>6. 燒錄程式</h2>
         <div class="steps">
           <div class="step"><h3>關閉占用 serial port 的程式</h3><p>關閉 Atlas Agent、Serial Monitor 與其他序列工具，避免 USB CDC port 被占用。</p></div>
-          <div class="step"><h3>按 Upload →</h3><p>確認 Board 和 Port 正確後，按 IDE 左上角 Upload 箭頭。IDE 會先編譯，再寫入 UNO R4 WiFi。</p></div>
-          <div class="step"><h3>等待完成</h3><p>燒錄期間不要拔 USB。看到 <strong>Done uploading</strong> 後才算完成。</p></div>
+          <div class="step"><h3>按 Upload →</h3><p>確認 Board 和 Port 正確後，按 IDE 左上角、Verify 右側的 <strong>Upload 右箭頭</strong>。IDE 會先編譯，再寫入 UNO R4。</p></div>
+          <div class="step">
+            <h3>燒錄失敗時重新選擇 Board／Port</h3>
+            <p>若 Output 顯示 <code>No device found on ...</code> 或 <code>Upload error: exit status 1</code>，常見原因是重新插拔 USB 後 COM／USB port 已變更。回到上一節的 Board Selector，重新選擇目前出現的 UNO R4 與新 port，再按 Upload。</p>
+            <figure class="manual-figure">
+              <img src="assets/arduino/06-upload-failed-port.png" width="1283" height="726" loading="lazy" alt="Arduino IDE 顯示 No device found 與 Upload error exit status 1 的燒錄失敗畫面">
+              <figcaption><span class="figure-label">圖 6-1</span>典型的 port 失效畫面。畫面底部雖仍顯示舊 port，但裝置已不存在，必須重新選擇開發板與目前 USB port。</figcaption>
+            </figure>
+          </div>
+          <div class="step">
+            <h3>等待燒錄完成</h3>
+            <p>燒錄期間不要拔 USB。Output 會顯示 erase、write 與進度；進度到 100%，且沒有紅色錯誤或失敗通知，才算燒錄成功。</p>
+            <figure class="manual-figure">
+              <img src="assets/arduino/07-upload-success.png" width="1284" height="901" loading="lazy" alt="Arduino IDE Output 顯示程式寫入 flash 進度達到百分之百的成功燒錄畫面">
+              <figcaption><span class="figure-label">圖 6-2</span>成功燒錄畫面：Output 顯示 Write to flash，進度完成至 100%，且右下角仍能看到正確的 UNO R4 與 USB port。</figcaption>
+            </figure>
+          </div>
           <div class="step"><h3>關閉 Serial Monitor</h3><p>若要改用 Atlas Agent，務必先關閉 Arduino IDE 的 Serial Monitor，否則 Agent 可能無法連線相同 USB CDC。</p></div>
         </div>
       </section>
@@ -167,6 +213,7 @@ RX: IP:192.168.1.100</code></pre>
               <tr><td>找不到 UNO R4 WiFi</td><td>板卡套件未安裝或 USB 線只能充電</td><td>安裝 Arduino UNO R4 Boards；更換確認可傳資料的 USB-C 線。</td></tr>
               <tr><td><code>Ethernet.h: No such file</code></td><td>Ethernet library 未安裝</td><td>Library Manager 搜尋 Ethernet，安裝 Arduino 官方版本。</td></tr>
               <tr><td>Upload port busy／無法開啟 port</td><td>Agent 或 Serial Monitor 正占用 CDC</td><td>關閉其他程式與 Serial Monitor，再重新選 Port。</td></tr>
+              <tr><td><code>No device found on ...</code>／<code>exit status 1</code></td><td>USB 重新插拔後 COM／USB port 已改變，IDE 仍保留舊 port</td><td>重新開啟 Board Selector，選擇目前的 UNO R4 與新 port，再按 Upload。</td></tr>
               <tr><td>燒錄卡住或板子無法辨識</td><td>原 sketch 影響 USB 或 bootloader 未進入</td><td>快速按兩下 RST 進 bootloader，再選擇新出現的 port 重燒。</td></tr>
               <tr><td>Agent 連線但沒有 IP</td><td>選錯 USB port、舊韌體或序列埠被占用</td><td>重新掃描；確認燒錄的是整合韌體；關閉 IDE Serial Monitor。</td></tr>
               <tr><td>Ethernet 無法連線</td><td>IP 網段錯誤、IP 衝突或 W5100 接線／CS 錯誤</td><td>確認 PC 同網段、每板 IP 唯一、CS=D10、SD CS=D4 被停用。</td></tr>

@@ -6,3 +6,4 @@ dist/
 *.zip
 *.jpg
 *.png
+!B518 ATE MVP Demo/Manual/assets/arduino/*.png
