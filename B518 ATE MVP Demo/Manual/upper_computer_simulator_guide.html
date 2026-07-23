@@ -16,7 +16,7 @@
       <p class="eyebrow">Windows Host Simulator</p>
       <h1>B518 ATE<br>上位機模擬器使用說明</h1>
       <p>模擬未來產線上位機：透過 TCP 連線 Arduino，選擇 DFU／FCT／BT，依實際 slot 輸入條碼並等待 ACK 與 RESULT。</p>
-      <div class="hero-meta"><span class="pill">程式：upper_computer_simulator.py</span><span class="pill">Windows TCP client</span><span class="pill">預設 192.168.1.100:5000</span></div>
+      <div class="hero-meta"><span class="pill">目前程式版本：V0.1.5</span><span class="pill">程式：upper_computer_simulator.py</span><span class="pill">Windows TCP client</span><span class="pill">預設 192.168.1.100:5000</span></div>
     </div>
   </div>
 
@@ -63,19 +63,33 @@
 
       <section id="connect">
         <h2>3. 與 Arduino 建立 TCP 連線</h2>
-        <div class="ui-map" aria-label="上位機模擬器介面示意">
-          <div class="ui-titlebar">B518 ATE 上位機模擬器 V0.1.5</div>
-          <div class="ui-body">
-            <div class="ui-row"><span class="ui-label">Arduino TCP 連線</span><span class="ui-field">IP: 192.168.1.100　Port: 5000</span><span class="ui-button">連線　中斷</span></div>
-            <div class="ui-row"><span class="ui-label">工站／JOB ID</span><span class="ui-field">BT　20260723-001</span><span class="ui-button">產生新 JOB</span></div>
-            <div class="ui-row"><span class="ui-label">測試條碼</span><span class="ui-field">Slot 1　SN001　　Slot 3　SN003　　Slot 4　SN004</span><span class="ui-button">發送測試條碼</span></div>
-            <div class="ui-log">TCP 已連線：192.168.1.100:5000<br>TX: BT:JOB=20260723-001;1=SN001,3=SN003,4=SN004 [CRLF]</div>
-          </div>
+        <p class="lead">上位機是 TCP client，Arduino W5100 是 TCP server。連線後保持同一條 TCP 連線等待 ACK 與 RESULT，不需要另外開一個接收程式。</p>
+        <figure class="manual-figure">
+          <img src="assets/upper_computer/01-main-hmi.png" width="1524" height="1224" loading="lazy" alt="B518 ATE 上位機模擬器完整主畫面，顯示 TCP 連線、FCT 工站、稀疏 slot、結果與通訊紀錄">
+          <figcaption><span class="figure-label">圖 3-1</span>上位機主畫面範例：FCT 的 slot1、2、4 已完成並顯示 PASS，slot3 留白且結果維持「—」。截圖版本為 V0.1.2；目前專案為 V0.1.5，主要欄位與操作流程相同。</figcaption>
+        </figure>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>畫面區域／按鍵</th><th>功能</th><th>FAE 操作重點</th></tr></thead>
+            <tbody>
+              <tr><td><strong>IP／Port</strong></td><td>指定要連線的 Arduino TCP server</td><td>IP 是 Arduino，不是 Mac mini；Port 預設 5000。</td></tr>
+              <tr><td><strong>連線</strong></td><td>建立 TCP socket 並啟動背景接收</td><td>狀態與 Log 都顯示已連線後才能發送。</td></tr>
+              <tr><td><strong>中斷</strong></td><td>主動關閉目前 TCP 連線</td><td>測試進行中不要按；應等待 RESULT 或 TIMEOUT。</td></tr>
+              <tr><td><strong>工站</strong></td><td>選擇 DFU、FCT 或 BT 命令格式</td><td>必須和目標 Mac mini Agent 的工站相同。</td></tr>
+              <tr><td><strong>JOB ID</strong>／產生新 JOB</td><td>識別本次工作循環；按鍵依時間建立唯一值</td><td>每盤使用新 JOB，送出後到 RESULT 前不要更改。</td></tr>
+              <tr><td><strong>Slot 1～4 SN 條碼</strong></td><td>把物料 SN 綁定到實際載具位置</td><td>空 slot 留白，不可把後方 SN 往前補位。</td></tr>
+              <tr><td><strong>測試結果</strong></td><td>顯示 WAIT ACK、TESTING、PASS、FAIL、TIMEOUT 或 UNKNOWN</td><td>「—」表示該 slot 未送出或尚未指定。</td></tr>
+              <tr><td><strong>發送測試條碼</strong></td><td>組成 JOB 訊框並自動加上 CRLF</td><td>至少填 1 個、最多 4 個不重複 SN。</td></tr>
+              <tr><td><strong>清除</strong></td><td>清空四個 SN 與結果欄</td><td>不會換 JOB、不會清除 Log，也不會中斷 TCP。</td></tr>
+              <tr><td><strong>TCP 通訊紀錄</strong></td><td>依序顯示連線、TX、ACK、RESULT 與錯誤</td><td>異常時保存完整紀錄，不要只截最後一行。</td></tr>
+            </tbody>
+          </table>
         </div>
         <div class="steps">
           <div class="step"><h3>輸入 IP</h3><p>填入這一台測試設備 Arduino 的 IP，例如 <code>192.168.1.104</code>。不要填 Mac mini IP。</p></div>
           <div class="step"><h3>確認 Port</h3><p>預設 <code>5000</code>。除非 Arduino 韌體已修改，否則不要更動。</p></div>
-          <div class="step"><h3>按「連線」</h3><p>狀態應顯示 <strong>已連線：IP:5000</strong>，下方 Log 顯示 TCP 已連線。</p></div>
+          <div class="step"><h3>按「連線」</h3><p>狀態應顯示 <strong>已連線：IP:5000</strong>，下方 Log 顯示 <code>TCP 已連線：IP:5000</code>。兩處都正確才繼續。</p></div>
+          <div class="step"><h3>測試期間保持連線</h3><p>送出 JOB 後，接收執行緒會在同一 socket 等待回覆。收到整批 RESULT 前不要按「中斷」、關閉程式或拔除網路線。</p></div>
         </div>
         <p>IP、Port 與上次選擇的工站會儲存在：</p>
         <pre><code>%APPDATA%\B518UpperComputerSimulator\preferences.json</code></pre>
@@ -83,6 +97,10 @@
 
       <section id="station">
         <h2>4. 選擇設備與 JOB ID</h2>
+        <figure class="manual-figure">
+          <img src="assets/upper_computer/02-station-selector.png" width="1524" height="1224" loading="lazy" alt="B518 ATE 上位機模擬器展開工站下拉選單，顯示 DFU FCT 與 BT">
+          <figcaption><span class="figure-label">圖 4-1</span>工站下拉選單提供 DFU、FCT、BT。圖中選擇 FCT，送出的訊框與回覆都會帶有 <code>FCT:JOB=...</code>。</figcaption>
+        </figure>
         <div class="grid-3">
           <div class="card"><h3>DFU</h3><p>韌體更新站。Agent 會依指定 slot 操作 HMI 輸入 SN，完成後監控 Atlas CSV。</p></div>
           <div class="card"><h3>FCT</h3><p>功能測試站。全 slot 直接監控；稀疏 slot 會先同步測試 checkbox。</p></div>
@@ -95,6 +113,7 @@
           <li>只可使用英數字、點、底線、連字號，最多 64 字元。</li>
           <li>按發送後不要更改工站或 JOB ID，直到收到該 JOB 的 RESULT。</li>
         </ul>
+        <div class="callout danger"><span class="callout-title">兩端工站必須一致</span>上位機選 FCT 時，目標 Mac mini 的 Atlas Agent 也必須選 FCT。若一端選錯，Agent 會拒絕 JOB 並回覆 WRONG_STATION；修正後請產生新的 JOB ID 再發送。</div>
       </section>
 
       <section id="barcode">
@@ -104,6 +123,7 @@
           <div class="step"><h3>確認條碼格式</h3><p>每批 1～4 個 SN；不可重複、不可含空白，只可使用英數字、點、底線或連字號。</p></div>
           <div class="step"><h3>按「發送測試條碼」</h3><p>程式自動組成帶工站、JOB ID、slot 與 CRLF 結尾的完整訊框。</p></div>
           <div class="step"><h3>先等 ACK，再等 RESULT</h3><p>送出後對應 slot 顯示 WAIT ACK；收到 ACK 後變成 TESTING。保持 TCP 連線，不要先按中斷。</p></div>
+          <div class="step"><h3>本批結束後再清除</h3><p>確認所有已送 slot 都有最終結果後，按「清除」移除 SN 與結果，再按「產生新 JOB」準備下一盤。TCP 連線可繼續沿用。</p></div>
         </div>
         <h3>稀疏 slot 範例</h3>
         <p>只有 slot1、slot2、slot4 有物料時：</p>
@@ -118,6 +138,7 @@
         </table>
         <pre><code>DFU:JOB=20260723-001;1=SN001,2=SN002,4=SN004\r\n</code></pre>
         <div class="callout danger"><span class="callout-title">不要把 SN 往前補位</span>slot3 沒有物料時，SN004 必須填在 Slot 4 欄位，不能填到 Slot 3。Agent 會依 slot 控制設備 checkbox 與開始按鈕。</div>
+        <div class="callout"><span class="callout-title">畫面上的稀疏 slot</span>如圖 3-1，slot1、2、4 填入 FCTDEMO001、FCTDEMO002、FCTDEMO004，slot3 留白。送出內容只包含 <code>1=...</code>、<code>2=...</code>、<code>4=...</code>，slot3 結果維持「—」。</div>
       </section>
 
       <section id="result">
@@ -127,6 +148,7 @@
         <p>收到 ACK 後，有輸入 SN 的 slot 顯示 TESTING。ACK 不代表測試已完成。</p>
         <h3>RESULT：整批完成</h3>
         <pre><code>RESULT:BT:JOB=20260723-001;1=SN001,PASS;2=SN002,PASS;4=SN004,FAIL\r\n</code></pre>
+        <p>程式只會把「工站與 JOB ID 都等於目前畫面」的 RESULT 寫入結果欄；其他批次的 RESULT 會記錄為「忽略非當前 JOB」。每個結果仍會依 slot 寫回原位置，不會重新排序。</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>畫面狀態</th><th>意義</th><th>FAE 行動</th></tr></thead>
@@ -188,7 +210,7 @@
       </section>
     </main>
   </div>
-  <footer class="site-footer">B518-205/207 ATE MVP｜上位機模擬器操作手冊｜版次 1.0</footer>
+  <footer class="site-footer">B518-205/207 ATE MVP｜上位機模擬器操作手冊｜版次 1.1</footer>
   <script src="manual.js"></script>
 </body>
 </html>
