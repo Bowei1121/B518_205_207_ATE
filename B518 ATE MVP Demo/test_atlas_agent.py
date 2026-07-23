@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -173,6 +173,12 @@ class AtlasAgentTests(unittest.TestCase):
         text = [OcrText("slot1", (350, 102, 60, 26)), OcrText("BTDEMO001", (580, 102, 150, 26)),
                 OcrText("slot2", (350, 162, 60, 26)), OcrText("BTDEMO002", (580, 162, 150, 26))]
         self.assertEqual(pair_bt_sn_text(rows, text), ["BTDEM0001", "BTDEM0002"])
+
+    def test_bt_sn_cell_crop_is_left_of_its_status_cell_and_excludes_header(self):
+        # Retina screenshot geometry: STATUS is x=1064..1304 and the SN cell
+        # is its directly adjacent 360-pixel crop to the left.
+        self.assertEqual(bt_sn_cell_rectangle(BtStatusRow("PASS", (1064, 231, 240, 60)), 1668, 900),
+                         (704, 224, 360, 74))
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:

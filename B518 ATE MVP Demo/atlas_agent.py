@@ -674,7 +674,7 @@ def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]
     """Assign OCR SN text to each STATUS row, preferring the adjacent SN column."""
     candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in ocr_texts
                   if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))
-                  and not re.fullmatch(r"SLOT[1-4]", normalize_ocr_sn(item.text))]
+                  and not re.fullmatch(r"(?:SN|SLOT[1-4]|STATUS|PROGRESS)", normalize_ocr_sn(item.text))]
     machine_sns: list[str] = []
     for row in status_rows:
         status_x, status_y, status_width, status_height = row.rectangle
@@ -691,6 +691,51 @@ def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]
         machine_sns.append(max(nearby, key=lambda item: (item.rectangle[0] + item.rectangle[2] / 2,
                                                           -abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center))).text)
     return machine_sns
+
+
+def bt_sn_cell_rectangle(status_row: BtStatusRow, image_width: int, image_height: int) -> tuple[int, int, int, int]:
+    """Return the SN-cell crop immediately left of a BT STATUS cell.
+
+    The simulator and target B482 tables place SN directly to the left of
+    STATUS.  The crop is derived from the matched STATUS geometry, so it stays
+    correct if the browser moves or the screenshot is Retina-scaled.
+    """
+    status_x, status_y, status_width, status_height = status_row.rectangle
+    left = max(0, round(status_x - status_width * 1.5))
+    top = max(0, round(status_y - status_height * .12))
+    right = min(image_width, status_x)
+    bottom = min(image_height, round(status_y + status_height * 1.12))
+    if right <= left or bottom <= top:
+        raise AgentError("BT SN 儲存格裁切範圍無效")
+    return left, top, right - left, bottom - top
+
+
+def bt_sn_text_from_status_rows(image: Path, status_rows: list[BtStatusRow]) -> list[str]:
+    """OCR each individual SN cell instead of OCRing the whole BT table."""
+    if cv2 is None:
+        raise AgentError("BT SN OCR 需要 opencv-python")
+    pixels = cv2.imread(str(image))
+    if pixels is None:
+        raise AgentError(f"無法讀取 OCR 截圖：{image}")
+    height, width = pixels.shape[:2]
+    values: list[str] = []
+    for index, row in enumerate(status_rows, start=1):
+        left, top, crop_width, crop_height = bt_sn_cell_rectangle(row, width, height)
+        crop = pixels[top:top + crop_height, left:left + crop_width]
+        handle = tempfile.NamedTemporaryFile(prefix=f"atlas_bt_sn_slot{index}_", suffix=".png", delete=False)
+        handle.close(); crop_path = Path(handle.name)
+        try:
+            if not cv2.imwrite(str(crop_path), crop):
+                raise AgentError("無法建立 BT SN OCR 暫存影像")
+            candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in recognize_text_vision(crop_path)
+                          if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))
+                          and not re.fullmatch(r"(?:SN|SLOT[1-4]|STATUS|PROGRESS)", normalize_ocr_sn(item.text))]
+            # A crop can include the far right edge of SLOT; choose the
+            # rightmost valid text, which is the SN column value.
+            values.append(max(candidates, key=lambda item: item.rectangle[0] + item.rectangle[2] / 2).text if candidates else "")
+        finally:
+            crop_path.unlink(missing_ok=True)
+    return values
 
 
 def recognize_text_vision(image: Path) -> list[OcrText]:
@@ -950,7 +995,7 @@ class BtStatusMonitor(threading.Thread):
             self.on_log("BT：所有指定 slot 已開始，等待全部 TESTING 結束")
         if len(self.testing_seen) == len(self.sns) and self.machine_sns is None:
             try:
-                all_machine_sns = pair_bt_sn_text(status_rows, recognize_text_vision(selected))
+                all_machine_sns = bt_sn_text_from_status_rows(selected, status_rows)
                 self.machine_sns = [all_machine_sns[slot - 1] for slot in self.slots]
             except AgentError as exc:
                 self.machine_sns = ["" for _ in self.sns]
