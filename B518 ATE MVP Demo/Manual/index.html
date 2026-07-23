@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B518 ATE MVP 操作手冊</title>
+  <meta name="description" content="提供工廠 FAE 使用的 B518 Arduino、Atlas Agent 與上位機模擬器操作手冊。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">B518</span><span>ATE MVP｜FAE 操作手冊</span></div>
+    <div class="top-actions"><button class="print-button" onclick="window.print()">列印總目錄</button></div>
+  </header>
+
+  <div class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Factory Enablement Guide</p>
+      <h1>B518 ATE MVP<br>工廠操作手冊</h1>
+      <p>從 Arduino 韌體燒錄、Mac mini Agent 設定，到 Windows 上位機送出測試 JOB 的完整操作路徑。</p>
+      <div class="hero-meta">
+        <span class="pill">適用對象：工廠 FAE／設備工程師</span>
+        <span class="pill">文件版次：1.0</span>
+        <span class="pill">更新日期：2026-07-23</span>
+        <span class="pill">離線 HTML</span>
+      </div>
+    </div>
+  </div>
+
+  <main class="manual-cards" aria-label="手冊目錄">
+    <a class="manual-card" href="arduino_firmware_guide.html">
+      <span class="manual-icon">01</span>
+      <h2>Arduino 韌體燒錄</h2>
+      <p>安裝官方 Arduino IDE、安裝 UNO R4 board package、開啟本專案 sketch、編譯、燒錄與燒錄後確認。</p>
+      <span class="open">開啟手冊 →</span>
+    </a>
+    <a class="manual-card" href="atlas_agent_guide.html">
+      <span class="manual-icon">02</span>
+      <h2>Atlas Agent 操作</h2>
+      <p>選擇工站與 USB CDC、連線 Arduino、設定資料路徑、製作 OpenCV 模板，以及 DFU／FCT／BT 日常操作。</p>
+      <span class="open">開啟手冊 →</span>
+    </a>
+    <a class="manual-card" href="upper_computer_simulator_guide.html">
+      <span class="manual-icon">03</span>
+      <h2>上位機模擬器</h2>
+      <p>在 Windows 連線 Arduino TCP server、選擇設備工站、依 slot 輸入條碼、發送 JOB 並判讀 ACK／RESULT。</p>
+      <span class="open">開啟手冊 →</span>
+    </a>
+  </main>
+
+  <section style="width:min(1180px,calc(100% - 40px));margin:0 auto 40px">
+    <h2>整體資料流</h2>
+    <div class="grid-3">
+      <div class="card"><div class="card-number">1</div><h3>Windows 上位機</h3><p>透過 TCP 連線指定 Arduino IP:5000，送出帶 JOB ID 與 slot 的條碼訊框。</p></div>
+      <div class="card"><div class="card-number">2</div><h3>Arduino Bridge</h3><p>在 TCP 與 USB CDC 間透明轉送；同時依 Agent 指令執行螢幕截圖與 USB HID 鍵鼠動作。</p></div>
+      <div class="card"><div class="card-number">3</div><h3>Mac mini Agent</h3><p>接收 JOB、操作測試 HMI、監控 CSV 或 BT 畫面，最後回傳完整 RESULT。</p></div>
+    </div>
+    <div class="callout warning">
+      <span class="callout-title">正式測試前</span>
+      Arduino、Mac mini、Windows 上位機必須依本手冊順序完成；TCP JOB 一律以 CRLF 結尾。Arduino MVP 同時間只接受一個 TCP client。
+    </div>
+  </section>
+
+  <footer class="site-footer">B518-205/207 ATE MVP｜本文件可離線開啟並使用瀏覽器列印成 PDF</footer>
+</body>
+</html>

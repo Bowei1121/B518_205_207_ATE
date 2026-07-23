@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>上位機模擬器操作｜B518 ATE MVP</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">03</span><span>上位機模擬器操作</span></div>
+    <div class="top-actions"><a href="index.html">回總目錄</a><button class="print-button" onclick="window.print()">列印／另存 PDF</button></div>
+  </header>
+  <div class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Windows Host Simulator</p>
+      <h1>B518 ATE<br>上位機模擬器使用說明</h1>
+      <p>模擬未來產線上位機：透過 TCP 連線 Arduino，選擇 DFU／FCT／BT，依實際 slot 輸入條碼並等待 ACK 與 RESULT。</p>
+      <div class="hero-meta"><span class="pill">程式：upper_computer_simulator.py</span><span class="pill">Windows TCP client</span><span class="pill">預設 192.168.1.100:5000</span></div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <nav class="toc" aria-label="本頁目錄">
+      <strong>本頁目錄</strong>
+      <a href="#file-note">1. 程式檔案說明</a>
+      <a href="#prepare">2. 啟動前準備</a>
+      <a href="#connect">3. 連線 Arduino</a>
+      <a href="#station">4. 選擇設備與 JOB</a>
+      <a href="#barcode">5. 輸入與發送條碼</a>
+      <a href="#result">6. ACK／RESULT 判讀</a>
+      <a href="#examples">7. 工站範例</a>
+      <a href="#troubleshoot">8. 常見異常</a>
+      <a href="#handoff">9. 操作檢核</a>
+      <a class="back" href="index.html">← 回手冊總目錄</a>
+    </nav>
+
+    <main>
+      <section id="file-note">
+        <h2>1. 程式檔案說明</h2>
+        <div class="callout warning">
+          <span class="callout-title">操作程式與測試程式名稱不同</span>
+          FAE 日常操作請執行 <code>upper_computer_simulator.py</code> 或 Windows 打包後的 <code>B518 Upper Computer Simulator.exe</code>。<code>test_upper_computer_simulator.py</code> 是開發人員的自動化測試檔，不能拿來當上位機 HMI。
+        </div>
+        <div class="grid-2">
+          <div class="card"><h3>Python 原始程式</h3><pre><code>upper_computer_simulator.py</code></pre><p>開發或除錯使用，需要 Windows Python 環境。</p></div>
+          <div class="card"><h3>Windows 交付程式</h3><pre><code>dist\B518 Upper Computer Simulator\
+└── B518 Upper Computer Simulator.exe</code></pre><p>FAE 建議直接執行 EXE，不需要安裝 Python。</p></div>
+        </div>
+      </section>
+
+      <section id="prepare">
+        <h2>2. 啟動前準備</h2>
+        <ul class="checklist">
+          <li>Windows 電腦、Mac mini 與 Arduino W5100 位於同一網段。</li>
+          <li>已取得目標設備 Arduino 的唯一 IP，TCP port 預設為 5000。</li>
+          <li>Mac mini Atlas Agent 已透過 USB CDC 連線 Arduino。</li>
+          <li>Atlas Agent 所選工站與準備發送的 DFU／FCT／BT 一致。</li>
+          <li>沒有其他上位機正連線同一片 Arduino；MVP 同時只支援一個 TCP client。</li>
+        </ul>
+        <div class="callout"><span class="callout-title">多設備原則</span>一台上位機可同時對多台 Arduino 建立不同 TCP 連線；每台設備必須有唯一 IP。每個連線各自等待該設備的 ACK／RESULT。</div>
+      </section>
+
+      <section id="connect">
+        <h2>3. 與 Arduino 建立 TCP 連線</h2>
+        <div class="ui-map" aria-label="上位機模擬器介面示意">
+          <div class="ui-titlebar">B518 ATE 上位機模擬器 V0.1.5</div>
+          <div class="ui-body">
+            <div class="ui-row"><span class="ui-label">Arduino TCP 連線</span><span class="ui-field">IP: 192.168.1.100　Port: 5000</span><span class="ui-button">連線　中斷</span></div>
+            <div class="ui-row"><span class="ui-label">工站／JOB ID</span><span class="ui-field">BT　20260723-001</span><span class="ui-button">產生新 JOB</span></div>
+            <div class="ui-row"><span class="ui-label">測試條碼</span><span class="ui-field">Slot 1　SN001　　Slot 3　SN003　　Slot 4　SN004</span><span class="ui-button">發送測試條碼</span></div>
+            <div class="ui-log">TCP 已連線：192.168.1.100:5000<br>TX: BT:JOB=20260723-001;1=SN001,3=SN003,4=SN004 [CRLF]</div>
+          </div>
+        </div>
+        <div class="steps">
+          <div class="step"><h3>輸入 IP</h3><p>填入這一台測試設備 Arduino 的 IP，例如 <code>192.168.1.104</code>。不要填 Mac mini IP。</p></div>
+          <div class="step"><h3>確認 Port</h3><p>預設 <code>5000</code>。除非 Arduino 韌體已修改，否則不要更動。</p></div>
+          <div class="step"><h3>按「連線」</h3><p>狀態應顯示 <strong>已連線：IP:5000</strong>，下方 Log 顯示 TCP 已連線。</p></div>
+        </div>
+        <p>IP、Port 與上次選擇的工站會儲存在：</p>
+        <pre><code>%APPDATA%\B518UpperComputerSimulator\preferences.json</code></pre>
+      </section>
+
+      <section id="station">
+        <h2>4. 選擇設備與 JOB ID</h2>
+        <div class="grid-3">
+          <div class="card"><h3>DFU</h3><p>韌體更新站。Agent 會依指定 slot 操作 HMI 輸入 SN，完成後監控 Atlas CSV。</p></div>
+          <div class="card"><h3>FCT</h3><p>功能測試站。全 slot 直接監控；稀疏 slot 會先同步測試 checkbox。</p></div>
+          <div class="card"><h3>BT</h3><p>藍牙測試站。Agent 點 Start All 或指定 Start N，並分析 STATUS 與設備 SN。</p></div>
+        </div>
+        <h3>JOB ID 規則</h3>
+        <ul>
+          <li>每一個工作循環使用唯一 JOB ID，不要重複使用上一盤的 ID。</li>
+          <li>可按「產生新 JOB」，程式會以日期時間產生。</li>
+          <li>只可使用英數字、點、底線、連字號，最多 64 字元。</li>
+          <li>按發送後不要更改工站或 JOB ID，直到收到該 JOB 的 RESULT。</li>
+        </ul>
+      </section>
+
+      <section id="barcode">
+        <h2>5. 輸入與發送條碼</h2>
+        <div class="steps">
+          <div class="step"><h3>依實際載具 slot 填寫</h3><p>Slot 1～4 對應設備實際位置。沒有物料的 slot 留白，程式不會重新編號。</p></div>
+          <div class="step"><h3>確認條碼格式</h3><p>每批 1～4 個 SN；不可重複、不可含空白，只可使用英數字、點、底線或連字號。</p></div>
+          <div class="step"><h3>按「發送測試條碼」</h3><p>程式自動組成帶工站、JOB ID、slot 與 CRLF 結尾的完整訊框。</p></div>
+          <div class="step"><h3>先等 ACK，再等 RESULT</h3><p>送出後對應 slot 顯示 WAIT ACK；收到 ACK 後變成 TESTING。保持 TCP 連線，不要先按中斷。</p></div>
+        </div>
+        <h3>稀疏 slot 範例</h3>
+        <p>只有 slot1、slot2、slot4 有物料時：</p>
+        <table>
+          <thead><tr><th>Slot</th><th>輸入</th><th>是否送出</th></tr></thead>
+          <tbody>
+            <tr><td>Slot 1</td><td>SN001</td><td>是</td></tr>
+            <tr><td>Slot 2</td><td>SN002</td><td>是</td></tr>
+            <tr><td>Slot 3</td><td>留白</td><td>否</td></tr>
+            <tr><td>Slot 4</td><td>SN004</td><td>是</td></tr>
+          </tbody>
+        </table>
+        <pre><code>DFU:JOB=20260723-001;1=SN001,2=SN002,4=SN004\r\n</code></pre>
+        <div class="callout danger"><span class="callout-title">不要把 SN 往前補位</span>slot3 沒有物料時，SN004 必須填在 Slot 4 欄位，不能填到 Slot 3。Agent 會依 slot 控制設備 checkbox 與開始按鈕。</div>
+      </section>
+
+      <section id="result">
+        <h2>6. ACK 與 RESULT 判讀</h2>
+        <h3>ACK：已接單</h3>
+        <pre><code>ACK:BT:JOB=20260723-001\r\n</code></pre>
+        <p>收到 ACK 後，有輸入 SN 的 slot 顯示 TESTING。ACK 不代表測試已完成。</p>
+        <h3>RESULT：整批完成</h3>
+        <pre><code>RESULT:BT:JOB=20260723-001;1=SN001,PASS;2=SN002,PASS;4=SN004,FAIL\r\n</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>畫面狀態</th><th>意義</th><th>FAE 行動</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status wait">WAIT ACK</span></td><td>JOB 已送出，尚未收到 Agent 接單</td><td>檢查 TCP Log；短時間內不應重送同一 JOB。</td></tr>
+              <tr><td><span class="status wait">TESTING</span></td><td>Agent 已 ACK，測試進行中</td><td>保持連線，等待整批 RESULT。</td></tr>
+              <tr><td><span class="status pass">PASS</span></td><td>該 slot 測試通過</td><td>依產線流程放行。</td></tr>
+              <tr><td><span class="status fail">FAIL</span></td><td>該 slot 任一測項失敗</td><td>依不良品流程處理並保留 Log。</td></tr>
+              <tr><td><span class="status fail">TIMEOUT</span></td><td>設定時間內沒有結果</td><td>查設備、CSV 路徑與 SN，勿直接重複送相同 JOB。</td></tr>
+              <tr><td>UNKNOWN</td><td>收到的結果狀態無法歸類</td><td>保存完整 TCP 通訊紀錄，交由軟體人員分析。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warning"><span class="callout-title">SN 不符訊息</span>若 RESULT 內 SN 與輸入欄不同，程式會在 Log 提示。BT 可能經人工覆核後依設備實際 SN 回傳，FAE 必須核對物料與覆核紀錄。</div>
+      </section>
+
+      <section id="examples">
+        <h2>7. 三種工站發送範例</h2>
+        <h3>DFU：slot1、2、4</h3>
+        <pre><code>DFU:JOB=DFU-20260723-001;1=DFU001,2=DFU002,4=DFU004\r\n</code></pre>
+        <h3>FCT：slot1、4</h3>
+        <pre><code>FCT:JOB=FCT-20260723-001;1=FCT001,4=FCT004\r\n</code></pre>
+        <h3>BT：slot1、2、4</h3>
+        <pre><code>BT:JOB=BT-20260723-001;1=BT001,2=BT002,4=BT004\r\n</code></pre>
+        <p>程式已自動加入 CRLF；操作員不需在輸入框手動輸入 <code>\r\n</code>。</p>
+      </section>
+
+      <section id="troubleshoot">
+        <h2>8. 常見異常</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>現象</th><th>可能原因</th><th>處理方式</th></tr></thead>
+            <tbody>
+              <tr><td>無法連線 IP:5000</td><td>IP 錯、不同網段、Arduino 未上電、W5100 未接或已有 client</td><td>確認 ping／網段、Agent 顯示 IP、網路線；中斷其他上位機。</td></tr>
+              <tr><td>顯示「尚未連線 Arduino TCP server」</td><td>未按連線或連線已斷</td><td>先完成 TCP 連線，再發送 JOB。</td></tr>
+              <tr><td>WAIT ACK 一直不變</td><td>Mac Agent 未連 USB、工站不一致或 TCP/USB bridge 中斷</td><td>看 TCP Log 與 Agent Log；確認 Agent 工站和 JOB 工站相同。</td></tr>
+              <tr><td>收到 WRONG_STATION</td><td>上位機與 Agent 工站不同</td><td>修正其中一方的 DFU/FCT/BT 選擇後，用新 JOB ID 重送。</td></tr>
+              <tr><td>收到 BUSY</td><td>前一 JOB 尚未完成</td><td>等待前一 JOB 的 RESULT/TIMEOUT；不要中斷或覆蓋。</td></tr>
+              <tr><td>收到 BT_SN_MISMATCH</td><td>BT 設備 SN 與上位機不符且人工取消覆核</td><td>核對載具 slot、設備 SN 與上位機資料，再建立新 JOB。</td></tr>
+              <tr><td>RESULT 被忽略</td><td>RESULT 的工站或 JOB ID 不是目前畫面值</td><td>檢查是否在測試中更改 JOB ID／工站，並保存原始 Log。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="handoff">
+        <h2>9. FAE 操作檢核</h2>
+        <ul class="checklist">
+          <li>IP 是目標 Arduino，而不是 Mac mini IP；Port 為 5000。</li>
+          <li>連線狀態顯示已連線。</li>
+          <li>工站選擇與 Atlas Agent 一致。</li>
+          <li>JOB ID 為本批唯一新值。</li>
+          <li>SN 依實際 slot 輸入；空 slot 保持空白。</li>
+          <li>發送後 Log 顯示完整 JOB 與 [CRLF]。</li>
+          <li>收到相同工站與 JOB ID 的 ACK。</li>
+          <li>測試期間 TCP 保持連線，直到收到完整 RESULT。</li>
+          <li>每個已送 slot 都有 PASS、FAIL、TIMEOUT 或 UNKNOWN 結果。</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer class="site-footer">B518-205/207 ATE MVP｜上位機模擬器操作手冊｜版次 1.0</footer>
+  <script src="manual.js"></script>
+</body>
+</html>

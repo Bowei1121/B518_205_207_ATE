@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Agent 操作｜B518 ATE MVP</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">02</span><span>Atlas Agent 操作</span></div>
+    <div class="top-actions"><a href="index.html">回總目錄</a><button class="print-button" onclick="window.print()">列印／另存 PDF</button></div>
+  </header>
+  <div class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Mac mini Station Agent</p>
+      <h1>Atlas Agent B518 ATE.app<br>程式使用說明</h1>
+      <p>在受隱私權限制的 Mac mini 上，以 USB CDC 連線 Arduino，設定工站與資料路徑，建立影像模板並執行 DFU／FCT／BT 測試。</p>
+      <div class="hero-meta"><span class="pill">目前程式版本：V0.1.5</span><span class="pill">USB CDC：115200 baud</span><span class="pill">不使用 Accessibility／Screen Recording</span></div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <nav class="toc" aria-label="本頁目錄">
+      <strong>本頁目錄</strong>
+      <a href="#prepare">1. 啟動前準備</a>
+      <a href="#connect">2. 連線 Arduino</a>
+      <a href="#paths">3. 工站與路徑設定</a>
+      <a href="#templates">4. 製作影像模板</a>
+      <a href="#template-list">5. 各工站模板清單</a>
+      <a href="#operation">6. 測試操作</a>
+      <a href="#logs">7. 結果與 Log</a>
+      <a href="#troubleshoot">8. 常見異常</a>
+      <a href="#handoff">9. 每日開線檢核</a>
+      <a class="back" href="index.html">← 回手冊總目錄</a>
+    </nav>
+
+    <main>
+      <section id="prepare">
+        <h2>1. 啟動前準備</h2>
+        <ul class="checklist">
+          <li>Arduino 已燒錄 <code>B518_Arduino_MVP_Test.ino</code>。</li>
+          <li>Arduino USB 接到本台 Mac mini，W5100 接到產線 switch。</li>
+          <li>Arduino IDE Serial Monitor 已關閉。</li>
+          <li>測試機 HMI 完整放在單一螢幕，不跨越雙螢幕邊界。</li>
+          <li>DFU／FCT 的 CSV 根路徑可讀寫；BT 不使用 Atlas CSV。</li>
+          <li>螢幕截圖資料夾已建立，macOS 可在該處儲存 Command+Shift+3 截圖。</li>
+        </ul>
+        <div class="callout"><span class="callout-title">隱私權設計</span>Agent 不使用 macOS Accessibility、AppleScript 或軟體鍵鼠控制。螢幕截圖、鍵盤與滑鼠動作全部由 Arduino USB HID 執行。</div>
+      </section>
+
+      <section id="connect">
+        <h2>2. 與 Arduino 建立連線</h2>
+        <div class="ui-map" aria-label="Atlas Agent 主畫面示意">
+          <div class="ui-titlebar">Atlas Agent B518 ATE — V0.1.5</div>
+          <div class="ui-body">
+            <div class="ui-row"><span class="ui-label">工站／USB CDC</span><span class="ui-field">DFU　 /dev/cu.usbmodem14201</span><span class="ui-button">重新掃描　連線　中斷</span></div>
+            <div class="ui-row"><span class="ui-label">CSV 根路徑</span><span class="ui-field">/Users/.../AtlasCSV</span><span class="ui-button">選擇</span></div>
+            <div class="ui-row"><span class="ui-label">OpenCV 模板路徑</span><span class="ui-field">.../templates</span><span class="ui-button">製作模板</span></div>
+            <div class="ui-row"><span class="ui-label">螢幕截圖路徑</span><span class="ui-field">/Users/.../Desktop/ScreenShot</span><span class="ui-button">選擇</span></div>
+            <div class="ui-log">USB CDC 已連線；自動查詢 Arduino IP<br>TX: GET_IP<br>RX: IP:192.168.1.100</div>
+          </div>
+        </div>
+        <div class="steps">
+          <div class="step"><h3>選擇正確工站</h3><p>先在左上選擇本機實際用途：<strong>DFU、FCT 或 BT</strong>。收到不同工站的 JOB 時，Agent 會拒絕並回覆 WRONG_STATION。</p></div>
+          <div class="step"><h3>掃描 USB CDC</h3><p>按「重新掃描」，從下拉選單選擇 Arduino 的 <code>/dev/cu.usbmodem…</code>。若只有一台，程式通常會自動選取。</p></div>
+          <div class="step"><h3>按「連線」</h3><p>成功後 Agent 立即送出 <code>GET_IP</code>，Arduino 網路設定區應顯示實際 IP。</p></div>
+          <div class="step"><h3>確認通訊 Log</h3><p>至少要看到 <code>USB CDC 已連線</code>、<code>TX: GET_IP</code> 與 <code>RX: IP:...</code>。缺少其中一項都不要開始量產測試。</p></div>
+        </div>
+        <div class="callout warning"><span class="callout-title">修改 Arduino IP</span>按「修改 IP」輸入新 IPv4。成功回覆後 HMI 會立即更新顯示，設定保存在 Arduino EEPROM。每片板的 IP 必須唯一。</div>
+      </section>
+
+      <section id="paths">
+        <h2>3. 工站與路徑設定</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>欄位</th><th>DFU</th><th>FCT</th><th>BT</th></tr></thead>
+            <tbody>
+              <tr><td><strong>CSV 根路徑</strong></td><td>必填，指向 Atlas CSV 最上層</td><td>必填，指向 Atlas CSV 最上層</td><td>不使用，可保留</td></tr>
+              <tr><td><strong>Log 根路徑</strong></td><td colspan="3">選填；若留白，DFU/FCT 從 CSV 根路徑尋找 device.log</td></tr>
+              <tr><td><strong>OpenCV 模板路徑</strong></td><td>必填</td><td>稀疏 slot checkbox 時必填</td><td>必填</td></tr>
+              <tr><td><strong>螢幕截圖路徑</strong></td><td>必填</td><td>稀疏 slot 時必填</td><td>必填</td></tr>
+              <tr><td><strong>測試結果逾時</strong></td><td colspan="3">預設 300 秒；0 表示不逾時。未完成 SN 回報 TIMEOUT。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Atlas CSV 結構</h3>
+        <pre><code>CSV 根路徑/
+└── &lt;SN&gt;/
+    └── YYYYMMDD_HH-MM-SS.&lt;識別碼&gt;/
+        └── system/
+            ├── device.log
+            └── records.csv</code></pre>
+        <p>Agent 只接受開始流程之後建立的新資料；<code>records.csv</code> 任一 status 為 FAIL，該 SN 即判定 FAIL。</p>
+        <h3>設定 HID</h3>
+        <p>按「設定 HID」可調整每步延遲、X/Y 比例與偏移、relative／absolute 模式及虛擬桌面尺寸。一般 Retina 2880×1800 對應邏輯 1440×900 時，自動比例通常為 0.5。</p>
+      </section>
+
+      <section id="templates">
+        <h2>4. 製作 OpenCV 影像模板</h2>
+        <p class="lead">模板必須由「實際部署電腦、實際螢幕解析度、實際 HMI 縮放」的 Arduino 截圖製作。畫面縮放或主題改變後應重做。</p>
+        <div class="steps">
+          <div class="step"><h3>把測試 HMI 放到目標畫面</h3><p>畫面不要被其他視窗遮住，且完整位於單一螢幕。切換到要製作的工站頁面。</p></div>
+          <div class="step"><h3>確認 Agent 已連線 Arduino</h3><p>「擷取螢幕截圖」要透過 Arduino 送出 Command+Shift+3，因此必須先建立 USB CDC 連線。</p></div>
+          <div class="step"><h3>選擇模板根路徑</h3><p>在「OpenCV 模板路徑」選擇根資料夾。建議使用專案的 <code>templates</code>，或設備專用備份資料夾。</p></div>
+          <div class="step"><h3>按「製作模板」</h3><p>模板檔名下拉選單會依目前工站顯示所需名稱。不要任意改名，Agent 依相對檔名判斷用途。</p></div>
+          <div class="step"><h3>取得截圖</h3><p>可按「擷取螢幕截圖」、選擇既有截圖，或按「使用最新截圖」。Arduino 截圖約需 5 秒落檔，最長等待 15 秒。</p></div>
+          <div class="step"><h3>框選穩定區域</h3><p>拖曳框選控制項或固定標題。框選應緊貼目標、保留足夠辨識特徵，不要包含游標、時間、SN、PASS/FAIL 等會變內容。</p></div>
+          <div class="step"><h3>選擇名稱並儲存</h3><p>逐一選擇下拉檔名後按「儲存模板」。子資料夾 <code>b482/</code> 會自動建立。</p></div>
+          <div class="step"><h3>用疊圖驗證</h3><p>執行一次流程後按「查看匹配疊圖」。綠框應精準包住模板，紅十字為定位中心；游標偏移則調整 HID，而不是隨意重裁模板。</p></div>
+        </div>
+        <div class="callout danger"><span class="callout-title">模板禁止內容</span>不要把真實 SN、客戶資料、動態日期時間、PASS／FAIL／TESTING 狀態或滑鼠游標裁進「視窗定位模板」。BT STATUS 模板除外，因它本來就是用來辨識狀態。</div>
+      </section>
+
+      <section id="template-list">
+        <h2>5. 各工站模板清單</h2>
+        <h3>DFU — B482 DFU_2</h3>
+        <pre><code>b482/dfu2_window.png
+b482/dfu2_sn_input.png
+b482/dfu2_ok.png
+b482/slot_checkbox_checked.png
+b482/slot_checkbox_unchecked.png</code></pre>
+        <p>checked／unchecked 應只裁 checkbox 本體與足以辨識狀態的固定區域。稀疏 JOB 會在輸入條碼前重新截圖驗證四個 checkbox，不正確時補正一次；仍不符就停止。</p>
+
+        <h3>FCT</h3>
+        <pre><code>b482/fct_window.png
+b482/slot_checkbox_checked.png
+b482/slot_checkbox_unchecked.png</code></pre>
+        <p>四個 slot 全滿時 FCT 可直接監聽；稀疏 slot 才需要定位並同步 checkbox。</p>
+
+        <h3>BT</h3>
+        <pre><code>b482/bt_window.png
+b482/bt_start_all.png
+b482/bt_start_1.png
+b482/bt_start_2.png
+b482/bt_start_3.png
+b482/bt_start_4.png
+b482/bt_status_pass.png
+b482/bt_status_fail.png
+b482/bt_status_testing.png
+b482/bt_status_notset.png</code></pre>
+        <p>每個 STATUS 模板請裁一個完整狀態格（背景＋文字）。SN 由 macOS Vision 針對每列 SN 儲存格單獨 OCR，不需要另外製作 SN 模板。</p>
+      </section>
+
+      <section id="operation">
+        <h2>6. 日常測試操作</h2>
+        <h3>正式上位機模式</h3>
+        <p>正常量產由 Windows 上位機透過 Arduino TCP 傳入 JOB，Agent 自動顯示當前 JOB 並回覆 ACK。範例：</p>
+        <pre><code>DFU:JOB=20260723-001;1=SN001,2=SN002,4=SN004\r\n</code></pre>
+        <div class="grid-3">
+          <div class="card"><h3>DFU</h3><p>截圖定位 → 同步 checkbox → 逐筆點 SN 輸入框與 OK → 全部輸入後監聽 CSV。</p></div>
+          <div class="card"><h3>FCT</h3><p>全 slot 直接監聽；稀疏 slot 先同步 checkbox。治具推入後由設備自動開始。</p></div>
+          <div class="card"><h3>BT</h3><p>全四 slot 按 Start All；稀疏 slot 分別按 Start 1～4。先看到所有指定 slot TESTING，全部結束後才判定。</p></div>
+        </div>
+        <h3>手動驗證模式</h3>
+        <p>可在「當前測試條碼」輸入逗號分隔 SN 後按「開始流程」。正式量產仍應使用含 JOB ID 與 slot 的結構化命令。</p>
+        <h3>BT SN 人工覆核</h3>
+        <p>BT 在 TESTING 後逐列 OCR 設備 SN。若與上位機 SN 不符或讀取不完整，測試仍跑完，之後顯示覆核視窗：</p>
+        <ul>
+          <li><strong>確認並以設備 SN 回報：</strong>操作員確認／修正後，以設備實際 SN 組成 RESULT。</li>
+          <li><strong>取消並回報 NACK：</strong>不送 RESULT，回覆 <code>NACK:BT_SN_MISMATCH</code>。</li>
+        </ul>
+      </section>
+
+      <section id="logs">
+        <h2>7. 結果與通訊紀錄</h2>
+        <p>ACK 代表已接單，不代表測試完成：</p>
+        <pre><code>ACK:DFU:JOB=20260723-001\r\n</code></pre>
+        <p>所有指定 slot 完成後才回傳：</p>
+        <pre><code>RESULT:DFU:JOB=20260723-001;1=SN001,PASS;2=SN002,PASS;4=SN004,FAIL\r\n</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Log 關鍵字</th><th>意義／FAE 行動</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status pass">ACK</span></td><td>Agent 已接受 JOB，等待測試完成。</td></tr>
+              <tr><td><span class="status pass">RESULT</span></td><td>本 JOB 所有指定 slot 已完成。</td></tr>
+              <tr><td><span class="status wait">BUSY</span></td><td>前一 JOB 尚未完成，上位機不可覆蓋；等待結果後再送。</td></tr>
+              <tr><td><span class="status fail">START_FAILED</span></td><td>影像定位、HID 或 checkbox 驗證失敗；查看保留截圖與匹配疊圖。</td></tr>
+              <tr><td><span class="status fail">TCP_NOT_CONNECTED</span></td><td>Arduino 沒有上位機 TCP client；ACK/RESULT 無法送回。</td></tr>
+              <tr><td><span class="status wait">TIMEOUT</span></td><td>在設定時間內沒有新結果；確認 CSV 路徑、SN 與測試機狀態。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="troubleshoot">
+        <h2>8. 常見異常</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>現象</th><th>處理方式</th></tr></thead>
+            <tbody>
+              <tr><td>USB CDC 清單沒有 Arduino</td><td>確認 USB 資料線；關閉 Arduino Serial Monitor；按重新掃描；必要時重新插拔 USB。</td></tr>
+              <tr><td>連線後 IP 一直「查詢中」</td><td>確認選到正確 <code>usbmodem</code>、Arduino 已燒錄整合韌體，且 Log 有 GET_IP 回覆。</td></tr>
+              <tr><td>macOS 詢問「桌面檔案」權限</td><td>這是讀取所選截圖資料夾的檔案權限，不是 Screen Recording。允許後程式才能讀取 Arduino 產生的截圖。</td></tr>
+              <tr><td>找不到模板／相似度過低</td><td>用目前電腦的新截圖重做；確認縮放、解析度、HMI 頁面與主題一致，且模板檔名正確。</td></tr>
+              <tr><td>checkbox 狀態仍錯誤</td><td>重做 checked／unchecked 模板，只裁 checkbox；確認四個位置都能辨識。Agent 驗證失敗時不會輸入條碼。</td></tr>
+              <tr><td>疊圖正確但游標偏移</td><td>按設定 HID；優先使用 absolute，確認自動比例與虛擬桌面尺寸。雙螢幕另設 X/Y 偏移。</td></tr>
+              <tr><td>BT OCR 讀錯字元</td><td>程式已逐列裁 SN 儲存格；仍有字元不確定時依人工覆核視窗核對，不要直接確認錯誤 SN。</td></tr>
+              <tr><td>讀到上一筆 CSV</td><td>Agent 只接受開始後建立資料。確認測試機有建立新的時間戳資料夾，且 Mac 系統時間正確。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="handoff">
+        <h2>9. 每日開線檢核</h2>
+        <ul class="checklist">
+          <li>工站選擇與實際設備一致。</li>
+          <li>USB CDC 已連線，Arduino IP 已自動顯示。</li>
+          <li>CSV／Log／模板／截圖路徑正確且可存取。</li>
+          <li>HMI 完整位於單一螢幕，解析度與製作模板時一致。</li>
+          <li>用一筆已知 SN 執行首件，匹配疊圖與 HID 落點正確。</li>
+          <li>DFU/FCT 稀疏 slot checkbox 驗證成功。</li>
+          <li>上位機收到 ACK，測試後收到含 JOB ID 的 RESULT。</li>
+          <li>首件 PASS／FAIL 與實際測試機結果一致。</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer class="site-footer">B518-205/207 ATE MVP｜Atlas Agent 操作手冊｜版次 1.0</footer>
+  <script src="manual.js"></script>
+</body>
+</html>
