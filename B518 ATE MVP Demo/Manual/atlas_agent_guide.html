@@ -24,7 +24,7 @@
     <nav class="toc" aria-label="本頁目錄">
       <strong>本頁目錄</strong>
       <a href="#prepare">1. 啟動前準備</a>
-      <a href="#connect">2. 連線 Arduino</a>
+      <a href="#connect">2. 主畫面與 Arduino 連線</a>
       <a href="#paths">3. 工站與路徑設定</a>
       <a href="#templates">4. 製作影像模板</a>
       <a href="#template-list">5. 各工站模板清單</a>
@@ -50,21 +50,55 @@
       </section>
 
       <section id="connect">
-        <h2>2. 與 Arduino 建立連線</h2>
-        <div class="ui-map" aria-label="Atlas Agent 主畫面示意">
-          <div class="ui-titlebar">Atlas Agent B518 ATE — V0.1.5</div>
-          <div class="ui-body">
-            <div class="ui-row"><span class="ui-label">工站／USB CDC</span><span class="ui-field">DFU　 /dev/cu.usbmodem14201</span><span class="ui-button">重新掃描　連線　中斷</span></div>
-            <div class="ui-row"><span class="ui-label">CSV 根路徑</span><span class="ui-field">/Users/.../AtlasCSV</span><span class="ui-button">選擇</span></div>
-            <div class="ui-row"><span class="ui-label">OpenCV 模板路徑</span><span class="ui-field">.../templates</span><span class="ui-button">製作模板</span></div>
-            <div class="ui-row"><span class="ui-label">螢幕截圖路徑</span><span class="ui-field">/Users/.../Desktop/ScreenShot</span><span class="ui-button">選擇</span></div>
-            <div class="ui-log">USB CDC 已連線；自動查詢 Arduino IP<br>TX: GET_IP<br>RX: IP:192.168.1.100</div>
-          </div>
+        <h2>2. 主畫面與 Arduino 連線</h2>
+        <p class="lead">程式開啟後先核對工站、四個路徑與 USB CDC。這些資料會自動記憶上次設定，但換設備、換帳號或移動資料夾後仍須重新確認。</p>
+        <figure class="manual-figure">
+          <img src="assets/atlas_agent/01-main-hmi.png" width="942" height="734" loading="lazy" alt="Atlas Agent B518 ATE V0.1.5 程式開啟時的完整主畫面">
+          <figcaption><span class="figure-label">圖 2-1</span>Atlas Agent 主畫面。按鈕會依目前工站、USB 連線狀態與是否正在測試而啟用或停用。</figcaption>
+        </figure>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>畫面區域／按鍵</th><th>用途</th><th>操作重點</th></tr></thead>
+            <tbody>
+              <tr><td><strong>工站</strong></td><td>切換 DFU、FCT、BT 工作流程</td><td>啟動後第一個確認；必須與本台測試儀器一致。</td></tr>
+              <tr><td><strong>USB CDC</strong>／重新掃描／連線／中斷</td><td>選擇並管理 Arduino USB 序列連線</td><td>選 <code>/dev/cu.usbmodem…</code>，不要選 Bluetooth port。</td></tr>
+              <tr><td><strong>CSV 根路徑</strong></td><td>DFU／FCT 監控 SN 測試資料</td><td>要選到包含各 SN 資料夾的最上層根目錄。</td></tr>
+              <tr><td><strong>Log 根路徑</strong></td><td>指定額外的 device.log 根目錄</td><td>選填；留白時由 CSV 根路徑尋找。</td></tr>
+              <tr><td><strong>OpenCV 模板路徑</strong>／製作模板</td><td>讀取及建立畫面定位模板</td><td>建議放在本機 Documents/template。</td></tr>
+              <tr><td><strong>螢幕截圖路徑</strong></td><td>讀取 Arduino 觸發後由 macOS 儲存的截圖</td><td>必須與 macOS 實際截圖儲存位置一致。</td></tr>
+              <tr><td><strong>設定 HID</strong>／查看匹配疊圖</td><td>設定游標比例、模式、偏移與延遲；檢查辨識位置</td><td>定位正確但游標偏移時才調整 HID。</td></tr>
+              <tr><td><strong>DFU 畫面設定</strong>／測試逾時</td><td>選擇 DFU HMI 類型與整批測試逾時</td><td>非 DFU 工站仍可顯示，但不影響 FCT／BT 流程。</td></tr>
+              <tr><td><strong>當前測試條碼</strong>與流程按鍵</td><td>手動驗證 JOB、啟動流程、單獨啟動 BT slot、停止監聽</td><td>正式量產以 Arduino TCP 收到的 JOB 為主。</td></tr>
+              <tr><td><strong>Arduino 網路設定</strong>／修改 IP</td><td>顯示並修改 Arduino Ethernet IP</td><td>USB 連線後自動查詢；每片 Arduino IP 必須唯一。</td></tr>
+              <tr><td><strong>即時 device.log／通訊紀錄</strong></td><td>顯示 USB 指令、影像流程、CSV 與結果狀態</td><td>發生異常時先保存這一區的完整內容。</td></tr>
+            </tbody>
+          </table>
         </div>
         <div class="steps">
-          <div class="step"><h3>選擇正確工站</h3><p>先在左上選擇本機實際用途：<strong>DFU、FCT 或 BT</strong>。收到不同工站的 JOB 時，Agent 會拒絕並回覆 WRONG_STATION。</p></div>
-          <div class="step"><h3>掃描 USB CDC</h3><p>按「重新掃描」，從下拉選單選擇 Arduino 的 <code>/dev/cu.usbmodem…</code>。若只有一台，程式通常會自動選取。</p></div>
-          <div class="step"><h3>按「連線」</h3><p>成功後 Agent 立即送出 <code>GET_IP</code>，Arduino 網路設定區應顯示實際 IP。</p></div>
+          <div class="step">
+            <h3>選擇正確工站</h3>
+            <p>在左上選擇本機實際用途：<strong>DFU、FCT 或 BT</strong>。收到不同工站的 JOB 時，Agent 會拒絕並回覆 WRONG_STATION。</p>
+            <figure class="manual-figure">
+              <img src="assets/atlas_agent/06-station-selector.png" width="944" height="732" loading="lazy" alt="Atlas Agent 工站下拉選單顯示 DFU FCT 與 BT">
+              <figcaption><span class="figure-label">圖 2-2</span>每次開機先核對工站。圖中設備正在選擇 DFU／FCT／BT 腳本。</figcaption>
+            </figure>
+          </div>
+          <div class="step">
+            <h3>掃描並選擇 USB CDC</h3>
+            <p>按「重新掃描」，從下拉選單選擇 Arduino 的 <code>/dev/cu.usbmodem…</code>。若只有一台，程式通常會自動選取。<code>Bluetooth-Incoming-Port</code> 與 <code>BLTH</code> 不是 Arduino。</p>
+            <figure class="manual-figure">
+              <img src="assets/atlas_agent/03-usb-cdc-selector.png" width="944" height="732" loading="lazy" alt="Atlas Agent USB CDC 下拉選單顯示 usbmodem 與 Bluetooth ports">
+              <figcaption><span class="figure-label">圖 2-3</span>選擇名稱含 <code>usbmodem</code> 的 Arduino USB CDC；不要選擇藍牙序列埠。</figcaption>
+            </figure>
+          </div>
+          <div class="step">
+            <h3>按「連線」並等待自動取得 IP</h3>
+            <p>成功後 Agent 立即送出 <code>GET_IP</code>，Arduino 網路設定區會自動顯示實際 IP，不需要再按查詢按鈕。</p>
+            <figure class="manual-figure">
+              <img src="assets/atlas_agent/04-connected-ip-log.png" width="944" height="730" loading="lazy" alt="Atlas Agent 連線後顯示 Arduino IP 與 USB CDC 通訊 Log">
+              <figcaption><span class="figure-label">圖 2-4</span>成功判定為 Log 出現 <code>USB CDC 已連線</code>、<code>TX: GET_IP</code>、<code>RX: IP:...</code>，且 IP 顯示區同步更新。圖中後段的 read failed 是手動中斷／重連時的紀錄，不是第一次成功連線的必要訊息。</figcaption>
+            </figure>
+          </div>
           <div class="step"><h3>確認通訊 Log</h3><p>至少要看到 <code>USB CDC 已連線</code>、<code>TX: GET_IP</code> 與 <code>RX: IP:...</code>。缺少其中一項都不要開始量產測試。</p></div>
         </div>
         <div class="callout warning"><span class="callout-title">修改 Arduino IP</span>按「修改 IP」輸入新 IPv4。成功回覆後 HMI 會立即更新顯示，設定保存在 Arduino EEPROM。每片板的 IP 必須唯一。</div>
@@ -72,6 +106,21 @@
 
       <section id="paths">
         <h2>3. 工站與路徑設定</h2>
+        <h3>CSV 根路徑：選擇 SN 資料夾的最上層</h3>
+        <p>按 CSV 根路徑右側的「選擇」，在資料夾瀏覽器中選到包含所有 SN 資料夾的根目錄。不要選某一個 SN 資料夾，也不要選到單筆時間戳資料夾；選錯時 Agent 無法監控新的 <code>records.csv</code> 與 <code>device.log</code>。</p>
+        <figure class="manual-figure">
+          <img src="assets/atlas_agent/02-csv-folder-picker.png" width="946" height="741" loading="lazy" alt="Atlas Agent 開啟 macOS 資料夾瀏覽器選擇 AtlasDemoCSV 根路徑">
+          <figcaption><span class="figure-label">圖 3-1</span>範例選擇 <code>AtlasDemoCSV</code> 根目錄；視窗內可看到多個 SN 子資料夾，表示選擇層級正確。</figcaption>
+        </figure>
+        <h3>OpenCV 模板路徑：使用固定的本機資料夾</h3>
+        <p>建議先在本機 <strong>Documents</strong> 建立 <code>template</code> 資料夾，再由「OpenCV 模板路徑」選到該資料夾。若分正式機與模擬環境，可再建立 <code>production</code>、<code>simulation</code> 子資料夾；程式會在所選位置下建立或使用 <code>b482/</code>。</p>
+        <figure class="manual-figure">
+          <img src="assets/atlas_agent/05-opencv-template-folder-picker.png" width="942" height="729" loading="lazy" alt="Atlas Agent 選擇 Documents template simulation 作為 OpenCV 模板路徑">
+          <figcaption><span class="figure-label">圖 3-2</span>OpenCV 模板資料夾範例：<code>~/Documents/template/simulation</code>。量產設備應使用固定且可離線讀取的位置，避免操作期間移動或重新命名。</figcaption>
+        </figure>
+        <h3>螢幕截圖路徑：必須和 macOS 設定一致</h3>
+        <p>macOS 預設將螢幕截圖存到 <strong>Desktop（桌面）</strong>。若另外建立 <code>ScreenShot</code> 等專用資料夾，需把 Agent 的「螢幕截圖路徑」指定到同一資料夾。路徑不一致時，Arduino 雖然已按下截圖快捷鍵，Agent 仍會因找不到新檔案而逾時。</p>
+        <div class="callout"><span class="callout-title">截圖快捷鍵與 Windows 鍵盤</span>在 macOS 上，全螢幕截圖是 <strong>Command + Shift + 3</strong>。若 Mac mini 接的是 Windows 鍵盤，Windows／Start 鍵通常映射為 Command，因此按 <strong>Windows + Shift + 3</strong>。這是「Windows 鍵盤接到 macOS」的對應；在 Windows 作業系統本身並不是同一套截圖快捷鍵。</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>欄位</th><th>DFU</th><th>FCT</th><th>BT</th></tr></thead>
@@ -99,15 +148,56 @@
       <section id="templates">
         <h2>4. 製作 OpenCV 影像模板</h2>
         <p class="lead">模板必須由「實際部署電腦、實際螢幕解析度、實際 HMI 縮放」的 Arduino 截圖製作。畫面縮放或主題改變後應重做。</p>
+        <h3>模板製作視窗與按鍵</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>按鍵／區域</th><th>功能</th><th>使用時機</th></tr></thead>
+            <tbody>
+              <tr><td><strong>選擇截圖</strong></td><td>從任意資料夾挑選既有 PNG 截圖</td><td>已有指定的標準畫面或要重做舊模板時。</td></tr>
+              <tr><td><strong>使用最新截圖</strong></td><td>讀取「螢幕截圖路徑」內最新的截圖</td><td>已手動按 Command+Shift+3，並確認檔案完成落盤時。</td></tr>
+              <tr><td><strong>擷取螢幕截圖</strong></td><td>命令 Arduino HID 觸發 Command+Shift+3，等待新檔案後載入</td><td>希望在模板視窗內完成截圖；必須先連線 Arduino。</td></tr>
+              <tr><td><strong>縮小預覽／放大預覽</strong></td><td>調整工作區預覽倍率</td><td>只影響框選操作，不會改變原圖或模板像素。</td></tr>
+              <tr><td><strong>模板檔名</strong></td><td>選擇目前工站要求的相對檔名</td><td>先選正確名稱，再框選並儲存；不同工站清單不同。</td></tr>
+              <tr><td><strong>影像工作區</strong></td><td>以滑鼠拖曳紅色矩形框選模板</td><td>下方會顯示已選取原圖的像素寬高。</td></tr>
+              <tr><td><strong>儲存模板</strong></td><td>把框選區域存到 OpenCV 模板根路徑</td><td>紅框、模板名稱都確認後再按。</td></tr>
+              <tr><td><strong>取消</strong></td><td>關閉視窗，不儲存本次框選</td><td>選錯圖片、工站或模板名稱時。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figure class="manual-figure">
+          <img src="assets/atlas_agent/07-template-maker-window.png" width="972" height="671" loading="lazy" alt="Atlas Agent 製作圖像匹配模板視窗顯示截圖來源按鈕預覽按鈕模板檔名與儲存模板">
+          <figcaption><span class="figure-label">圖 4-1</span>模板製作 HMI。右上角下拉選單只顯示目前工站需要的模板；紅框為本次要儲存的辨識區域。</figcaption>
+        </figure>
         <div class="steps">
           <div class="step"><h3>把測試 HMI 放到目標畫面</h3><p>畫面不要被其他視窗遮住，且完整位於單一螢幕。切換到要製作的工站頁面。</p></div>
           <div class="step"><h3>確認 Agent 已連線 Arduino</h3><p>「擷取螢幕截圖」要透過 Arduino 送出 Command+Shift+3，因此必須先建立 USB CDC 連線。</p></div>
-          <div class="step"><h3>選擇模板根路徑</h3><p>在「OpenCV 模板路徑」選擇根資料夾。建議使用專案的 <code>templates</code>，或設備專用備份資料夾。</p></div>
+          <div class="step"><h3>選擇模板根路徑</h3><p>在「OpenCV 模板路徑」選擇根資料夾。建議使用 <code>~/Documents/template</code> 或設備專用子資料夾。</p></div>
           <div class="step"><h3>按「製作模板」</h3><p>模板檔名下拉選單會依目前工站顯示所需名稱。不要任意改名，Agent 依相對檔名判斷用途。</p></div>
           <div class="step"><h3>取得截圖</h3><p>可按「擷取螢幕截圖」、選擇既有截圖，或按「使用最新截圖」。Arduino 截圖約需 5 秒落檔，最長等待 15 秒。</p></div>
           <div class="step"><h3>框選穩定區域</h3><p>拖曳框選控制項或固定標題。框選應緊貼目標、保留足夠辨識特徵，不要包含游標、時間、SN、PASS/FAIL 等會變內容。</p></div>
           <div class="step"><h3>選擇名稱並儲存</h3><p>逐一選擇下拉檔名後按「儲存模板」。子資料夾 <code>b482/</code> 會自動建立。</p></div>
           <div class="step"><h3>用疊圖驗證</h3><p>執行一次流程後按「查看匹配疊圖」。綠框應精準包住模板，紅十字為定位中心；游標偏移則調整 HID，而不是隨意重裁模板。</p></div>
+        </div>
+        <h3>FCT 範例：依序製作三種模板</h3>
+        <p>先在 Agent 主畫面選擇 <strong>FCT</strong> 工站，再開啟模板製作視窗。以下三個檔名缺一不可，且 checked／unchecked 需從相同解析度與相同 HMI 位置製作。</p>
+        <ol>
+          <li><strong><code>b482/fct_window.png</code>：</strong>框選固定且唯一的 FCT 視窗標題或標誌，供程式定位整個測試畫面。不要包含 SN、STATUS、日期與游標。</li>
+          <li><strong><code>b482/slot_checkbox_checked.png</code>：</strong>框選已勾選的 checkbox 與足以辨識的固定文字。</li>
+          <li><strong><code>b482/slot_checkbox_unchecked.png</code>：</strong>用相同大小與範圍框選未勾選狀態，避免兩份模板因裁切範圍不同而誤判。</li>
+        </ol>
+        <figure class="manual-figure">
+          <img src="assets/atlas_agent/08-fct-checked-template-selection.png" width="973" height="670" loading="lazy" alt="FCT 畫面中框選已勾選 checkbox 並選擇 slot_checkbox_checked 模板名稱">
+          <figcaption><span class="figure-label">圖 4-2</span>製作 <code>slot_checkbox_checked.png</code>：右上檔名選對後，紅框只保留 checkbox 與固定的「測試」文字。</figcaption>
+        </figure>
+        <div class="grid-2">
+          <figure class="manual-figure">
+            <img src="assets/atlas_agent/09-fct-checked-template.png" width="262" height="97" loading="lazy" alt="FCT slot 已勾選 checkbox 的模板框選範圍">
+            <figcaption><span class="figure-label">圖 4-3</span>Checked：綠色勾選狀態。</figcaption>
+          </figure>
+          <figure class="manual-figure">
+            <img src="assets/atlas_agent/10-fct-unchecked-template.png" width="261" height="95" loading="lazy" alt="FCT slot 未勾選 checkbox 的模板框選範圍">
+            <figcaption><span class="figure-label">圖 4-4</span>Unchecked：白色未勾選狀態。</figcaption>
+          </figure>
         </div>
         <div class="callout danger"><span class="callout-title">模板禁止內容</span>不要把真實 SN、客戶資料、動態日期時間、PASS／FAIL／TESTING 狀態或滑鼠游標裁進「視窗定位模板」。BT STATUS 模板除外，因它本來就是用來辨識狀態。</div>
       </section>
@@ -217,7 +307,7 @@ b482/bt_status_notset.png</code></pre>
       </section>
     </main>
   </div>
-  <footer class="site-footer">B518-205/207 ATE MVP｜Atlas Agent 操作手冊｜版次 1.0</footer>
+  <footer class="site-footer">B518-205/207 ATE MVP｜Atlas Agent 操作手冊｜版次 1.1</footer>
   <script src="manual.js"></script>
 </body>
 </html>
