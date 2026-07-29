@@ -49,6 +49,10 @@ chmod +x build_macos_catalina_app.sh verify_catalina_bundle.sh
 `dist-catalina/Atlas Agent B518 ATE.app`。最後會掃描 App 內所有 Mach-O 原生檔案；若任何
 檔案要求高於 macOS 10.15，建置會失敗而不應交付。
 
+若首次建置曾在 `pyobjc-core` 顯示 `ModuleNotFoundError: No module named
+'pkg_resources'`，請先取得最新版專案後重新執行相同腳本；腳本已固定相容的 setuptools
+並處理這個舊版 PyObjC 的建置需求。
+
 這是 ad-hoc／未公證的 MVP；正式交付到另一台 Mac 前，請由有 Apple Developer
 憑證的建置流程完成簽署與 notarization。不要為此開啟 Automation 或 Accessibility
 權限。

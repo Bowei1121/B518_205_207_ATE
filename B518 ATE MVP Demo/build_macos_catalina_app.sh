@@ -38,8 +38,12 @@ if command -v pgrep >/dev/null && pgrep -f "$APP_EXECUTABLE" >/dev/null 2>/dev/n
   exit 3
 fi
 
-"$PYTHON" -m pip install --upgrade pip
-"$PYTHON" -m pip install --no-binary=pyobjc-core,pyobjc-framework-Cocoa,pyobjc-framework-Vision \
+# PyObjC 10.3.1's setup script still imports pkg_resources.  Newer setuptools
+# no longer ships that compatibility module, so keep the build toolchain below
+# its removal and avoid pip creating an isolated environment with a newer one.
+"$PYTHON" -m pip install --upgrade pip "setuptools==80.9.0" wheel
+"$PYTHON" -m pip install --no-build-isolation \
+  --no-binary=pyobjc-core,pyobjc-framework-Cocoa,pyobjc-framework-Vision \
   -r requirements-catalina.txt "pyinstaller==6.16.0"
 if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, Vision, AppKit'; then
   echo "Catalina build dependencies could not be imported."
