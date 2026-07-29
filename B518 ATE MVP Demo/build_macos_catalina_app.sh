@@ -59,12 +59,19 @@ fi
 
 BUILD_VERSION="$("$PYTHON" bump_build_version.py)"
 echo "Building Catalina-compatible Atlas Agent B518 ATE V$BUILD_VERSION"
+TEMPLATE_SOURCE="$PWD/templates"
+if [[ ! -d "$TEMPLATE_SOURCE" ]]; then
+  echo "Required template directory is missing: $TEMPLATE_SOURCE"
+  exit 4
+fi
+# With --specpath, a relative add-data source would be looked up under
+# build-catalina.  Use the project absolute path so templates are packaged.
 "$PYTHON" -m PyInstaller --noconfirm --clean --windowed \
   --name "Atlas Agent B518 ATE" \
   --distpath "$PWD/dist-catalina" \
   --workpath "$PWD/build-catalina" \
   --specpath "$PWD/build-catalina" \
-  --add-data "templates:templates" \
+  --add-data "$TEMPLATE_SOURCE:templates" \
   --collect-all serial \
   --collect-all cv2 \
   --collect-all Vision \
