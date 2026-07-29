@@ -12,6 +12,13 @@ if [[ "$(/usr/bin/uname -m)" != "x86_64" ]]; then
   echo "This script requires an Intel (x86_64) Catalina VM."
   exit 2
 fi
+if ! /usr/bin/xcodebuild -version >/dev/null 2>&1; then
+  echo "A full Xcode installation is required to build the Catalina PyObjC bridges."
+  echo "Install Xcode 12.4 in /Applications, then run:"
+  echo "  sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer"
+  echo "  sudo xcodebuild -license accept"
+  exit 2
+fi
 
 PYTHON="${PYTHON:-/usr/local/bin/python3.12}"
 if [[ ! -x "$PYTHON" ]]; then

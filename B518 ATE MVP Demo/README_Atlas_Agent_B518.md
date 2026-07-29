@@ -44,10 +44,20 @@ chmod +x build_macos_catalina_app.sh verify_catalina_bundle.sh
 ./build_macos_catalina_app.sh
 ```
 
-`xcode-select -p` 應顯示 `/Library/Developer/CommandLineTools`。腳本會建立
-`.venv-catalina`、使用 Catalina 相容的固定套件版本、遞增版本號，並輸出
+腳本會建立 `.venv-catalina`、使用 Catalina 相容的固定套件版本、遞增版本號，並輸出
 `dist-catalina/Atlas Agent B518 ATE.app`。最後會掃描 App 內所有 Mach-O 原生檔案；若任何
 檔案要求高於 macOS 10.15，建置會失敗而不應交付。
+
+首次建置還需要安裝完整的 **Xcode 12.4**（Command Line Tools 不足）。安裝後必須執行：
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+xcodebuild -version
+```
+
+最後一行應能正常顯示 Xcode 版本；若仍顯示 active developer directory 是
+`CommandLineTools`，代表尚未切換完成。
 
 若首次建置曾在 `pyobjc-core` 顯示 `ModuleNotFoundError: No module named
 'pkg_resources'`，請先取得最新版專案後重新執行相同腳本；腳本已固定相容的 setuptools
