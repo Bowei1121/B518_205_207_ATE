@@ -1,0 +1,12 @@
+# This set is intentionally separate from requirements.txt.
+# It is for building an Intel app that must run on macOS Catalina 10.15.
+pyserial==3.5
+numpy==1.26.4
+# 4.6 ships a macOS 10.15 x86_64 abi3 wheel; newer OpenCV wheels require a
+# newer macOS release and make the frozen app fail before its UI appears.
+opencv-python==4.6.0.66
+# Build these Objective-C bridges from source inside Catalina.  This links
+# them to the Catalina SDK instead of accepting a newer pre-built wheel.
+pyobjc-core==10.3.1; sys_platform == "darwin"
+pyobjc-framework-Cocoa==10.3.1; sys_platform == "darwin"
+pyobjc-framework-Vision==10.3.1; sys_platform == "darwin"

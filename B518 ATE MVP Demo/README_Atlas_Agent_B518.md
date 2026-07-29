@@ -31,6 +31,24 @@ chmod +x build_macos_app.sh
 輸出為 `dist/Atlas Agent B518 ATE.app`。目標 Mac mini 僅執行產出的 App；Agent
 本身不要求 Automation 或 Accessibility 權限。
 
+### macOS Catalina 10.15 Intel 專用打包
+
+若交付機是 macOS Catalina 10.15 Intel，**不可**使用較新的 macOS 直接建置，否則
+PyInstaller 會將需要較新 macOS 的 Python 原生模組包進 App，造成 Catalina 上雙擊無法開啟。
+請在 Catalina 10.15 的 Intel VM 完成以下操作；交付機不需要安裝 Python。
+
+```bash
+cd "/你的專案/B518 ATE MVP Demo"
+xcode-select -p
+chmod +x build_macos_catalina_app.sh verify_catalina_bundle.sh
+./build_macos_catalina_app.sh
+```
+
+`xcode-select -p` 應顯示 `/Library/Developer/CommandLineTools`。腳本會建立
+`.venv-catalina`、使用 Catalina 相容的固定套件版本、遞增版本號，並輸出
+`dist-catalina/Atlas Agent B518 ATE.app`。最後會掃描 App 內所有 Mach-O 原生檔案；若任何
+檔案要求高於 macOS 10.15，建置會失敗而不應交付。
+
 這是 ad-hoc／未公證的 MVP；正式交付到另一台 Mac 前，請由有 Apple Developer
 憑證的建置流程完成簽署與 notarization。不要為此開啟 Automation 或 Accessibility
 權限。
