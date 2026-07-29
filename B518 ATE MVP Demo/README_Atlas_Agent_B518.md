@@ -23,6 +23,27 @@ Accessibility、AppleScript、CGEvent 或任何 Mac 端鍵盤／滑鼠控制；�
 每次執行建置腳本會自動遞增共用版本號的 patch 段，例如 `V0.1.0` 變為 `V0.1.1`；
 Mac App 視窗標題與 `Info.plist`、Windows 上位機模擬器標題均使用此版本號。
 
+### 交付前必做：確認測試機 OS 與 CPU 架構
+
+macOS App 的 Python、OpenCV、PyObjC 等原生模組會隨 App 一起封裝；**建置機若比測試機
+更新，或 CPU 架構不同，App 可能在測試機雙擊時完全無法開啟。** 每一台新的測試機或每一種
+測試機規格，在交付前都必須先記錄以下結果：
+
+```bash
+sw_vers -productVersion
+uname -m
+sysctl -n machdep.cpu.brand_string
+```
+
+| 測試機結果 | 建置規則 | 交付檔案 |
+| --- | --- | --- |
+| `10.15.x`、`x86_64`（Intel） | 使用 Catalina 10.15 Intel VM；不可在較新的 macOS 直接建置 | `dist-catalina/Atlas Agent B518 ATE.app` |
+| 其他 Intel macOS | 建置機應是相同或更舊、且仍受支援的 Intel macOS；不可讓任何封裝模組的最低 OS 高於測試機 | 以對應環境產出的 `dist/...app` |
+| `arm64`（Apple Silicon） | 使用相同或更舊、且仍受支援的 Apple Silicon macOS 建置；不可將 Intel-only App 當作原生交付版本 | 以對應 ARM 環境產出的 `dist/...app` |
+
+原則是「**CPU 架構要相同；建置 macOS 版本不得高於測試機**」。完全相同的 OS 與 CPU 環境是
+最安全的做法。每次建置完成後，必須先在相同規格的 VM 或實機雙擊驗證，再複製到封閉測試機。
+
 ```bash
 chmod +x build_macos_app.sh
 ./build_macos_app.sh
