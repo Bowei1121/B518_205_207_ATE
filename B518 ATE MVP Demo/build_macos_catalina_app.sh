@@ -71,7 +71,7 @@ fi
   --distpath "$PWD/dist-catalina" \
   --workpath "$PWD/build-catalina" \
   --specpath "$PWD/build-catalina" \
-  --add-data "$TEMPLATE_SOURCE:templates" \
+  --add-data="${TEMPLATE_SOURCE}:templates" \
   --collect-all serial \
   --collect-all cv2 \
   --collect-all Vision \
