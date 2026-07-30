@@ -27,6 +27,7 @@
       <a href="#connect">2. 主畫面與 Arduino 連線</a>
       <a href="#paths">3. 工站與路徑設定</a>
       <a href="#templates">4. 製作影像模板</a>
+      <a href="#bt-template">4-1. BT 現場模板製作</a>
       <a href="#template-list">5. 各工站模板清單</a>
       <a href="#operation">6. 測試操作</a>
       <a href="#logs">7. 結果與 Log</a>
@@ -194,6 +195,55 @@
             <figcaption><span class="figure-label">圖 4-4</span>Unchecked：白色未勾選狀態。</figcaption>
           </figure>
         </div>
+        <section id="bt-template" class="nested-section">
+          <h3>BT 現場 HMI：視窗與 Start 按鈕模板製作</h3>
+          <p class="lead">本節只處理「找到 BT 視窗、取得焦點、點擊 Start」；PASS／FAIL／TESTING／NOTSET 的狀態模板與 SN OCR 不在本次現場模板製作範圍內。</p>
+          <div class="callout danger"><span class="callout-title">最重要：模板一定要在現場製作</span>模擬 HMI 只用來說明模板名稱與測試流程。<strong>不可</strong>把模擬畫面的截圖或模板複製到現場測試機使用。請在實際 Mac mini、實際 WirelessRFTestAutomation 軟體、實際螢幕解析度與縮放下，由 Arduino 觸發截圖後製作模板。</div>
+          <div class="grid-2">
+            <figure class="manual-figure">
+              <img src="assets/atlas_agent/11-bt-production-hmi.png" width="1478" height="638" loading="lazy" alt="現場 WirelessRFTestAutomation BT 測試介面，包含 Start 1 到 Start 4 與 Start All 按鈕">
+              <figcaption><span class="figure-label">圖 4-5</span>現場真實 BT HMI。請以此設備上的 Arduino 截圖作為模板來源；圖內的色框僅為按鈕位置提示，不是 HMI 原始內容。</figcaption>
+            </figure>
+            <figure class="manual-figure">
+              <img src="assets/atlas_agent/12-bt-simulator-hmi.png" width="2048" height="1148" loading="lazy" alt="B518 模擬 BT HMI，包含 Start 1 到 Start 4 與 Start All 按鈕">
+              <figcaption><span class="figure-label">圖 4-6</span>開發用模擬 HMI，只作按鈕名稱和流程對照。它的字型、位置與現場不同，不能作為現場模板。</figcaption>
+            </figure>
+          </div>
+          <h4>本次需完成的六個模板</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>模板檔名</th><th>裁切目標</th><th>程式用途</th></tr></thead>
+              <tbody>
+                <tr><td><code>b482/bt_window.png</code></td><td>BT 視窗內固定、唯一且不會隨測試改變的標題／識別區域</td><td>定位測試視窗、先點擊視窗取得焦點。</td></tr>
+                <tr><td><code>b482/bt_start_1.png</code></td><td>完整的 Start 1 按鈕與文字</td><td>只啟動 slot 1。</td></tr>
+                <tr><td><code>b482/bt_start_2.png</code></td><td>完整的 Start 2 按鈕與文字</td><td>只啟動 slot 2。</td></tr>
+                <tr><td><code>b482/bt_start_3.png</code></td><td>完整的 Start 3 按鈕與文字</td><td>只啟動 slot 3。</td></tr>
+                <tr><td><code>b482/bt_start_4.png</code></td><td>完整的 Start 4 按鈕與文字</td><td>只啟動 slot 4。</td></tr>
+                <tr><td><code>b482/bt_start_all.png</code></td><td>完整的 Start All 按鈕與文字</td><td>四個 slot 全部測試時一次啟動。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="steps">
+            <div class="step"><h3>固定現場畫面</h3><p>在目標 Mac mini 開啟現場 BT HMI，完整放在單一螢幕，不要被其他視窗遮住。保持平常測試使用的解析度、瀏覽器縮放、字體大小與 HMI 版本。</p></div>
+            <div class="step"><h3>開啟 Agent 的 BT 模板製作器</h3><p>在 Atlas Agent 選擇 <strong>BT</strong> 工站；確認 OpenCV 模板路徑與螢幕截圖路徑正確，USB CDC 已連線，然後按「設定 → 製作模板」。</p></div>
+            <div class="step"><h3>取得現場截圖</h3><p>按「擷取螢幕截圖」，等待截圖完成後載入；或先由 Arduino 執行全螢幕截圖，再按「使用最新截圖」。不要使用手機拍照、螢幕錄影畫面或模擬 HMI 圖片。</p></div>
+            <div class="step"><h3>先製作 BT 視窗定位模板</h3><p>模板檔名選 <code>b482/bt_window.png</code>，框選固定且唯一的視窗識別區。避開上方 macOS 選單列、時間、測試紀錄、SN、測試進度、結果與滑鼠游標。</p></div>
+            <div class="step"><h3>逐張製作五個 Start 模板</h3><p>依序選 <code>bt_start_1.png</code>、<code>bt_start_2.png</code>、<code>bt_start_3.png</code>、<code>bt_start_4.png</code>、<code>bt_start_all.png</code>。每次只框選一個完整按鈕和按鈕文字，邊界貼近按鈕；不可把相鄰按鈕、色框標記或空白區域一起裁入。</p></div>
+            <div class="step"><h3>儲存並驗證</h3><p>確認模板檔名後按「儲存模板」。先以單一 slot 做 Start 1～4 驗證，再以四個 slot 做 Start All 驗證；每次流程後按「查看匹配疊圖」，綠框需包住正確目標，紅十字應位於按鈕可點擊中心。</p></div>
+          </div>
+          <div class="callout"><span class="callout-title">裁圖規則</span>Start 1～4 必須各自從現場畫面裁一張，不能複製同一張模板後改檔名。若綠框正確但點擊落點仍偏移，請在「設定 HID」校正比例、偏移或 absolute 桌面尺寸；不要靠重裁模板猜測位置。</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>現象</th><th>現場處置</th></tr></thead>
+              <tbody>
+                <tr><td>找不到 <code>bt_window.png</code></td><td>重新以目前 Mac mini 截圖製作，改選更固定、唯一的 BT 視窗區域；不要包含會變動的測試資料。</td></tr>
+                <tr><td>Start 按鈕匹配到錯誤位置</td><td>確認模板沒有裁進綠／黃／藍標記、游標、相鄰按鈕或動態內容；用原始現場截圖重做該按鈕。</td></tr>
+                <tr><td>單一 slot 無法啟動</td><td>確認對應的 <code>bt_start_N.png</code> 已建立；稀疏 slot 不會使用 Start All。</td></tr>
+                <tr><td>疊圖正確但按鈕沒有被點到</td><td>確認 Arduino HID 可用，並於「設定 HID」校正座標，不要修改已正確匹配的模板。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
         <div class="callout danger"><span class="callout-title">模板禁止內容</span>不要把真實 SN、客戶資料、動態日期時間、PASS／FAIL／TESTING 狀態或滑鼠游標裁進「視窗定位模板」。BT STATUS 模板除外，因它本來就是用來辨識狀態。</div>
       </section>
 
@@ -224,7 +274,7 @@ b482/bt_status_pass.png
 b482/bt_status_fail.png
 b482/bt_status_testing.png
 b482/bt_status_notset.png</code></pre>
-        <p>每個 STATUS 模板請裁一個完整狀態格（背景＋文字）。SN 由 macOS Vision 針對每列 SN 儲存格單獨 OCR，不需要另外製作 SN 模板。</p>
+        <p><strong>現場第一階段：</strong>先完成前六個視窗／Start 模板並驗證點擊；詳細操作請見<a href="#bt-template">「BT 現場 HMI：視窗與 Start 按鈕模板製作」</a>。STATUS 模板待現場狀態呈現方式確認後再製作。SN 由 macOS Vision 針對每列 SN 儲存格單獨 OCR，不需要另外製作 SN 模板。</p>
       </section>
 
       <section id="operation">
