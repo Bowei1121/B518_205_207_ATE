@@ -62,6 +62,7 @@ DEFAULT_BAUD = 115200
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
+DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 4, "BT": 4}
 
 # Dynamic PASS / FAIL / NOTSET / TESTING cells are deliberately excluded from
 # every template.  They change throughout a real test and must not be used for
@@ -120,6 +121,7 @@ class Preferences:
     absolute_height: int = 900
     auto_scale: bool = True
     result_timeout_seconds: float = 300.0
+    auto_slot_sync: bool = False
 
     @classmethod
     def load(cls, path: Path) -> "Preferences":
@@ -190,6 +192,37 @@ def parse_barcodes(payload: str) -> list[str]:
     if any("/" in item or "\\" in item or item in (".", "..") for item in values):
         raise AgentError("SN 不可包含路徑字元")
     return values
+
+
+def demo_slot_assignments(station: str, values: Iterable[str]) -> tuple[tuple[int, str], ...]:
+    """Build sparse slot assignments for the local Demo dialog only.
+
+    The production TCP protocol and main free-form input deliberately remain
+    limited to four slots.  DFU's temporary seven-slot support is therefore
+    available only after an operator explicitly opens the Demo dialog.
+    """
+    station = station.upper()
+    limit = DEMO_SLOT_LIMITS.get(station)
+    if limit is None:
+        raise AgentError("Demo 工站必須是 DFU、FCT 或 BT")
+    values = list(values)
+    if len(values) != limit:
+        raise AgentError(f"{station} Demo 需要 {limit} 個 slot 輸入欄位")
+    assignments: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for slot, value in enumerate(values, start=1):
+        sn = value.strip()
+        if not sn:
+            continue
+        if not SN_PATTERN.fullmatch(sn):
+            raise AgentError(f"slot{slot} 的 SN 格式無效")
+        if sn in seen:
+            raise AgentError(f"同一 Demo 不可重複輸入 SN：{sn}")
+        seen.add(sn)
+        assignments.append((slot, sn))
+    if not assignments:
+        raise AgentError("請至少輸入一個要測試的 slot 條碼")
+    return tuple(assignments)
 
 
 def incoming_barcode_payload(line: str) -> Optional[str]:
@@ -1314,6 +1347,7 @@ class AtlasAgentApp:
         self.absolute_height = tk.StringVar(value=str(pref.absolute_height))
         self.auto_scale = tk.BooleanVar(value=pref.auto_scale)
         self.result_timeout = tk.StringVar(value=str(pref.result_timeout_seconds))
+        self.auto_slot_sync = tk.BooleanVar(value=pref.auto_slot_sync)
         self.overlay_path = self.pref_file.with_name("last_match_overlay.png")
         self.station = tk.StringVar(value=pref.station if pref.station in ("DFU", "FCT", "BT") else "DFU")
         self.current_station = self.station.get()
@@ -1337,36 +1371,11 @@ class AtlasAgentApp:
         ttk.Button(top, text="重新掃描", command=self.refresh_ports).pack(side="left", padx=4)
         ttk.Button(top, text="連線", command=self.connect).pack(side="left")
         ttk.Button(top, text="中斷", command=self.link.close).pack(side="left", padx=(4, 0))
-        for label, variable in (("CSV 根路徑：", self.csv_path), ("Log 根路徑（選填）：", self.log_path)):
-            row = ttk.Frame(panel); row.pack(fill="x", pady=(8, 0))
-            ttk.Label(row, text=label).pack(side="left")
-            ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
-            ttk.Button(row, text="選擇", command=lambda v=variable: self.choose_dir(v)).pack(side="left", padx=(4, 0))
-        row = ttk.Frame(panel); row.pack(fill="x", pady=(8, 0))
-        ttk.Label(row, text="OpenCV 模板路徑：").pack(side="left")
-        ttk.Entry(row, textvariable=self.template_path).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="選擇", command=lambda: self.choose_dir(self.template_path)).pack(side="left", padx=(4, 0))
-        ttk.Button(row, text="製作模板", command=self.open_template_maker).pack(side="left", padx=(4, 0))
-        row = ttk.Frame(panel); row.pack(fill="x", pady=(8, 0))
-        ttk.Label(row, text="螢幕截圖路徑：").pack(side="left")
-        ttk.Entry(row, textvariable=self.screenshot_path).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="選擇", command=lambda: self.choose_dir(self.screenshot_path)).pack(side="left", padx=(4, 0))
-        hid = ttk.Frame(panel); hid.pack(fill="x", pady=(8, 0))
-        ttk.Button(hid, text="設定 HID", command=self.open_hid_settings).pack(side="left")
-        ttk.Label(hid, text="設定滑鼠模式、比例、偏移與每步延遲", foreground="#555").pack(side="left", padx=8)
-        ttk.Button(hid, text="查看匹配疊圖", command=self.show_match_overlay).pack(side="right")
-        profile = ttk.Frame(panel); profile.pack(fill="x", pady=(8, 0))
-        ttk.Label(profile, text="DFU 畫面設定：").pack(side="left")
-        ttk.Combobox(profile, textvariable=self.dfu_profile, width=30, state="readonly",
-                     values=("b482_dfu2", "generic", "b482_dfu1_manual")).pack(side="left")
-        ttk.Label(profile, text="  B482 DFU_2：每個 SN 輸入後按 OK；DFU_1 尚待確認輸入步驟。").pack(side="left")
-        timeout = ttk.Frame(panel); timeout.pack(fill="x", pady=(6, 0))
-        ttk.Label(timeout, text="測試結果逾時(s)：").pack(side="left")
-        ttk.Entry(timeout, textvariable=self.result_timeout, width=8).pack(side="left", padx=4)
-        ttk.Label(timeout, text="0 表示不逾時；逾時的未完成 SN 回報 TIMEOUT。", foreground="#555").pack(side="left")
+        ttk.Button(top, text="設定", command=self.open_settings).pack(side="left", padx=(8, 0))
         batch = ttk.LabelFrame(panel, text="當前測試條碼（由 Arduino TCP→USB CDC 收到；也可手動驗證）", padding=8); batch.pack(fill="x", pady=10)
         ttk.Entry(batch, textvariable=self.sn_text).pack(side="left", fill="x", expand=True)
         ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).pack(side="left", padx=(5, 0))
+        ttk.Button(batch, text="Demo", command=self.open_demo_dialog).pack(side="left", padx=(5, 0))
         self.bt_channel_buttons = ttk.Frame(batch); self.bt_channel_buttons.pack(side="left", padx=(5, 0))
         for slot in range(1, 5):
             ttk.Button(self.bt_channel_buttons, text=f"BT Start {slot}", command=lambda n=slot: self.start_bt_channel(n)).pack(side="left", padx=2)
@@ -1389,6 +1398,25 @@ class AtlasAgentApp:
     def choose_dir(self, variable: tk.StringVar) -> None:
         selected = filedialog.askdirectory(initialdir=variable.get() or str(Path.home()))
         if selected: variable.set(selected)
+
+    def save_preferences(self) -> None:
+        """Persist all user-controlled settings after a successful Settings apply."""
+        try:
+            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
+        except AgentError:
+            return
+        try:
+            result_timeout = max(0.0, float(self.result_timeout.get()))
+        except ValueError:
+            result_timeout = 300.0
+        Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
+                    template_path=self.template_path.get(), station=self.station.get(),
+                    dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
+                    hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
+                    hid_offset_x=offset_x, hid_offset_y=offset_y, hid_mode=hid_mode,
+                    absolute_width=absolute_width, absolute_height=absolute_height,
+                    auto_scale=self.auto_scale.get(), result_timeout_seconds=result_timeout,
+                    auto_slot_sync=self.auto_slot_sync.get()).save(self.pref_file)
 
     def hid_settings(self) -> tuple[float, float, float, float, float, str, int, int]:
         return self.parse_hid_settings_values(self.hid_delay.get(), self.hid_scale_x.get(), self.hid_scale_y.get(),
@@ -1415,15 +1443,53 @@ class AtlasAgentApp:
             absolute_hid_report_coordinate((0, 0), absolute_width, absolute_height)
         return delay, scale_x, scale_y, offset_x, offset_y, mode, absolute_width, absolute_height
 
-    def open_hid_settings(self) -> None:
-        """Keep advanced HID calibration out of the compact main HMI."""
+    def open_settings(self) -> None:
+        """Keep non-daily paths and test controls out of the compact HMI."""
         dialog = tk.Toplevel(self.root)
-        dialog.title("HID 設定")
+        dialog.title("Atlas Agent 設定")
         dialog.transient(self.root)
         dialog.resizable(False, False)
         frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="Arduino HID 控制設定", font=("TkDefaultFont", 14, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
-        ttk.Label(frame, text="這些值只影響 Arduino 的滑鼠 HID 指令，不會使用 macOS 軟體鍵盤／滑鼠控制。", foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 12))
+        ttk.Label(frame, text="Atlas Agent 設定", font=("TkDefaultFont", 14, "bold")).pack(anchor="w", pady=(0, 8))
+        notebook = ttk.Notebook(frame); notebook.pack(fill="both", expand=True)
+
+        paths = ttk.Frame(notebook, padding=10); notebook.add(paths, text="路徑與模板")
+        flow = ttk.Frame(notebook, padding=10); notebook.add(flow, text="流程設定")
+        hid = ttk.Frame(notebook, padding=10); notebook.add(hid, text="HID 設定")
+
+        csv_path, log_path = tk.StringVar(value=self.csv_path.get()), tk.StringVar(value=self.log_path.get())
+        template_path, screenshot_path = tk.StringVar(value=self.template_path.get()), tk.StringVar(value=self.screenshot_path.get())
+
+        def choose_dialog_dir(variable: tk.StringVar) -> None:
+            selected = filedialog.askdirectory(parent=dialog, initialdir=variable.get() or str(Path.home()))
+            if selected:
+                variable.set(selected)
+
+        for row, (label, variable) in enumerate((("CSV 根路徑：", csv_path), ("Log 根路徑（選填）：", log_path),
+                                                   ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
+            ttk.Label(paths, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            ttk.Entry(paths, textvariable=variable, width=58).grid(row=row, column=1, sticky="ew", pady=3)
+            ttk.Button(paths, text="選擇", command=lambda v=variable: choose_dialog_dir(v)).grid(row=row, column=2, padx=(5, 0), pady=3)
+        ttk.Button(paths, text="製作模板", command=lambda: self.open_template_maker(
+            template_path.get(), screenshot_path.get(), dfu_profile.get())).grid(row=4, column=1, sticky="w", pady=(10, 0))
+        ttk.Button(paths, text="查看匹配疊圖", command=self.show_match_overlay).grid(row=4, column=2, sticky="e", pady=(10, 0))
+        paths.columnconfigure(1, weight=1)
+
+        dfu_profile = tk.StringVar(value=self.dfu_profile.get())
+        result_timeout = tk.StringVar(value=self.result_timeout.get())
+        auto_slot_sync = tk.BooleanVar(value=self.auto_slot_sync.get())
+        ttk.Label(flow, text="DFU 畫面設定：").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Combobox(flow, textvariable=dfu_profile, width=28, state="readonly",
+                     values=DFU_PROFILES).grid(row=0, column=1, sticky="w", pady=3)
+        ttk.Label(flow, text="B482 DFU_2：每個 SN 輸入後按 OK。", foreground="#555").grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Label(flow, text="測試結果逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
+        ttk.Entry(flow, textvariable=result_timeout, width=10).grid(row=2, column=1, sticky="w", pady=(12, 3))
+        ttk.Label(flow, text="0 表示不逾時；未完成 SN 回報 TIMEOUT。", foreground="#555").grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(flow, text="自動同步 DFU／FCT Slot 勾選（需要 checkbox 模板）", variable=auto_slot_sync).grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 3))
+        ttk.Label(flow, text="未勾選為 Demo 手動 Slot 模式：請先在測試 HMI 手動設定 checkbox；Agent 不會驗證或修正。", foreground="#a33", wraplength=620).grid(row=5, column=0, columnspan=2, sticky="w")
+
+        ttk.Label(hid, text="Arduino HID 控制設定", font=("TkDefaultFont", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        ttk.Label(hid, text="這些值只影響 Arduino HID 指令，不會使用 macOS 軟體鍵盤／滑鼠控制。", foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
         delay = tk.StringVar(value=self.hid_delay.get())
         scale_x, scale_y = tk.StringVar(value=self.hid_scale_x.get()), tk.StringVar(value=self.hid_scale_y.get())
@@ -1432,39 +1498,48 @@ class AtlasAgentApp:
         absolute_width, absolute_height = tk.StringVar(value=self.absolute_width.get()), tk.StringVar(value=self.absolute_height.get())
         auto_scale = tk.BooleanVar(value=self.auto_scale.get())
 
-        ttk.Label(frame, text="每步延遲（秒）：").grid(row=2, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=delay, width=10).grid(row=2, column=1, sticky="w")
-        ttk.Checkbutton(frame, text="依截圖／顯示器自動計算比例", variable=auto_scale).grid(row=2, column=2, columnspan=2, sticky="w", padx=(16, 0))
-        ttk.Label(frame, text="X / Y 比例：").grid(row=3, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=scale_x, width=10).grid(row=3, column=1, sticky="w")
-        ttk.Entry(frame, textvariable=scale_y, width=10).grid(row=3, column=2, sticky="w", padx=(8, 0))
-        ttk.Label(frame, text="X / Y 偏移：").grid(row=4, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=offset_x, width=10).grid(row=4, column=1, sticky="w")
-        ttk.Entry(frame, textvariable=offset_y, width=10).grid(row=4, column=2, sticky="w", padx=(8, 0))
-        ttk.Label(frame, text="HID 模式：").grid(row=5, column=0, sticky="w", pady=3)
-        ttk.Combobox(frame, textvariable=mode, values=("relative", "absolute"), width=12, state="readonly").grid(row=5, column=1, sticky="w")
-        ttk.Label(frame, text="absolute 虛擬桌面（邏輯點）：").grid(row=6, column=0, sticky="w", pady=3)
-        ttk.Entry(frame, textvariable=absolute_width, width=10).grid(row=6, column=1, sticky="w")
-        ttk.Label(frame, text="×").grid(row=6, column=2, sticky="w", padx=(8, 2))
-        ttk.Entry(frame, textvariable=absolute_height, width=10).grid(row=6, column=3, sticky="w")
-        ttk.Label(frame, text="例：單一 Retina 顯示器為 1440 × 900", foreground="#555").grid(row=7, column=0, columnspan=4, sticky="w", pady=(3, 0))
+        ttk.Label(hid, text="每步延遲（秒）：").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(hid, textvariable=delay, width=10).grid(row=2, column=1, sticky="w")
+        ttk.Checkbutton(hid, text="依截圖／顯示器自動計算比例", variable=auto_scale).grid(row=2, column=2, columnspan=2, sticky="w", padx=(16, 0))
+        ttk.Label(hid, text="X / Y 比例：").grid(row=3, column=0, sticky="w", pady=3)
+        ttk.Entry(hid, textvariable=scale_x, width=10).grid(row=3, column=1, sticky="w")
+        ttk.Entry(hid, textvariable=scale_y, width=10).grid(row=3, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(hid, text="X / Y 偏移：").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Entry(hid, textvariable=offset_x, width=10).grid(row=4, column=1, sticky="w")
+        ttk.Entry(hid, textvariable=offset_y, width=10).grid(row=4, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(hid, text="HID 模式：").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Combobox(hid, textvariable=mode, values=("relative", "absolute"), width=12, state="readonly").grid(row=5, column=1, sticky="w")
+        ttk.Label(hid, text="absolute 虛擬桌面（邏輯點）：").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Entry(hid, textvariable=absolute_width, width=10).grid(row=6, column=1, sticky="w")
+        ttk.Label(hid, text="×").grid(row=6, column=2, sticky="w", padx=(8, 2))
+        ttk.Entry(hid, textvariable=absolute_height, width=10).grid(row=6, column=3, sticky="w")
+        ttk.Label(hid, text="例：單一 Retina 顯示器為 1440 × 900", foreground="#555").grid(row=7, column=0, columnspan=4, sticky="w", pady=(3, 0))
 
         def save() -> None:
             try:
                 self.parse_hid_settings_values(delay.get(), scale_x.get(), scale_y.get(), offset_x.get(), offset_y.get(),
                                                mode.get(), absolute_width.get(), absolute_height.get())
+                timeout_value = float(result_timeout.get())
+                if timeout_value < 0:
+                    raise ValueError
             except AgentError as exc:
                 messagebox.showerror(TITLE, str(exc), parent=dialog); return
+            except ValueError:
+                messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數", parent=dialog); return
             self.hid_delay.set(delay.get()); self.hid_scale_x.set(scale_x.get()); self.hid_scale_y.set(scale_y.get())
             self.hid_offset_x.set(offset_x.get()); self.hid_offset_y.set(offset_y.get()); self.hid_mode.set(mode.get())
             self.absolute_width.set(absolute_width.get()); self.absolute_height.set(absolute_height.get())
             self.auto_scale.set(auto_scale.get())
+            self.csv_path.set(csv_path.get()); self.log_path.set(log_path.get())
+            self.template_path.set(template_path.get()); self.screenshot_path.set(screenshot_path.get())
+            self.dfu_profile.set(dfu_profile.get()); self.result_timeout.set(result_timeout.get())
+            self.auto_slot_sync.set(auto_slot_sync.get())
+            self.save_preferences()
             dialog.destroy()
 
-        buttons = ttk.Frame(frame); buttons.grid(row=8, column=0, columnspan=4, sticky="e", pady=(14, 0))
+        buttons = ttk.Frame(frame); buttons.pack(fill="x", pady=(12, 0))
         ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
         ttk.Button(buttons, text="套用", command=save).pack(side="right", padx=(0, 6))
-        dialog.grab_set()
 
     def show_match_overlay(self) -> None:
         if not self.overlay_path.is_file():
@@ -1490,27 +1565,30 @@ class AtlasAgentApp:
         label.pack(padx=10, pady=10)
         ttk.Label(dialog, text=f"原圖 {width} × {height} px；檔案：{self.overlay_path}").pack(padx=10, pady=(0, 10))
 
-    def open_template_maker(self) -> None:
-        template_root = Path(self.template_path.get()).expanduser()
-        screenshot_root = Path(self.screenshot_path.get()).expanduser()
+    def open_template_maker(self, template_path: Optional[str] = None, screenshot_path: Optional[str] = None,
+                            dfu_profile: Optional[str] = None) -> None:
+        template_root = Path(template_path if template_path is not None else self.template_path.get()).expanduser()
+        screenshot_root = Path(screenshot_path if screenshot_path is not None else self.screenshot_path.get()).expanduser()
         if not screenshot_root.is_dir():
             messagebox.showerror(TITLE, "請先選擇有效的螢幕截圖路徑"); return
         station = self.station.get()
         if station == "FCT":
             TemplateMakerDialog(self.root, template_root, screenshot_root,
-                                list(FCT_CHECKBOX_TEMPLATES.values()), self.capture_template_screenshot)
+                                list(FCT_CHECKBOX_TEMPLATES.values()),
+                                lambda: self.capture_template_screenshot(screenshot_root))
             return
-        profile = VISUAL_PROFILES[self.dfu_profile.get() if station == "DFU" else "b482_bt"]
+        profile = VISUAL_PROFILES[(dfu_profile if dfu_profile is not None else self.dfu_profile.get()) if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
         suggested.extend(profile[key] for key in ("barcode", "ok", "start", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
             suggested.extend(profile["status"].values())
-        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested, self.capture_template_screenshot)
+        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested,
+                            lambda: self.capture_template_screenshot(screenshot_root))
 
-    def capture_template_screenshot(self) -> Path:
+    def capture_template_screenshot(self, screenshot_root: Optional[Path] = None) -> Path:
         """Ask Arduino for a fresh screenshot and return the newest generated file."""
-        screenshot_root = Path(self.screenshot_path.get()).expanduser()
+        screenshot_root = screenshot_root or Path(self.screenshot_path.get()).expanduser()
         if not screenshot_root.is_dir():
             raise AgentError("請先選擇有效的螢幕截圖路徑")
         before = time.time()
@@ -1559,30 +1637,29 @@ class AtlasAgentApp:
         job_id = "LOCAL-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         return TestCommand(self.station.get(), job_id, tuple(zip(slots, sns)))
 
-    def validate_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand]]:
-        try:
-            root_text = self.csv_path.get().strip()
-            root = Path(root_text).expanduser() if root_text else Path(".")
-            if self.station.get() != "BT" and not root.is_dir():
-                raise AgentError("請選擇有效的 CSV 根路徑")
-            command = self.command_from_payload(payload, bt_slot)
-            if command.station != self.station.get():
-                raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
-        except AgentError as exc:
-            messagebox.showerror(TITLE, str(exc)); return None
+    def validate_command(self, command: TestCommand) -> tuple[Path, TestCommand]:
+        root_text = self.csv_path.get().strip()
+        root = Path(root_text).expanduser() if root_text else Path(".")
+        if command.station != "BT" and not root.is_dir():
+            raise AgentError("請選擇有效的 CSV 根路徑")
+        if command.station != self.station.get():
+            raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
         return root, command
 
-    def prepare_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand, int, float, float]]:
-        validated = self.validate_batch(payload, bt_slot)
-        if validated is None:
-            return None
+    def validate_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand]]:
+        try:
+            command = self.command_from_payload(payload, bt_slot)
+            return self.validate_command(command)
+        except AgentError as exc:
+            messagebox.showerror(TITLE, str(exc)); return None
+
+    def prepare_command(self, root: Path, command: TestCommand) -> Optional[tuple[Path, TestCommand, int, float, float]]:
         try:
             result_timeout = float(self.result_timeout.get())
             if result_timeout < 0:
                 raise ValueError
         except ValueError:
             messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數"); return None
-        root, command = validated
         self.stop_monitor()
         self.sns, self.slots = command.sns, command.slots
         self.current_job_id, self.current_station = command.job_id, command.station
@@ -1592,32 +1669,80 @@ class AtlasAgentApp:
         self.batch_number += 1
         return root, command, self.batch_number, time.time(), result_timeout
 
-    def start_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[list[str]]:
-        prepared = self.prepare_batch(payload, bt_slot)
-        if prepared is None:
-            return None
+    def prepare_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand, int, float, float]]:
+        validated = self.validate_batch(payload, bt_slot)
+        return self.prepare_command(*validated) if validated is not None else None
+
+    def start_prepared(self, prepared: tuple[Path, TestCommand, int, float, float]) -> list[str]:
         root, command, batch_number, created_after, result_timeout = prepared
         if command.station in ("DFU", "BT"):
             threading.Thread(target=self.visual_start,
                              args=(command.station, command.sns, command.slots, root, batch_number,
                                    created_after, result_timeout), daemon=True).start()
-        elif command.slots != [1, 2, 3, 4]:
-            # A full FCT tray uses the normal fixture workflow.  A sparse JOB
-            # must first synchronize the visible checkbox state with the
-            # requested slots, otherwise a fixture insertion can test stale
-            # slot 2/3 selections.
+        elif command.slots != [1, 2, 3, 4] and self.auto_slot_sync.get():
             threading.Thread(target=self.configure_fct_sparse_slots,
                              args=(command.slots, root, command.sns, batch_number,
                                    created_after, result_timeout), daemon=True).start()
         else:
+            if command.station == "FCT" and command.slots != [1, 2, 3, 4]:
+                self.append("FCT 手動 Slot 模式：已略過 checkbox 同步，等待治具／模擬 HMI 開始測試。")
             self.start_monitor(root, command.sns, batch_number, created_after, result_timeout)
         return command.sns
+
+    def start_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[list[str]]:
+        prepared = self.prepare_batch(payload, bt_slot)
+        if prepared is None:
+            return None
+        return self.start_prepared(prepared)
 
     def start_bt_channel(self, slot: int) -> None:
         if self.station.get() != "BT":
             messagebox.showinfo(TITLE, "請先將工站切換為 BT，再使用個別通道 Start 按鈕。", parent=self.root)
             return
         self.start_batch(self.sn_text.get(), bt_slot=slot)
+
+    def open_demo_dialog(self) -> None:
+        """Collect explicit slot-to-SN mappings for an on-site live demo."""
+        station = self.station.get()
+        slot_count = DEMO_SLOT_LIMITS[station]
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"{station} Demo 條碼輸入")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text=f"{station} 現場 Demo", font=("TkDefaultFont", 14, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        description = ("DFU Demo 暫時支援 7 個 slot；此能力不會改變正式 TCP／一般手動輸入的 4-slot 限制。"
+                       if station == "DFU" else "每格對應一個 slot；留白代表該 slot 不測試。")
+        ttk.Label(frame, text=description, foreground="#555", wraplength=560).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        if not self.auto_slot_sync.get() and station in ("DFU", "FCT"):
+            ttk.Label(frame, text="手動 Slot 模式：請先在測試 HMI 手動確認 checkbox 狀態。", foreground="#a33").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        elif station == "FCT":
+            ttk.Label(frame, text="FCT 開始後僅監聽；請由治具或模擬 HMI 觸發測試開始。", foreground="#555").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        first_row = 3
+        entries = [tk.StringVar() for _ in range(slot_count)]
+        for index, variable in enumerate(entries, start=1):
+            ttk.Label(frame, text=f"Slot {index}").grid(row=first_row + index - 1, column=0, sticky="w", pady=3)
+            ttk.Entry(frame, textvariable=variable, width=48).grid(row=first_row + index - 1, column=1, sticky="ew", pady=3)
+
+        def start() -> None:
+            try:
+                assignments = demo_slot_assignments(station, [item.get() for item in entries])
+                command = TestCommand(station, "DEMO-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f"), assignments)
+                root, command = self.validate_command(command)
+                prepared = self.prepare_command(root, command)
+            except AgentError as exc:
+                messagebox.showerror(TITLE, str(exc), parent=dialog); return
+            if prepared is None:
+                return
+            dialog.destroy()
+            self.append("Demo 已啟動：" + "、".join(f"slot{slot}={sn}" for slot, sn in command.assignments))
+            self.start_prepared(prepared)
+
+        buttons = ttk.Frame(frame); buttons.grid(row=first_row + slot_count, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="開始流程", command=start).pack(side="right", padx=(0, 6))
+        dialog.bind("<Return>", lambda _: start())
 
     def start_local_demo(self, payload: str) -> None:
         validated = self.validate_batch(payload)
@@ -1864,7 +1989,7 @@ class AtlasAgentApp:
             templates = Path(self.template_path.get()).expanduser()
             if station == "DFU":
                 required = [profile["window"], profile["barcode"]]
-                if slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                if self.auto_slot_sync.get() and slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
                     required.extend((profile["checkbox_checked"], profile["checkbox_unchecked"]))
             else:
                 start_templates = ([profile["start"]] if slots == [1, 2, 3, 4]
@@ -1945,7 +2070,8 @@ class AtlasAgentApp:
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
                 focus_commands = click_commands(target_for(window_center), hid_mode)
-                sparse_checkbox_job = slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each"
+                sparse_checkbox_job = (self.auto_slot_sync.get() and slots != [1, 2, 3, 4]
+                                       and profile["input_mode"] == "ok_each")
                 if sparse_checkbox_job:
                     states = slot_checkbox_states(shot, resolved[profile["checkbox_checked"]],
                                                    resolved[profile["checkbox_unchecked"]], region=region)
@@ -1970,6 +2096,8 @@ class AtlasAgentApp:
                                                          resolved[profile["checkbox_checked"]],
                                                          resolved[profile["checkbox_unchecked"]],
                                                          target_for, hid_mode, delay)
+                    elif slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                        self.events.put(("log", "DFU 手動 Slot 模式：已略過 checkbox 模板與同步，依人工設定的 slot 順序輸入 SN。"))
                     self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
@@ -2146,21 +2274,7 @@ class AtlasAgentApp:
         self.root.after(100, self.process_events)
 
     def close(self) -> None:
-        try:
-            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
-        except AgentError:
-            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = .5, 1.0, 1.0, 0.0, 0.0, "relative", 1440, 900
-        try:
-            result_timeout = max(0.0, float(self.result_timeout.get()))
-        except ValueError:
-            result_timeout = 300.0
-        Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
-                    template_path=self.template_path.get(), station=self.station.get(),
-                    dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
-                    hid_delay=delay, hid_scale_x=scale_x, hid_scale_y=scale_y,
-                    hid_offset_x=offset_x, hid_offset_y=offset_y, hid_mode=hid_mode,
-                    absolute_width=absolute_width, absolute_height=absolute_height,
-                    auto_scale=self.auto_scale.get(), result_timeout_seconds=result_timeout).save(self.pref_file)
+        self.save_preferences()
         self.stop_monitor(); self.link.close(); self.root.destroy()
 
 

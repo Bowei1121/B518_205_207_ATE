@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -22,6 +22,16 @@ class AtlasAgentTests(unittest.TestCase):
     def test_barcodes(self):
         self.assertEqual(parse_barcodes("DATA:A, B,C"), ["A", "B", "C"])
         with self.assertRaises(Exception): parse_barcodes("A,B,C,D,E")
+
+    def test_demo_slot_assignments_supports_sparse_seven_slot_dfu_only(self):
+        self.assertEqual(demo_slot_assignments("DFU", ["SN001", "", "SN003", "", "", "", "SN007"]),
+                         ((1, "SN001"), (3, "SN003"), (7, "SN007")))
+        self.assertEqual(demo_slot_assignments("FCT", ["SN001", "", "SN003", ""]),
+                         ((1, "SN001"), (3, "SN003")))
+        with self.assertRaises(AgentError):
+            demo_slot_assignments("FCT", ["SN001"] * 7)
+        with self.assertRaises(AgentError):
+            demo_slot_assignments("DFU", ["SN001"] * 7)
 
     def test_transparent_tcp_barcode_payload_is_accepted_without_control_replies(self):
         self.assertEqual(incoming_barcode_payload("SN1,SN2"), "SN1,SN2")
@@ -142,6 +152,8 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(command.sns, ["SN001", "SN003", "SN004"])
         with self.assertRaises(AgentError):
             parse_test_command("BT:JOB=X;1=SN001,1=SN002")
+        with self.assertRaises(AgentError):
+            parse_test_command("DFU:JOB=LIVE;1=SN001,2=SN002,3=SN003,4=SN004,5=SN005")
 
     def test_bt_ignores_stale_final_status_until_testing_has_been_seen(self):
         seen = set()
@@ -308,7 +320,7 @@ class AtlasAgentTests(unittest.TestCase):
     def test_preferences_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             filename = Path(directory) / "preferences.json"
-            expected = Preferences("/dev/cu.usbmodem1", "/csv", "/log", "/templates", "BT", "b482_dfu2", "/shots")
+            expected = Preferences("/dev/cu.usbmodem1", "/csv", "/log", "/templates", "BT", "b482_dfu2", "/shots", auto_slot_sync=True)
             expected.save(filename)
             self.assertEqual(Preferences.load(filename), expected)
 

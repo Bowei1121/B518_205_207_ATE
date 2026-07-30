@@ -52,6 +52,23 @@ chmod +x build_macos_app.sh
 輸出為 `dist/Atlas Agent B518 ATE.app`。目標 Mac mini 僅執行產出的 App；Agent
 本身不要求 Automation 或 Accessibility 權限。
 
+## 現場 Demo 操作
+
+主畫面右側的「設定」將路徑、模板、DFU 流程、結果逾時與 HID 校正集中在同一個視窗；現場
+操作只需在主畫面選擇工站、連線 Arduino、按「Demo」輸入條碼並開始流程。
+
+Demo 視窗以 slot 對應的獨立欄位輸入 SN，留白代表不測試。DFU Demo 暫時提供 slot 1～7，
+FCT 與 BT 為 slot 1～4。DFU 的 7-slot 僅限此本機 Demo 視窗；一般手動逗號輸入、Arduino
+TCP 與上位機 TCP JOB 仍固定最多 4 個 slot，符合未來正式設備規格。
+
+設定中的「自動同步 DFU／FCT Slot 勾選」預設為關閉，適合現場 Demo：操作人員先在測試 HMI
+手動設定有料／空料 slot，再以 Demo 視窗輸入相同 slot 的條碼。此模式不需要
+`slot_checkbox_checked.png` 與 `slot_checkbox_unchecked.png`，但 Agent 也不會驗證人工設定。
+正式產線請開啟自動同步並建立兩種 checkbox 模板。
+
+FCT Demo 按開始後只會啟動 CSV 監聽；測試仍須由治具或模擬 HMI 的 Fixture Insert 功能觸發。
+DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
+
 ### macOS Catalina 10.15 Intel 專用打包
 
 若交付機是 macOS Catalina 10.15 Intel，**不可**使用較新的 macOS 直接建置，否則

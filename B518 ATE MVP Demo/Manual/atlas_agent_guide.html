@@ -51,7 +51,7 @@
 
       <section id="connect">
         <h2>2. 主畫面與 Arduino 連線</h2>
-        <p class="lead">程式開啟後先核對工站、四個路徑與 USB CDC。這些資料會自動記憶上次設定，但換設備、換帳號或移動資料夾後仍須重新確認。</p>
+        <p class="lead">程式開啟後先核對工站與 USB CDC。路徑、模板、流程與 HID 校正集中在「設定」視窗，這些資料會自動記憶上次設定。</p>
         <figure class="manual-figure">
           <img src="assets/atlas_agent/01-main-hmi.png" width="942" height="734" loading="lazy" alt="Atlas Agent B518 ATE V0.1.5 程式開啟時的完整主畫面">
           <figcaption><span class="figure-label">圖 2-1</span>Atlas Agent 主畫面。按鈕會依目前工站、USB 連線狀態與是否正在測試而啟用或停用。</figcaption>
@@ -62,13 +62,8 @@
             <tbody>
               <tr><td><strong>工站</strong></td><td>切換 DFU、FCT、BT 工作流程</td><td>啟動後第一個確認；必須與本台測試儀器一致。</td></tr>
               <tr><td><strong>USB CDC</strong>／重新掃描／連線／中斷</td><td>選擇並管理 Arduino USB 序列連線</td><td>選 <code>/dev/cu.usbmodem…</code>，不要選 Bluetooth port。</td></tr>
-              <tr><td><strong>CSV 根路徑</strong></td><td>DFU／FCT 監控 SN 測試資料</td><td>要選到包含各 SN 資料夾的最上層根目錄。</td></tr>
-              <tr><td><strong>Log 根路徑</strong></td><td>指定額外的 device.log 根目錄</td><td>選填；留白時由 CSV 根路徑尋找。</td></tr>
-              <tr><td><strong>OpenCV 模板路徑</strong>／製作模板</td><td>讀取及建立畫面定位模板</td><td>建議放在本機 Documents/template。</td></tr>
-              <tr><td><strong>螢幕截圖路徑</strong></td><td>讀取 Arduino 觸發後由 macOS 儲存的截圖</td><td>必須與 macOS 實際截圖儲存位置一致。</td></tr>
-              <tr><td><strong>設定 HID</strong>／查看匹配疊圖</td><td>設定游標比例、模式、偏移與延遲；檢查辨識位置</td><td>定位正確但游標偏移時才調整 HID。</td></tr>
-              <tr><td><strong>DFU 畫面設定</strong>／測試逾時</td><td>選擇 DFU HMI 類型與整批測試逾時</td><td>非 DFU 工站仍可顯示，但不影響 FCT／BT 流程。</td></tr>
-              <tr><td><strong>當前測試條碼</strong>與流程按鍵</td><td>手動驗證 JOB、啟動流程、單獨啟動 BT slot、停止監聽</td><td>正式量產以 Arduino TCP 收到的 JOB 為主。</td></tr>
+              <tr><td><strong>設定</strong></td><td>開啟路徑與模板、流程、HID 的統一設定視窗</td><td>日常 Demo 不需長期佔用主畫面；按套用後立即儲存。</td></tr>
+              <tr><td><strong>當前測試條碼</strong>與流程按鍵</td><td>手動驗證 JOB、Demo、啟動流程、單獨啟動 BT slot、停止監聽</td><td>正式量產以 Arduino TCP 收到的 JOB 為主。</td></tr>
               <tr><td><strong>Arduino 網路設定</strong>／修改 IP</td><td>顯示並修改 Arduino Ethernet IP</td><td>USB 連線後自動查詢；每片 Arduino IP 必須唯一。</td></tr>
               <tr><td><strong>即時 device.log／通訊紀錄</strong></td><td>顯示 USB 指令、影像流程、CSV 與結果狀態</td><td>發生異常時先保存這一區的完整內容。</td></tr>
             </tbody>
@@ -244,6 +239,9 @@ b482/bt_status_notset.png</code></pre>
         </div>
         <h3>手動驗證模式</h3>
         <p>可在「當前測試條碼」輸入逗號分隔 SN 後按「開始流程」。正式量產仍應使用含 JOB ID 與 slot 的結構化命令。</p>
+        <h3>現場 Demo 模式</h3>
+        <p>按主畫面的「Demo」開啟 slot 條碼視窗：DFU 暫時提供 7 格，FCT 與 BT 各提供 4 格。每格就是對應 slot 的 SN，留白代表不測試，因此不會因逗號順序而混淆。DFU 的 7-slot 能力只存在 Demo 視窗；一般手動輸入與 TCP JOB 仍維持最多 4 slot。</p>
+        <p>Demo 前先在「設定 → 流程設定」確認 Slot 模式。預設為手動模式，操作人員需自行在測試 HMI 勾選有料 slot、取消空料 slot；此模式不需要 checkbox 模板，也不會驗證人工設定。正式量產請開啟自動同步。FCT Demo 按開始後只會監聽，仍需由治具或模擬 HMI 觸發測試開始。</p>
         <h3>BT SN 人工覆核</h3>
         <p>BT 在 TESTING 後逐列 OCR 設備 SN。若與上位機 SN 不符或讀取不完整，測試仍跑完，之後顯示覆核視窗：</p>
         <ul>
