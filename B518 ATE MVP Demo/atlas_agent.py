@@ -63,6 +63,8 @@ SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
 DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 4, "BT": 4}
+COMPACT_HMI_GEOMETRY = "420x820"
+COMPACT_HMI_MIN_SIZE = (400, 700)
 
 # Dynamic PASS / FAIL / NOTSET / TESTING cells are deliberately excluded from
 # every template.  They change throughout a real test and must not be used for
@@ -1317,7 +1319,11 @@ class AtlasAgentApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(TITLE)
-        self.root.geometry("940x700")
+        # The production station uses a 1280×1024 display.  Keep Agent narrow
+        # enough to sit beside the test HMI, while leaving the lower half for
+        # the live serial/device log.
+        self.root.geometry(COMPACT_HMI_GEOMETRY)
+        self.root.minsize(*COMPACT_HMI_MIN_SIZE)
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -1356,39 +1362,81 @@ class AtlasAgentApp:
         self.ip_text = tk.StringVar()
         self.demo_fail_last = tk.BooleanVar(value=False)
         self._build()
+        self.station.trace_add("write", self._update_station_controls)
+        self._update_station_controls()
         self.refresh_ports()
         self.root.after(100, self.process_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build(self) -> None:
-        panel = ttk.Frame(self.root, padding=12); panel.pack(fill="both", expand=True)
-        top = ttk.Frame(panel); top.pack(fill="x")
-        ttk.Label(top, text="工站：").pack(side="left")
-        ttk.Combobox(top, textvariable=self.station, values=("DFU", "FCT", "BT"), width=8, state="readonly").pack(side="left")
-        ttk.Label(top, text="  USB CDC：").pack(side="left")
-        self.port_menu = ttk.Combobox(top, textvariable=self.port, width=35)
-        self.port_menu.pack(side="left", fill="x", expand=True)
-        ttk.Button(top, text="重新掃描", command=self.refresh_ports).pack(side="left", padx=4)
-        ttk.Button(top, text="連線", command=self.connect).pack(side="left")
-        ttk.Button(top, text="中斷", command=self.link.close).pack(side="left", padx=(4, 0))
-        ttk.Button(top, text="設定", command=self.open_settings).pack(side="left", padx=(8, 0))
-        batch = ttk.LabelFrame(panel, text="當前測試條碼（由 Arduino TCP→USB CDC 收到；也可手動驗證）", padding=8); batch.pack(fill="x", pady=10)
-        ttk.Entry(batch, textvariable=self.sn_text).pack(side="left", fill="x", expand=True)
-        ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).pack(side="left", padx=(5, 0))
-        ttk.Button(batch, text="Demo", command=self.open_demo_dialog).pack(side="left", padx=(5, 0))
-        self.bt_channel_buttons = ttk.Frame(batch); self.bt_channel_buttons.pack(side="left", padx=(5, 0))
+        panel = ttk.Frame(self.root, padding=10)
+        panel.pack(fill="both", expand=True)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(4, weight=1)
+
+        connection = ttk.LabelFrame(panel, text="連線", padding=8)
+        connection.grid(row=0, column=0, sticky="ew")
+        connection.columnconfigure(1, weight=1)
+        ttk.Label(connection, text="工站").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(connection, textvariable=self.station, values=("DFU", "FCT", "BT"), width=8,
+                     state="readonly").grid(row=0, column=1, sticky="ew", padx=(6, 4))
+        ttk.Button(connection, text="設定", command=self.open_settings).grid(row=0, column=2, sticky="e")
+        ttk.Label(connection, text="USB CDC").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.port_menu = ttk.Combobox(connection, textvariable=self.port)
+        self.port_menu.grid(row=1, column=1, sticky="ew", padx=(6, 4), pady=(6, 0))
+        ttk.Button(connection, text="掃描", command=self.refresh_ports).grid(row=1, column=2, sticky="e", pady=(6, 0))
+        ttk.Button(connection, text="連線", command=self.connect).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(connection, text="中斷", command=self.link.close).grid(row=2, column=2, sticky="ew", pady=(8, 0))
+
+        batch = ttk.LabelFrame(panel, text="測試條碼", padding=8)
+        batch.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        batch.columnconfigure(0, weight=1)
+        ttk.Label(batch, text="TCP 收到的 JOB 會自動填入；也可手動以逗號分隔輸入。", foreground="#555",
+                  wraplength=365).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        ttk.Entry(batch, textvariable=self.sn_text).grid(row=1, column=0, columnspan=4, sticky="ew")
+        ttk.Button(batch, text="開始流程", command=lambda: self.start_batch(self.sn_text.get())).grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(batch, text="Demo", command=self.open_demo_dialog).grid(row=2, column=1, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Button(batch, text="本機模擬", command=lambda: self.start_local_demo(self.sn_text.get())).grid(row=2, column=2, sticky="ew", pady=(6, 0))
+        ttk.Button(batch, text="停止監聽", command=self.stop_monitor).grid(row=2, column=3, sticky="ew", padx=(4, 0), pady=(6, 0))
+        for column in range(4):
+            batch.columnconfigure(column, weight=1)
+
+        self.bt_channel_buttons = ttk.Frame(batch)
+        self.bt_channel_buttons.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(6, 0))
         for slot in range(1, 5):
-            ttk.Button(self.bt_channel_buttons, text=f"BT Start {slot}", command=lambda n=slot: self.start_bt_channel(n)).pack(side="left", padx=2)
-        ttk.Button(batch, text="本機模擬", command=lambda: self.start_local_demo(self.sn_text.get())).pack(side="left", padx=(5, 0))
-        ttk.Button(batch, text="停止監聽", command=self.stop_monitor).pack(side="left", padx=(5, 0))
-        ttk.Checkbutton(panel, text="本機模擬最後一台 FAIL（僅寫入目前 CSV 根路徑）", variable=self.demo_fail_last).pack(anchor="w")
-        self.sn_display = ttk.Label(panel, text="尚無測試中的 SN", anchor="w"); self.sn_display.pack(fill="x")
-        ip = ttk.LabelFrame(panel, text="Arduino 網路設定", padding=8); ip.pack(fill="x", pady=10)
-        ttk.Label(ip, textvariable=self.ip_text).pack(side="left", fill="x", expand=True)
-        ttk.Button(ip, text="修改 IP", command=self.change_ip).pack(side="left", padx=(5, 0))
-        ttk.Label(panel, text="即時 device.log / 通訊紀錄：").pack(anchor="w")
-        self.output = tk.Text(panel, height=22, wrap="word", state="disabled")
-        self.output.pack(fill="both", expand=True)
+            self.bt_channel_buttons.columnconfigure(slot - 1, weight=1)
+            ttk.Button(self.bt_channel_buttons, text=f"Start {slot}", command=lambda n=slot: self.start_bt_channel(n)).grid(
+                row=0, column=slot - 1, sticky="ew", padx=(0 if slot == 1 else 2, 0))
+        ttk.Checkbutton(batch, text="本機模擬最後一台 FAIL", variable=self.demo_fail_last).grid(
+            row=4, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
+        job = ttk.LabelFrame(panel, text="目前 JOB", padding=7)
+        job.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.sn_display = ttk.Label(job, text="尚無測試中的 SN", anchor="w", justify="left", wraplength=370)
+        self.sn_display.pack(fill="x")
+
+        ip = ttk.LabelFrame(panel, text="Arduino 網路設定", padding=7)
+        ip.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        ip.columnconfigure(0, weight=1)
+        ttk.Label(ip, textvariable=self.ip_text, anchor="w").grid(row=0, column=0, sticky="ew")
+        ttk.Button(ip, text="修改 IP", command=self.change_ip).grid(row=0, column=1, sticky="e", padx=(6, 0))
+
+        logs = ttk.LabelFrame(panel, text="即時 device.log／通訊紀錄", padding=7)
+        logs.grid(row=4, column=0, sticky="nsew", pady=(8, 0))
+        logs.columnconfigure(0, weight=1)
+        logs.rowconfigure(0, weight=1)
+        self.output = tk.Text(logs, height=18, wrap="word", state="disabled")
+        self.output.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(logs, orient="vertical", command=self.output.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.output.configure(yscrollcommand=scrollbar.set)
+
+    def _update_station_controls(self, *_: object) -> None:
+        """Show BT's individual Start controls only when they are meaningful."""
+        if self.station.get() == "BT":
+            self.bt_channel_buttons.grid()
+        else:
+            self.bt_channel_buttons.grid_remove()
 
     def refresh_ports(self) -> None:
         ports = [item.device for item in list_ports.comports()] if list_ports else []
