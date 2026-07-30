@@ -1,0 +1,10 @@
+# Intel macOS Mojave 10.14 build set.
+# OpenCV must be compiled in the Mojave VM: the pre-built 4.6 wheel used for
+# Catalina declares macOS 10.15 as its minimum system version.
+pyserial==3.5
+numpy==1.26.4
+opencv-python==4.10.0.84
+# BT now reads TestData CSV results, so Vision OCR is not part of this bundle.
+# Cocoa remains required for the AppKit display geometry query.
+pyobjc-core==10.3.1; sys_platform == "darwin"
+pyobjc-framework-Cocoa==10.3.1; sys_platform == "darwin"

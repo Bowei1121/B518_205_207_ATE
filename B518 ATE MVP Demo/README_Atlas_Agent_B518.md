@@ -37,12 +37,15 @@ sysctl -n machdep.cpu.brand_string
 
 | 測試機結果 | 建置規則 | 交付檔案 |
 | --- | --- | --- |
+| `10.14.x`、`x86_64`（Intel） | 使用 Mojave 10.14 Intel VM，以原始碼編譯 OpenCV；不可使用 Catalina wheel | `dist-mojave/Atlas Agent B518 ATE.app` |
 | `10.15.x`、`x86_64`（Intel） | 使用 Catalina 10.15 Intel VM；不可在較新的 macOS 直接建置 | `dist-catalina/Atlas Agent B518 ATE.app` |
 | 其他 Intel macOS | 建置機應是相同或更舊、且仍受支援的 Intel macOS；不可讓任何封裝模組的最低 OS 高於測試機 | 以對應環境產出的 `dist/...app` |
 | `arm64`（Apple Silicon） | 使用相同或更舊、且仍受支援的 Apple Silicon macOS 建置；不可將 Intel-only App 當作原生交付版本 | 以對應 ARM 環境產出的 `dist/...app` |
 
 原則是「**CPU 架構要相同；建置 macOS 版本不得高於測試機**」。完全相同的 OS 與 CPU 環境是
-最安全的做法。每次建置完成後，必須先在相同規格的 VM 或實機雙擊驗證，再複製到封閉測試機。
+最安全的做法。若同一份 App 要共用於 Mojave 與 Catalina，應以 Mojave Intel 建置、先通過
+Mojave 與 Catalina 實機驗證後才可共用；若任一原生依賴無法通過 Mojave 驗證，則改交付兩份
+App，而不是把 Catalina 版交給 Mojave。每次建置完成後，必須先在相同規格的 VM 或實機雙擊驗證，再複製到封閉測試機。
 
 ```bash
 chmod +x build_macos_app.sh
@@ -68,6 +71,29 @@ TCP 與上位機 TCP JOB 仍固定最多 4 個 slot，符合未來正式設備�
 
 FCT Demo 按開始後只會啟動 CSV 監聽；測試仍須由治具或模擬 HMI 的 Fixture Insert 功能觸發。
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
+
+### macOS Mojave 10.14.5 Intel 專用打包（BT 共用版基準）
+
+BT 現場機為 **macOS Mojave 10.14.5、Intel x86_64**。目前 App 可開啟但模板製作器失敗，
+代表 App 內的 OpenCV 原生元件不相容；不可把現有 Catalina 發行檔直接交付給 BT 機。
+
+請在 Mojave 10.14 Intel VM 安裝完整 **Xcode 10.3**、Python 3.12 與 CMake/Ninja 建置工具後執行：
+
+```bash
+cd "/你的專案/B518 ATE MVP Demo"
+xcode-select -p
+chmod +x build_macos_mojave_app.sh verify_mojave_bundle.sh
+./build_macos_mojave_app.sh
+```
+
+腳本會建立 `.venv-mojave`，設定 `MACOSX_DEPLOYMENT_TARGET=10.14`，並在 Mojave **由原始碼編譯**
+OpenCV 與 PyObjC；不使用最低需求為 10.15 的 Catalina OpenCV wheel。產物為
+`dist-mojave/Atlas Agent B518 ATE.app`。最後 `verify_mojave_bundle.sh` 會掃描 App 中每一個 Mach-O
+檔案，任何一個要求高於 macOS 10.14 都會使建置失敗。
+
+建置完成後必須先在 Mojave BT 機測試：開啟 App、連線 Arduino、按「設定 → 製作模板」、載入截圖、
+儲存 `bt_window.png` 與一個 Start 模板；再在 Catalina 機測試相同 App。兩邊都通過，才可將 Mojave
+版作為共用交付檔。
 
 ### macOS Catalina 10.15 Intel 專用打包
 
