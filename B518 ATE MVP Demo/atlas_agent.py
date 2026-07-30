@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -52,6 +52,13 @@ except ImportError:
 
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
 TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
+BT_RESULT_FILENAME = re.compile(
+    r"^\[Thread(?P<thread>[0-3])\]\[[^\]]+\]\[(?P<sn>[^\]]+)\]"
+    r"\[(?P<status>PASSED|FAILED)\]\[(?P<started>\d{14})\]\.csv$"
+)
+BT_THREAD_TO_SLOT = {0: 1, 1: 2, 2: 3, 3: 4}
+BT_START_TOLERANCE_SECONDS = 2
+BT_RESULT_FIELDS = ("SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without
 # adding a DATA: frame.  Keep the raw payload acceptance narrow enough that a
 # CDC control reply (OK:, IP:, ERR:) can never accidentally start a test.
@@ -83,8 +90,6 @@ VISUAL_PROFILES = {
         "window": "b482/bt_window.png", "start": "b482/bt_start_all.png",
         "starts": {1: "b482/bt_start_1.png", 2: "b482/bt_start_2.png",
                    3: "b482/bt_start_3.png", 4: "b482/bt_start_4.png"},
-        "status": {"PASS": "b482/bt_status_pass.png", "FAIL": "b482/bt_status_fail.png",
-                   "TESTING": "b482/bt_status_testing.png", "NOTSET": "b482/bt_status_notset.png"},
         "window_size": (1568, 727),
     },
 }
@@ -944,6 +949,164 @@ class FolderMonitor(threading.Thread):
             pass
 
 
+@dataclass(frozen=True)
+class BtCsvResult:
+    """One fully validated BT TestData result file."""
+    slot: int
+    sn: str
+    status: str
+    started_at: datetime
+    ended_at: datetime
+    path: Path
+
+
+def parse_bt_result_filename(path: Path) -> tuple[int, str, str, datetime]:
+    """Parse the BT exporter filename without trusting it as the sole source."""
+    match = BT_RESULT_FILENAME.fullmatch(path.name)
+    if not match:
+        raise AgentError("檔名不符合 BT 結果格式")
+    thread = int(match.group("thread"))
+    sn = match.group("sn").strip()
+    if not sn:
+        raise AgentError("BT 檔名 SN 為空白")
+    try:
+        started_at = datetime.strptime(match.group("started"), "%Y%m%d%H%M%S")
+    except ValueError as exc:
+        raise AgentError("BT 檔名時間格式錯誤") from exc
+    return BT_THREAD_TO_SLOT[thread], sn, {"PASSED": "PASS", "FAILED": "FAIL"}[match.group("status")], started_at
+
+
+def parse_bt_result_csv(path: Path) -> BtCsvResult:
+    """Accept a BT CSV only when its path, filename and row agree completely."""
+    slot, filename_sn, filename_status, filename_started = parse_bt_result_filename(path)
+    folder_status = {"PASSED": "PASS", "FAILED": "FAIL"}.get(path.parent.name.upper())
+    if folder_status != filename_status:
+        raise AgentError("資料夾、檔名測試結果不一致")
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as source:
+            rows = list(csv.reader(source))
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise AgentError(f"CSV 無法完整讀取：{exc}") from exc
+
+    header_index = next((index for index, row in enumerate(rows)
+                         if set(BT_RESULT_FIELDS).issubset(set(item.strip() for item in row))), None)
+    if header_index is None:
+        raise AgentError("CSV 缺少必要欄位")
+    header = [item.strip() for item in rows[header_index]]
+    indices = {name: header.index(name) for name in BT_RESULT_FIELDS}
+    record = None
+    for row in rows[header_index + 1:]:
+        if len(row) <= max(indices.values()):
+            continue
+        values = {name: row[index].strip() for name, index in indices.items()}
+        if values["SerialNumber"] == filename_sn:
+            record = values
+            break
+    if record is None:
+        raise AgentError("CSV 找不到與檔名一致的 SerialNumber")
+    try:
+        unit = int(record["Unit Number"])
+    except ValueError as exc:
+        raise AgentError("CSV Unit Number 格式錯誤") from exc
+    if unit != slot - 1:
+        raise AgentError("Thread 與 CSV Unit Number 不一致")
+    csv_status = {"PASSED": "PASS", "FAILED": "FAIL"}.get(record["Test Pass/Fail Status"].upper())
+    if csv_status != filename_status:
+        raise AgentError("資料夾、檔名與 CSV 測試結果不一致")
+    try:
+        csv_started = datetime.strptime(record["StartTime"], "%Y/%m/%d %H:%M:%S")
+        ended_at = datetime.strptime(record["EndTime"], "%Y/%m/%d %H:%M:%S")
+    except ValueError as exc:
+        raise AgentError("CSV StartTime／EndTime 格式錯誤") from exc
+    if csv_started != filename_started:
+        raise AgentError("檔名時間與 CSV StartTime 不一致")
+    if ended_at < csv_started:
+        raise AgentError("CSV EndTime 早於 StartTime")
+    return BtCsvResult(slot, filename_sn, filename_status, csv_started, ended_at, path)
+
+
+def bt_result_directories(root: Path, started_at: datetime, now: Optional[datetime] = None) -> list[Path]:
+    """Return start-day and current-day folders, supporting a midnight rollover."""
+    dates = (started_at.date(), (now or datetime.now()).date())
+    directories: list[Path] = []
+    for day in dict.fromkeys(dates):
+        for status in ("PASSED", "FAILED"):
+            directory = root / day.isoformat() / status
+            if directory.is_dir():
+                directories.append(directory)
+    return directories
+
+
+def discover_bt_csv_results(root: Path, slots: Iterable[int], started_at: datetime,
+                            now: Optional[datetime] = None) -> tuple[dict[int, BtCsvResult], list[tuple[Path, str]]]:
+    """Find valid post-start results; invalid or still-writing files are reported, never accepted."""
+    wanted = set(slots)
+    threshold = started_at - timedelta(seconds=BT_START_TOLERANCE_SECONDS)
+    results: dict[int, BtCsvResult] = {}
+    errors: list[tuple[Path, str]] = []
+    for directory in bt_result_directories(root, started_at, now):
+        for path in sorted(directory.glob("*.csv")):
+            try:
+                slot, _, _, filename_started = parse_bt_result_filename(path)
+            except AgentError:
+                continue
+            if slot not in wanted or filename_started < threshold or slot in results:
+                continue
+            try:
+                result = parse_bt_result_csv(path)
+                if result.started_at < threshold:
+                    continue
+                results[slot] = result
+            except AgentError as exc:
+                errors.append((path, str(exc)))
+    return results, errors
+
+
+class BtCsvLogMonitor(threading.Thread):
+    """Monitor BT TestData CSV exports after the Start button is clicked."""
+    def __init__(self, csv_root: Path, sns: list[str], slots: list[int], started_at: datetime,
+                 on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
+                 on_review: Callable[[BtSnReview], None], stop: threading.Event,
+                 timeout_seconds: float = 0.0, on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
+        super().__init__(daemon=True)
+        self.csv_root, self.sns, self.slots, self.started_at = csv_root, sns, slots, started_at
+        self.on_log, self.on_result, self.on_review, self.stop = on_log, on_result, on_review, stop
+        self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.reported_warnings: set[tuple[Path, str]] = set()
+
+    def run(self) -> None:
+        self.on_log("BT CSV 監聽已啟動：" + "、".join(f"slot{slot}={sn}" for slot, sn in zip(self.slots, self.sns)) +
+                    f"；根路徑：{self.csv_root}" + (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
+        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+        while not self.stop.is_set():
+            results, errors = discover_bt_csv_results(self.csv_root, self.slots, self.started_at)
+            for warning in errors:
+                if warning not in self.reported_warnings:
+                    self.reported_warnings.add(warning)
+                    self.on_log(f"BT CSV 尚未有效：{warning[0].name} — {warning[1]}")
+            if all(slot in results for slot in self.slots):
+                ordered = [results[slot] for slot in self.slots]
+                for result in ordered:
+                    self.on_log(f"BT CSV：slot{result.slot} SN={result.sn}，{result.status}，EndTime={result.ended_at:%Y-%m-%d %H:%M:%S}")
+                actual_sns = [result.sn for result in ordered]
+                if [sn.strip().upper() for sn in actual_sns] != [sn.strip().upper() for sn in self.sns]:
+                    self.on_log("BT CSV SN 比對結果：不符，完成後等待人工覆核")
+                    self.on_review(BtSnReview(self.sns, actual_sns, self.slots,
+                                               {expected: result.status for expected, result in zip(self.sns, ordered)}))
+                else:
+                    for expected, result in zip(self.sns, ordered):
+                        self.on_result(TestResult(expected, result.status, result.path.parent, result.path,
+                                                  f"BT CSV Thread{result.slot - 1}／Unit {result.slot - 1}"))
+                return
+            if deadline is not None and time.monotonic() >= deadline:
+                pending = [sn for sn, slot in zip(self.sns, self.slots) if slot not in results]
+                self.on_log("BT CSV 結果逾時：" + "、".join(pending))
+                if self.on_timeout:
+                    self.on_timeout(pending)
+                return
+            self.stop.wait(.25)
+
+
 class BtStatusMonitor(threading.Thread):
     """Permission-free BT result monitor using Arduino-created screenshots.
 
@@ -1513,7 +1676,7 @@ class AtlasAgentApp:
             if selected:
                 variable.set(selected)
 
-        for row, (label, variable) in enumerate((("CSV 根路徑：", csv_path), ("Log 根路徑（選填）：", log_path),
+        for row, (label, variable) in enumerate((("CSV／BT TestData 根路徑：", csv_path), ("Log 根路徑（選填）：", log_path),
                                                    ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
             ttk.Label(paths, text=label).grid(row=row, column=0, sticky="w", pady=3)
             ttk.Entry(paths, textvariable=variable, width=58).grid(row=row, column=1, sticky="ew", pady=3)
@@ -1630,7 +1793,6 @@ class AtlasAgentApp:
         suggested.extend(profile[key] for key in ("barcode", "ok", "start", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
-            suggested.extend(profile["status"].values())
         TemplateMakerDialog(self.root, template_root, screenshot_root, suggested,
                             lambda: self.capture_template_screenshot(screenshot_root))
 
@@ -1688,8 +1850,8 @@ class AtlasAgentApp:
     def validate_command(self, command: TestCommand) -> tuple[Path, TestCommand]:
         root_text = self.csv_path.get().strip()
         root = Path(root_text).expanduser() if root_text else Path(".")
-        if command.station != "BT" and not root.is_dir():
-            raise AgentError("請選擇有效的 CSV 根路徑")
+        if not root.is_dir():
+            raise AgentError("請選擇有效的 CSV／BT TestData 根路徑")
         if command.station != self.station.get():
             raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
         return root, command
@@ -1827,23 +1989,14 @@ class AtlasAgentApp:
                                      lambda pending: self.events.put(("timeout", (batch_number, pending))))
         self.monitor.start()
 
-    def start_bt_status_monitor(self, sns: list[str], slots: list[int], batch_number: int, result_timeout: float,
-                                status_templates: dict[str, Path]) -> None:
-        screenshot_root = Path(self.screenshot_path.get()).expanduser()
-        if not screenshot_root.is_dir():
-            self.append("BT STATUS 監聽未啟動：請選擇有效的螢幕截圖路徑")
-            return
+    def start_bt_log_monitor(self, csv_root: Path, sns: list[str], slots: list[int], batch_number: int,
+                             started_at: datetime, result_timeout: float) -> None:
         self.monitor_stop = threading.Event()
-
-        def request() -> None:
-            self.link.send("SCREENSHOT")
-            self.events.put(("log", "TX: SCREENSHOT（BT STATUS）"))
-
-        self.monitor = BtStatusMonitor(screenshot_root, status_templates, sns, slots, request,
+        self.monitor = BtCsvLogMonitor(csv_root, sns, slots, started_at,
                                        lambda item: self.events.put(("log", item)),
                                        lambda result: self.events.put(("result", (batch_number, result))),
                                        lambda review: self.events.put(("bt_sn_review", (batch_number, review))),
-                                       self.delete_processed_screenshots, self.monitor_stop, result_timeout,
+                                       self.monitor_stop, result_timeout,
                                        lambda pending: self.events.put(("timeout", (batch_number, pending))))
         self.monitor.start()
 
@@ -1855,9 +2008,9 @@ class AtlasAgentApp:
         dialog.resizable(False, False)
         result: dict[str, Optional[list[str]]] = {"sns": None}
         frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="BT 已完成測試，但設備畫面 SN 與上位機 SN 不一致。\n請核對設備實際 SN；確認後將以此處 SN 回傳 RESULT。",
+        ttk.Label(frame, text="BT 已完成測試，但 BT CSV 的實際 SN 與上位機 SN 不一致。\n請核對設備實際 SN；確認後將以此處 SN 回傳 RESULT。",
                   foreground="#9b1c1c").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
-        for column, label in enumerate(("Slot", "上位機 SN", "設備 OCR SN（可修正）", "測試結果")):
+        for column, label in enumerate(("Slot", "上位機 SN", "BT CSV SN（可修正）", "測試結果")):
             ttk.Label(frame, text=label).grid(row=1, column=column, sticky="w", padx=(0, 12), pady=(0, 4))
         fields: list[tk.StringVar] = []
         for index, (slot, expected, actual) in enumerate(zip(review.slots, review.expected_sns, review.machine_sns), start=2):
@@ -2042,7 +2195,9 @@ class AtlasAgentApp:
             else:
                 start_templates = ([profile["start"]] if slots == [1, 2, 3, 4]
                                    else [profile["starts"][slot] for slot in slots])
-                required = [profile["window"], *start_templates, *profile["status"].values()]
+                # BT result status is read from TestData CSV after Start; only
+                # the stable window and Start controls need image templates.
+                required = [profile["window"], *start_templates]
             if station == "DFU" and profile["input_mode"] == "ok_each":
                 required.append(profile["ok"])
             resolved = {item: resolve_template_path(templates, item) for item in required if item}
@@ -2179,12 +2334,13 @@ class AtlasAgentApp:
                 commands = click_commands(focus, hid_mode)
                 for _, button in buttons:
                     commands.extend(click_commands(button, hid_mode))
+                bt_started_at = datetime.now()
                 self.send_hid_sequence(commands, delay=delay)
                 self.events.put(("log", "BT：已點擊測試畫面取得焦點並啟動 " +
-                                 "、".join(label for label, _ in buttons) + "；啟動畫面 STATUS 監聽"))
+                                 "、".join(label for label, _ in buttons) + "；啟動 BT TestData CSV 監聽"))
             if station == "BT":
-                self.events.put(("begin_bt_status_monitor", (sns, slots, batch_number, result_timeout,
-                                                               {state: resolved[name] for state, name in profile["status"].items()})))
+                self.events.put(("begin_bt_log_monitor", (csv_root, sns, slots, batch_number,
+                                                            bt_started_at, result_timeout)))
             else:
                 self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
         except Exception as exc:
@@ -2271,12 +2427,12 @@ class AtlasAgentApp:
                         self.start_monitor(root, sns, batch_number, created_after, result_timeout)
                     else:
                         self.append("略過已被新批次取代的影像流程")
-                elif kind == "begin_bt_status_monitor":
-                    sns, slots, batch_number, result_timeout, status_templates = item
+                elif kind == "begin_bt_log_monitor":
+                    csv_root, sns, slots, batch_number, started_at, result_timeout = item
                     if batch_number == self.batch_number:
-                        self.start_bt_status_monitor(sns, slots, batch_number, result_timeout, status_templates)
+                        self.start_bt_log_monitor(csv_root, sns, slots, batch_number, started_at, result_timeout)
                     else:
-                        self.append("略過已被新批次取代的 BT 影像流程")
+                        self.append("略過已被新批次取代的 BT CSV 監聽")
                 elif kind == "bt_sn_review":
                     batch_number, review = item; assert isinstance(review, BtSnReview)
                     if batch_number != self.batch_number:

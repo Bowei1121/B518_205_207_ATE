@@ -44,7 +44,7 @@
           <li>Arduino USB 接到本台 Mac mini，W5100 接到產線 switch。</li>
           <li>Arduino IDE Serial Monitor 已關閉。</li>
           <li>測試機 HMI 完整放在單一螢幕，不跨越雙螢幕邊界。</li>
-          <li>DFU／FCT 的 CSV 根路徑可讀寫；BT 不使用 Atlas CSV。</li>
+          <li>DFU／FCT 的 CSV 根路徑可讀寫；BT 的 CSV／BT TestData 根路徑可讀取。</li>
           <li>螢幕截圖資料夾已建立，macOS 可在該處儲存 Command+Shift+3 截圖。</li>
         </ul>
         <div class="callout"><span class="callout-title">隱私權設計</span>Agent 不使用 macOS Accessibility、AppleScript 或軟體鍵鼠控制。螢幕截圖、鍵盤與滑鼠動作全部由 Arduino USB HID 執行。</div>
@@ -103,8 +103,8 @@
 
       <section id="paths">
         <h2>3. 工站與路徑設定</h2>
-        <h3>CSV 根路徑：選擇 SN 資料夾的最上層</h3>
-        <p>按 CSV 根路徑右側的「選擇」，在資料夾瀏覽器中選到包含所有 SN 資料夾的根目錄。不要選某一個 SN 資料夾，也不要選到單筆時間戳資料夾；選錯時 Agent 無法監控新的 <code>records.csv</code> 與 <code>device.log</code>。</p>
+        <h3>CSV／BT TestData 根路徑</h3>
+        <p>DFU／FCT：按右側「選擇」，選到包含所有 SN 資料夾的最上層。不要選某一個 SN 或單筆時間戳資料夾。BT：選到 <code>/vault/B482_RFTEST/TestData</code> 類型的根目錄；不要選某一天或 <code>PASSED</code>／<code>FAILED</code> 子資料夾。</p>
         <figure class="manual-figure">
           <img src="assets/atlas_agent/02-csv-folder-picker.png" width="946" height="741" loading="lazy" alt="Atlas Agent 開啟 macOS 資料夾瀏覽器選擇 AtlasDemoCSV 根路徑">
           <figcaption><span class="figure-label">圖 3-1</span>範例選擇 <code>AtlasDemoCSV</code> 根目錄；視窗內可看到多個 SN 子資料夾，表示選擇層級正確。</figcaption>
@@ -122,7 +122,7 @@
           <table>
             <thead><tr><th>欄位</th><th>DFU</th><th>FCT</th><th>BT</th></tr></thead>
             <tbody>
-              <tr><td><strong>CSV 根路徑</strong></td><td>必填，指向 Atlas CSV 最上層</td><td>必填，指向 Atlas CSV 最上層</td><td>不使用，可保留</td></tr>
+              <tr><td><strong>CSV／BT TestData 根路徑</strong></td><td>必填，指向 Atlas CSV 最上層</td><td>必填，指向 Atlas CSV 最上層</td><td>必填，指向 <code>TestData</code> 最上層</td></tr>
               <tr><td><strong>Log 根路徑</strong></td><td colspan="3">選填；若留白，DFU/FCT 從 CSV 根路徑尋找 device.log</td></tr>
               <tr><td><strong>OpenCV 模板路徑</strong></td><td>必填</td><td>稀疏 slot checkbox 時必填</td><td>必填</td></tr>
               <tr><td><strong>螢幕截圖路徑</strong></td><td>必填</td><td>稀疏 slot 時必填</td><td>必填</td></tr>
@@ -198,7 +198,7 @@
         </div>
         <section id="bt-template" class="nested-section">
           <h3>BT 現場 HMI：視窗與 Start 按鈕模板製作</h3>
-          <p class="lead">本節只處理「找到 BT 視窗、取得焦點、點擊 Start」；PASS／FAIL／TESTING／NOTSET 的狀態模板與 SN OCR 不在本次現場模板製作範圍內。</p>
+          <p class="lead">本節只處理「找到 BT 視窗、取得焦點、點擊 Start」；PASS／FAIL 與設備 SN 由 BT TestData CSV 驗證，不需要狀態或 SN OCR 模板。</p>
           <div class="callout danger"><span class="callout-title">最重要：模板一定要在現場製作</span>模擬 HMI 只用來說明模板名稱與測試流程。<strong>不可</strong>把模擬畫面的截圖或模板複製到現場測試機使用。請在實際 Mac mini、實際 WirelessRFTestAutomation 軟體、實際螢幕解析度與縮放下，由 Arduino 觸發截圖後製作模板。</div>
           <div class="grid-2">
             <figure class="manual-figure">
@@ -245,7 +245,7 @@
             </table>
           </div>
         </section>
-        <div class="callout danger"><span class="callout-title">模板禁止內容</span>不要把真實 SN、客戶資料、動態日期時間、PASS／FAIL／TESTING 狀態或滑鼠游標裁進「視窗定位模板」。BT STATUS 模板除外，因它本來就是用來辨識狀態。</div>
+        <div class="callout danger"><span class="callout-title">模板禁止內容</span>不要把真實 SN、客戶資料、動態日期時間、PASS／FAIL／TESTING 狀態或滑鼠游標裁進「視窗定位模板」。BT 結果由 TestData CSV 判定，不需要 STATUS 模板。</div>
       </section>
 
       <section id="template-list">
@@ -271,11 +271,8 @@ b482/bt_start_1.png
 b482/bt_start_2.png
 b482/bt_start_3.png
 b482/bt_start_4.png
-b482/bt_status_pass.png
-b482/bt_status_fail.png
-b482/bt_status_testing.png
-b482/bt_status_notset.png</code></pre>
-        <p><strong>現場第一階段：</strong>先完成前六個視窗／Start 模板並驗證點擊；詳細操作請見<a href="#bt-template">「BT 現場 HMI：視窗與 Start 按鈕模板製作」</a>。STATUS 模板待現場狀態呈現方式確認後再製作。SN 由 macOS Vision 針對每列 SN 儲存格單獨 OCR，不需要另外製作 SN 模板。</p>
+</code></pre>
+        <p>BT 只需上述六個視窗／Start 模板並驗證點擊；詳細操作請見<a href="#bt-template">「BT 現場 HMI：視窗與 Start 按鈕模板製作」</a>。PASS／FAIL 與設備實際 SN 均從 TestData CSV 讀取，不需要 STATUS 或 SN OCR 模板。</p>
       </section>
 
       <section id="operation">
@@ -286,7 +283,7 @@ b482/bt_status_notset.png</code></pre>
         <div class="grid-3">
           <div class="card"><h3>DFU</h3><p>截圖定位 → 同步 checkbox → 逐筆點 SN 輸入框與 OK → 全部輸入後監聽 CSV。</p></div>
           <div class="card"><h3>FCT</h3><p>全 slot 直接監聽；稀疏 slot 先同步 checkbox。治具推入後由設備自動開始。</p></div>
-          <div class="card"><h3>BT</h3><p>全四 slot 按 Start All；稀疏 slot 分別按 Start 1～4。先看到所有指定 slot TESTING，全部結束後才判定。</p></div>
+          <div class="card"><h3>BT</h3><p>全四 slot 按 Start All；稀疏 slot 分別按 Start 1～4。之後以各 Thread 的新 TestData CSV 一起判定。</p></div>
         </div>
         <h3>手動驗證模式</h3>
         <p>可在「當前測試條碼」輸入逗號分隔 SN 後按「開始流程」。正式量產仍應使用含 JOB ID 與 slot 的結構化命令。</p>
@@ -294,7 +291,7 @@ b482/bt_status_notset.png</code></pre>
         <p>按主畫面的「Demo」開啟 slot 條碼視窗：DFU 暫時提供 7 格，FCT 與 BT 各提供 4 格。每格就是對應 slot 的 SN，留白代表不測試，因此不會因逗號順序而混淆。DFU 的 7-slot 能力只存在 Demo 視窗；一般手動輸入與 TCP JOB 仍維持最多 4 slot。</p>
         <p>Demo 前先在「設定 → 流程設定」確認 Slot 模式。預設為手動模式，操作人員需自行在測試 HMI 勾選有料 slot、取消空料 slot；此模式不需要 checkbox 模板，也不會驗證人工設定。正式量產請開啟自動同步。FCT Demo 按開始後只會監聽，仍需由治具或模擬 HMI 觸發測試開始。</p>
         <h3>BT SN 人工覆核</h3>
-        <p>BT 在 TESTING 後逐列 OCR 設備 SN。若與上位機 SN 不符或讀取不完整，測試仍跑完，之後顯示覆核視窗：</p>
+        <p>BT 以 TestData CSV 的 Thread、Unit Number、SN、狀態與時間驗證結果。若 CSV 實際 SN 與上位機 SN 不符或資料不完整，測試仍跑完，之後顯示覆核視窗：</p>
         <ul>
           <li><strong>確認並以設備 SN 回報：</strong>操作員確認／修正後，以設備實際 SN 組成 RESULT。</li>
           <li><strong>取消並回報 NACK：</strong>不送 RESULT，回覆 <code>NACK:BT_SN_MISMATCH</code>。</li>
@@ -334,7 +331,7 @@ b482/bt_status_notset.png</code></pre>
               <tr><td>找不到模板／相似度過低</td><td>用目前電腦的新截圖重做；確認縮放、解析度、HMI 頁面與主題一致，且模板檔名正確。</td></tr>
               <tr><td>checkbox 狀態仍錯誤</td><td>重做 checked／unchecked 模板，只裁 checkbox；確認四個位置都能辨識。Agent 驗證失敗時不會輸入條碼。</td></tr>
               <tr><td>疊圖正確但游標偏移</td><td>按設定 HID；優先使用 absolute，確認自動比例與虛擬桌面尺寸。雙螢幕另設 X/Y 偏移。</td></tr>
-              <tr><td>BT OCR 讀錯字元</td><td>程式已逐列裁 SN 儲存格；仍有字元不確定時依人工覆核視窗核對，不要直接確認錯誤 SN。</td></tr>
+              <tr><td>BT CSV 未被接受</td><td>確認根路徑指向 TestData、檔案位於當日 PASSED／FAILED、檔名時間晚於 Start，且 Thread、Unit Number、SN 與 CSV 狀態一致；寫入中檔案會自動重試。</td></tr>
               <tr><td>讀到上一筆 CSV</td><td>Agent 只接受開始後建立資料。確認測試機有建立新的時間戳資料夾，且 Mac 系統時間正確。</td></tr>
             </tbody>
           </table>

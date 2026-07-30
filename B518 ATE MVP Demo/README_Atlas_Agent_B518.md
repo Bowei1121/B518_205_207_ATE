@@ -195,33 +195,28 @@ macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以�
 相容既有作法：根目錄直接有 `dfu2_window.png` 等同名檔案時，Agent 也會自動使用；但
 任意名稱（例如 `123.png`）無法判斷模板用途，仍須改成下拉選單列出的名稱。
 
-### BT 畫面 STATUS 判定
+### BT TestData CSV 判定
 
-BT 不使用 Atlas CSV。請在 BT 初始畫面選「製作模板」，分別框選**一個完整 STATUS 格**
-（包含背景與文字），並依下列名稱儲存：
+BT 保留 OpenCV 做視窗定位及 Start 按鈕定位；PASS／FAIL 結果改由 BT 的 TestData CSV 判定。
+設定中的「CSV／BT TestData 根路徑」請指向例如 `/vault/B482_RFTEST/TestData` 的根目錄，
+其下必須有 `YYYY-MM-DD/PASSED` 與 `YYYY-MM-DD/FAILED`。BT 初始畫面只需製作下列模板：
 
 ```
 b482/bt_window.png
 b482/bt_start_all.png
 b482/bt_start_1.png ... b482/bt_start_4.png
-b482/bt_status_pass.png
-b482/bt_status_fail.png
-b482/bt_status_testing.png
-b482/bt_status_notset.png
 ```
 
 輸入 1–4 個 SN（多筆時依 slot 1～4 排列）後，按「開始流程」會點 `Start All`；按「BT Start 1`～
-`BT Start 4` 則只啟動、回報對應 slot 的 SN；個別測試也可只輸入一個 SN。啟動後每次由 Arduino 產生新截圖，Agent 讀取
-四列 STATUS，截圖分析完即刪除；下一次擷取至少間隔 1 秒。macOS 截圖本身可能延後數秒才
-真正落檔，因此無須、也不能用需要 Screen Recording 權限的方式強制固定每秒取得新影像。
-BT 在 Start 前會先點擊匹配到的 BT 標題取得測試畫面焦點；結果監聽會先確認指定 slot 至少
-出現一次 `TESTING`，並等待**所有指定 slot 的 TESTING 都結束**後，才一起接受 PASS／FAIL，
-避免前一批殘留結果或尚未完成的單一 slot 被誤回傳。
-在所有指定 slot 都首次出現 `TESTING` 後，Agent 以 macOS Vision OCR 讀取同張截圖的設備 SN，
-並逐 slot 與上位機 SN 比對。若不符、缺值或 OCR 無法讀取，測試仍會完成，但 RESULT 前必須由
-操作員在覆核視窗確認或修正設備實際 SN；確認後只回傳設備 SN，取消則回傳
-`NACK:BT_SN_MISMATCH`。Vision OCR 只分析 Arduino 已存下的截圖，不需要 Screen Recording、
-Accessibility 或軟體鍵鼠控制權限。
+`BT Start 4` 則只啟動、回報對應 slot 的 SN；個別測試也可只輸入一個 SN。Start 前 Agent 會先
+點擊匹配到的 BT 視窗取得焦點，然後記錄 Start 時間並監聽 CSV。
+
+結果採固定對應：`Thread0→slot1`、`Thread1→slot2`、`Thread2→slot3`、`Thread3→slot4`。
+只接受 Start 時間後（容差 2 秒）產生，且檔名、`PASSED/FAILED` 資料夾與 CSV 內容完全一致的檔案。
+CSV 必須包含 `SerialNumber`、`Unit Number`、`Test Pass/Fail Status`、`StartTime`、`EndTime`；寫入中的
+檔案或任何不一致檔案會略過並持續重試。跨午夜時同時檢查 Start 日期與目前日期資料夾。若 CSV
+實際 SN 與上位機 SN 不同，全部指定 slot 完成後才顯示人工覆核；確認後以 CSV 的實際 SN 回傳
+`RESULT`，取消則回傳 `NACK:BT_SN_MISMATCH`。BT 不再截圖輪詢 STATUS，也不需要 STATUS 或 OCR 模板。
 雙螢幕 Mac 在 `SCREENSHOT` 後可能新增多張檔案，Agent 會逐張尋找視窗模板；請將 HTML
 測試人機完整放在單一螢幕，不要跨越兩個顯示器。
 自訂 B482 模板會在匹配到測試視窗的那張完整截圖上搜尋控制項，因此可支援 Retina 與 HTML
@@ -274,8 +269,8 @@ Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設
 
 本次提供的 B482 畫面已配置在 `templates/b482/`。選 DFU 時，請選 `b482_dfu2`：
 Agent 會依序填入左下 SN 欄、點擊 `OK`，讓測試程式把 SN 搬入各 Slot。FCT 將在治具
-推入後直接監聽；BT 可定位並點擊 `Start All` 或 `Start 1`～`Start 4`，後續以 STATUS
-格的 PASS／FAIL 模板判讀結果。
+推入後直接監聽；BT 可定位並點擊 `Start All` 或 `Start 1`～`Start 4`，後續以 TestData
+的 PASSED／FAILED CSV 判讀結果。
 
 ### 無硬體本機 Demo：HTML B482 HMI
 

@@ -5,11 +5,11 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_result_directories, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -163,6 +163,66 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "TESTING", "NOTSET", "NOTSET"], seen), {})
         self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "FAIL", "NOTSET", "NOTSET"], seen),
                          {"SN001": "PASS", "SN002": "FAIL"})
+
+    @staticmethod
+    def write_bt_result(root, thread, sn, status, started, *, unit=None, csv_status=None, folder_status=None):
+        folder_status = folder_status or status
+        directory = root / started.date().isoformat() / folder_status
+        directory.mkdir(parents=True, exist_ok=True)
+        filename = f"[Thread{thread}][B482_BT-COND][{sn}][{status}][{started:%Y%m%d%H%M%S}].csv"
+        path = directory / filename
+        with path.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.writer(target)
+            writer.writerow(["SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime"])
+            writer.writerow([sn, thread if unit is None else unit, csv_status or status,
+                             started.strftime("%Y/%m/%d %H:%M:%S"),
+                             (started + timedelta(seconds=20)).strftime("%Y/%m/%d %H:%M:%S")])
+        return path
+
+    def test_bt_csv_monitor_discovers_four_sample_shaped_results_in_thread_order(self):
+        started = datetime(2025, 8, 20, 18, 13, 38)
+        sample_sns = ["HK5HKH3YJN000003YV", "HK5HKH3YJN300003YV", "HK5HKH3YJMY00003YV", "HK5HKH3YJN100003YV"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for thread, sn in enumerate(sample_sns):
+                self.write_bt_result(root, thread, sn, "PASSED", started)
+            results, errors = discover_bt_csv_results(root, [1, 2, 3, 4], started)
+            self.assertEqual(errors, [])
+            self.assertEqual([(results[slot].sn, results[slot].status) for slot in (1, 2, 3, 4)],
+                             list(zip(sample_sns, ["PASS"] * 4)))
+
+    def test_bt_csv_monitor_handles_sparse_slots_and_failed_results(self):
+        started = datetime(2026, 7, 30, 15, 0, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_bt_result(root, 0, "SN001", "PASSED", started)
+            self.write_bt_result(root, 2, "SN003", "FAILED", started)
+            self.write_bt_result(root, 3, "SN004", "PASSED", started)
+            results, errors = discover_bt_csv_results(root, [1, 3, 4], started)
+            self.assertEqual(errors, [])
+            self.assertEqual({slot: result.status for slot, result in results.items()}, {1: "PASS", 3: "FAIL", 4: "PASS"})
+
+    def test_bt_csv_monitor_rejects_stale_and_inconsistent_files(self):
+        started = datetime(2026, 7, 30, 15, 0, 10)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_bt_result(root, 0, "OLD", "PASSED", started - timedelta(seconds=3))
+            invalid = self.write_bt_result(root, 1, "SN002", "PASSED", started, unit=3)
+            results, errors = discover_bt_csv_results(root, [1, 2], started)
+            self.assertEqual(results, {})
+            self.assertIn((invalid, "Thread 與 CSV Unit Number 不一致"), errors)
+
+    def test_bt_csv_monitor_searches_start_and_current_dates_for_midnight(self):
+        started = datetime(2026, 7, 30, 23, 59, 59)
+        next_day = started + timedelta(seconds=2)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_bt_result(root, 0, "SN001", "PASSED", next_day)
+            directories = bt_result_directories(root, started, next_day)
+            self.assertEqual(directories, [root / "2026-07-31" / "PASSED"])
+            results, errors = discover_bt_csv_results(root, [1], started, next_day)
+            self.assertEqual(errors, [])
+            self.assertEqual(results[1].sn, "SN001")
 
     def test_bt_ocr_sn_text_is_matched_to_the_corresponding_status_row(self):
         rows = [BtStatusRow("TESTING", (800, 100 + index * 60, 120, 30)) for index in range(4)]
