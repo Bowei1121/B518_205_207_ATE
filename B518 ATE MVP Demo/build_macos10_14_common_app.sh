@@ -74,7 +74,7 @@ BUILD_VERSION="$("$PYTHON" bump_build_version.py)"
 echo "Building macOS $TARGET-compatible candidate V$BUILD_VERSION"
 "$PYTHON" -m PyInstaller --noconfirm --clean --windowed --target-arch x86_64 \
   --name "Atlas Agent B518 ATE" --distpath "$DIST" --workpath "$BUILD" --specpath "$BUILD" \
-  --add-data="$TEMPLATE_SOURCE:templates" --collect-all serial --collect-all cv2 --hidden-import AppKit atlas_agent.py
+  --add-data "${TEMPLATE_SOURCE}:templates" --collect-all serial --collect-all cv2 --hidden-import AppKit atlas_agent.py
 
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUILD_VERSION" "$PLIST"
