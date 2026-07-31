@@ -391,6 +391,9 @@ class AtlasAgentTests(unittest.TestCase):
         demo = Path(__file__).parent
         ui = demo.parent / "Atlas UI"
         b482 = demo / "templates" / "b482"
+        reference_images = (ui / "B482_DFU_2.jpg", ui / "B482_BT.jpg")
+        if not all(image.is_file() for image in reference_images):
+            self.skipTest("Optional Atlas UI reference screenshots are not present in this checkout")
         self.assertEqual(template_center(ui / "B482_DFU_2.jpg", b482 / "dfu2_window.png"), (175, 34))
         self.assertEqual(template_center(ui / "B482_DFU_2.jpg", b482 / "dfu2_sn_input.png"), (200, 550))
         self.assertEqual(template_center(ui / "B482_DFU_2.jpg", b482 / "dfu2_ok.png"), (951, 552))
