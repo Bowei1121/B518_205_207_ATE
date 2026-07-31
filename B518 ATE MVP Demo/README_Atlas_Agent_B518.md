@@ -82,7 +82,8 @@ chmod +x build_macos10_14_common_app.sh verify_macos10_14_bundle.sh
 腳本只接受 `10.15.x`＋`x86_64` 建置環境，固定設定
 `MACOSX_DEPLOYMENT_TARGET=10.14`、`CMAKE_OSX_DEPLOYMENT_TARGET=10.14` 與
 `CMAKE_OSX_ARCHITECTURES=x86_64`。它會先把 `opencv-python-headless 4.10.0.84` 從原始碼編譯為
-內部 wheel，再封裝，因此不會誤用最低需求為 10.15 的現成 Intel OpenCV wheel；BT 的模板製作、
+內部 wheel，再封裝，因此不會誤用最低需求為 10.15 的現成 Intel OpenCV wheel；Catalina 上若出現
+`ninja ... is not supported on this platform`，新版腳本會改用 Xcode／Unix Makefiles，不需要安裝 JDK 或 Ninja；BT 的模板製作、
 視窗定位與 Start 按鈕定位都仍完整使用 OpenCV。
 
 輸出 App 是 `dist-macos10.14-common/Atlas Agent B518 ATE.app`；可交付的 ZIP、SHA-256 與建置

@@ -48,7 +48,11 @@ fi
 "$PYTHON" -m pip install --upgrade pip "setuptools==80.9.0" wheel
 # These build tools are installed before the source build so OpenCV does not
 # pull a newer, platform-incompatible isolated toolchain.
-"$PYTHON" -m pip install "cmake==3.30.5" "ninja==1.11.1.1" "scikit-build==0.17.6"
+# The old Ninja PyPI package does not publish a Catalina-compatible runtime.
+# CMake falls back to Xcode/Unix Makefiles, which is sufficient for this
+# one-time OpenCV source wheel and avoids a false platform failure after build.
+"$PYTHON" -m pip uninstall -y ninja >/dev/null 2>&1 || true
+"$PYTHON" -m pip install "cmake==3.30.5" "scikit-build==0.17.6"
 "$PYTHON" -m pip install "numpy==1.26.4" "pyserial==3.5" \
   "pyobjc-core==10.3.1" "pyobjc-framework-Cocoa==10.3.1" "pyinstaller==6.16.0"
 
