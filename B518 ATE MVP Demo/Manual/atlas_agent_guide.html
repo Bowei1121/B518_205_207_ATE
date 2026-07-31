@@ -288,8 +288,8 @@ b482/bt_start_4.png
         <h3>手動驗證模式</h3>
         <p>可在「當前測試條碼」輸入逗號分隔 SN 後按「開始流程」。正式量產仍應使用含 JOB ID 與 slot 的結構化命令。</p>
         <h3>現場 Demo 模式</h3>
-        <p>按主畫面的「Demo」開啟 slot 條碼視窗：DFU 暫時提供 7 格，FCT 與 BT 各提供 4 格。每格就是對應 slot 的 SN，留白代表不測試，因此不會因逗號順序而混淆。DFU 的 7-slot 能力只存在 Demo 視窗；一般手動輸入與 TCP JOB 仍維持最多 4 slot。</p>
-        <p>Demo 前先在「設定 → 流程設定」確認 Slot 模式。預設為手動模式，操作人員需自行在測試 HMI 勾選有料 slot、取消空料 slot；此模式不需要 checkbox 模板，也不會驗證人工設定。正式量產請開啟自動同步。FCT Demo 按開始後只會監聽，仍需由治具或模擬 HMI 觸發測試開始。</p>
+        <p>按主畫面的「Demo」開啟 slot 條碼視窗：DFU 暫時提供 7 格、FCT 提供 6 格、BT 提供 4 格。每格就是對應 slot 的 SN，留白代表不測試，因此不會因逗號順序而混淆。DFU 7-slot 與 FCT 6-slot 能力只存在 Demo 視窗；一般手動輸入與 TCP JOB 仍維持最多 4 slot。</p>
+        <p>Demo 前先在「設定 → 流程設定」確認 Slot 模式。預設為手動模式，操作人員需自行在測試 HMI 勾選有料 slot、取消空料 slot；此模式不需要 checkbox 模板，也不會驗證人工設定。正式量產請開啟自動同步。FCT 6-slot Demo 固定採手動 Slot，即使設定中開啟自動同步也會略過既有四格 checkbox 辨識；按開始後只會監聽，仍需由治具或模擬 HMI 觸發測試開始。</p>
         <h3>BT SN 人工覆核</h3>
         <p>BT 以 TestData CSV 的 Thread、Unit Number、SN、狀態與時間驗證結果。若 CSV 實際 SN 與上位機 SN 不符或資料不完整，測試仍跑完，之後顯示覆核視窗：</p>
         <ul>

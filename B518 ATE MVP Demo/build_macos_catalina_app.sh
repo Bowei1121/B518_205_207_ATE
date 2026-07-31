@@ -3,6 +3,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+set_plist_string() {
+  local plist_path="$1"
+  local plist_key="$2"
+  local plist_value="$3"
+  if /usr/libexec/PlistBuddy -c "Print :$plist_key" "$plist_path" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :$plist_key $plist_value" "$plist_path"
+  else
+    /usr/libexec/PlistBuddy -c "Add :$plist_key string $plist_value" "$plist_path"
+  fi
+}
+
 if [[ "$(/usr/bin/sw_vers -productVersion)" != 10.15.* ]]; then
   echo "This script must run inside the macOS Catalina 10.15 Intel build VM."
   echo "Current system: $(/usr/bin/sw_vers -productVersion)"
@@ -77,8 +88,8 @@ fi
   atlas_agent.py
 
 PLIST="$PWD/dist-catalina/Atlas Agent B518 ATE.app/Contents/Info.plist"
-plutil -replace CFBundleShortVersionString -string "$BUILD_VERSION" "$PLIST"
-plutil -insert CFBundleVersion -string "$BUILD_VERSION" "$PLIST"
+set_plist_string "$PLIST" CFBundleShortVersionString "$BUILD_VERSION"
+set_plist_string "$PLIST" CFBundleVersion "$BUILD_VERSION"
 "$PWD/verify_catalina_bundle.sh" "$PWD/dist-catalina/Atlas Agent B518 ATE.app"
 
 echo "Built Catalina-compatible V$BUILD_VERSION: $PWD/dist-catalina/Atlas Agent B518 ATE.app"

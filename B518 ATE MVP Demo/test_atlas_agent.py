@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -23,15 +23,22 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(parse_barcodes("DATA:A, B,C"), ["A", "B", "C"])
         with self.assertRaises(Exception): parse_barcodes("A,B,C,D,E")
 
-    def test_demo_slot_assignments_supports_sparse_seven_slot_dfu_only(self):
+    def test_demo_slot_assignments_supports_sparse_dfu_seven_and_fct_six(self):
         self.assertEqual(demo_slot_assignments("DFU", ["SN001", "", "SN003", "", "", "", "SN007"]),
                          ((1, "SN001"), (3, "SN003"), (7, "SN007")))
-        self.assertEqual(demo_slot_assignments("FCT", ["SN001", "", "SN003", ""]),
-                         ((1, "SN001"), (3, "SN003")))
+        self.assertEqual(demo_slot_assignments("FCT", ["SN001", "", "", "SN004", "", "SN006"]),
+                         ((1, "SN001"), (4, "SN004"), (6, "SN006")))
         with self.assertRaises(AgentError):
             demo_slot_assignments("FCT", ["SN001"] * 7)
         with self.assertRaises(AgentError):
             demo_slot_assignments("DFU", ["SN001"] * 7)
+
+    def test_fct_six_slot_demo_never_uses_four_checkbox_synchronizer(self):
+        self.assertTrue(fct_auto_slot_sync_supported([1, 3, 4]))
+        self.assertFalse(fct_auto_slot_sync_supported([1, 3, 4], demo=True))
+        self.assertFalse(fct_auto_slot_sync_supported([1, 2, 3, 4]))
+        self.assertFalse(fct_auto_slot_sync_supported([1, 4, 6]))
+        self.assertFalse(fct_auto_slot_sync_supported([1, 2, 3, 4, 5, 6]))
 
     def test_transparent_tcp_barcode_payload_is_accepted_without_control_replies(self):
         self.assertEqual(incoming_barcode_payload("SN1,SN2"), "SN1,SN2")
@@ -143,6 +150,12 @@ class AtlasAgentTests(unittest.TestCase):
         report = batch_result_report("BT", "20260722-001", [(1, "SN001"), (3, "SN003"), (4, "SN004")],
                                      {"SN004": "FAIL", "SN001": "PASS", "SN003": "PASS"})
         self.assertEqual(report, "RESULT:BT:JOB=20260722-001;1=SN001,PASS;3=SN003,PASS;4=SN004,FAIL")
+        fct_report = batch_result_report(
+            "FCT", "DEMO-20260731", [(1, "FCT001"), (4, "FCT004"), (6, "FCT006")],
+            {"FCT001": "PASS", "FCT004": "PASS", "FCT006": "FAIL"})
+        self.assertEqual(
+            fct_report,
+            "RESULT:FCT:JOB=DEMO-20260731;1=FCT001,PASS;4=FCT004,PASS;6=FCT006,FAIL")
 
     def test_station_job_command_preserves_sparse_slots(self):
         command = parse_test_command("FCT:JOB=20260722-001;1=SN001,3=SN003,4=SN004")

@@ -12,6 +12,37 @@ BUILD="$PWD/build-macos10.14-common"
 APP="$DIST/Atlas Agent B518 ATE.app"
 RELEASE="$PWD/release-macos10.14-common"
 
+set_plist_string() {
+  local plist_path="$1"
+  local plist_key="$2"
+  local plist_value="$3"
+  if /usr/libexec/PlistBuddy -c "Print :$plist_key" "$plist_path" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :$plist_key $plist_value" "$plist_path"
+  else
+    /usr/libexec/PlistBuddy -c "Add :$plist_key string $plist_value" "$plist_path"
+  fi
+}
+
+verify_plist_writer() {
+  local test_directory
+  local test_plist
+  test_directory=$(/usr/bin/mktemp -d /tmp/atlas-agent-plist-test.XXXXXX)
+  test_plist="$test_directory/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :Existing string old" "$test_plist" >/dev/null
+  set_plist_string "$test_plist" Existing replaced
+  set_plist_string "$test_plist" Missing added
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :Existing' "$test_plist")" == replaced ]]
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :Missing' "$test_plist")" == added ]]
+  /bin/rm "$test_plist"
+  /bin/rmdir "$test_directory"
+  echo "Info.plist add/set self-test passed."
+}
+
+if [[ "${1:-}" == "--self-test-plist" ]]; then
+  verify_plist_writer
+  exit 0
+fi
+
 [[ "$(/usr/bin/sw_vers -productVersion)" == 10.15.* ]] || {
   echo "This candidate builder must run in the macOS Catalina 10.15 Intel VM."
   echo "Current macOS: $(/usr/bin/sw_vers -productVersion)"; exit 2; }
@@ -67,6 +98,7 @@ OPENCV_WHEEL=$(find "$WHEEL_DIR" -maxdepth 1 -name 'opencv_python_headless-4.10.
 
 "$PYTHON" -m unittest -v test_atlas_agent.py test_upper_computer_simulator.py
 "$PWD/verify_macos10_14_bundle.sh" --self-test
+verify_plist_writer
 
 TEMPLATE_SOURCE="$PWD/templates"
 [[ -d "$TEMPLATE_SOURCE" ]] || { echo "Template directory is missing: $TEMPLATE_SOURCE"; exit 4; }
@@ -77,13 +109,9 @@ echo "Building macOS $TARGET-compatible candidate V$BUILD_VERSION"
   --add-data "${TEMPLATE_SOURCE}:templates" --collect-all serial --collect-all cv2 --hidden-import AppKit atlas_agent.py
 
 PLIST="$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUILD_VERSION" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_VERSION" "$PLIST"
-if /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST" >/dev/null 2>&1; then
-  /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $TARGET" "$PLIST"
-else
-  /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $TARGET" "$PLIST"
-fi
+set_plist_string "$PLIST" CFBundleShortVersionString "$BUILD_VERSION"
+set_plist_string "$PLIST" CFBundleVersion "$BUILD_VERSION"
+set_plist_string "$PLIST" LSMinimumSystemVersion "$TARGET"
 /usr/bin/codesign --force --deep --sign - "$APP"
 "$PWD/verify_macos10_14_bundle.sh" "$APP"
 

@@ -61,7 +61,7 @@ DEFAULT_BAUD = 115200
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
-DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 4, "BT": 4}
+DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 6, "BT": 4}
 COMPACT_HMI_GEOMETRY = "420x820"
 COMPACT_HMI_MIN_SIZE = (400, 700)
 
@@ -210,6 +210,12 @@ def demo_slot_assignments(station: str, values: Iterable[str]) -> tuple[tuple[in
     if not assignments:
         raise AgentError("請至少輸入一個要測試的 slot 條碼")
     return tuple(assignments)
+
+
+def fct_auto_slot_sync_supported(slots: Iterable[int], demo: bool = False) -> bool:
+    """Return whether the existing four-checkbox FCT synchronizer can be used."""
+    ordered = list(slots)
+    return not demo and bool(ordered) and max(ordered) <= 4 and ordered != [1, 2, 3, 4]
 
 
 def incoming_barcode_payload(line: str) -> Optional[str]:
@@ -1512,6 +1518,9 @@ class AtlasAgentApp:
             raise AgentError("請選擇有效的 CSV／BT TestData 根路徑")
         if command.station != self.station.get():
             raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
+        if any(slot > 4 for slot in command.slots):
+            if command.station != "FCT" or not command.job_id.startswith("DEMO-") or max(command.slots) > 6:
+                raise AgentError("slot 5～6 僅開放給 FCT Demo 視窗；正式 JOB 與一般輸入仍限 slot 1～4")
         return root, command
 
     def validate_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand]]:
@@ -1547,12 +1556,15 @@ class AtlasAgentApp:
             threading.Thread(target=self.visual_start,
                              args=(command.station, command.sns, command.slots, root, batch_number,
                                    created_after, result_timeout), daemon=True).start()
-        elif command.slots != [1, 2, 3, 4] and self.auto_slot_sync.get():
+        elif self.auto_slot_sync.get() and fct_auto_slot_sync_supported(
+                command.slots, command.job_id.startswith("DEMO-")):
             threading.Thread(target=self.configure_fct_sparse_slots,
                              args=(command.slots, root, command.sns, batch_number,
                                    created_after, result_timeout), daemon=True).start()
         else:
-            if command.station == "FCT" and command.slots != [1, 2, 3, 4]:
+            if command.station == "FCT" and command.job_id.startswith("DEMO-"):
+                self.append("FCT 6-slot Demo 採手動 Slot 模式：已略過四格 checkbox 同步，等待治具／模擬 HMI 開始測試。")
+            elif command.station == "FCT" and command.slots != [1, 2, 3, 4]:
                 self.append("FCT 手動 Slot 模式：已略過 checkbox 同步，等待治具／模擬 HMI 開始測試。")
             self.start_monitor(root, command.sns, batch_number, created_after, result_timeout)
         return command.sns
@@ -1580,13 +1592,17 @@ class AtlasAgentApp:
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
         ttk.Label(frame, text=f"{station} 現場 Demo", font=("TkDefaultFont", 14, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        description = ("DFU Demo 暫時支援 7 個 slot；此能力不會改變正式 TCP／一般手動輸入的 4-slot 限制。"
-                       if station == "DFU" else "每格對應一個 slot；留白代表該 slot 不測試。")
-        ttk.Label(frame, text=description, foreground="#555", wraplength=560).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 10))
-        if not self.auto_slot_sync.get() and station in ("DFU", "FCT"):
-            ttk.Label(frame, text="手動 Slot 模式：請先在測試 HMI 手動確認 checkbox 狀態。", foreground="#a33").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        if station == "DFU":
+            description = "DFU Demo 暫時支援 7 個 slot；此能力不會改變正式 TCP／一般手動輸入的 4-slot 限制。"
         elif station == "FCT":
-            ttk.Label(frame, text="FCT 開始後僅監聽；請由治具或模擬 HMI 觸發測試開始。", foreground="#555").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+            description = "FCT Demo 暫時支援 6 個 slot；每格對應一個 slot，留白代表該 slot 不測試。"
+        else:
+            description = "每格對應一個 slot；留白代表該 slot 不測試。"
+        ttk.Label(frame, text=description, foreground="#555", wraplength=560).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        if station == "FCT":
+            ttk.Label(frame, text="FCT 6-slot Demo 固定採手動 Slot；請先確認測試 HMI／治具，再由治具觸發測試。", foreground="#a33").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        elif not self.auto_slot_sync.get() and station == "DFU":
+            ttk.Label(frame, text="手動 Slot 模式：請先在測試 HMI 手動確認 checkbox 狀態。", foreground="#a33").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
         first_row = 3
         entries = [tk.StringVar() for _ in range(slot_count)]
         for index, variable in enumerate(entries, start=1):
