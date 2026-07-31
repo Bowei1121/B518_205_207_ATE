@@ -432,8 +432,10 @@ pre code { padding: 0; color: inherit; background: transparent; font-size: inher
   .hero { padding: 28px; background: #fff; color: #000; border-bottom: 3px solid #17384a; }
   .hero p, .eyebrow, .pill { color: #333; }
   .page-shell { display: block; width: 100%; margin: 18px 0; }
-  section { box-shadow: none; break-inside: avoid; margin: 0 0 16px; padding: 18px; }
-  .manual-figure { box-shadow: none; break-inside: avoid; }
+  section { box-shadow: none; break-inside: auto; margin: 0 0 16px; padding: 18px; }
+  .manual-figure { box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+  .manual-figure figcaption { break-before: avoid; page-break-before: avoid; }
+  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
   a { color: #000; text-decoration: none; }
   pre { color: #000; background: #f2f2f2; border: 1px solid #ccc; }
 }
