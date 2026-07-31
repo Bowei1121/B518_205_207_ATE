@@ -1,17 +1,33 @@
 # B518 Arduino MVP Test
 
-UNO R4 WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W5100 TCP server 作為 Mac 與上位機間的雙向橋接。
+UNO R4 Minima／WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W5100 TCP server 作為 Mac 與上位機間的雙向橋接。
 
 ## 硬體與前置條件
 
-- Arduino UNO R4 WiFi。
+- Arduino UNO R4 Minima 或 UNO R4 WiFi。請在 Arduino IDE 選擇與板子絲印完全相同的 Board；Agent 的 `BOARD` 欄位會回報實際編譯目標。
 - W5100 Ethernet 模組或 Shield，以 SPI 連接；預設 CS 為 D10。若模組不是 D10，修改 `W5100_CS_PIN`。
-- Arduino IDE 已安裝 UNO R4 WiFi 對應的 **Arduino Renesas UNO** board package，以及內建 `Ethernet`、`Keyboard`、`Mouse` libraries。
+- Arduino IDE 已安裝 **Arduino UNO R4 Boards**（舊介面可能顯示 **Arduino Renesas UNO**）board package，以及內建 `Ethernet`、`Keyboard`、`Mouse` libraries。
 - USB 接到 Mac mini。此 USB 同時提供 CDC serial 與 HID keyboard/mouse。
 
 首次燒錄時的預設 IP、gateway、subnet 與 TCP port 位於 `.ino` 最上方。預設 TCP server 為 `192.168.1.100:5000`。部署時由 Mac mini 用 USB 指令配置各板 IP；韌體會同步由 IP 推導一組本地管理 MAC，因此每個唯一 IP 都會有唯一 MAC。
 
 > HID 指令會實際控制目前登入的 Mac。測試時請先儲存工作、將游標移到安全位置，並保留可中斷 USB 連線的方法。
+
+## 韌體版本與交付前檢核
+
+唯一版本來源是 `firmware_version.h`；目前首版為 **1.0.0**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
+
+```bash
+cd "B518 ATE MVP Demo/B518_Arduino_MVP_Test"
+python3 bump_firmware_version.py hotfix   # 修正問題：patch +1
+python3 bump_firmware_version.py feature  # 相容新功能：minor +1、patch 歸零
+python3 bump_firmware_version.py major    # 不相容變更：major +1、其餘歸零
+python3 verify_firmware_version.py --base HEAD
+```
+
+驗證工具會在 `.ino` 或韌體標頭變動而版本未變時失敗，也會拒絕跳號、倒退或不符合規則的版本。純文件修改不需要升版。重複編譯或燒錄相同來源不升版。
+
+交付前依序執行：升版、版本驗證、以目標板型 Verify／Upload、使用 Serial Monitor 發送 `GET_INFO`、最後才提交 Git。協定格式不相容時才調整 `B518_PROTOCOL_VERSION`；一般新功能不調整協定版本。
 
 ## USB 指令協議
 
@@ -31,7 +47,8 @@ UNO R4 WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W5100 TCP 
 | `K_KEY:TAB\n` | 輸入一個 Tab，用於切換下一個 DFU 條碼欄位。 |
 | `K_SHORTCUT:SCREENSHOT\n` | 送出 macOS Command + Shift + 3，且前後均釋放按鍵。 |
 | `SCREENSHOT\n` | `K_SHORTCUT:SCREENSHOT` 的建議別名，供 Atlas Agent 使用。 |
-| `GET_IP\n` | 回覆 `IP:192.168.1.100\n`（實際為目前 W5100 IP）。 |
+| `GET_IP\n` | 回覆既有 `IP:192.168.1.100\n`（實際 IP），新版韌體隨後再回覆 `INFO:...`。 |
+| `GET_INFO\n` | 回覆韌體識別資訊，例如 `INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_MINIMA\n`。 |
 | `NET_SET:A.B.C.D\n` | **僅 USB CDC 可發送**。保存新的 IPv4 位址、立即重新初始化 W5100，回覆 `OK:NET_SET:A.B.C.D\n`。 |
 | `NET_RESET\n` | **僅 USB CDC 可發送**。還原編譯時預設 IP，回覆 `OK:NET_RESET:A.B.C.D\n`。 |
 
@@ -39,7 +56,9 @@ UNO R4 WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W5100 TCP 
 DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN，最後再由開始按鈕觸發測試。
 `M_SCROLL` 的絕對值也限制為 10000，避免過大的指令長時間佔用 HID 傳送。
 
-`NET_SET` 接受單播 IPv4 host 位址，並排除 `x.x.x.0` 與 `x.x.x.255`。設定儲存在 UNO R4 WiFi 的 EEPROM，斷電或重開機後仍會保留。網路設定指令只會在 Arduino 從 Mac 的 USB CDC 收到時被執行；TCP 收到的資料只會透明轉送到 USB，無法修改設定。
+`NET_SET` 接受單播 IPv4 host 位址，並排除 `x.x.x.0` 與 `x.x.x.255`。設定儲存在 UNO R4 的 EEPROM，斷電或重開機後仍會保留。網路設定指令只會在 Arduino 從 Mac 的 USB CDC 收到時被執行；TCP 收到的資料只會透明轉送到 USB，無法修改設定。
+
+`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。`OK:SCREENSHOT` 只表示 Arduino 已送出 HID 快捷鍵，不保證 macOS 一定建立了截圖檔。
 
 ## 多 Arduino 的 USB 配置流程
 
@@ -64,10 +83,10 @@ Mac Agent 產生。請讓 Mac 程式區分 Arduino 控制回覆 (`IP:`、`OK:`�
 
 ## 燒錄與快速測試
 
-1. 用 Arduino IDE 開啟 `B518_Arduino_MVP_Test.ino`，選取 **Arduino UNO R4 WiFi** 並燒錄。
+1. 用 Arduino IDE 開啟 `B518_Arduino_MVP_Test.ino`，選取板子絲印對應的 **Arduino UNO R4 Minima** 或 **Arduino UNO R4 WiFi** 並燒錄。
 2. 關閉 IDE 的 Serial Monitor，避免它佔用 Mac 的 CDC port。
 3. 在 Mac 找出 port，例如 `ls /dev/cu.usbmodem*`，再用序列工具以 115200 baud 開啟。
-4. 發送 `GET_IP`，應得到 `IP:...`。接著測試 `M_MOVE:100,100`、`M_DELTA:5,0`、`M_ABS:16384,16384`、`M_ABS_CLICK:L`，最後才測試 `K_TYPE:...`。
+4. 發送 `GET_INFO`，確認 `FW`、`PROTO`、`BOARD`；再發送 `GET_IP`，應得到 `IP:...` 與同一份 `INFO:...`。接著測試 `M_MOVE:100,100`、`M_DELTA:5,0`、`M_ABS:16384,16384`、`M_ABS_CLICK:L`，最後才測試 `K_TYPE:...`。
 5. 從上位機對設定 IP 的 TCP port 連線，測試 TCP → USB 與 USB 非控制資料 → TCP 是否位元組一致。
 
 ## 已知 MVP 限制

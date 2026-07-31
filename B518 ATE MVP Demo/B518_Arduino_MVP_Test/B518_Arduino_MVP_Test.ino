@@ -1,6 +1,6 @@
 /*
   B518 Arduino MVP Test
-  Target: Arduino UNO R4 WiFi + W5100 Ethernet module/shield
+  Target: Arduino UNO R4 Minima or UNO R4 WiFi + W5100 Ethernet module/shield
 
   USB CDC receives newline-terminated control commands.  Unknown lines are
   forwarded unchanged to the currently connected TCP client; TCP bytes are
@@ -12,6 +12,7 @@
 #include <Keyboard.h>
 #include <Mouse.h>
 #include <HID.h>
+#include "firmware_version.h"
 
 // -------- Network configuration: change these values for the installation.
 const byte DEFAULT_IP[] = {192, 168, 1, 100};
@@ -207,6 +208,9 @@ void processUsbFrame() {
   if (equalsCommand("GET_IP", commandLength)) {
     Serial.print("IP:");
     Serial.println(Ethernet.localIP());
+    printFirmwareInfo();
+  } else if (equalsCommand("GET_INFO", commandLength)) {
+    printFirmwareInfo();
   } else if (startsWith("NET_SET:", commandLength)) {
     handleNetworkSet(commandLength);
   } else if (equalsCommand("NET_RESET", commandLength)) {
@@ -247,6 +251,19 @@ void processUsbFrame() {
     // Non-control traffic remains byte-for-byte unchanged, including CR/LF.
     forwardUsbFrameToTcp();
   }
+}
+
+void printFirmwareInfo() {
+  // Keep this command response on USB CDC only.  No boot banner is emitted,
+  // so the TCP bridge remains byte-for-byte transparent for normal traffic.
+  Serial.print("INFO:PRODUCT=");
+  Serial.print(B518_FIRMWARE_PRODUCT);
+  Serial.print(";FW=");
+  Serial.print(B518_FIRMWARE_VERSION);
+  Serial.print(";PROTO=");
+  Serial.print(B518_PROTOCOL_VERSION);
+  Serial.print(";BOARD=");
+  Serial.println(B518_FIRMWARE_BOARD);
 }
 
 uint8_t calculateNetworkChecksum(const NetworkSettings &settings) {

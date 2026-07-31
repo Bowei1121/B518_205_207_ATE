@@ -39,7 +39,7 @@
       <section id="prepare">
         <h2>1. 啟動前準備</h2>
         <ul class="checklist">
-          <li>Arduino 已燒錄 <code>B518_Arduino_MVP_Test.ino</code>，USB 接到本台 Mac mini，W5100 接到產線 switch。</li>
+          <li>Arduino 已燒錄 <code>B518_Arduino_MVP_Test.ino</code>，USB 接到本台 Mac mini，W5100 接到產線 switch；確認燒錄時的 Board 與實際 UNO R4 Minima／WiFi 相符。</li>
           <li>Arduino IDE Serial Monitor 已關閉，避免 USB CDC 被占用。</li>
           <li>DFU／FCT 的 CSV 根路徑可讀寫；BT 的 TestData 根路徑可讀取。</li>
           <li>螢幕截圖資料夾已建立，且與 macOS Command+Shift+3 的儲存位置一致。</li>
@@ -71,7 +71,7 @@
         <div class="steps">
           <div class="step"><h3>選擇工站</h3><p>於「工站」下拉選單選 DFU、FCT 或 BT。每次開線、切換治具或收到錯誤 JOB 時都應重新確認。</p></div>
           <div class="step"><h3>掃描並選擇 USB CDC</h3><p>按「掃描」，選擇名稱含 <code>usbmodem</code> 的 Arduino USB CDC。<code>Bluetooth-Incoming-Port</code> 與 <code>BLTH</code> 不是 Arduino。</p></div>
-          <div class="step"><h3>連線並確認 IP</h3><p>按「連線」後，Agent 會自動送出 <code>GET_IP</code>。確認即時 Log 出現 USB CDC 已連線、<code>TX: GET_IP</code> 與 <code>RX: IP:…</code>，再開始測試。</p></div>
+          <div class="step"><h3>連線並確認韌體</h3><p>按「連線」後，Agent 會自動送出 <code>GET_IP</code>。新版 Arduino 會在 <code>IP:…</code> 後回覆 <code>INFO:PRODUCT=…;FW=…;PROTO=…;BOARD=…</code>；確認畫面顯示 IP、韌體、協定與板型，再開始測試。未回覆 INFO 的舊板會顯示「未知／舊版」，不會阻止操作。</p></div>
         </div>
         <h3>BT 工站的個別 Start 控制</h3>
         <p>切換為 BT 時，主畫面會顯示 Start 1～4。四個 slot 都要測試時，輸入全部 SN 後按「開始流程」以點擊 Start All；稀疏 slot 則使用對應的 Start 1～4。</p>
@@ -210,7 +210,8 @@
         <h2>7. 常見異常</h2>
         <div class="table-wrap"><table><thead><tr><th>現象</th><th>處理方式</th></tr></thead><tbody>
           <tr><td>USB CDC 清單沒有 Arduino</td><td>確認 USB 資料線，關閉 Arduino Serial Monitor，按「掃描」，必要時重新插拔 USB。</td></tr>
-          <tr><td>連線後 IP 一直未顯示</td><td>確認選到正確 <code>usbmodem</code>，並檢查 Log 是否有 GET_IP 回覆。</td></tr>
+          <tr><td>連線後 IP 或韌體資訊未顯示</td><td>確認選到正確 <code>usbmodem</code>，檢查 Log 的 GET_IP／INFO 回覆；未回覆 INFO 代表舊版或未知韌體，請記錄完整 Log 後確認燒錄版本。</td></tr>
+          <tr><td>顯示協定版本警告</td><td>可繼續測試，但須記錄 Agent 版本、FW、PROTO、BOARD、USB CDC 裝置名稱與完整 Log，交由開發人員確認相容性。</td></tr>
           <tr><td>找不到模板／相似度過低</td><td>用目前部署機的新截圖重做模板；確認解析度、縮放、HMI 頁面與主題一致。</td></tr>
           <tr><td>疊圖正確但游標偏移</td><td>於「設定 → HID 設定」調整自動比例、偏移或 absolute 虛擬桌面尺寸；不要任意重裁已正確的模板。</td></tr>
           <tr><td>BT CSV 未被接受</td><td>確認根路徑指向 TestData、檔案在當日 PASSED／FAILED、建立時間晚於 Start，且 Thread、Unit Number、SN 與狀態一致。</td></tr>
@@ -221,7 +222,7 @@
         <h2>8. 每日開線檢核</h2>
         <ul class="checklist">
           <li>工站選擇與實際設備一致。</li>
-          <li>USB CDC 已連線，Arduino IP 已顯示。</li>
+          <li>USB CDC 已連線，Arduino IP、FW、PROTO、BOARD 均已顯示；板型與實際硬體相符。</li>
           <li>CSV／Log／模板／截圖路徑正確且可存取。</li>
           <li>HMI 完整位於單一螢幕，解析度與製作模板時一致。</li>
           <li>已用已知 SN 執行首件，匹配疊圖與 HID 落點正確。</li>

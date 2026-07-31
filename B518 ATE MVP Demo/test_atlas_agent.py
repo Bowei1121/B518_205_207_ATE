@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -67,6 +67,26 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(arduino_ip_reply("OK:NET_SET:192.168.1.101"), "192.168.1.101")
         self.assertEqual(arduino_ip_reply("EVT: IP=192.168.1.102"), "192.168.1.102")
         self.assertIsNone(arduino_ip_reply("OK:NET_SET:999.1.1.1"))
+
+    def test_arduino_info_reply_parses_identity_without_becoming_job_data(self):
+        identity = arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_MINIMA")
+        self.assertIsNotNone(identity)
+        self.assertEqual(identity.firmware_version, "1.0.0")
+        self.assertEqual(identity.protocol_version, 1)
+        self.assertEqual(identity.board, "UNO_R4_MINIMA")
+        self.assertIsNone(incoming_barcode_payload("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_MINIMA"))
+
+    def test_arduino_info_reply_rejects_missing_or_invalid_fields(self):
+        self.assertIsNone(arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0;PROTO=1;BOARD=UNO_R4_MINIMA"))
+        self.assertIsNone(arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=x;BOARD=UNO_R4_MINIMA"))
+        self.assertIsNone(arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1"))
+        self.assertIsNone(arduino_info_reply("IP:192.168.1.100"))
+
+    def test_arduino_protocol_mismatch_only_produces_a_warning(self):
+        current = arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_WIFI")
+        old = arduino_info_reply("INFO:PRODUCT=B518_ARDUINO_MVP;FW=0.9.9;PROTO=0;BOARD=UNO_R4_MINIMA")
+        self.assertIsNone(arduino_protocol_warning(current))
+        self.assertIn("將繼續執行測試", arduino_protocol_warning(old))
 
     def test_dfu_each_sn_returns_to_origin_before_input_and_ok(self):
         self.assertEqual(

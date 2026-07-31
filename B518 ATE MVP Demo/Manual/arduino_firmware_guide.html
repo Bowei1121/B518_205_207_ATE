@@ -106,7 +106,7 @@
           </div>
           <div class="step">
             <h3>從 Tools 選單找到目標板型</h3>
-            <p>開啟 <strong>Tools → Board → Arduino UNO R4 Boards</strong>，清單中可以找到 <strong>Arduino UNO R4 Minima</strong> 與 <strong>Arduino UNO R4 WiFi</strong>。請依實際硬體型號選擇；本專案目前 B518 Demo 與下方實機截圖使用的是 <strong>UNO R4 WiFi</strong>。</p>
+            <p>開啟 <strong>Tools → Board → Arduino UNO R4 Boards</strong>，清單中可以找到 <strong>Arduino UNO R4 Minima</strong> 與 <strong>Arduino UNO R4 WiFi</strong>。請依實際硬體絲印選擇；兩者皆可使用本專案韌體，且燒錄後可由 Agent 的 <code>BOARD</code> 欄位確認實際編譯目標。</p>
             <figure class="manual-figure is-compact">
               <img src="assets/arduino/01-tools-board-menu.png" width="676" height="356" loading="lazy" alt="Arduino IDE Tools 選單展開 Arduino UNO R4 Boards 並顯示 Minima 與 WiFi 板型">
               <figcaption><span class="figure-label">圖 3-2</span>Tools 選單中的 UNO R4 板型清單；畫面勾選的是 WiFi，Minima 位於同一清單。</figcaption>
@@ -136,7 +136,7 @@
 TCP_LISTEN_PORT  = 5000
 W5100_CS_PIN     = 10
 SD_CS_PIN        = 4</code></pre></div>
-          <div class="step"><h3>接上硬體</h3><p>將 W5100 Shield 正確疊接在 UNO R4 WiFi，USB-C 接到燒錄電腦。初次配置多片 Arduino 時，先不要把所有預設 IP 相同的板子一起接到 switch。</p></div>
+          <div class="step"><h3>接上硬體</h3><p>將 W5100 Shield 正確接到 UNO R4 Minima 或 UNO R4 WiFi，USB-C 接到燒錄電腦。初次配置多片 Arduino 時，先不要把所有預設 IP 相同的板子一起接到 switch。</p></div>
           <div class="step">
             <h3>選擇 Board 與 Port</h3>
             <p>點 IDE 上方 Board Selector，選擇與實際硬體相同的 <strong>Arduino UNO R4 WiFi</strong> 或 <strong>Arduino UNO R4 Minima</strong>，再選擇新出現的 USB port。無法分辨時，拔掉 USB 觀察哪個 port 消失，再重新插入。</p>
@@ -193,14 +193,15 @@ SD_CS_PIN        = 4</code></pre></div>
         <ol>
           <li>關閉 Arduino IDE Serial Monitor。</li>
           <li>開啟 <strong>Atlas Agent B518 ATE.app</strong>。</li>
-          <li>按「重新掃描」，選擇 <code>/dev/cu.usbmodem…</code>。</li>
+          <li>按「掃描」，選擇 <code>/dev/cu.usbmodem…</code>。</li>
           <li>按「連線」。Agent 會自動送出 <code>GET_IP</code>。</li>
-          <li>確認畫面顯示 Arduino IP，而非「查詢中」或錯誤訊息。</li>
+          <li>確認畫面顯示 Arduino IP、FW、PROTO 與 BOARD；BOARD 必須與燒錄時選擇的 UNO R4 Minima／WiFi 一致。</li>
         </ol>
         <pre><code>預期通訊紀錄：
 USB CDC 已連線；自動查詢 Arduino IP
 TX: GET_IP
-RX: IP:192.168.1.100</code></pre>
+RX: IP:192.168.1.100
+RX: INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_MINIMA</code></pre>
         <div class="callout warning"><span class="callout-title">多片 Arduino IP 配置</span>每次只接一片尚未設定的板，透過 Agent「修改 IP」設定唯一位址，再接入 switch。不要讓兩片仍使用 192.168.1.100 的板同時上網。</div>
       </section>
 
@@ -227,10 +228,10 @@ RX: IP:192.168.1.100</code></pre>
         <ul class="checklist">
           <li>Arduino IDE 使用官方 IDE 2，UNO R4 board package 已安裝。</li>
           <li>開啟的是 <code>B518_Arduino_MVP_Test.ino</code>，不是僅 TCP bridge 的舊程式。</li>
-          <li>Board 為 Arduino UNO R4 WiFi，Port 與實際 USB 對應。</li>
+          <li>Board 為實際使用的 Arduino UNO R4 Minima 或 UNO R4 WiFi，Port 與實際 USB 對應。</li>
           <li>Verify 與 Upload 均成功。</li>
           <li>Serial Monitor 已關閉。</li>
-          <li>Atlas Agent 可連線並自動讀到 Arduino IP。</li>
+          <li>Atlas Agent 可連線並自動讀到 Arduino IP、FW、PROTO 與 BOARD。</li>
           <li>同一網段的每片 Arduino IP 均唯一。</li>
         </ul>
         <h3>官方參考</h3>

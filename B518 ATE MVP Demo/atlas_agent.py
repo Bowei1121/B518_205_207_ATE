@@ -58,6 +58,8 @@ RAW_SN_BATCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\s*,\s*[A-Za-z0-
 SN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 JOB_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 DEFAULT_BAUD = 115200
+ARDUINO_PROTOCOL_VERSION = 1
+ARDUINO_INFO_TIMEOUT_MS = 1500
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
@@ -164,6 +166,14 @@ class TestCommand:
     @property
     def sns(self) -> list[str]:
         return [sn for _, sn in self.assignments]
+
+
+@dataclass(frozen=True)
+class ArduinoIdentity:
+    product: str
+    firmware_version: str
+    protocol_version: int
+    board: str
 
 
 def parse_barcodes(payload: str) -> list[str]:
@@ -281,6 +291,38 @@ def arduino_ip_reply(line: str) -> Optional[str]:
     if len(parts) != 4 or any(not part.isdigit() or not 0 <= int(part) <= 255 for part in parts):
         return None
     return candidate
+
+
+def arduino_info_reply(line: str) -> Optional[ArduinoIdentity]:
+    """Parse the compact identity reply emitted by the versioned firmware."""
+    value = line.strip()
+    if not value.startswith("INFO:"):
+        return None
+    fields: dict[str, str] = {}
+    for item in value[5:].split(";"):
+        if "=" not in item:
+            return None
+        key, field_value = item.split("=", 1)
+        key, field_value = key.strip().upper(), field_value.strip()
+        if not key or not field_value or key in fields:
+            return None
+        fields[key] = field_value
+    required = ("PRODUCT", "FW", "PROTO", "BOARD")
+    if any(key not in fields for key in required):
+        return None
+    if not re.fullmatch(r"\d+\.\d+\.\d+", fields["FW"]):
+        return None
+    if not fields["PROTO"].isdigit() or not re.fullmatch(r"[A-Z0-9_]+", fields["BOARD"]):
+        return None
+    return ArduinoIdentity(fields["PRODUCT"], fields["FW"], int(fields["PROTO"]), fields["BOARD"])
+
+
+def arduino_protocol_warning(identity: ArduinoIdentity) -> Optional[str]:
+    """Return a non-blocking compatibility warning for a different protocol."""
+    if identity.protocol_version == ARDUINO_PROTOCOL_VERSION:
+        return None
+    return ("Arduino 協定版本不一致："
+            f"Agent={ARDUINO_PROTOCOL_VERSION}，Arduino={identity.protocol_version}；將繼續執行測試")
 
 
 def batch_result_report(station: str, job_id: str, assignments: Iterable[tuple[int, str]],
@@ -1183,6 +1225,9 @@ class AtlasAgentApp:
         self.dfu_profile = tk.StringVar(value=pref.dfu_profile if pref.dfu_profile in DFU_PROFILES else "b482_dfu2")
         self.sn_text = tk.StringVar()
         self.ip_text = tk.StringVar()
+        self.arduino_ip: Optional[str] = None
+        self.arduino_identity: Optional[ArduinoIdentity] = None
+        self.arduino_info_query = 0
         self.demo_fail_last = tk.BooleanVar(value=False)
         self._build()
         self.station.trace_add("write", self._update_station_controls)
@@ -1485,10 +1530,38 @@ class AtlasAgentApp:
     def connect(self) -> None:
         try:
             self.link.connect(self.port.get().strip())
-            self.append("USB CDC 已連線；自動查詢 Arduino IP")
-            self.ip_text.set("IP：查詢中…")
+            self.arduino_ip = None
+            self.arduino_identity = None
+            self.arduino_info_query += 1
+            query = self.arduino_info_query
+            self.append("USB CDC 已連線；自動查詢 Arduino IP 與韌體資訊")
+            self.update_arduino_display()
             self.safe_send("GET_IP")
+            self.root.after(ARDUINO_INFO_TIMEOUT_MS, lambda: self.mark_legacy_firmware(query))
         except (AgentError, OSError) as exc: messagebox.showerror(TITLE, str(exc))
+
+    def update_arduino_display(self) -> None:
+        ip = self.arduino_ip or "查詢中…"
+        if self.arduino_identity is None:
+            identity = "韌體：查詢中…"
+        else:
+            identity = (f"韌體：{self.arduino_identity.firmware_version}｜協定："
+                        f"{self.arduino_identity.protocol_version}｜板型：{self.arduino_identity.board}")
+        self.ip_text.set(f"IP：{ip}\n{identity}")
+
+    def mark_legacy_firmware(self, query: int) -> None:
+        if query != self.arduino_info_query or self.arduino_identity is not None or not self.link.connection:
+            return
+        ip = self.arduino_ip or "未回覆"
+        self.ip_text.set(f"IP：{ip}\n韌體：未知／舊版（未回覆 INFO）")
+        self.append("WARN: Arduino 未回覆 INFO；以舊版／未知韌體模式繼續")
+
+    def accept_arduino_identity(self, identity: ArduinoIdentity) -> None:
+        self.arduino_identity = identity
+        self.update_arduino_display()
+        warning = arduino_protocol_warning(identity)
+        if warning:
+            self.append("WARN: " + warning)
 
     def safe_send(self, command: str) -> None:
         try: self.link.send(command); self.append("TX: " + command)
@@ -2075,6 +2148,16 @@ class AtlasAgentApp:
                 kind, item = self.events.get_nowait()
                 if kind == "serial":
                     line = str(item); self.append("RX: " + line)
+                    # INFO replies are Agent diagnostics, never HID replies or
+                    # transparent TCP payloads.  Intercept them first so they
+                    # cannot accidentally start a JOB or satisfy an HID wait.
+                    if line.strip().startswith("INFO:"):
+                        identity = arduino_info_reply(line)
+                        if identity is None:
+                            self.append("WARN: Arduino INFO 格式無效")
+                        else:
+                            self.accept_arduino_identity(identity)
+                        continue
                     self.hid_replies.put(line)
                     if re.match(r"^(DFU|FCT|BT):", line, re.IGNORECASE):
                         try:
@@ -2089,7 +2172,8 @@ class AtlasAgentApp:
                         else:
                             ip = arduino_ip_reply(line)
                             if ip:
-                                self.ip_text.set("IP:" + ip)
+                                self.arduino_ip = ip
+                                self.update_arduino_display()
                 elif kind == "log": self.append(str(item))
                 elif kind == "auto_scale":
                     scale_x, scale_y = item

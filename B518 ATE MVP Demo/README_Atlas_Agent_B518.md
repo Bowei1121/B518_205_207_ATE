@@ -16,6 +16,12 @@ Accessibility、AppleScript、CGEvent 或任何 Mac 端鍵盤／滑鼠控制；�
 
 開發與建置環境固定使用 Python 3.12 的 `.venv`，不要使用系統或 Anaconda 的 `python3`。
 
+## Arduino 韌體識別與現場回報
+
+連線後 Agent 會照舊送出 `GET_IP`。新版 Arduino 在 `IP:` 後回覆 `INFO:PRODUCT=...;FW=...;PROTO=...;BOARD=...`，主畫面的「Arduino 網路設定」會顯示 IP、韌體、協定與編譯板型；舊韌體則會顯示「未知／舊版」。Agent 與 Arduino 的協定版本不同時只寫入警告，**不會阻止** Demo、HID、TCP 或正式測試。
+
+發生現場異常時，請一併提供 Agent 視窗標題版本、`FW`、`PROTO`、`BOARD`、USB CDC 裝置名稱（例如 `/dev/cu.usbmodem…`）及完整即時通訊紀錄。若要人工確認，先關閉 Agent，再以 115200 baud 的 Arduino Serial Monitor 發送 `GET_INFO`；不可同時開啟兩者。
+
 ## 打包 macOS App
 
 在具備網路與 Python 套件安裝權限的建置電腦上執行：
