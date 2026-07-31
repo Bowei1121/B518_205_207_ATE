@@ -22,6 +22,8 @@ Accessibility、AppleScript、CGEvent 或任何 Mac 端鍵盤／滑鼠控制；�
 
 發生現場異常時，請一併提供 Agent 視窗標題版本、`FW`、`PROTO`、`BOARD`、USB CDC 裝置名稱（例如 `/dev/cu.usbmodem…`）及完整即時通訊紀錄。若要人工確認，先關閉 Agent，再以 115200 baud 的 Arduino Serial Monitor 發送 `GET_INFO`；不可同時開啟兩者。
 
+封閉式 Mac mini 不需額外安裝診斷軟體：按「設定 → 製作模板 → 擷取螢幕截圖」後，直接查看既有 Agent Log。新版韌體會先顯示 `RX: ACK:SCREENSHOT`，HID 函式返回後才顯示 `RX: OK:SCREENSHOT`；只有前者代表問題卡在 macOS HID 截圖階段，兩者都有但未產生 PNG 則表示 macOS 沒完成截圖儲存。
+
 ## 打包 macOS App
 
 在具備網路與 Python 套件安裝權限的建置電腦上執行：

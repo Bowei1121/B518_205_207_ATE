@@ -211,6 +211,8 @@
         <div class="table-wrap"><table><thead><tr><th>現象</th><th>處理方式</th></tr></thead><tbody>
           <tr><td>USB CDC 清單沒有 Arduino</td><td>確認 USB 資料線，關閉 Arduino Serial Monitor，按「掃描」，必要時重新插拔 USB。</td></tr>
           <tr><td>連線後 IP 或韌體資訊未顯示</td><td>確認選到正確 <code>usbmodem</code>，檢查 Log 的 GET_IP／INFO 回覆；未回覆 INFO 代表舊版或未知韌體，請記錄完整 Log 後確認燒錄版本。</td></tr>
+          <tr><td>截圖只出現 <code>ACK:SCREENSHOT</code></td><td>韌體已收到命令，但 HID 截圖函式未返回；保留 Agent Log，確認 macOS 是否辨識 Arduino 鍵盤 HID。</td></tr>
+          <tr><td>截圖已有 <code>ACK</code> 與 <code>OK</code> 但無 PNG</td><td>Arduino 已完成 HID 函式；檢查 macOS 截圖快捷鍵、實際儲存位置與資料夾寫入權限。</td></tr>
           <tr><td>顯示協定版本警告</td><td>可繼續測試，但須記錄 Agent 版本、FW、PROTO、BOARD、USB CDC 裝置名稱與完整 Log，交由開發人員確認相容性。</td></tr>
           <tr><td>找不到模板／相似度過低</td><td>用目前部署機的新截圖重做模板；確認解析度、縮放、HMI 頁面與主題一致。</td></tr>
           <tr><td>疊圖正確但游標偏移</td><td>於「設定 → HID 設定」調整自動比例、偏移或 absolute 虛擬桌面尺寸；不要任意重裁已正確的模板。</td></tr>

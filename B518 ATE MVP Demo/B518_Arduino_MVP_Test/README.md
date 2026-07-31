@@ -15,7 +15,7 @@ UNO R4 Minima／WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W
 
 ## 韌體版本與交付前檢核
 
-唯一版本來源是 `firmware_version.h`；目前首版為 **1.0.0**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
+唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.1**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
 
 ```bash
 cd "B518 ATE MVP Demo/B518_Arduino_MVP_Test"
@@ -46,7 +46,7 @@ python3 verify_firmware_version.py --base HEAD
 | `K_WRITE:string\n` | 輸入可列印 ASCII 字串，不附加 Enter。 |
 | `K_KEY:TAB\n` | 輸入一個 Tab，用於切換下一個 DFU 條碼欄位。 |
 | `K_SHORTCUT:SCREENSHOT\n` | 送出 macOS Command + Shift + 3，且前後均釋放按鍵。 |
-| `SCREENSHOT\n` | `K_SHORTCUT:SCREENSHOT` 的建議別名，供 Atlas Agent 使用。 |
+| `SCREENSHOT\n` | `K_SHORTCUT:SCREENSHOT` 的建議別名，供 Atlas Agent 使用；依序回覆 `ACK:SCREENSHOT` 與 `OK:SCREENSHOT`。 |
 | `GET_IP\n` | 回覆既有 `IP:192.168.1.100\n`（實際 IP），新版韌體隨後再回覆 `INFO:...`。 |
 | `GET_INFO\n` | 回覆韌體識別資訊，例如 `INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.0;PROTO=1;BOARD=UNO_R4_MINIMA\n`。 |
 | `NET_SET:A.B.C.D\n` | **僅 USB CDC 可發送**。保存新的 IPv4 位址、立即重新初始化 W5100，回覆 `OK:NET_SET:A.B.C.D\n`。 |
@@ -58,7 +58,7 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 
 `NET_SET` 接受單播 IPv4 host 位址，並排除 `x.x.x.0` 與 `x.x.x.255`。設定儲存在 UNO R4 的 EEPROM，斷電或重開機後仍會保留。網路設定指令只會在 Arduino 從 Mac 的 USB CDC 收到時被執行；TCP 收到的資料只會透明轉送到 USB，無法修改設定。
 
-`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。`OK:SCREENSHOT` 只表示 Arduino 已送出 HID 快捷鍵，不保證 macOS 一定建立了截圖檔。
+`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。`ACK:SCREENSHOT` 表示韌體已收到截圖命令、即將呼叫 HID；`OK:SCREENSHOT` 表示 HID 函式已返回。兩者都不保證 macOS 一定建立了截圖檔。
 
 ## 多 Arduino 的 USB 配置流程
 

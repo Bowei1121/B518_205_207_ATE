@@ -245,6 +245,10 @@ void processUsbFrame() {
     Serial.println("OK:K_KEY:TAB");
   } else if (equalsCommand("SCREENSHOT", commandLength) ||
              equalsCommand("K_SHORTCUT:SCREENSHOT", commandLength)) {
+    // Emit a diagnostic before touching the HID endpoint.  The closed Mac
+    // station can use the existing Agent log to distinguish a command/frame
+    // problem from a HID action that never returns to this firmware.
+    Serial.println("ACK:SCREENSHOT");
     takeScreenshot();
     Serial.println("OK:SCREENSHOT");
   } else {

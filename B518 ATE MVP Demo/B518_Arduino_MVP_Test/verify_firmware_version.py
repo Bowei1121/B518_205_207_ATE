@@ -47,9 +47,10 @@ def main() -> int:
     parser.add_argument("--base", default="HEAD", help="Git revision to compare with (default: HEAD)")
     args = parser.parse_args()
     repo_root = Path(git_output("rev-parse", "--show-toplevel").strip())
-    relative_dir = FIRMWARE_DIR.relative_to(repo_root).as_posix()
     relative_version = VERSION_FILE.relative_to(repo_root).as_posix()
-    changed = set(git_output("diff", "--name-only", args.base, "--", relative_dir).splitlines())
+    # git_output runs from FIRMWARE_DIR, so use its local pathspec.  Git still
+    # returns repository-relative names, which are compared below.
+    changed = set(git_output("diff", "--name-only", args.base, "--", ".").splitlines())
     # git diff intentionally omits an untracked initial header.  Treat the
     # canonical version file as changed when it does not exist in the base.
     if VERSION_FILE.is_file() and base_file(args.base, relative_version) is None:
