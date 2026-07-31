@@ -30,7 +30,7 @@ fi
 # A locked-down build account may have no writable user site-packages.  Do not
 # invoke pip (which may still attempt a user-site write) when every build
 # dependency is already importable.
-if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, Vision'; then
+if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, AppKit'; then
   echo "Missing build dependencies; installing from requirements.txt..."
   "$PYTHON" -m pip install -r requirements.txt pyinstaller
 fi
@@ -41,7 +41,6 @@ echo "Building Atlas Agent B518 ATE V$BUILD_VERSION"
   --add-data "templates:templates" \
   --collect-all serial \
   --collect-all cv2 \
-  --collect-all Vision \
   atlas_agent.py
 
 plutil -replace CFBundleShortVersionString -string "$BUILD_VERSION" "dist/Atlas Agent B518 ATE.app/Contents/Info.plist"

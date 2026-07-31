@@ -50,9 +50,9 @@ fi
 # its removal and avoid pip creating an isolated environment with a newer one.
 "$PYTHON" -m pip install --upgrade pip "setuptools==80.9.0" wheel
 "$PYTHON" -m pip install --no-build-isolation \
-  --no-binary=pyobjc-core,pyobjc-framework-Cocoa,pyobjc-framework-Vision \
+  --no-binary=pyobjc-core,pyobjc-framework-Cocoa \
   -r requirements-catalina.txt "pyinstaller==6.16.0"
-if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, Vision, AppKit'; then
+if ! "$PYTHON" -c 'import PyInstaller, cv2, serial, AppKit'; then
   echo "Catalina build dependencies could not be imported."
   exit 4
 fi
@@ -74,7 +74,6 @@ fi
   --add-data="${TEMPLATE_SOURCE}:templates" \
   --collect-all serial \
   --collect-all cv2 \
-  --collect-all Vision \
   atlas_agent.py
 
 PLIST="$PWD/dist-catalina/Atlas Agent B518 ATE.app/Contents/Info.plist"

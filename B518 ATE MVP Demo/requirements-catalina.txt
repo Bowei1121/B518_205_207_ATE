@@ -9,4 +9,3 @@ opencv-python==4.6.0.66
 # them to the Catalina SDK instead of accepting a newer pre-built wheel.
 pyobjc-core==10.3.1; sys_platform == "darwin"
 pyobjc-framework-Cocoa==10.3.1; sys_platform == "darwin"
-pyobjc-framework-Vision==10.3.1; sys_platform == "darwin"

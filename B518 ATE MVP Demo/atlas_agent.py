@@ -13,7 +13,6 @@ import json
 import queue
 import re
 import struct
-import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -42,13 +41,6 @@ try:
     import AppKit
 except ImportError:
     AppKit = None
-
-try:
-    import Vision
-    from Foundation import NSURL
-except ImportError:
-    Vision = None
-    NSURL = None
 
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
 TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
@@ -149,18 +141,6 @@ class TestResult:
     folder: Path
     records: Path
     detail: str = ""
-
-
-@dataclass(frozen=True)
-class BtStatusRow:
-    status: str
-    rectangle: tuple[int, int, int, int]
-
-
-@dataclass(frozen=True)
-class OcrText:
-    text: str
-    rectangle: tuple[int, int, int, int]
 
 
 @dataclass(frozen=True)
@@ -650,214 +630,6 @@ def slot_checkbox_states(image: Path, checked_template: Path, unchecked_template
     return [(item[2], item[3]) for item in rows]
 
 
-def bt_status_rows_from_screen(image: Path, status_templates: dict[str, Path],
-                               region: Optional[tuple[int, int, int, int]] = None) -> list[BtStatusRow]:
-    """Read the four top-to-bottom BT STATUS cells and retain their geometry."""
-    hits: list[tuple[int, int, str, tuple[int, int, int, int], float]] = []
-    for status, template in status_templates.items():
-        for x, y, width, height, score in template_matches(image, template, region=region):
-            hits.append((y + height // 2, x + width // 2, status, (x, y, width, height), score))
-    if not hits:
-        raise AgentError("找不到任何 BT STATUS 模板")
-    # A crop that includes the cell background and text creates one match per
-    # row.  Sort by y to preserve slot 1→4 order, retaining the best hit when
-    # two state templates overlap around the same row.
-    rows: list[tuple[int, int, str, tuple[int, int, int, int], float]] = []
-    for hit in sorted(hits):
-        if rows and abs(hit[0] - rows[-1][0]) <= 12:
-            if hit[4] > rows[-1][4]:
-                rows[-1] = hit
-        else:
-            rows.append(hit)
-    if len(rows) < 4:
-        raise AgentError(f"BT STATUS 僅辨識到 {len(rows)} 列；請確認四個狀態模板均從同一解析度畫面裁切")
-    return [BtStatusRow(row[2], row[3]) for row in rows[:4]]
-
-
-def bt_statuses_from_screen(image: Path, status_templates: dict[str, Path],
-                            region: Optional[tuple[int, int, int, int]] = None) -> list[str]:
-    """Compatibility helper that returns only STATUS names."""
-    return [row.status for row in bt_status_rows_from_screen(image, status_templates, region)]
-
-
-def normalize_ocr_sn(value: str) -> str:
-    """Normalize BT OCR serials for the agreed customer barcode alphabet.
-
-    Customer serial numbers intentionally exclude the letter ``O`` while
-    retaining digits 0–9.  Vision therefore reading an ``O`` is the known,
-    deterministic OCR representation of ``0``; convert only that character.
-    ``I`` remains untouched so the software never guesses 1 from I.
-    """
-    return re.sub(r"\s+", "", value).upper().replace("O", "0")
-
-
-def vision_rectangle_components(rectangle: object) -> tuple[float, float, float, float]:
-    """Return a Vision CGRect as x, y, width, height across PyObjC versions.
-
-    Older PyObjC versions exposed a CGRect as a flat four-value tuple, while
-    current versions expose it as ``((x, y), (width, height))``.  Keep the
-    OCR pipeline independent of that bridge representation.
-    """
-    try:
-        if len(rectangle) == 4:  # type: ignore[arg-type]
-            x, y, width, height = rectangle  # type: ignore[misc]
-        elif len(rectangle) == 2:  # type: ignore[arg-type]
-            (x, y), (width, height) = rectangle  # type: ignore[misc]
-        else:
-            raise ValueError("unexpected component count")
-        return float(x), float(y), float(width), float(height)
-    except (TypeError, ValueError) as exc:
-        raise AgentError(f"無法解析 Vision OCR 座標：{rectangle!r}") from exc
-
-
-def pair_bt_sn_text(status_rows: list[BtStatusRow], ocr_texts: Iterable[OcrText]) -> list[str]:
-    """Assign OCR SN text to each STATUS row, preferring the adjacent SN column."""
-    candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in ocr_texts
-                  if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))
-                  and not re.fullmatch(r"(?:SN|SLOT[1-4]|STATUS|PROGRESS)", normalize_ocr_sn(item.text))]
-    machine_sns: list[str] = []
-    for row in status_rows:
-        status_x, status_y, status_width, status_height = row.rectangle
-        row_center = status_y + status_height / 2
-        nearby = [item for item in candidates
-                  if item.rectangle[0] + item.rectangle[2] / 2 < status_x
-                  and abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center) <= max(48, status_height * 1.5)]
-        if not nearby:
-            machine_sns.append("")
-            continue
-        # Both the SLOT label and its SN have the same vertical position.
-        # The SN column is immediately to the left of STATUS, so select the
-        # rightmost candidate rather than relying on Vision's return order.
-        machine_sns.append(max(nearby, key=lambda item: (item.rectangle[0] + item.rectangle[2] / 2,
-                                                          -abs(item.rectangle[1] + item.rectangle[3] / 2 - row_center))).text)
-    return machine_sns
-
-
-def bt_sn_cell_rectangle(status_row: BtStatusRow, image_width: int, image_height: int) -> tuple[int, int, int, int]:
-    """Return the SN-cell crop immediately left of a BT STATUS cell.
-
-    The simulator and target B482 tables place SN directly to the left of
-    STATUS.  The crop is derived from the matched STATUS geometry, so it stays
-    correct if the browser moves or the screenshot is Retina-scaled.
-    """
-    status_x, status_y, status_width, status_height = status_row.rectangle
-    left = max(0, round(status_x - status_width * 1.5))
-    top = max(0, round(status_y - status_height * .12))
-    right = min(image_width, status_x)
-    bottom = min(image_height, round(status_y + status_height * 1.12))
-    if right <= left or bottom <= top:
-        raise AgentError("BT SN 儲存格裁切範圍無效")
-    return left, top, right - left, bottom - top
-
-
-def bt_sn_text_from_status_rows(image: Path, status_rows: list[BtStatusRow]) -> list[str]:
-    """OCR each individual SN cell instead of OCRing the whole BT table."""
-    if cv2 is None:
-        raise AgentError("BT SN OCR 需要 opencv-python")
-    pixels = cv2.imread(str(image))
-    if pixels is None:
-        raise AgentError(f"無法讀取 OCR 截圖：{image}")
-    height, width = pixels.shape[:2]
-    values: list[str] = []
-    for index, row in enumerate(status_rows, start=1):
-        left, top, crop_width, crop_height = bt_sn_cell_rectangle(row, width, height)
-        crop = pixels[top:top + crop_height, left:left + crop_width]
-        handle = tempfile.NamedTemporaryFile(prefix=f"atlas_bt_sn_slot{index}_", suffix=".png", delete=False)
-        handle.close(); crop_path = Path(handle.name)
-        try:
-            if not cv2.imwrite(str(crop_path), crop):
-                raise AgentError("無法建立 BT SN OCR 暫存影像")
-            candidates = [OcrText(normalize_ocr_sn(item.text), item.rectangle) for item in recognize_text_vision(crop_path)
-                          if RAW_SN_BATCH.fullmatch(normalize_ocr_sn(item.text))
-                          and not re.fullmatch(r"(?:SN|SLOT[1-4]|STATUS|PROGRESS)", normalize_ocr_sn(item.text))]
-            # A crop can include the far right edge of SLOT; choose the
-            # rightmost valid text, which is the SN column value.
-            values.append(max(candidates, key=lambda item: item.rectangle[0] + item.rectangle[2] / 2).text if candidates else "")
-        finally:
-            crop_path.unlink(missing_ok=True)
-    return values
-
-
-def recognize_text_vision(image: Path) -> list[OcrText]:
-    """Read screenshot text with macOS Vision; no screen-recording permission is used."""
-    if Vision is None or NSURL is None:
-        raise AgentError("缺少 macOS Vision OCR；請重新建置並安裝 pyobjc-framework-Vision")
-    if cv2 is None:
-        raise AgentError("Vision OCR 需要 opencv-python 取得截圖尺寸")
-    pixels = cv2.imread(str(image))
-    if pixels is None:
-        raise AgentError(f"無法讀取 OCR 截圖：{image}")
-    height, width = pixels.shape[:2]
-    recognition_image = image
-    coordinate_scale = 1.0
-    temporary_image: Optional[Path] = None
-    # Vision can reject a large Retina screenshot before it reaches OCR.  The
-    # text remains clear at this size; coordinates are converted back below.
-    maximum_dimension = 800
-    if max(width, height) > maximum_dimension:
-        coordinate_scale = maximum_dimension / max(width, height)
-        scaled = cv2.resize(pixels, (round(width * coordinate_scale), round(height * coordinate_scale)), interpolation=cv2.INTER_AREA)
-        handle = tempfile.NamedTemporaryFile(prefix="atlas_bt_ocr_", suffix=".png", delete=False)
-        handle.close(); temporary_image = Path(handle.name)
-        if not cv2.imwrite(str(temporary_image), scaled):
-            temporary_image.unlink(missing_ok=True)
-            raise AgentError("無法建立 Vision OCR 暫存影像")
-        recognition_image = temporary_image
-        height, width = scaled.shape[:2]
-    results = []
-
-    def completed(request, error) -> None:
-        if error is not None:
-            return
-        for observation in request.results() or []:
-            candidates = observation.topCandidates_(1)
-            if not candidates:
-                continue
-            text = str(candidates[0].string())
-            x, y, box_width, box_height = vision_rectangle_components(observation.boundingBox())
-            results.append(OcrText(text, (round(x * width), round((1 - y - box_height) * height),
-                                          round(box_width * width), round(box_height * height))))
-
-    try:
-        request = Vision.VNRecognizeTextRequest.alloc().initWithCompletionHandler_(completed)
-        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
-        request.setUsesLanguageCorrection_(False)
-        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(NSURL.fileURLWithPath_(str(recognition_image)), {})
-        success, error = handler.performRequests_error_([request], None)
-        if not success:
-            raise AgentError("macOS Vision OCR 失敗：" + str(error or "未知錯誤"))
-        if coordinate_scale != 1.0:
-            return [OcrText(item.text, tuple(round(value / coordinate_scale) for value in item.rectangle)) for item in results]
-        return results
-    finally:
-        if temporary_image is not None:
-            temporary_image.unlink(missing_ok=True)
-
-
-def bt_completed_results(sns: list[str], slots: list[int], statuses: list[str], testing_seen: set[str]) -> dict[str, str]:
-    """Return final BT results only after the entire selected batch has ended.
-
-    A BT HMI often retains the previous PASS/FAIL until its next run starts.
-    Requiring TESTING is the protocol guard that separates a new test from
-    that stale screen state.
-    """
-    selected: dict[str, str] = {}
-    for sn, slot in zip(sns, slots):
-        if not 1 <= slot <= len(statuses):
-            raise AgentError(f"BT slot {slot} 不在畫面 STATUS 範圍內")
-        current = statuses[slot - 1]
-        selected[sn] = current
-        if current == "TESTING":
-            testing_seen.add(sn)
-    # Never return a partial batch: stale results are possible before TESTING,
-    # and early PASS/FAIL is not a final batch result while another slot runs.
-    if any(sn not in testing_seen for sn in sns) or any(status == "TESTING" for status in selected.values()):
-        return {}
-    if any(status not in ("PASS", "FAIL") for status in selected.values()):
-        return {}
-    return selected
-
-
 def opencv_image_to_tk_png(image) -> str:
     """Encode an OpenCV BGR image for Tk without swapping red/blue channels."""
     if cv2 is None:
@@ -1105,124 +877,6 @@ class BtCsvLogMonitor(threading.Thread):
                     self.on_timeout(pending)
                 return
             self.stop.wait(.25)
-
-
-class BtStatusMonitor(threading.Thread):
-    """Permission-free BT result monitor using Arduino-created screenshots.
-
-    macOS may defer writing a screenshot for several seconds.  Therefore the
-    one-second interval is measured *after a fresh image has been analysed*,
-    rather than repeatedly analysing an old image.
-    """
-    def __init__(self, screenshot_root: Path, status_templates: dict[str, Path],
-                 sns: list[str], slots: list[int], request_screenshot: Callable[[], None],
-                 on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
-                 on_review: Callable[[BtSnReview], None],
-                 delete_shots: Callable[[Iterable[Path]], None], stop: threading.Event,
-                 timeout_seconds: float = 0.0, on_timeout: Optional[Callable[[list[str]], None]] = None) -> None:
-        super().__init__(daemon=True)
-        self.screenshot_root, self.status_templates = screenshot_root, status_templates
-        self.sns, self.slots, self.request_screenshot = sns, slots, request_screenshot
-        self.on_log, self.on_result, self.on_review, self.delete_shots, self.stop = on_log, on_result, on_review, delete_shots, stop
-        self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
-        self.reported: set[str] = set()
-        self.testing_seen: set[str] = set()
-        self.machine_sns: Optional[list[str]] = None
-        self.sn_mismatch = False
-
-    def run(self) -> None:
-        self.on_log("BT 畫面 STATUS 監聽已啟動：" + "、".join(self.sns) + "；先等待 TESTING，再接受 PASS／FAIL；每張新截圖分析後間隔 1 秒")
-        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
-        while not self.stop.is_set():
-            before = time.time()
-            try:
-                self.request_screenshot()
-                shots = self._wait_for_screenshots(before)
-                if not shots:
-                    self.on_log("BT：等待螢幕截圖逾時，將重試")
-                else:
-                    if self._analyse_screenshots(shots):
-                        return
-            except Exception as exc:
-                self.on_log(f"BT STATUS 畫面分析失敗：{exc}")
-            if deadline is not None and time.monotonic() >= deadline:
-                pending = [sn for sn in self.sns if sn not in self.reported]
-                if pending and self.on_timeout:
-                    self.on_timeout(pending)
-                return
-            if self.stop.wait(1.0):
-                return
-
-    def _wait_for_screenshots(self, before: float) -> list[Path]:
-        # Do not assume that a five-second macOS thumbnail delay is exact.
-        deadline = time.monotonic() + SCREENSHOT_TIMEOUT_SECONDS
-        while not self.stop.is_set() and time.monotonic() < deadline:
-            shots = new_screenshots(self.screenshot_root, before)
-            if shots:
-                return shots
-            self.stop.wait(.25)
-        return []
-
-    def _analyse_screenshots(self, shots: list[Path]) -> bool:
-        selected: Optional[Path] = None
-        statuses: list[str] = []
-        status_rows: list[BtStatusRow] = []
-        errors: list[str] = []
-        for shot in shots:
-            try:
-                # The BT window template is needed only once to find the Start
-                # button.  During a test the browser can resize/reflow, while
-                # the status-cell templates remain sufficient and avoid a
-                # false failure caused by the decorative "BT" title.
-                status_rows = bt_status_rows_from_screen(shot, self.status_templates)
-                statuses = [row.status for row in status_rows]
-                selected = shot
-                break
-            except AgentError as exc:
-                errors.append(f"{shot.name}: {exc}")
-        if selected is None:
-            self.delete_shots(shots)
-            raise AgentError("；".join(errors) or "沒有可分析的 BT 截圖")
-        summary = ", ".join(f"slot{index + 1}={status}" for index, status in enumerate(statuses))
-        self.on_log(f"BT STATUS：{summary}")
-        completed = bt_completed_results(self.sns, self.slots, statuses, self.testing_seen)
-        waiting = [sn for sn in self.sns if sn not in self.testing_seen]
-        if waiting:
-            self.on_log("BT：等待所有指定 slot 進入新一輪 TESTING：" + "、".join(waiting))
-        elif any(statuses[slot - 1] == "TESTING" for slot in self.slots):
-            self.on_log("BT：所有指定 slot 已開始，等待全部 TESTING 結束")
-        if len(self.testing_seen) == len(self.sns) and self.machine_sns is None:
-            try:
-                all_machine_sns = bt_sn_text_from_status_rows(selected, status_rows)
-                self.machine_sns = [all_machine_sns[slot - 1] for slot in self.slots]
-            except AgentError as exc:
-                self.machine_sns = ["" for _ in self.sns]
-                self.on_log("BT SN OCR 失敗：" + str(exc))
-            # Apply the documented O→0 OCR normalization to both values for
-            # comparison.  Production barcodes exclude O; this additionally
-            # keeps the older BTDEMO simulator names from becoming false
-            # mismatches solely because Vision saw their letter O as digit 0.
-            expected_for_comparison = [normalize_ocr_sn(sn) for sn in self.sns]
-            self.sn_mismatch = self.machine_sns != expected_for_comparison
-            self.on_log("BT SN 比對：" + "；".join(
-                f"slot{slot} 上位機={expected or '（空）'}／設備={actual or '（未辨識）'}"
-                for slot, expected, actual in zip(self.slots, self.sns, self.machine_sns)))
-            self.on_log("BT SN 比對結果：" + ("不符，完成後等待人工覆核" if self.sn_mismatch else "一致"))
-        # The images have now been read (including OCR if needed) and are not
-        # retained on the locked-down production Mac.
-        self.delete_shots(shots)
-        if not completed:
-            return False
-        if self.sn_mismatch:
-            assert self.machine_sns is not None
-            self.on_review(BtSnReview(self.sns, self.machine_sns, self.slots, completed))
-            return True
-        for sn, slot in zip(self.sns, self.slots):
-            if sn in completed and sn not in self.reported:
-                self.reported.add(sn)
-                status = completed[sn]
-                self.on_result(TestResult(sn, status, selected.parent, selected, f"BT 畫面 slot{slot} STATUS={status}"))
-        return all(sn in self.reported for sn in self.sns)
 
 
 class SerialLineFramer:
@@ -1528,6 +1182,10 @@ class AtlasAgentApp:
         self.station.trace_add("write", self._update_station_controls)
         self._update_station_controls()
         self.refresh_ports()
+        if cv2 is None:
+            self.root.after(150, lambda: messagebox.showerror(
+                TITLE, "缺少 OpenCV 圖像處理元件；模板製作與 DFU／BT 定位無法使用。\n"
+                       "請使用完整建置版重新安裝 App。", parent=self.root))
         self.root.after(100, self.process_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -2023,7 +1681,7 @@ class AtlasAgentApp:
 
         def confirm() -> None:
             try:
-                values = [normalize_ocr_sn(item.get()) for item in fields]
+                values = [item.get().strip().upper() for item in fields]
                 parsed = parse_barcodes(",".join(values))
                 if len(parsed) != len(values) or len(set(parsed)) != len(parsed):
                     raise AgentError("設備實際 SN 必須完整且不可重複")

@@ -1,0 +1,8 @@
+# One shared Intel runtime: built in Catalina with a macOS 10.14 deployment target.
+# OpenCV is intentionally built from this source distribution by the build script;
+# current pre-built Intel wheels require macOS 10.15 or newer.
+pyserial==3.5
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+pyobjc-core==10.3.1; sys_platform == "darwin"
+pyobjc-framework-Cocoa==10.3.1; sys_platform == "darwin"

@@ -37,23 +37,17 @@ sysctl -n machdep.cpu.brand_string
 
 | 測試機結果 | 建置規則 | 交付檔案 |
 | --- | --- | --- |
-| `10.14.x`、`x86_64`（Intel） | 使用 Mojave 10.14 Intel VM，以原始碼編譯 OpenCV；不可使用 Catalina wheel | `dist-mojave/Atlas Agent B518 ATE.app` |
-| `10.15.x`、`x86_64`（Intel） | 使用 Catalina 10.15 Intel VM；不可在較新的 macOS 直接建置 | `dist-catalina/Atlas Agent B518 ATE.app` |
+| `10.14.x`／`10.15.x`、`x86_64`（Intel） | 優先使用 Catalina 10.15 Intel VM 的共用候選版流程；OpenCV 必須以 10.14 target 原始碼編譯 | `dist-macos10.14-common/Atlas Agent B518 ATE.app` |
 | 其他 Intel macOS | 建置機應是相同或更舊、且仍受支援的 Intel macOS；不可讓任何封裝模組的最低 OS 高於測試機 | 以對應環境產出的 `dist/...app` |
 | `arm64`（Apple Silicon） | 使用相同或更舊、且仍受支援的 Apple Silicon macOS 建置；不可將 Intel-only App 當作原生交付版本 | 以對應 ARM 環境產出的 `dist/...app` |
 
-原則是「**CPU 架構要相同；建置 macOS 版本不得高於測試機**」。完全相同的 OS 與 CPU 環境是
-最安全的做法。若同一份 App 要共用於 Mojave 與 Catalina，應以 Mojave Intel 建置、先通過
-Mojave 與 Catalina 實機驗證後才可共用；若任一原生依賴無法通過 Mojave 驗證，則改交付兩份
-App，而不是把 Catalina 版交給 Mojave。每次建置完成後，必須先在相同規格的 VM 或實機雙擊驗證，再複製到封閉測試機。
+原則是「**CPU 架構要相同；封裝模組的最低 macOS 不得高於測試機**」。完全相同的 OS 與 CPU
+環境仍是最安全的做法。現階段沒有 Mojave VM 時，可在 Catalina 產出目標為 Mojave 的**候選版**；
+它必須先通過 Mojave BT 與 Catalina DFU/FCT 的實機驗收，才可作為共用正式版。
 
-```bash
-chmod +x build_macos_app.sh
-./build_macos_app.sh
-```
-
-輸出為 `dist/Atlas Agent B518 ATE.app`。目標 Mac mini 僅執行產出的 App；Agent
-本身不要求 Automation 或 Accessibility 權限。
+`build_macos_app.sh` 只適合目前開發機的快速驗證；**不得**把它作為 Mojave／Catalina 現場共用版。
+正式候選版請依下方「Catalina 10.15 產出 macOS 10.14／10.15 共用候選版」流程建置。目標 Mac mini
+僅執行產出的 App；Agent 本身不要求 Automation 或 Accessibility 權限。
 
 ## 現場 Demo 操作
 
@@ -72,7 +66,36 @@ TCP 與上位機 TCP JOB 仍固定最多 4 個 slot，符合未來正式設備�
 FCT Demo 按開始後只會啟動 CSV 監聽；測試仍須由治具或模擬 HMI 的 Fixture Insert 功能觸發。
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
 
-### macOS Mojave 10.14.5 Intel 專用打包（BT 共用版基準）
+### 主要流程：Catalina 10.15 產出 macOS 10.14／10.15 共用候選版
+
+目前 BT 為 **macOS Mojave 10.14.5 Intel x86_64**，DFU／FCT 為 **macOS Catalina 10.15 Intel x86_64**。
+請在既有 Catalina 10.15 Intel VM、完整 Xcode 12.4 與 python.org **Python 3.12.6** 環境執行：
+
+```bash
+cd "/你的專案/B518 ATE MVP Demo"
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+chmod +x build_macos10_14_common_app.sh verify_macos10_14_bundle.sh
+./build_macos10_14_common_app.sh
+```
+
+腳本只接受 `10.15.x`＋`x86_64` 建置環境，固定設定
+`MACOSX_DEPLOYMENT_TARGET=10.14`、`CMAKE_OSX_DEPLOYMENT_TARGET=10.14` 與
+`CMAKE_OSX_ARCHITECTURES=x86_64`。它會先把 `opencv-python-headless 4.10.0.84` 從原始碼編譯為
+內部 wheel，再封裝，因此不會誤用最低需求為 10.15 的現成 Intel OpenCV wheel；BT 的模板製作、
+視窗定位與 Start 按鈕定位都仍完整使用 OpenCV。
+
+輸出 App 是 `dist-macos10.14-common/Atlas Agent B518 ATE.app`；可交付的 ZIP、SHA-256 與建置
+環境報告在 `release-macos10.14-common/`。驗證器會檢查每一個 Mach-O 的 `x86_64` 架構、最低 OS
+不高於 10.14、沒有 App 外第三方 dylib、`LSMinimumSystemVersion=10.14`、必要套件及 ad-hoc
+簽章。**候選版不等同正式版**：先在 Mojave BT 機驗證 App 啟動、Arduino 連線、設定→製作模板、
+`bt_window`／Start 模板匹配與 BT TestData 結果；通過後再用同一個 ZIP 在 Catalina DFU/FCT 完成
+三個連續 cycle。兩邊都通過才可共用交付。
+
+若 App 啟動時缺少 OpenCV，會立即顯示「缺少 OpenCV 圖像處理元件」；此時不要繼續製作模板，
+應回到建置 VM 重新產出完整候選版。
+
+### Mojave 10.14.5 Intel 原生建置（可取得 Mojave VM 時的最保守選項）
 
 BT 現場機為 **macOS Mojave 10.14.5、Intel x86_64**。目前 App 可開啟但模板製作器失敗，
 代表 App 內的 OpenCV 原生元件不相容；不可把現有 Catalina 發行檔直接交付給 BT 機。
@@ -95,7 +118,7 @@ OpenCV 與 PyObjC；不使用最低需求為 10.15 的 Catalina OpenCV wheel。�
 儲存 `bt_window.png` 與一個 Start 模板；再在 Catalina 機測試相同 App。兩邊都通過，才可將 Mojave
 版作為共用交付檔。
 
-### macOS Catalina 10.15 Intel 專用打包
+### macOS Catalina 10.15 Intel 專用打包（不供 Mojave 共用）
 
 若交付機是 macOS Catalina 10.15 Intel，**不可**使用較新的 macOS 直接建置，否則
 PyInstaller 會將需要較新 macOS 的 Python 原生模組包進 App，造成 Catalina 上雙擊無法開啟。

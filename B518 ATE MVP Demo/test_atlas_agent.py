@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from bump_build_version import bump_version
-from atlas_agent import AgentError, BtStatusRow, FolderMonitor, OcrText, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_completed_results, bt_result_directories, bt_sn_cell_rectangle, bt_statuses_from_screen, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, normalize_ocr_sn, opencv_image_to_tk_png, pair_bt_sn_text, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, vision_rectangle_components, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_ip_reply, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import delta_command, direction_delta, parse_step
 
 
@@ -155,15 +155,6 @@ class AtlasAgentTests(unittest.TestCase):
         with self.assertRaises(AgentError):
             parse_test_command("DFU:JOB=LIVE;1=SN001,2=SN002,3=SN003,4=SN004,5=SN005")
 
-    def test_bt_ignores_stale_final_status_until_testing_has_been_seen(self):
-        seen = set()
-        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "FAIL", "NOTSET", "NOTSET"], seen), {})
-        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["TESTING", "TESTING", "NOTSET", "NOTSET"], seen), {})
-        self.assertEqual(seen, {"SN001", "SN002"})
-        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "TESTING", "NOTSET", "NOTSET"], seen), {})
-        self.assertEqual(bt_completed_results(["SN001", "SN002"], [1, 2], ["PASS", "FAIL", "NOTSET", "NOTSET"], seen),
-                         {"SN001": "PASS", "SN002": "FAIL"})
-
     @staticmethod
     def write_bt_result(root, thread, sn, status, started, *, unit=None, csv_status=None, folder_status=None):
         folder_status = folder_status or status
@@ -223,34 +214,6 @@ class AtlasAgentTests(unittest.TestCase):
             results, errors = discover_bt_csv_results(root, [1], started, next_day)
             self.assertEqual(errors, [])
             self.assertEqual(results[1].sn, "SN001")
-
-    def test_bt_ocr_sn_text_is_matched_to_the_corresponding_status_row(self):
-        rows = [BtStatusRow("TESTING", (800, 100 + index * 60, 120, 30)) for index in range(4)]
-        text = [OcrText(f" bt-abcd-00{index + 1} ", (550, 102 + index * 60, 150, 26)) for index in range(4)]
-        self.assertEqual(pair_bt_sn_text(rows, text), ["BT-ABCD-001", "BT-ABCD-002", "BT-ABCD-003", "BT-ABCD-004"])
-        self.assertEqual(normalize_ocr_sn(" sn O01 "), "SN001")
-
-    def test_vision_ocr_rectangle_accepts_legacy_and_current_pyobjc_shapes(self):
-        self.assertEqual(vision_rectangle_components((.1, .2, .3, .4)), (.1, .2, .3, .4))
-        self.assertEqual(vision_rectangle_components(((.1, .2), (.3, .4))), (.1, .2, .3, .4))
-        with self.assertRaises(AgentError):
-            vision_rectangle_components((.1, .2))
-
-    def test_bt_ocr_sn_pairing_keeps_missing_slot_empty_for_manual_review(self):
-        rows = [BtStatusRow("TESTING", (800, 100, 120, 30)), BtStatusRow("TESTING", (800, 160, 120, 30))]
-        self.assertEqual(pair_bt_sn_text(rows, [OcrText("SN001", (550, 102, 150, 26))]), ["SN001", ""])
-
-    def test_bt_ocr_sn_pairing_ignores_slot_labels_and_prefers_sn_column(self):
-        rows = [BtStatusRow("TESTING", (800, 100 + index * 60, 120, 30)) for index in range(2)]
-        text = [OcrText("slot1", (350, 102, 60, 26)), OcrText("BTDEMO001", (580, 102, 150, 26)),
-                OcrText("slot2", (350, 162, 60, 26)), OcrText("BTDEMO002", (580, 162, 150, 26))]
-        self.assertEqual(pair_bt_sn_text(rows, text), ["BTDEM0001", "BTDEM0002"])
-
-    def test_bt_sn_cell_crop_is_left_of_its_status_cell_and_excludes_header(self):
-        # Retina screenshot geometry: STATUS is x=1064..1304 and the SN cell
-        # is its directly adjacent 360-pixel crop to the left.
-        self.assertEqual(bt_sn_cell_rectangle(BtStatusRow("PASS", (1064, 231, 240, 60)), 1668, 900),
-                         (704, 224, 360, 74))
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -396,26 +359,6 @@ class AtlasAgentTests(unittest.TestCase):
             cv2.imwrite(str(screen_file), screen)
             cv2.imwrite(str(template_file), screen[40:70, 60:100])
             self.assertEqual(template_center(screen_file, template_file), (80, 55))
-
-    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
-    def test_bt_status_templates_read_four_rows_in_slot_order(self):
-        import numpy as np
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            screen = np.full((180, 180, 3), 255, dtype=np.uint8)
-            colors = {"PASS": (0, 239, 0), "FAIL": (0, 0, 255), "TESTING": (0, 255, 255), "NOTSET": (241, 75, 240)}
-            statuses = ["TESTING", "PASS", "FAIL", "NOTSET"]
-            templates = {}
-            for index, status in enumerate(statuses):
-                y = 20 + index * 35
-                screen[y:y + 20, 80:130] = colors[status]
-                screen[y + 4:y + 16, 96:114] = (255, 255, 255)  # non-uniform crop detail
-                template = root / f"{status}.png"
-                cv2.imwrite(str(template), screen[y:y + 20, 80:130])
-                templates[status] = template
-            image = root / "screen.png"; cv2.imwrite(str(image), screen)
-            self.assertEqual(bt_statuses_from_screen(image, templates), statuses)
-            self.assertEqual(len(template_matches(image, templates["PASS"])), 1)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_slot_checkbox_states_returns_four_left_to_right_states(self):
