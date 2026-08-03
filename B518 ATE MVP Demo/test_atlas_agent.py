@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bump_build_version import bump_version
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
-from hid_calibration import SCREENSHOT_COMMAND, delta_command, direction_delta, parse_step
+from hid_calibration import SCREENSHOT_COMMAND, delta_command, direction_delta, keyboard_write_command, parse_delay_seconds, parse_step
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -152,6 +152,16 @@ class AtlasAgentTests(unittest.TestCase):
 
     def test_calibration_screenshot_uses_agent_protocol_command(self):
         self.assertEqual(SCREENSHOT_COMMAND, "SCREENSHOT")
+
+    def test_calibration_delayed_keyboard_write_validates_protocol_payload(self):
+        self.assertEqual(keyboard_write_command("Test 123"), "K_WRITE:Test 123")
+        self.assertEqual(parse_delay_seconds("0.5"), .5)
+        with self.assertRaises(ValueError):
+            keyboard_write_command("測試")
+        with self.assertRaises(ValueError):
+            keyboard_write_command("line1\nline2")
+        with self.assertRaises(ValueError):
+            parse_delay_seconds("120.5")
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_match_overlay_is_saved_with_match_annotations(self):

@@ -18,6 +18,7 @@ except ImportError:
 TITLE = "Atlas HID 座標校正 B518"
 BAUD_RATE = 115200
 SCREENSHOT_COMMAND = "SCREENSHOT"
+KEYBOARD_DELAY_MAX_SECONDS = 120.0
 
 
 def parse_step(value: str) -> int:
@@ -42,17 +43,38 @@ def direction_delta(direction: str, step: int) -> tuple[int, int]:
     return deltas[direction]
 
 
+def parse_delay_seconds(value: str) -> float:
+    try:
+        delay = float(value)
+    except ValueError as exc:
+        raise ValueError("輸入延遲必須是 0 至 120 的數字（可含小數）") from exc
+    if not 0 <= delay <= KEYBOARD_DELAY_MAX_SECONDS:
+        raise ValueError("輸入延遲必須是 0 至 120 秒")
+    return delay
+
+
+def keyboard_write_command(text: str) -> str:
+    if not text:
+        raise ValueError("請輸入要驗證的文字")
+    if any(ord(char) < 0x20 or ord(char) > 0x7E for char in text):
+        raise ValueError("韌體僅支援可列印 ASCII 文字（不可含中文、換行或特殊字元）")
+    return "K_WRITE:" + text
+
+
 class HidCalibrationApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title(TITLE)
-        root.geometry("760x500")
-        root.minsize(680, 460)
+        root.geometry("760x650")
+        root.minsize(680, 600)
         self.connection = None
         self.stop = threading.Event()
         self.events: queue.Queue[str] = queue.Queue()
         self.port = tk.StringVar()
         self.step = tk.StringVar(value="5")
+        self.keyboard_text = tk.StringVar(value="HID keyboard test")
+        self.keyboard_delay = tk.StringVar(value="3")
+        self.typing_after_id: str | None = None
         self.status = tk.StringVar(value="請選擇 Arduino USB CDC 並連線")
         self.position_x = 0
         self.position_y = 0
@@ -98,6 +120,19 @@ class HidCalibrationApp:
             command=self.take_screenshot,
         ).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
 
+        keyboard = ttk.LabelFrame(panel, text="Arduino 鍵盤輸入驗證", padding=12)
+        keyboard.pack(fill="x", pady=(0, 12))
+        keyboard.columnconfigure(1, weight=1)
+        ttk.Label(keyboard, text="測試文字：").grid(row=0, column=0, sticky="w")
+        ttk.Entry(keyboard, textvariable=self.keyboard_text).grid(row=0, column=1, columnspan=3, sticky="ew", padx=(4, 8))
+        ttk.Label(keyboard, text="延遲（秒）：").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Spinbox(keyboard, from_=0, to=KEYBOARD_DELAY_MAX_SECONDS, increment=.5,
+                    textvariable=self.keyboard_delay, width=9).grid(row=1, column=1, sticky="w", padx=(4, 8), pady=(8, 0))
+        ttk.Button(keyboard, text="開始延遲輸入", command=self.schedule_keyboard_write).grid(
+            row=1, column=2, sticky="ew", pady=(8, 0))
+        ttk.Label(keyboard, text="開始後請將滑鼠點到目標輸入框；文字不會自動送出 Enter。",
+                  foreground="#555").grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+
         ttk.Label(panel, textvariable=self.status).pack(anchor="w")
         ttk.Label(panel, text="通訊紀錄：").pack(anchor="w", pady=(8, 0))
         self.output = tk.Text(panel, height=8, state="disabled", wrap="word")
@@ -126,6 +161,7 @@ class HidCalibrationApp:
         self.append("已連線：" + self.port.get())
 
     def disconnect(self) -> None:
+        self.cancel_pending_keyboard_write()
         self.stop.set()
         if self.connection:
             self.connection.close()
@@ -161,6 +197,32 @@ class HidCalibrationApp:
     def take_screenshot(self) -> None:
         if self.send(SCREENSHOT_COMMAND):
             self.status.set("已送出截圖指令；請等待 macOS 將螢幕截圖儲存至預設路徑。")
+
+    def cancel_pending_keyboard_write(self) -> None:
+        if self.typing_after_id is not None:
+            self.root.after_cancel(self.typing_after_id)
+            self.typing_after_id = None
+
+    def schedule_keyboard_write(self) -> None:
+        try:
+            command = keyboard_write_command(self.keyboard_text.get())
+            delay = parse_delay_seconds(self.keyboard_delay.get())
+        except ValueError as exc:
+            messagebox.showerror(TITLE, str(exc)); return
+        if not self.connection:
+            messagebox.showwarning(TITLE, "請先連線 Arduino"); return
+        if self.typing_after_id is not None:
+            self.cancel_pending_keyboard_write()
+            self.append("已取消前一個延遲輸入工作。")
+        milliseconds = round(delay * 1000)
+        self.typing_after_id = self.root.after(milliseconds, lambda: self.send_keyboard_write(command))
+        self.status.set(f"將於 {delay:g} 秒後透過 Arduino 輸入文字；請現在點選目標輸入框。")
+        self.append(f"文字輸入倒數開始：{delay:g} 秒後執行 K_WRITE。")
+
+    def send_keyboard_write(self, command: str) -> None:
+        self.typing_after_id = None
+        if self.send(command):
+            self.status.set("文字輸入指令已送出；請在通訊紀錄確認 RX: OK:K_WRITE。")
 
     def move(self, direction: str) -> None:
         try:

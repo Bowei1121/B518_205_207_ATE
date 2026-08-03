@@ -327,6 +327,10 @@ Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設
 按下 **一鍵截圖（Arduino ⌘⇧3）** 會透過 USB CDC 傳送 `SCREENSHOT`，再由 Arduino HID
 觸發 macOS 全螢幕截圖。通訊紀錄應依序顯示 `TX: SCREENSHOT`、`RX: ACK:SCREENSHOT`
 與 `RX: OK:SCREENSHOT`；這些回覆表示 HID 函式已執行，截圖檔仍可能需數秒才完成儲存。
+
+同一程式的「Arduino 鍵盤輸入驗證」區填入測試文字與延遲秒數（`0`～`120`，可含小數），按
+「開始延遲輸入」後，請在倒數期間將滑鼠點到目標輸入框。時間到會傳送 `K_WRITE:<文字>`，
+文字不會自動輸入 Enter。韌體限定可列印 ASCII，因此請使用英文、數字與一般符號；成功回覆為 `RX: OK:K_WRITE`。
 工具會顯示從 Home 累積的「目前 Arduino 控制座標」：Home 為 `(0,0)`，右／下遞增，
 左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。
 
