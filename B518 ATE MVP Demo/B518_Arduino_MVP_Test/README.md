@@ -15,7 +15,7 @@ UNO R4 Minima／WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W
 
 ## 韌體版本與交付前檢核
 
-唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.3**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
+唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.4**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
 
 ```bash
 cd "B518 ATE MVP Demo/B518_Arduino_MVP_Test"
@@ -35,9 +35,9 @@ Mac Agent → Arduino 的 **USB CDC 控制指令固定使用 LF** (`\n`) 結尾�
 
 | Mac → Arduino | 動作 |
 | --- | --- |
-| `M_RESET\n` | 向左上盲移 3000 × 3000，相對定位歸零。 |
+| `M_RESET\n` | 依序回覆 `ACK:M_RESET`、向左上盲移 3000 × 3000、`OK:M_RESET`。 |
 | `M_MOVE:X,Y\n` | 先歸零，再右移 X、下移 Y。X/Y 只能是 0 到 10000 的整數。 |
-| `M_DELTA:X,Y\n` | 不歸零，直接相對移動 X、Y steps；可使用負值，供座標校正工具的方向鍵測試。 |
+| `M_DELTA:X,Y\n` | 依序回覆 `ACK:M_DELTA`、不歸零直接相對移動 X、Y steps、`OK:M_DELTA`；可使用負值。 |
 | `M_ABS:X,Y\n` | 使用第二個絕對 HID 指標移到 0–32767 的 X/Y；不受一般相對滑鼠加速度影響。 |
 | `M_ABS_CLICK:L\n` | 在目前絕對 HID 位置按左鍵。 |
 | `M_CLICK:L\n` / `M_CLICK:R\n` | 左／右鍵點擊。 |
@@ -59,7 +59,7 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 
 `NET_SET` 接受單播 IPv4 host 位址，並排除 `x.x.x.0` 與 `x.x.x.255`。設定儲存在 UNO R4 的 EEPROM，斷電或重開機後仍會保留。網路設定指令只會在 Arduino 從 Mac 的 USB CDC 收到時被執行；TCP 收到的資料只會透明轉送到 USB，無法修改設定。
 
-`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標、`FAULT` 為異常鎖存狀態，`LAST` 為最後一個異常代碼。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。`ACK:SCREENSHOT` 表示韌體已收到截圖命令、即將呼叫 HID；`OK:SCREENSHOT` 表示 HID 函式已返回。兩者都不保證 macOS 一定建立了截圖檔。
+`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標、`FAULT` 為異常鎖存狀態，`LAST` 為最後一個異常代碼。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。所有 `ACK:` 表示韌體已解析命令、即將呼叫對應 HID；`OK:` 表示 HID 函式已返回。兩者都不保證 macOS 一定接受 HID report。
 
 ### 板載異常 LED
 

@@ -984,8 +984,7 @@ class SerialLink:
         framer = SerialLineFramer()
         while not self.stop.is_set() and self.connection:
             try:
-                with self.lock:
-                    raw = self.connection.read(256)
+                raw = self.connection.read(256)
                 if raw:
                     for line in framer.feed(raw):
                         self.on_line(line)
@@ -1021,9 +1020,9 @@ class SerialLink:
                 self.connection.reset_input_buffer()
                 self.connection.reset_output_buffer()
             else:
-                waiting = getattr(self.connection, "in_waiting", 0)
-                if waiting:
-                    self.connection.read(waiting)
+                # SerialLink._receive is the sole reader. Clearing the App
+                # queue before send_control removes stale replies without a
+                # competing read that can steal the first new command reply.
                 self.connection.flush()
 
     def close(self) -> None:

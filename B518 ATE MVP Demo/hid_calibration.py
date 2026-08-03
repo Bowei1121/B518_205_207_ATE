@@ -41,6 +41,18 @@ def is_nonfatal_cdc_diagnostic(line: str) -> bool:
     """A disconnected TCP bridge does not mean the local HID command failed."""
     return line in NONFATAL_CDC_DIAGNOSTICS
 
+
+def is_hid_progress_reply(command: str, line: str) -> bool:
+    """Return true for a non-terminal firmware ACK for this HID command."""
+    if command.startswith("M_DELTA:"):
+        return line == "ACK:M_DELTA"
+    if command.startswith("M_MOVE:"):
+        return line == "ACK:M_MOVE"
+    return {
+        "M_RESET": "ACK:M_RESET",
+        "SCREENSHOT": "ACK:SCREENSHOT",
+    }.get(command) == line
+
 def parse_firmware_info(line: str) -> tuple[str, str, int, str] | None:
     """Parse the identity line emitted by the canonical B518 firmware."""
     value = line.strip()
@@ -288,9 +300,9 @@ class HidCalibrationApp:
                     self.connection.reset_input_buffer()
                     self.connection.reset_output_buffer()
                 else:
-                    waiting = getattr(self.connection, "in_waiting", 0)
-                    if waiting:
-                        self.connection.read(waiting)
+                    # The receive thread is the sole reader.  Clearing the
+                    # app event queue above discards stale replies without
+                    # racing it for USB bytes on older macOS VMs.
                     self.connection.flush()
         except Exception as exc:
             self.append("WARN: 無法清空 USB CDC buffer：" + str(exc))
@@ -340,8 +352,7 @@ class HidCalibrationApp:
         while (not self.stop.is_set() and generation == self.connection_generation
                and connection is self.connection):
             try:
-                with self.serial_lock:
-                    raw_line = connection.readline().decode("utf-8", errors="replace")
+                raw_line = connection.readline().decode("utf-8", errors="replace")
                 # Normalise only transport framing. Do not use str.strip(),
                 # because a transparent TCP payload may legitimately contain
                 # ordinary leading/trailing spaces.
@@ -461,8 +472,8 @@ class HidCalibrationApp:
             else:
                 self.status.set(f"指令 {command} 失敗：{line}；畫面座標未變更。")
             return
-        if self.pending_command == "SCREENSHOT" and line == "ACK:SCREENSHOT":
-            self.status.set("Arduino 已接收截圖指令，正在執行 HID 組合鍵…")
+        if is_hid_progress_reply(self.pending_command, line):
+            self.status.set(f"Arduino 已接收 {self.pending_command}，正在執行 HID…")
             return
         expected = self.pending_reply or ""
         if line == expected:

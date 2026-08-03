@@ -13,7 +13,7 @@ from bump_hid_calibration_version import bump_version as bump_hid_calibration_ve
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
-                             is_nonfatal_cdc_diagnostic, normalize_cdc_line,
+                             is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
                              parse_delay_seconds, parse_firmware_info, parse_step)
 
 
@@ -85,6 +85,10 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(normalize_cdc_line("  RESULT:SN001,PASS  \r\n"), "  RESULT:SN001,PASS  ")
         self.assertTrue(is_nonfatal_cdc_diagnostic("ERR:TCP_NOT_CONNECTED"))
         self.assertFalse(is_nonfatal_cdc_diagnostic("ERR:M_DELTA_FORMAT"))
+        self.assertTrue(is_hid_progress_reply("M_RESET", "ACK:M_RESET"))
+        self.assertTrue(is_hid_progress_reply("M_DELTA:0,5", "ACK:M_DELTA"))
+        self.assertTrue(is_hid_progress_reply("SCREENSHOT", "ACK:SCREENSHOT"))
+        self.assertFalse(is_hid_progress_reply("M_RESET", "OK:M_RESET"))
 
     def test_arduino_network_replies_update_the_same_ip_display(self):
         self.assertEqual(arduino_ip_reply("IP:192.168.1.100"), "192.168.1.100")

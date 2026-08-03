@@ -30,6 +30,10 @@ const uint8_t SD_CS_PIN = 4;  // Prevent an Ethernet shield SD card from using S
 const size_t USB_FRAME_MAX = 768;
 const int16_t MOUSE_RESET_DISTANCE = 3000;
 const uint8_t MOUSE_STEP = 120;  // HID Mouse.move uses a signed 8-bit delta.
+// Mojave/Catalina can require a longer interrupt-report interval than newer
+// macOS releases. A neutral report wakes the endpoint before a relative move.
+const uint8_t MOUSE_WAKE_DELAY_MS = 10;
+const uint8_t MOUSE_REPORT_DELAY_MS = 8;
 const int32_t HID_VALUE_MAX = 10000;
 const uint16_t ABSOLUTE_HID_MAX = 32767;
 
@@ -248,11 +252,14 @@ void processUsbFrame() {
   } else if (equalsCommand("NET_RESET", commandLength)) {
     resetNetworkSettings();
   } else if (equalsCommand("M_RESET", commandLength)) {
+    Serial.println("ACK:M_RESET");
     mouseReset();
     Serial.println("OK:M_RESET");
   } else if (startsWith("M_MOVE:", commandLength)) {
+    Serial.println("ACK:M_MOVE");
     handleMouseMove(commandLength);
   } else if (startsWith("M_DELTA:", commandLength)) {
+    Serial.println("ACK:M_DELTA");
     handleMouseDelta(commandLength);
   } else if (startsWith("M_ABS:", commandLength)) {
     handleAbsoluteMove(commandLength);
@@ -574,13 +581,17 @@ void mouseReset() {
 }
 
 void moveMouseBy(int32_t x, int32_t y) {
+  // Do not rely on the first non-zero relative report being accepted by an
+  // older Intel macOS HID stack. This report is intentionally neutral.
+  Mouse.move(0, 0, 0);
+  delay(MOUSE_WAKE_DELAY_MS);
   while (x != 0 || y != 0) {
     int8_t stepX = x > MOUSE_STEP ? MOUSE_STEP : (x < -MOUSE_STEP ? -MOUSE_STEP : (int8_t)x);
     int8_t stepY = y > MOUSE_STEP ? MOUSE_STEP : (y < -MOUSE_STEP ? -MOUSE_STEP : (int8_t)y);
     Mouse.move(stepX, stepY, 0);
     x -= stepX;
     y -= stepY;
-    delay(1);  // lets the USB HID endpoint deliver each relative move report
+    delay(MOUSE_REPORT_DELAY_MS);  // lets older HID endpoints deliver each report
   }
 }
 
