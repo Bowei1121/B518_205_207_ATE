@@ -975,7 +975,7 @@ class SerialLink:
             raise AgentError("缺少 pyserial；請執行 python3 -m pip install -r requirements.txt")
         self.close()
         self.connection = serial.Serial(port, DEFAULT_BAUD, timeout=0.2)
-        self.synchronize()
+        self.synchronize(hard_reset=True)
         self.stop.clear()
         self.thread = threading.Thread(target=self._receive, daemon=True)
         self.thread.start()
@@ -1012,13 +1012,19 @@ class SerialLink:
         """Forward an Agent business reply through Arduino's transparent TCP bridge."""
         self._send(payload, "\r\n")
 
-    def synchronize(self) -> None:
-        """Drop stale local USB CDC bytes before a new control transaction."""
+    def synchronize(self, *, hard_reset: bool = False) -> None:
+        """Drop stale local CDC bytes without resetting the USB driver per command."""
         if not self.connection:
             return
         with self.lock:
-            self.connection.reset_input_buffer()
-            self.connection.reset_output_buffer()
+            if hard_reset:
+                self.connection.reset_input_buffer()
+                self.connection.reset_output_buffer()
+            else:
+                waiting = getattr(self.connection, "in_waiting", 0)
+                if waiting:
+                    self.connection.read(waiting)
+                self.connection.flush()
 
     def close(self) -> None:
         self.stop.set()
@@ -1591,7 +1597,7 @@ class AtlasAgentApp:
         self.arduino_info_attempt = 0
         query = self.arduino_info_query
         self.clear_serial_replies()
-        self.link.synchronize()
+        self.link.synchronize(hard_reset=True)
         self.root.after(initial_delay_ms, lambda: self.send_arduino_discovery_attempt(query))
 
     def send_arduino_discovery_attempt(self, query: int) -> None:

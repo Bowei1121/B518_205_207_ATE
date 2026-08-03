@@ -78,7 +78,7 @@ class AtlasAgentTests(unittest.TestCase):
         link.send_control("M_RESET\r\n")
         link.send_tcp_payload("RESULT:SN001,PASS,ok\n")
         self.assertEqual(link.connection.written, b"M_RESET\nRESULT:SN001,PASS,ok\r\n")
-        self.assertEqual((link.connection.input_resets, link.connection.output_resets), (1, 1))
+        self.assertEqual((link.connection.input_resets, link.connection.output_resets), (0, 0))
 
     def test_calibration_normalizes_framing_and_ignores_only_tcp_bridge_diagnostic(self):
         self.assertEqual(normalize_cdc_line("\x00\r\nOK:M_RESET\r\n"), "OK:M_RESET")

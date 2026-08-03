@@ -272,15 +272,26 @@ class HidCalibrationApp:
             except queue.Empty:
                 return
 
-    def synchronize_cdc_channel(self) -> None:
-        """Start the next control transaction from an empty local CDC channel."""
+    def synchronize_cdc_channel(self, *, hard_reset: bool = False) -> None:
+        """Discard stale CDC bytes without unnecessarily resetting a VM USB driver.
+
+        A full pyserial reset is reserved for a new connection or a firmware
+        discovery retry. Repeating it immediately before every HID command can
+        drop the first packet on older macOS virtual USB implementations.
+        """
         self.clear_received_events()
         if not self.connection:
             return
         try:
             with self.serial_lock:
-                self.connection.reset_input_buffer()
-                self.connection.reset_output_buffer()
+                if hard_reset:
+                    self.connection.reset_input_buffer()
+                    self.connection.reset_output_buffer()
+                else:
+                    waiting = getattr(self.connection, "in_waiting", 0)
+                    if waiting:
+                        self.connection.read(waiting)
+                    self.connection.flush()
         except Exception as exc:
             self.append("WARN: 無法清空 USB CDC buffer：" + str(exc))
 
@@ -295,7 +306,7 @@ class HidCalibrationApp:
             return
         self.cancel_firmware_retry()
         self.clear_pending()
-        self.synchronize_cdc_channel()
+        self.synchronize_cdc_channel(hard_reset=True)
         self.firmware_query_attempt = 0
         self.firmware_verified = False
         self.set_hid_controls_enabled(False)
