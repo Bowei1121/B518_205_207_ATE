@@ -321,8 +321,11 @@ DFU 在第一個 SN 前會先點擊匹配到的測試視窗標題安全區取得
 ### Arduino HID 距離校正工具
 
 `hid_calibration.py` 是不依賴測試流程的獨立校正 UI。執行 `python3 hid_calibration.py`
-（或 `bash build_hid_calibration_app.sh` 後開啟 `dist/Atlas HID Calibration B518.app`），選擇
-Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設定 Step 後按鍵盤方向鍵
+（或執行 `./build_hid_calibration_app.sh`，解壓 `release-hid-calibration` 內最新的 ZIP），選擇
+Arduino USB CDC 串口並連線。連線後工具會先發送 `GET_INFO`；只有收到
+`PRODUCT=B518_ARDUINO_MVP`、相容的 `PROTO` 與完整版本資訊後才開放 HID 按鈕。
+若收到 `ERR:TCP_NOT_CONNECTED`、逾時或不合格的 `INFO`，畫面會停用 HID 測試並明確提示
+韌體來源不一致。驗證通過後，先按 **Home** 將游標移到左上角；設定 Step 後按鍵盤方向鍵
 或畫面方向按鈕，Arduino 會以 `M_DELTA:X,Y` 相對移動指定距離。
 按下 **一鍵截圖（Arduino ⌘⇧3）** 會透過 USB CDC 傳送 `SCREENSHOT`，再由 Arduino HID
 觸發 macOS 全螢幕截圖。通訊紀錄應依序顯示 `TX: SCREENSHOT`、`RX: ACK:SCREENSHOT`
@@ -332,7 +335,15 @@ Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設
 「開始延遲輸入」後，請在倒數期間將滑鼠點到目標輸入框。時間到會傳送 `K_WRITE:<文字>`，
 文字不會自動輸入 Enter。韌體限定可列印 ASCII，因此請使用英文、數字與一般符號；成功回覆為 `RX: OK:K_WRITE`。
 工具會顯示從 Home 累積的「目前 Arduino 控制座標」：Home 為 `(0,0)`，右／下遞增，
-左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。
+左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。座標只會在收到
+`OK:M_RESET` 或 `OK:M_DELTA` 後更新；僅完成 Serial 寫入或收到 `ERR:*` 不會改變座標。
+
+宿主開發 Mac 要建立本機驗證版，執行 `./build_hid_calibration_app.sh`。Catalina 10.15
+Intel VM 要建立 Mojave 10.14／Catalina 10.15 共用候選版，執行
+`./build_hid_calibration_macos10_14_common.sh`。兩個腳本都只安裝 PySerial 與 PyInstaller，不會為了
+校正工具下載 OpenCV；每次建置會獨立增加 HID Calibration 版本號。宿主版會在 `/private/tmp`
+完成簽章，再輸出 ZIP 與 SHA-256，避免專案所在的 File Provider／雲端同步資料夾替 `.app`
+加入 FinderInfo 而破壞簽章；請勿再使用舊的 `dist/Atlas HID Calibration B518.app`。
 
 例：OpenCV 疊圖顯示按鈕中心為 `(1000,1000)`，校正工具從 Home 以累計 `(500,500)`
 才到達同一位置，則將 Agent 的 X／Y 比例設定為 `0.5`。使用前必須重新燒錄

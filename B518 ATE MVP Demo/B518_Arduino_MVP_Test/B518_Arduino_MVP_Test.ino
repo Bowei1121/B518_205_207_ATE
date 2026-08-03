@@ -124,8 +124,28 @@ EthernetClient tcpClient;
 char usbFrame[USB_FRAME_MAX];
 size_t usbFrameLength = 0;
 bool discardUsbFrame = false;
+bool firmwareFault = false;
+const char *lastFirmwareFault = "NONE";
+
+bool looksLikeControlCommand(size_t commandLength);
+
+void clearFirmwareFault() {
+  firmwareFault = false;
+  lastFirmwareFault = "NONE";
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
+void reportFirmwareError(const char *errorText, const char *faultCode) {
+  firmwareFault = true;
+  lastFirmwareFault = faultCode;
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial.print("ERR:");
+  Serial.println(errorText);
+}
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  clearFirmwareFault();
   Serial.begin(115200);
 
   pinMode(SD_CS_PIN, OUTPUT);
@@ -189,7 +209,7 @@ void appendUsbByte(char value) {
   if (usbFrameLength >= USB_FRAME_MAX) {
     usbFrameLength = 0;
     discardUsbFrame = true;
-    Serial.println("ERR:FRAME_TOO_LONG");
+    reportFirmwareError("FRAME_TOO_LONG", "FRAME_TOO_LONG");
     return;
   }
 
@@ -211,6 +231,9 @@ void processUsbFrame() {
     printFirmwareInfo();
   } else if (equalsCommand("GET_INFO", commandLength)) {
     printFirmwareInfo();
+  } else if (equalsCommand("DIAG_CLEAR", commandLength)) {
+    clearFirmwareFault();
+    Serial.println("OK:DIAG_CLEAR");
   } else if (startsWith("NET_SET:", commandLength)) {
     handleNetworkSet(commandLength);
   } else if (equalsCommand("NET_RESET", commandLength)) {
@@ -251,6 +274,8 @@ void processUsbFrame() {
     Serial.println("ACK:SCREENSHOT");
     takeScreenshot();
     Serial.println("OK:SCREENSHOT");
+  } else if (looksLikeControlCommand(commandLength)) {
+    reportFirmwareError("UNKNOWN_CONTROL_COMMAND", "UNKNOWN_CONTROL_COMMAND");
   } else {
     // Non-control traffic remains byte-for-byte unchanged, including CR/LF.
     forwardUsbFrameToTcp();
@@ -267,7 +292,20 @@ void printFirmwareInfo() {
   Serial.print(";PROTO=");
   Serial.print(B518_PROTOCOL_VERSION);
   Serial.print(";BOARD=");
-  Serial.println(B518_FIRMWARE_BOARD);
+  Serial.print(B518_FIRMWARE_BOARD);
+  Serial.print(";FAULT=");
+  Serial.print(firmwareFault ? 1 : 0);
+  Serial.print(";LAST=");
+  Serial.println(lastFirmwareFault);
+}
+
+bool looksLikeControlCommand(size_t commandLength) {
+  return startsWith("M_", commandLength) ||
+         startsWith("K_", commandLength) ||
+         startsWith("GET_", commandLength) ||
+         startsWith("NET_", commandLength) ||
+         startsWith("DIAG_", commandLength) ||
+         startsWith("SCREENSHOT", commandLength);
 }
 
 uint8_t calculateNetworkChecksum(const NetworkSettings &settings) {
@@ -370,7 +408,7 @@ void handleNetworkSet(size_t commandLength) {
   const size_t prefixLength = strlen("NET_SET:");
   uint8_t requestedIp[4];
   if (!parseIpv4(usbFrame + prefixLength, commandLength - prefixLength, requestedIp)) {
-    Serial.println("ERR:NET_SET_FORMAT");
+    reportFirmwareError("NET_SET_FORMAT", "NET_SET_FORMAT");
     return;
   }
 
@@ -433,7 +471,7 @@ void handleMouseMove(size_t commandLength) {
       !parseInteger(usbFrame + prefixLength, comma - prefixLength, x) ||
       !parseInteger(usbFrame + comma + 1, commandLength - comma - 1, y) ||
       x < 0 || y < 0) {
-    Serial.println("ERR:M_MOVE_FORMAT");
+    reportFirmwareError("M_MOVE_FORMAT", "M_MOVE_FORMAT");
     return;
   }
 
@@ -451,7 +489,7 @@ void handleMouseDelta(size_t commandLength) {
   if (comma == commandLength ||
       !parseInteger(usbFrame + prefixLength, comma - prefixLength, x) ||
       !parseInteger(usbFrame + comma + 1, commandLength - comma - 1, y)) {
-    Serial.println("ERR:M_DELTA_FORMAT");
+    reportFirmwareError("M_DELTA_FORMAT", "M_DELTA_FORMAT");
     return;
   }
 
@@ -471,7 +509,7 @@ void handleAbsoluteMove(size_t commandLength) {
       !parseIntegerWithLimit(usbFrame + prefixLength, comma - prefixLength, x, ABSOLUTE_HID_MAX) ||
       !parseIntegerWithLimit(usbFrame + comma + 1, commandLength - comma - 1, y, ABSOLUTE_HID_MAX) ||
       x < 0 || y < 0 || x > ABSOLUTE_HID_MAX || y > ABSOLUTE_HID_MAX) {
-    Serial.println("ERR:M_ABS_FORMAT");
+    reportFirmwareError("M_ABS_FORMAT", "M_ABS_FORMAT");
     return;
   }
 
@@ -483,7 +521,7 @@ void handleScroll(size_t commandLength) {
   const size_t prefixLength = strlen("M_SCROLL:");
   int32_t amount;
   if (!parseInteger(usbFrame + prefixLength, commandLength - prefixLength, amount)) {
-    Serial.println("ERR:M_SCROLL_FORMAT");
+    reportFirmwareError("M_SCROLL_FORMAT", "M_SCROLL_FORMAT");
     return;
   }
   while (amount != 0) {
@@ -499,7 +537,7 @@ void handleType(size_t commandLength) {
   for (size_t i = prefixLength; i < commandLength; ++i) {
     // Keyboard.print is deliberately restricted to printable ASCII for MVP.
     if ((uint8_t)usbFrame[i] < 0x20 || (uint8_t)usbFrame[i] > 0x7E) {
-      Serial.println("ERR:K_TYPE_ASCII_ONLY");
+      reportFirmwareError("K_TYPE_ASCII_ONLY", "K_TYPE_ASCII_ONLY");
       return;
     }
   }
@@ -513,7 +551,7 @@ void handleWrite(size_t commandLength) {
   const size_t prefixLength = strlen("K_WRITE:");
   for (size_t i = prefixLength; i < commandLength; ++i) {
     if ((uint8_t)usbFrame[i] < 0x20 || (uint8_t)usbFrame[i] > 0x7E) {
-      Serial.println("ERR:K_WRITE_ASCII_ONLY");
+      reportFirmwareError("K_WRITE_ASCII_ONLY", "K_WRITE_ASCII_ONLY");
       return;
     }
   }

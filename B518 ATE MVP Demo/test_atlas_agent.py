@@ -9,8 +9,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from bump_build_version import bump_version
+from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
-from hid_calibration import SCREENSHOT_COMMAND, delta_command, direction_delta, keyboard_write_command, parse_delay_seconds, parse_step
+from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
+                             expected_success_reply, keyboard_write_command,
+                             parse_delay_seconds, parse_firmware_info, parse_step)
 
 
 class AtlasAgentTests(unittest.TestCase):
@@ -18,6 +21,11 @@ class AtlasAgentTests(unittest.TestCase):
         updated, version = bump_version('VERSION = "3.14.15"\n')
         self.assertEqual(version, "3.14.16")
         self.assertEqual(updated, 'VERSION = "3.14.16"\n')
+
+    def test_hid_calibration_build_version_has_an_independent_patch_counter(self):
+        updated, version = bump_hid_calibration_version('VERSION = "0.1.9"\n')
+        self.assertEqual(version, "0.1.10")
+        self.assertEqual(updated, 'VERSION = "0.1.10"\n')
 
     def test_barcodes(self):
         self.assertEqual(parse_barcodes("DATA:A, B,C"), ["A", "B", "C"])
@@ -162,6 +170,22 @@ class AtlasAgentTests(unittest.TestCase):
             keyboard_write_command("line1\nline2")
         with self.assertRaises(ValueError):
             parse_delay_seconds("120.5")
+
+    def test_calibration_requires_canonical_firmware_identity(self):
+        self.assertEqual(
+            parse_firmware_info(
+                "INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0.2;PROTO=1;BOARD=UNO_R4_MINIMA;FAULT=1;LAST=M_DELTA_FORMAT"),
+            ("B518_ARDUINO_MVP", "1.0.2", 1, "UNO_R4_MINIMA"),
+        )
+        self.assertIsNone(parse_firmware_info("IP:192.168.1.100"))
+        self.assertIsNone(parse_firmware_info("INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.0;PROTO=1"))
+
+    def test_calibration_knows_terminal_hid_success_replies(self):
+        self.assertEqual(expected_success_reply("M_RESET"), "OK:M_RESET")
+        self.assertEqual(expected_success_reply("M_DELTA:-5,0"), "OK:M_DELTA")
+        self.assertEqual(expected_success_reply("SCREENSHOT"), "OK:SCREENSHOT")
+        self.assertEqual(expected_success_reply("K_WRITE:TEST"), "OK:K_WRITE")
+        self.assertEqual(expected_success_reply("UNKNOWN"), "")
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_match_overlay_is_saved_with_match_annotations(self):
