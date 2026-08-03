@@ -20,6 +20,7 @@ except ImportError:
 TITLE = "Atlas HID 座標校正 B518"
 BAUD_RATE = 115200
 SCREENSHOT_COMMAND = "SCREENSHOT"
+USB_CDC_CONTROL_TERMINATOR = "\n"
 KEYBOARD_DELAY_MAX_SECONDS = 120.0
 EXPECTED_FIRMWARE_PRODUCT = "B518_ARDUINO_MVP"
 EXPECTED_PROTOCOL_VERSION = 1
@@ -270,7 +271,9 @@ class HidCalibrationApp:
         if not expected:
             raise ValueError(f"未定義成功回覆的指令：{command}")
         try:
-            self.connection.write((command + "\r\n").encode("utf-8"))
+            # UNO R4 on older macOS/VM USB paths can retain a trailing CR
+            # after a command.  USB CDC controls are therefore LF-delimited.
+            self.connection.write((command.rstrip("\r\n") + USB_CDC_CONTROL_TERMINATOR).encode("utf-8"))
             self.connection.flush()
             self.append("TX: " + command)
             self.pending_command = command

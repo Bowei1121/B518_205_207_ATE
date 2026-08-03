@@ -15,7 +15,7 @@ UNO R4 Minima／WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W
 
 ## 韌體版本與交付前檢核
 
-唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.2**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
+唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.3**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
 
 ```bash
 cd "B518 ATE MVP Demo/B518_Arduino_MVP_Test"
@@ -31,7 +31,7 @@ python3 verify_firmware_version.py --base HEAD
 
 ## USB 指令協議
 
-所有控制指令均建議以 CRLF (`\r\n`) 結束；LF-only 也可使用。成功會回 `OK:...\r\n`，格式錯誤回 `ERR:...\r\n`。
+Mac Agent → Arduino 的 **USB CDC 控制指令固定使用 LF** (`\n`) 結尾。這是為了相容 macOS 10.14／10.15 與 VM USB CDC；不要在 Arduino Serial Monitor 對控制指令選擇 `NL & CR`。韌體仍可接受標準 CRLF（CR 在 LF 前），並會忽略空閒時殘留的 CR／LF／NUL。成功會回 `OK:...\r\n`，格式錯誤回 `ERR:...\r\n`。
 
 | Mac → Arduino | 動作 |
 | --- | --- |
@@ -79,7 +79,7 @@ UNO R4 的 `LED_BUILTIN` 在韌體啟動時熄滅。出現訊框過長、控制�
   Atlas Agent 的 JOB 必須是完整的一行，例如 `BT:JOB=JOB-1;1=SN1,3=SN3\r\n`；TCP 沒有訊息
   邊界，CRLF 用來避免資料分段時誤判，且可直接使用 LabVIEW 的 CRLF 偵測模式。
 - Mac 傳入 USB CDC 的一個換行框架若不是上表控制指令，就會**包含原始 CR/LF 在內**原封不動傳至 TCP client。
-- USB 端需以 LF 封包；這是為了能先辨識並攔截 `GET_IP` 與 HID 控制指令。單一框架上限 768 bytes，可容納四個長 SN 的 RESULT。超過上限會丟棄到下一個 LF，並回覆 `ERR:FRAME_TOO_LONG`。
+- USB CDC 的 HID／網路控制端需以 LF 封包；這是為了能先辨識並攔截 `GET_IP` 與 HID 控制指令。Agent 要回傳給 TCP 上位機的 `ACK`／`NACK`／`RESULT` 則仍透過 USB 使用 CRLF，讓 Arduino 保留原始 CRLF 透明轉送。單一框架上限 768 bytes，可容納四個長 SN 的 RESULT。超過上限會丟棄到下一個 LF，並回覆 `ERR:FRAME_TOO_LONG`。
 - MVP 同時間只服務一個 TCP client；目前連線結束後才會接受下一個 client。
 - 當 Mac 傳的是非控制資料且沒有 TCP client，Arduino 回覆 `ERR:TCP_NOT_CONNECTED`，該資料不會被緩存或重送。
 

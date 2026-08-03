@@ -223,6 +223,10 @@ LabVIEW 可用 TCP Read 的 CRLF 模式逐行讀取。工站不符、設備忙�
 失敗會回覆帶 JOB ID 的 `NACK`。舊的純 `SN1,SN2,...` 格式只保留給 HMI 手動驗證；正式
 上位機流程應一律使用包含工站、JOB ID 與 slot 的新格式。
 
+Arduino USB CDC 是另一條通道：HID、截圖、`GET_IP` 與 `NET_SET` 等控制命令使用 LF
+(`\n`)；這可避免 macOS 10.14／10.15 或 VM 留下 CR 而讓下一筆命令被誤判為 TCP 資料。
+Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原樣透明轉送到 TCP。
+
 偏好資料存於 `~/Library/Application Support/AtlasAgentB518/preferences.json`，包含
 串口、CSV／Log 路徑與工站。
 

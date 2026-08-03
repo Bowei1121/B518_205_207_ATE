@@ -206,6 +206,15 @@ void appendUsbByte(char value) {
     return;
   }
 
+  // Some older macOS/virtual-USB paths can deliver the CR paired with a
+  // previous LF as the first byte of the next CDC packet. Ignore only these
+  // separator bytes while idle so the next control line starts cleanly.
+  // A normal CRLF control line is still accepted because its CR arrives after
+  // command data, before the terminating LF.
+  if (usbFrameLength == 0 && (value == '\r' || value == '\n' || value == '\0')) {
+    return;
+  }
+
   if (usbFrameLength >= USB_FRAME_MAX) {
     usbFrameLength = 0;
     discardUsbFrame = true;

@@ -60,15 +60,16 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(framer.feed(b"N002\r\nOK:SCREEN"), ["SN001,SN002"])
         self.assertEqual(framer.feed(b"SHOT\n"), ["OK:SCREENSHOT"])
 
-    def test_agent_sends_crlf_for_labview_terminated_tcp_mode(self):
+    def test_agent_separates_usb_control_lf_from_tcp_payload_crlf(self):
         class FakeSerial:
             def __init__(self): self.written = b""
             def write(self, payload): self.written += payload
             def flush(self): pass
         link = SerialLink(lambda _: None)
         link.connection = FakeSerial()
-        link.send("RESULT:SN001,PASS,ok\n")
-        self.assertEqual(link.connection.written, b"RESULT:SN001,PASS,ok\r\n")
+        link.send_control("M_RESET\r\n")
+        link.send_tcp_payload("RESULT:SN001,PASS,ok\n")
+        self.assertEqual(link.connection.written, b"M_RESET\nRESULT:SN001,PASS,ok\r\n")
 
     def test_arduino_network_replies_update_the_same_ip_display(self):
         self.assertEqual(arduino_ip_reply("IP:192.168.1.100"), "192.168.1.100")

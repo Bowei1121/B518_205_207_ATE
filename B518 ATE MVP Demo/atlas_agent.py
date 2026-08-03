@@ -58,6 +58,7 @@ RAW_SN_BATCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:\s*,\s*[A-Za-z0-
 SN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 JOB_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 DEFAULT_BAUD = 115200
+USB_CDC_CONTROL_TERMINATOR = "\n"
 ARDUINO_PROTOCOL_VERSION = 1
 ARDUINO_INFO_TIMEOUT_MS = 1500
 SCREENSHOT_SETTLE_SECONDS = 5.0
@@ -930,9 +931,10 @@ class BtCsvLogMonitor(threading.Thread):
 class SerialLineFramer:
     """Accumulate a stream into newline-delimited CDC messages.
 
-    USB CDC and TCP preserve bytes, not application messages.  CRLF is the
-    documented wire terminator; accepting LF too keeps ordinary serial tools
-    compatible.  Waiting for the line ending prevents a TCP fragment such as
+    USB CDC and TCP preserve bytes, not application messages. TCP business
+    frames use CRLF, while Arduino USB CDC control commands use LF. Receiving
+    accepts either terminator so ordinary serial tools remain compatible.
+    Waiting for the line ending prevents a TCP fragment such as
     ``SN001,SN`` from becoming a false batch.
     """
     def __init__(self, maximum: int = 1024) -> None:
@@ -984,14 +986,20 @@ class SerialLink:
                 self.on_line(f"ERR: USB CDC 中斷：{exc}")
                 return
 
-    def send(self, command: str) -> None:
+    def _send(self, command: str, terminator: str) -> None:
         if not self.connection:
             raise AgentError("尚未連線 Arduino")
         with self.lock:
-            # CRLF lets LabVIEW use its built-in TCP "CRLF terminated" mode.
-            # The Arduino also accepts LF-only input for terminal compatibility.
-            self.connection.write((command.rstrip("\r\n") + "\r\n").encode("utf-8"))
+            self.connection.write((command.rstrip("\r\n") + terminator).encode("utf-8"))
             self.connection.flush()
+
+    def send_control(self, command: str) -> None:
+        """Send one Arduino HID/network control command over USB CDC using LF."""
+        self._send(command, USB_CDC_CONTROL_TERMINATOR)
+
+    def send_tcp_payload(self, payload: str) -> None:
+        """Forward an Agent business reply through Arduino's transparent TCP bridge."""
+        self._send(payload, "\r\n")
 
     def close(self) -> None:
         self.stop.set()
@@ -1511,7 +1519,7 @@ class AtlasAgentApp:
         if not screenshot_root.is_dir():
             raise AgentError("請先選擇有效的螢幕截圖路徑")
         before = time.time()
-        self.link.send("SCREENSHOT")
+        self.link.send_control("SCREENSHOT")
         self.events.put(("log", "TX: SCREENSHOT（製作模板）"))
         time.sleep(SCREENSHOT_SETTLE_SECONDS)
         deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
@@ -1536,7 +1544,7 @@ class AtlasAgentApp:
             query = self.arduino_info_query
             self.append("USB CDC 已連線；自動查詢 Arduino IP 與韌體資訊")
             self.update_arduino_display()
-            self.safe_send("GET_IP")
+            self.safe_send_control("GET_IP")
             self.root.after(ARDUINO_INFO_TIMEOUT_MS, lambda: self.mark_legacy_firmware(query))
         except (AgentError, OSError) as exc: messagebox.showerror(TITLE, str(exc))
 
@@ -1563,8 +1571,12 @@ class AtlasAgentApp:
         if warning:
             self.append("WARN: " + warning)
 
-    def safe_send(self, command: str) -> None:
-        try: self.link.send(command); self.append("TX: " + command)
+    def safe_send_control(self, command: str) -> None:
+        try: self.link.send_control(command); self.append("TX USB/LF: " + command)
+        except AgentError as exc: messagebox.showerror(TITLE, str(exc))
+
+    def safe_send_tcp(self, command: str) -> None:
+        try: self.link.send_tcp_payload(command); self.append("TX TCP/CRLF: " + command)
         except AgentError as exc: messagebox.showerror(TITLE, str(exc))
 
     def command_from_payload(self, payload: str, bt_slot: Optional[int] = None) -> TestCommand:
@@ -1794,7 +1806,7 @@ class AtlasAgentApp:
             except queue.Empty: break
         for index, command in enumerate(sequence):
             expected = hid_success_reply(command)
-            self.link.send(command)
+            self.link.send_control(command)
             deadline = time.monotonic() + timeout
             while True:
                 remaining = deadline - time.monotonic()
@@ -1826,7 +1838,7 @@ class AtlasAgentApp:
         barcode entry unless all four visible controls match the JOB exactly.
         """
         for attempt in range(2):
-            before = time.time(); self.link.send("SCREENSHOT")
+            before = time.time(); self.link.send_control("SCREENSHOT")
             self.events.put(("log", f"驗證 Slot checkbox（第 {attempt + 1} 次截圖）…"))
             time.sleep(SCREENSHOT_SETTLE_SECONDS)
             deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
@@ -1877,7 +1889,7 @@ class AtlasAgentApp:
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir():
                 raise AgentError("請選擇有效的螢幕截圖路徑")
-            before = time.time(); self.link.send("SCREENSHOT")
+            before = time.time(); self.link.send_control("SCREENSHOT")
             self.events.put(("log", f"FCT sparse slot：等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
             time.sleep(SCREENSHOT_SETTLE_SECONDS)
             deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
@@ -1955,7 +1967,7 @@ class AtlasAgentApp:
             root_fallbacks = [item for item, path in resolved.items() if path.parent == templates and Path(item).parent != Path(".")]
             if root_fallbacks:
                 self.events.put(("log", "相容模式：使用模板根目錄檔案「" + "、".join(root_fallbacks) + "」"))
-            before = time.time(); self.link.send("SCREENSHOT")
+            before = time.time(); self.link.send_control("SCREENSHOT")
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir(): raise AgentError("請選擇有效的螢幕截圖路徑")
             self.events.put(("log", f"等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
@@ -2103,7 +2115,7 @@ class AtlasAgentApp:
             parts = value.split(".")
             if len(parts) != 4 or any(not p.isdigit() or not 0 <= int(p) <= 255 for p in parts):
                 messagebox.showerror(TITLE, "IPv4 格式不正確"); return
-            self.safe_send("NET_SET:" + value)
+            self.safe_send_control("NET_SET:" + value)
 
     def report_if_batch_complete(self, batch_number: int) -> None:
         if self.reported_batch_number == batch_number or not all(sn in self.batch_results for sn in self.sns):
@@ -2113,7 +2125,7 @@ class AtlasAgentApp:
         self.reported_batch_number = batch_number
         self.monitor = None
         if self.link.connection:
-            self.safe_send(report)
+            self.safe_send_tcp(report)
         else:
             self.append("未連線 Arduino，略過上報：" + report)
 
@@ -2125,22 +2137,22 @@ class AtlasAgentApp:
             command = parse_test_command(line)
         except AgentError as exc:
             self.append("工作指令拒絕：" + str(exc))
-            self.safe_send("NACK:INVALID_COMMAND")
+            self.safe_send_tcp("NACK:INVALID_COMMAND")
             return
         nack_header = f"NACK:{command.station}:JOB={command.job_id};"
         if command.station != self.station.get():
             self.append(f"拒絕 JOB {command.job_id}：指令工站 {command.station} 與本機 {self.station.get()} 不符")
-            self.safe_send(nack_header + "WRONG_STATION")
+            self.safe_send_tcp(nack_header + "WRONG_STATION")
             return
         if self.remote_batch_active():
             self.append(f"拒絕 JOB {command.job_id}：目前 JOB {self.current_job_id} 尚未完成")
-            self.safe_send(nack_header + "BUSY")
+            self.safe_send_tcp(nack_header + "BUSY")
             return
         accepted = self.start_batch(line)
         if accepted is None:
-            self.safe_send(nack_header + "REJECTED")
+            self.safe_send_tcp(nack_header + "REJECTED")
             return
-        self.safe_send(f"ACK:{command.station}:JOB={command.job_id}")
+        self.safe_send_tcp(f"ACK:{command.station}:JOB={command.job_id}")
 
     def process_events(self) -> None:
         try:
@@ -2201,7 +2213,7 @@ class AtlasAgentApp:
                     if actual_sns is None:
                         self.append("BT SN 覆核取消：不回傳 RESULT，改送 NACK:BT_SN_MISMATCH")
                         if self.link.connection:
-                            self.safe_send(f"NACK:BT:JOB={self.current_job_id};BT_SN_MISMATCH")
+                            self.safe_send_tcp(f"NACK:BT:JOB={self.current_job_id};BT_SN_MISMATCH")
                         self.reported_batch_number = batch_number
                         continue
                     self.append("BT SN 覆核確認：以設備 SN 回傳：" + "、".join(actual_sns))
@@ -2212,7 +2224,7 @@ class AtlasAgentApp:
                 elif kind == "start_failed":
                     station, batch_number = item
                     if batch_number == self.batch_number and self.link.connection:
-                        self.safe_send(f"NACK:{station}:JOB={self.current_job_id};START_FAILED")
+                        self.safe_send_tcp(f"NACK:{station}:JOB={self.current_job_id};START_FAILED")
                         self.reported_batch_number = batch_number
                 elif kind == "result":
                     batch_number, result = item; assert isinstance(result, TestResult)
