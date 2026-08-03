@@ -946,7 +946,11 @@ class SerialLineFramer:
         messages: list[str] = []
         while b"\n" in self.buffer:
             end = self.buffer.index(b"\n")
-            line = bytes(self.buffer[:end]).rstrip(b"\r")
+            # CDC packet boundaries are not message boundaries.  Old macOS
+            # USB stacks and VMs may leave CR/LF/NUL bytes at either edge of
+            # the next read.  Strip only those framing bytes; deliberately
+            # preserve ordinary spaces and all payload characters.
+            line = bytes(self.buffer[:end]).strip(b"\x00\r\n")
             del self.buffer[:end + 1]
             if line:
                 messages.append(line.decode("utf-8", errors="replace"))
@@ -1815,6 +1819,13 @@ class AtlasAgentApp:
                 reply = self.hid_replies.get(timeout=remaining)
                 if reply == expected:
                     break
+                # A disconnected upstream TCP client is unrelated to the
+                # local USB HID operation.  Keep waiting for the command's
+                # authoritative OK reply instead of aborting the sequence on
+                # this asynchronous bridge diagnostic.
+                if reply == "ERR:TCP_NOT_CONNECTED":
+                    self.append(f"WARN: 忽略 {command} 執行期間的 TCP 未連線診斷")
+                    continue
                 if reply.startswith("ERR:"):
                     raise AgentError(f"Arduino 執行 {command} 失敗：{reply}")
             if delay and index < len(sequence) - 1:
@@ -2169,6 +2180,13 @@ class AtlasAgentApp:
                             self.append("WARN: Arduino INFO 格式無效")
                         else:
                             self.accept_arduino_identity(identity)
+                        continue
+                    # This can be emitted by the transparent TCP bridge when
+                    # no upper-computer client is connected.  It is not an
+                    # HID command result, and queuing it would make the next
+                    # local HID command fail before its OK reply arrives.
+                    if line == "ERR:TCP_NOT_CONNECTED":
+                        self.append("WARN: Arduino TCP 尚未連線（不影響 USB HID 控制）")
                         continue
                     self.hid_replies.put(line)
                     if re.match(r"^(DFU|FCT|BT):", line, re.IGNORECASE):

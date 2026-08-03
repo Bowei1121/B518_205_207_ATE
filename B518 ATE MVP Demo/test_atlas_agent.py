@@ -60,6 +60,11 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(framer.feed(b"N002\r\nOK:SCREEN"), ["SN001,SN002"])
         self.assertEqual(framer.feed(b"SHOT\n"), ["OK:SCREENSHOT"])
 
+    def test_serial_framer_discards_only_cdc_boundary_noise(self):
+        framer = SerialLineFramer()
+        self.assertEqual(framer.feed(b"\x00\r\nOK:M_RESET\x00\r\n"), ["OK:M_RESET"])
+        self.assertEqual(framer.feed(b"  RESULT:SN001,PASS  \r\n"), ["  RESULT:SN001,PASS  "])
+
     def test_agent_separates_usb_control_lf_from_tcp_payload_crlf(self):
         class FakeSerial:
             def __init__(self): self.written = b""

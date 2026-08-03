@@ -250,7 +250,11 @@ class HidCalibrationApp:
         while (not self.stop.is_set() and generation == self.connection_generation
                and connection is self.connection):
             try:
-                line = connection.readline().decode("utf-8", errors="replace").strip()
+                raw_line = connection.readline().decode("utf-8", errors="replace")
+                # Normalise only transport framing. Do not use str.strip(),
+                # because a transparent TCP payload may legitimately contain
+                # ordinary leading/trailing spaces.
+                line = raw_line.strip("\x00\r\n")
                 if line: self.events.put(("rx", line))
             except Exception as exc:
                 if not self.stop.is_set() and generation == self.connection_generation:
@@ -324,6 +328,16 @@ class HidCalibrationApp:
 
     def handle_received_line(self, line: str) -> None:
         self.append("RX: " + line)
+        # The firmware keeps the USB CDC channel transparent for normal TCP
+        # payloads.  A station without an upstream TCP client can therefore
+        # emit this diagnostic independently of the HID command that was just
+        # accepted.  It must not consume a pending M_/K_/SCREENSHOT command:
+        # the following OK reply is the authoritative HID completion signal.
+        if line == "ERR:TCP_NOT_CONNECTED":
+            if self.pending_command is not None:
+                self.status.set(
+                    f"指令 {self.pending_command} 已送出；忽略未連線 TCP 診斷，等待 Arduino OK 回覆。")
+            return
         if line.startswith("INFO:"):
             identity = parse_firmware_info(line)
             if identity is None:
