@@ -324,6 +324,9 @@ DFU 在第一個 SN 前會先點擊匹配到的測試視窗標題安全區取得
 （或 `bash build_hid_calibration_app.sh` 後開啟 `dist/Atlas HID Calibration B518.app`），選擇
 Arduino USB CDC 串口並連線。先按 **Home** 將游標移到左上角；設定 Step 後按鍵盤方向鍵
 或畫面方向按鈕，Arduino 會以 `M_DELTA:X,Y` 相對移動指定距離。
+按下 **一鍵截圖（Arduino ⌘⇧3）** 會透過 USB CDC 傳送 `SCREENSHOT`，再由 Arduino HID
+觸發 macOS 全螢幕截圖。通訊紀錄應依序顯示 `TX: SCREENSHOT`、`RX: ACK:SCREENSHOT`
+與 `RX: OK:SCREENSHOT`；這些回覆表示 HID 函式已執行，截圖檔仍可能需數秒才完成儲存。
 工具會顯示從 Home 累積的「目前 Arduino 控制座標」：Home 為 `(0,0)`，右／下遞增，
 左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。
 

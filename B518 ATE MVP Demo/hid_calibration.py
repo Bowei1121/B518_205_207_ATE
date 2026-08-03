@@ -17,6 +17,7 @@ except ImportError:
 
 TITLE = "Atlas HID 座標校正 B518"
 BAUD_RATE = 115200
+SCREENSHOT_COMMAND = "SCREENSHOT"
 
 
 def parse_step(value: str) -> int:
@@ -91,6 +92,11 @@ class HidCalibrationApp:
         ttk.Button(arrows, text="←  左", command=lambda: self.move("Left"), width=12).grid(row=1, column=0, padx=3, pady=3)
         ttk.Button(arrows, text="↓  下", command=lambda: self.move("Down"), width=12).grid(row=1, column=1, padx=3, pady=3)
         ttk.Button(arrows, text="→  右", command=lambda: self.move("Right"), width=12).grid(row=1, column=2, padx=3, pady=3)
+        ttk.Button(
+            controls,
+            text="一鍵截圖（Arduino ⌘⇧3）",
+            command=self.take_screenshot,
+        ).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
 
         ttk.Label(panel, textvariable=self.status).pack(anchor="w")
         ttk.Label(panel, text="通訊紀錄：").pack(anchor="w", pady=(8, 0))
@@ -151,6 +157,10 @@ class HidCalibrationApp:
         if self.send("M_RESET"):
             self.position_x = self.position_y = 0
             self.update_position()
+
+    def take_screenshot(self) -> None:
+        if self.send(SCREENSHOT_COMMAND):
+            self.status.set("已送出截圖指令；請等待 macOS 將螢幕截圖儲存至預設路徑。")
 
     def move(self, direction: str) -> None:
         try:
