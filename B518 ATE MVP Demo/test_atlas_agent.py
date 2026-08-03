@@ -13,6 +13,7 @@ from bump_hid_calibration_version import bump_version as bump_hid_calibration_ve
 from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
+                             is_nonfatal_cdc_diagnostic, normalize_cdc_line,
                              parse_delay_seconds, parse_firmware_info, parse_step)
 
 
@@ -67,14 +68,23 @@ class AtlasAgentTests(unittest.TestCase):
 
     def test_agent_separates_usb_control_lf_from_tcp_payload_crlf(self):
         class FakeSerial:
-            def __init__(self): self.written = b""
+            def __init__(self): self.written = b""; self.input_resets = 0; self.output_resets = 0
             def write(self, payload): self.written += payload
             def flush(self): pass
+            def reset_input_buffer(self): self.input_resets += 1
+            def reset_output_buffer(self): self.output_resets += 1
         link = SerialLink(lambda _: None)
         link.connection = FakeSerial()
         link.send_control("M_RESET\r\n")
         link.send_tcp_payload("RESULT:SN001,PASS,ok\n")
         self.assertEqual(link.connection.written, b"M_RESET\nRESULT:SN001,PASS,ok\r\n")
+        self.assertEqual((link.connection.input_resets, link.connection.output_resets), (1, 1))
+
+    def test_calibration_normalizes_framing_and_ignores_only_tcp_bridge_diagnostic(self):
+        self.assertEqual(normalize_cdc_line("\x00\r\nOK:M_RESET\r\n"), "OK:M_RESET")
+        self.assertEqual(normalize_cdc_line("  RESULT:SN001,PASS  \r\n"), "  RESULT:SN001,PASS  ")
+        self.assertTrue(is_nonfatal_cdc_diagnostic("ERR:TCP_NOT_CONNECTED"))
+        self.assertFalse(is_nonfatal_cdc_diagnostic("ERR:M_DELTA_FORMAT"))
 
     def test_arduino_network_replies_update_the_same_ip_display(self):
         self.assertEqual(arduino_ip_reply("IP:192.168.1.100"), "192.168.1.100")

@@ -25,7 +25,21 @@ KEYBOARD_DELAY_MAX_SECONDS = 120.0
 EXPECTED_FIRMWARE_PRODUCT = "B518_ARDUINO_MVP"
 EXPECTED_PROTOCOL_VERSION = 1
 FIRMWARE_QUERY_DELAY_MS = 800
+FIRMWARE_QUERY_MAX_ATTEMPTS = 3
+FIRMWARE_QUERY_TIMEOUT_MS = 1400
+FIRMWARE_QUERY_RETRY_DELAYS_MS = (350, 900)
 COMMAND_TIMEOUT_MS = 3000
+NONFATAL_CDC_DIAGNOSTICS = frozenset(("ERR:TCP_NOT_CONNECTED",))
+
+
+def normalize_cdc_line(raw_line: str) -> str:
+    """Remove only USB CDC framing bytes, never meaningful payload spacing."""
+    return raw_line.strip("\x00\r\n")
+
+
+def is_nonfatal_cdc_diagnostic(line: str) -> bool:
+    """A disconnected TCP bridge does not mean the local HID command failed."""
+    return line in NONFATAL_CDC_DIAGNOSTICS
 
 def parse_firmware_info(line: str) -> tuple[str, str, int, str] | None:
     """Parse the identity line emitted by the canonical B518 firmware."""
@@ -108,6 +122,7 @@ class HidCalibrationApp:
         root.geometry("760x650")
         root.minsize(680, 600)
         self.connection = None
+        self.serial_lock = threading.Lock()
         self.connection_generation = 0
         self.stop = threading.Event()
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
@@ -120,6 +135,9 @@ class HidCalibrationApp:
         self.pending_command: str | None = None
         self.pending_reply: str | None = None
         self.pending_success: Callable[[], None] | None = None
+        self.firmware_query_attempt = 0
+        self.firmware_retry_after_id: str | None = None
+        self.tcp_diagnostic_logged = False
         self.firmware_verified = False
         self.firmware = tk.StringVar(value="韌體：尚未驗證")
         self.hid_controls: list[tk.Widget] = []
@@ -218,7 +236,6 @@ class HidCalibrationApp:
         self.disconnect()
         try:
             self.connection = serial.Serial(self.port.get(), BAUD_RATE, timeout=.2)
-            self.connection.reset_input_buffer()
         except Exception as exc:
             self.connection = None; messagebox.showerror(TITLE, f"無法連線：{exc}"); return
         self.stop.clear()
@@ -231,10 +248,11 @@ class HidCalibrationApp:
         self.firmware.set("韌體：查詢中…")
         self.status.set("已連線；正在驗證 Arduino 韌體與控制協定。")
         self.append("已連線：" + self.port.get())
-        self.root.after(FIRMWARE_QUERY_DELAY_MS, self.query_firmware)
+        self.start_firmware_verification(FIRMWARE_QUERY_DELAY_MS)
 
     def disconnect(self) -> None:
         self.cancel_pending_keyboard_write()
+        self.cancel_firmware_retry()
         self.stop.set()
         self.connection_generation += 1
         if self.connection:
@@ -246,15 +264,77 @@ class HidCalibrationApp:
         self.firmware.set("韌體：尚未驗證")
         self.status.set("未連線")
 
+    def clear_received_events(self) -> None:
+        """Discard replies that belonged to a prior connection or command."""
+        while True:
+            try:
+                self.events.get_nowait()
+            except queue.Empty:
+                return
+
+    def synchronize_cdc_channel(self) -> None:
+        """Start the next control transaction from an empty local CDC channel."""
+        self.clear_received_events()
+        if not self.connection:
+            return
+        try:
+            with self.serial_lock:
+                self.connection.reset_input_buffer()
+                self.connection.reset_output_buffer()
+        except Exception as exc:
+            self.append("WARN: 無法清空 USB CDC buffer：" + str(exc))
+
+    def cancel_firmware_retry(self) -> None:
+        if self.firmware_retry_after_id is not None:
+            self.root.after_cancel(self.firmware_retry_after_id)
+        self.firmware_retry_after_id = None
+
+    def start_firmware_verification(self, initial_delay_ms: int = 200) -> None:
+        """Synchronize the session and verify GET_INFO with bounded retries."""
+        if not self.connection:
+            return
+        self.cancel_firmware_retry()
+        self.clear_pending()
+        self.synchronize_cdc_channel()
+        self.firmware_query_attempt = 0
+        self.firmware_verified = False
+        self.set_hid_controls_enabled(False)
+        self.firmware.set("韌體：查詢中…")
+        self.status.set("USB CDC 已同步；正在驗證 Arduino 韌體…")
+        self.firmware_retry_after_id = self.root.after(initial_delay_ms, self.send_firmware_query_attempt)
+
+    def send_firmware_query_attempt(self) -> None:
+        self.firmware_retry_after_id = None
+        if not self.connection or self.pending_command is not None:
+            return
+        self.synchronize_cdc_channel()
+        self.firmware_query_attempt += 1
+        self.append(f"韌體驗證第 {self.firmware_query_attempt}/{FIRMWARE_QUERY_MAX_ATTEMPTS} 次：GET_INFO")
+        self.send_checked("GET_INFO", require_firmware=False, timeout_ms=FIRMWARE_QUERY_TIMEOUT_MS,
+                          synchronize=False)
+
+    def retry_firmware_query(self, reason: str) -> None:
+        if not self.connection:
+            return
+        if self.firmware_query_attempt >= FIRMWARE_QUERY_MAX_ATTEMPTS:
+            self.reject_firmware(
+                f"韌體驗證失敗：已嘗試 {FIRMWARE_QUERY_MAX_ATTEMPTS} 次仍未取得有效 INFO（{reason}）。")
+            return
+        delay = FIRMWARE_QUERY_RETRY_DELAYS_MS[self.firmware_query_attempt - 1]
+        self.status.set(f"韌體驗證未完成（{reason}）；{delay / 1000:g} 秒後自動重試。")
+        self.append(f"WARN: GET_INFO 未完成：{reason}；將自動重試")
+        self.firmware_retry_after_id = self.root.after(delay, self.send_firmware_query_attempt)
+
     def receive(self, connection, generation: int) -> None:
         while (not self.stop.is_set() and generation == self.connection_generation
                and connection is self.connection):
             try:
-                raw_line = connection.readline().decode("utf-8", errors="replace")
+                with self.serial_lock:
+                    raw_line = connection.readline().decode("utf-8", errors="replace")
                 # Normalise only transport framing. Do not use str.strip(),
                 # because a transparent TCP payload may legitimately contain
                 # ordinary leading/trailing spaces.
-                line = raw_line.strip("\x00\r\n")
+                line = normalize_cdc_line(raw_line)
                 if line: self.events.put(("rx", line))
             except Exception as exc:
                 if not self.stop.is_set() and generation == self.connection_generation:
@@ -262,7 +342,8 @@ class HidCalibrationApp:
                 return
 
     def send_checked(self, command: str, on_success: Callable[[], None] | None = None,
-                     *, require_firmware: bool = True) -> bool:
+                     *, require_firmware: bool = True, timeout_ms: int | None = None,
+                     synchronize: bool = True) -> bool:
         if not self.connection:
             messagebox.showwarning(TITLE, "請先連線 Arduino"); return False
         if require_firmware and not self.firmware_verified:
@@ -275,15 +356,18 @@ class HidCalibrationApp:
         if not expected:
             raise ValueError(f"未定義成功回覆的指令：{command}")
         try:
+            if synchronize:
+                self.synchronize_cdc_channel()
             # UNO R4 on older macOS/VM USB paths can retain a trailing CR
             # after a command.  USB CDC controls are therefore LF-delimited.
-            self.connection.write((command.rstrip("\r\n") + USB_CDC_CONTROL_TERMINATOR).encode("utf-8"))
-            self.connection.flush()
+            with self.serial_lock:
+                self.connection.write((command.rstrip("\r\n") + USB_CDC_CONTROL_TERMINATOR).encode("utf-8"))
+                self.connection.flush()
             self.append("TX: " + command)
             self.pending_command = command
             self.pending_reply = expected
             self.pending_success = on_success
-            self.pending_timeout_id = self.root.after(COMMAND_TIMEOUT_MS, self.pending_timed_out)
+            self.pending_timeout_id = self.root.after(timeout_ms or COMMAND_TIMEOUT_MS, self.pending_timed_out)
             return True
         except Exception as exc:
             self.append("ERR: 傳送失敗：" + str(exc))
@@ -304,7 +388,7 @@ class HidCalibrationApp:
         self.pending_reply = None
         self.pending_success = None
         if command == "GET_INFO":
-            self.reject_firmware("查詢逾時：Arduino 未回覆 INFO，可能為舊韌體或燒錄錯誤。")
+            self.retry_firmware_query("等待 INFO 逾時")
         elif command:
             self.status.set(f"指令 {command} 逾時；未收到執行成功回覆。")
 
@@ -312,12 +396,8 @@ class HidCalibrationApp:
         if not self.connection:
             messagebox.showwarning(TITLE, "請先連線 Arduino")
             return
-        if self.pending_command is not None:
-            return
-        self.firmware_verified = False
-        self.set_hid_controls_enabled(False)
-        self.firmware.set("韌體：查詢中…")
-        self.send_checked("GET_INFO", require_firmware=False)
+        if self.pending_command is None:
+            self.start_firmware_verification()
 
     def reject_firmware(self, reason: str) -> None:
         self.firmware_verified = False
@@ -327,22 +407,25 @@ class HidCalibrationApp:
         self.append("韌體驗證失敗：" + reason)
 
     def handle_received_line(self, line: str) -> None:
+        if is_nonfatal_cdc_diagnostic(line):
+            if not self.tcp_diagnostic_logged:
+                self.append("WARN: Arduino TCP 尚未連線；不影響 USB HID 控制。")
+                self.tcp_diagnostic_logged = True
+            if self.pending_command is not None:
+                self.status.set(
+                    f"指令 {self.pending_command} 已送出；忽略未連線 TCP 診斷，等待 Arduino OK 回覆。")
+            return
         self.append("RX: " + line)
         # The firmware keeps the USB CDC channel transparent for normal TCP
         # payloads.  A station without an upstream TCP client can therefore
         # emit this diagnostic independently of the HID command that was just
         # accepted.  It must not consume a pending M_/K_/SCREENSHOT command:
         # the following OK reply is the authoritative HID completion signal.
-        if line == "ERR:TCP_NOT_CONNECTED":
-            if self.pending_command is not None:
-                self.status.set(
-                    f"指令 {self.pending_command} 已送出；忽略未連線 TCP 診斷，等待 Arduino OK 回覆。")
-            return
         if line.startswith("INFO:"):
             identity = parse_firmware_info(line)
             if identity is None:
                 self.clear_pending()
-                self.reject_firmware("INFO 格式不正確，請確認燒錄來源。")
+                self.retry_firmware_query("INFO 格式不正確")
                 return
             product, version, protocol, board = identity
             self.clear_pending()
@@ -352,6 +435,7 @@ class HidCalibrationApp:
                     f"{EXPECTED_FIRMWARE_PRODUCT}／PROTO={EXPECTED_PROTOCOL_VERSION}。")
                 return
             self.firmware_verified = True
+            self.cancel_firmware_retry()
             self.set_hid_controls_enabled(True)
             self.firmware.set(f"韌體：{version}｜協定：{protocol}｜板子：{board}")
             self.status.set("韌體驗證通過；請先按 Home，再測試滑鼠、截圖與鍵盤。")
@@ -362,8 +446,7 @@ class HidCalibrationApp:
             command = self.pending_command
             self.clear_pending()
             if command == "GET_INFO":
-                self.reject_firmware(
-                    f"Arduino 回覆 {line}；這通常表示目前不是支援 GET_INFO 的正式韌體。")
+                self.retry_firmware_query(line)
             else:
                 self.status.set(f"指令 {command} 失敗：{line}；畫面座標未變更。")
             return

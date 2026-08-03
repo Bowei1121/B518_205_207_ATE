@@ -61,6 +61,8 @@ DEFAULT_BAUD = 115200
 USB_CDC_CONTROL_TERMINATOR = "\n"
 ARDUINO_PROTOCOL_VERSION = 1
 ARDUINO_INFO_TIMEOUT_MS = 1500
+ARDUINO_INFO_MAX_ATTEMPTS = 3
+ARDUINO_INFO_RETRY_DELAYS_MS = (350, 900)
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
@@ -973,7 +975,7 @@ class SerialLink:
             raise AgentError("缺少 pyserial；請執行 python3 -m pip install -r requirements.txt")
         self.close()
         self.connection = serial.Serial(port, DEFAULT_BAUD, timeout=0.2)
-        self.connection.reset_input_buffer()
+        self.synchronize()
         self.stop.clear()
         self.thread = threading.Thread(target=self._receive, daemon=True)
         self.thread.start()
@@ -982,7 +984,8 @@ class SerialLink:
         framer = SerialLineFramer()
         while not self.stop.is_set() and self.connection:
             try:
-                raw = self.connection.read(256)
+                with self.lock:
+                    raw = self.connection.read(256)
                 if raw:
                     for line in framer.feed(raw):
                         self.on_line(line)
@@ -999,16 +1002,29 @@ class SerialLink:
 
     def send_control(self, command: str) -> None:
         """Send one Arduino HID/network control command over USB CDC using LF."""
+        # Every HID/network control command starts a fresh CDC transaction.
+        # Do not apply this to transparent TCP business payloads: those bytes
+        # must retain their framing and must never discard an upstream JOB.
+        self.synchronize()
         self._send(command, USB_CDC_CONTROL_TERMINATOR)
 
     def send_tcp_payload(self, payload: str) -> None:
         """Forward an Agent business reply through Arduino's transparent TCP bridge."""
         self._send(payload, "\r\n")
 
+    def synchronize(self) -> None:
+        """Drop stale local USB CDC bytes before a new control transaction."""
+        if not self.connection:
+            return
+        with self.lock:
+            self.connection.reset_input_buffer()
+            self.connection.reset_output_buffer()
+
     def close(self) -> None:
         self.stop.set()
         if self.connection:
-            self.connection.close()
+            with self.lock:
+                self.connection.close()
         self.connection = None
 
 
@@ -1240,6 +1256,7 @@ class AtlasAgentApp:
         self.arduino_ip: Optional[str] = None
         self.arduino_identity: Optional[ArduinoIdentity] = None
         self.arduino_info_query = 0
+        self.arduino_info_attempt = 0
         self.demo_fail_last = tk.BooleanVar(value=False)
         self._build()
         self.station.trace_add("write", self._update_station_controls)
@@ -1544,13 +1561,48 @@ class AtlasAgentApp:
             self.link.connect(self.port.get().strip())
             self.arduino_ip = None
             self.arduino_identity = None
-            self.arduino_info_query += 1
-            query = self.arduino_info_query
             self.append("USB CDC 已連線；自動查詢 Arduino IP 與韌體資訊")
             self.update_arduino_display()
-            self.safe_send_control("GET_IP")
-            self.root.after(ARDUINO_INFO_TIMEOUT_MS, lambda: self.mark_legacy_firmware(query))
+            self.start_arduino_discovery(800)
         except (AgentError, OSError) as exc: messagebox.showerror(TITLE, str(exc))
+
+    def clear_serial_replies(self) -> None:
+        """Discard stale serial responses but preserve monitor/UI events."""
+        retained: list[tuple[str, object]] = []
+        while True:
+            try:
+                event = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if event[0] != "serial":
+                retained.append(event)
+        for event in retained:
+            self.events.put(event)
+        while True:
+            try:
+                self.hid_replies.get_nowait()
+            except queue.Empty:
+                break
+
+    def start_arduino_discovery(self, initial_delay_ms: int = 200) -> None:
+        if not self.link.connection:
+            return
+        self.arduino_info_query += 1
+        self.arduino_info_attempt = 0
+        query = self.arduino_info_query
+        self.clear_serial_replies()
+        self.link.synchronize()
+        self.root.after(initial_delay_ms, lambda: self.send_arduino_discovery_attempt(query))
+
+    def send_arduino_discovery_attempt(self, query: int) -> None:
+        if query != self.arduino_info_query or self.arduino_identity is not None or not self.link.connection:
+            return
+        self.clear_serial_replies()
+        self.link.synchronize()
+        self.arduino_info_attempt += 1
+        self.append(f"Arduino 韌體查詢第 {self.arduino_info_attempt}/{ARDUINO_INFO_MAX_ATTEMPTS} 次")
+        self.safe_send_control("GET_IP")
+        self.root.after(ARDUINO_INFO_TIMEOUT_MS, lambda: self.mark_legacy_firmware(query))
 
     def update_arduino_display(self) -> None:
         ip = self.arduino_ip or "查詢中…"
@@ -1564,6 +1616,11 @@ class AtlasAgentApp:
     def mark_legacy_firmware(self, query: int) -> None:
         if query != self.arduino_info_query or self.arduino_identity is not None or not self.link.connection:
             return
+        if self.arduino_info_attempt < ARDUINO_INFO_MAX_ATTEMPTS:
+            delay = ARDUINO_INFO_RETRY_DELAYS_MS[self.arduino_info_attempt - 1]
+            self.append(f"WARN: Arduino 尚未回覆 INFO；{delay / 1000:g} 秒後自動重試")
+            self.root.after(delay, lambda: self.send_arduino_discovery_attempt(query))
+            return
         ip = self.arduino_ip or "未回覆"
         self.ip_text.set(f"IP：{ip}\n韌體：未知／舊版（未回覆 INFO）")
         self.append("WARN: Arduino 未回覆 INFO；以舊版／未知韌體模式繼續")
@@ -1576,7 +1633,11 @@ class AtlasAgentApp:
             self.append("WARN: " + warning)
 
     def safe_send_control(self, command: str) -> None:
-        try: self.link.send_control(command); self.append("TX USB/LF: " + command)
+        try:
+            # Control commands never reuse a reply from an earlier CDC frame.
+            self.clear_serial_replies()
+            self.link.send_control(command)
+            self.append("TX USB/LF: " + command)
         except AgentError as exc: messagebox.showerror(TITLE, str(exc))
 
     def safe_send_tcp(self, command: str) -> None:
@@ -1810,6 +1871,10 @@ class AtlasAgentApp:
             except queue.Empty: break
         for index, command in enumerate(sequence):
             expected = hid_success_reply(command)
+            # Each HID control command owns its reply window; no completion
+            # from an earlier command may satisfy or fail this transaction.
+            self.clear_serial_replies()
+            self.link.synchronize()
             self.link.send_control(command)
             deadline = time.monotonic() + timeout
             while True:
