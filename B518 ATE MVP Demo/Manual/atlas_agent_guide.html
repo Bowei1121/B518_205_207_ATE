@@ -135,7 +135,7 @@
             <thead><tr><th>按鍵／區域</th><th>功能</th></tr></thead>
             <tbody>
               <tr><td><strong>選擇截圖</strong></td><td>挑選既有 PNG 截圖；適合已有標準畫面或重做模板。</td></tr>
-              <tr><td><strong>使用最新截圖／擷取螢幕截圖</strong></td><td>讀取截圖路徑最新檔案，或由已連線 Arduino HID 觸發 Command+Shift+3。</td></tr>
+              <tr><td><strong>使用最新截圖／擷取螢幕截圖</strong></td><td>讀取截圖路徑最新檔案，或由已連線 Arduino HID 觸發 Command+Shift+3。擷取時 Atlas Agent 主畫面、設定頁與模板頁會暫時隱藏，完成或失敗後自動恢復。</td></tr>
               <tr><td><strong>縮小預覽／放大預覽</strong></td><td>僅調整框選時的預覽倍率，不改變原圖或模板像素。</td></tr>
               <tr><td><strong>模板檔名／儲存模板</strong></td><td>依目前工站選正確相對檔名，將紅框區域存入模板根路徑。</td></tr>
             </tbody>
@@ -143,7 +143,7 @@
         </div>
         <div class="steps">
           <div class="step"><h3>固定現場畫面</h3><p>讓目標 HMI 完整顯示於單一螢幕且不被遮住。</p></div>
-          <div class="step"><h3>取得部署機截圖</h3><p>可選既有截圖、使用最新截圖，或在 USB CDC 已連線時按「擷取螢幕截圖」。</p></div>
+          <div class="step"><h3>取得部署機截圖</h3><p>可選既有截圖、使用最新截圖，或在 USB CDC 已連線時按「擷取螢幕截圖」。按下後 Atlas Agent 會暫時消失，讓目標 HMI 不受遮擋；請等待畫面自動恢復並載入新截圖。</p></div>
           <div class="step"><h3>框選穩定區域</h3><p>保留固定標題、標誌或完整按鈕，避開游標、SN、日期、PASS／FAIL 與測試中狀態。</p></div>
           <div class="step"><h3>儲存並驗證</h3><p>依下拉檔名逐一儲存；執行流程後用「查看匹配疊圖」確認綠框與落點。</p></div>
         </div>

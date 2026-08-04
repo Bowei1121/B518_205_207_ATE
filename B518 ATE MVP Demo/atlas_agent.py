@@ -65,6 +65,10 @@ ARDUINO_INFO_MAX_ATTEMPTS = 3
 ARDUINO_INFO_RETRY_DELAYS_MS = (350, 900)
 SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
+# Allow the macOS window server to remove Atlas Agent before Arduino sends the
+# global screenshot shortcut. This is intentionally separate from the time
+# macOS needs to write the captured PNG to disk.
+TEMPLATE_CAPTURE_HIDE_SETTLE_MS = 350
 DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
 DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 6, "BT": 4}
 COMPACT_HMI_GEOMETRY = "420x820"
@@ -104,6 +108,47 @@ FCT_CHECKBOX_TEMPLATES = {
 
 class AgentError(RuntimeError):
     pass
+
+
+def hide_visible_atlas_windows(root: tk.Misc) -> list[tuple[tk.Misc, str]]:
+    """Temporarily hide visible Atlas top-level windows for a clean screenshot.
+
+    Template capture is the only caller.  It records only windows that were
+    already visible, so an operator's minimized or withdrawn window is never
+    unexpectedly opened afterwards.
+    """
+    candidates: list[tk.Misc] = [root]
+    try:
+        candidates.extend(child for child in root.winfo_children()
+                          if child.winfo_class() == "Toplevel")
+    except tk.TclError:
+        return []
+
+    hidden: list[tuple[tk.Misc, str]] = []
+    for window in candidates:
+        try:
+            state = str(window.state())
+            if state in ("withdrawn", "iconic") or not window.winfo_viewable():
+                continue
+            hidden.append((window, state))
+            window.withdraw()
+        except tk.TclError:
+            continue
+    return hidden
+
+
+def restore_atlas_windows(windows: Iterable[tuple[tk.Misc, str]]) -> None:
+    """Restore only the windows hidden by ``hide_visible_atlas_windows``."""
+    for window, state in windows:
+        try:
+            if not window.winfo_exists():
+                continue
+            window.deiconify()
+            if state == "zoomed":
+                window.state("zoomed")
+            window.lift()
+        except tk.TclError:
+            continue
 
 
 @dataclass
@@ -1041,6 +1086,7 @@ class TemplateMakerDialog:
     def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path,
                  suggested_names: Iterable[str] = ("test_window.png",),
                  capture_screenshot: Optional[Callable[[], Path]] = None) -> None:
+        self.app_root = parent.winfo_toplevel()
         self.window = tk.Toplevel(parent)
         self.window.title("製作圖像匹配模板")
         self.window.transient(parent)
@@ -1051,6 +1097,7 @@ class TemplateMakerDialog:
         self.suggested_names = list(suggested_names) or ["test_window.png"]
         self.capture_screenshot = capture_screenshot
         self.capture_results: queue.Queue[tuple[bool, object]] = queue.Queue()
+        self.hidden_windows: list[tuple[tk.Misc, str]] = []
         self.image_path: Optional[Path] = None
         self.original = None
         self.scale = 1.0
@@ -1101,7 +1148,18 @@ class TemplateMakerDialog:
         if self.capture_screenshot is None:
             messagebox.showerror(TITLE, "目前沒有可用的 Arduino 擷取功能", parent=self.window); return
         self.capture_button.state(["disabled"])
-        self.info.set("Arduino 正在擷取螢幕截圖，等待 macOS 完成儲存…")
+        self.info.set("Atlas Agent 正在暫時隱藏，準備擷取乾淨的螢幕截圖…")
+        self.hidden_windows = hide_visible_atlas_windows(self.app_root)
+        # A withdraw request is asynchronous on macOS.  Waiting briefly before
+        # the Arduino shortcut prevents the Agent UI from appearing in the PNG.
+        self.app_root.update_idletasks()
+        self.window.after(TEMPLATE_CAPTURE_HIDE_SETTLE_MS, self._start_hidden_capture)
+
+    def _start_hidden_capture(self) -> None:
+        if self.capture_screenshot is None:
+            self._restore_hidden_windows()
+            self._capture_failed("目前沒有可用的 Arduino 擷取功能")
+            return
 
         def run() -> None:
             try:
@@ -1112,6 +1170,10 @@ class TemplateMakerDialog:
         threading.Thread(target=run, daemon=True).start()
         self.window.after(100, self._poll_capture)
 
+    def _restore_hidden_windows(self) -> None:
+        hidden, self.hidden_windows = self.hidden_windows, []
+        restore_atlas_windows(hidden)
+
     def _poll_capture(self) -> None:
         try:
             success, value = self.capture_results.get_nowait()
@@ -1119,6 +1181,7 @@ class TemplateMakerDialog:
             if self.window.winfo_exists():
                 self.window.after(100, self._poll_capture)
             return
+        self._restore_hidden_windows()
         if success:
             self._captured_screenshot(value)
         else:

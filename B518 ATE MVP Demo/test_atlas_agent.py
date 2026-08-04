@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -18,6 +18,38 @@ from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
 
 
 class AtlasAgentTests(unittest.TestCase):
+    def test_template_capture_hides_only_visible_atlas_windows_and_restores_order(self):
+        class FakeWindow:
+            def __init__(self, name, state="normal", visible=True, top_level=False):
+                self.name, self._state, self.visible, self.top_level = name, state, visible, top_level
+                self.withdrawn = self.deiconified = self.lifted = 0
+            def winfo_class(self): return "Toplevel" if self.top_level else "Frame"
+            def state(self, value=None):
+                if value is not None: self._state = value
+                return self._state
+            def winfo_viewable(self): return self.visible
+            def winfo_exists(self): return True
+            def withdraw(self): self.withdrawn += 1; self._state = "withdrawn"; self.visible = False
+            def deiconify(self): self.deiconified += 1; self._state = "normal"; self.visible = True
+            def lift(self): self.lifted += 1
+
+        root = FakeWindow("root")
+        settings = FakeWindow("settings", top_level=True)
+        maker = FakeWindow("maker", state="zoomed", top_level=True)
+        minimized = FakeWindow("minimized", state="iconic", visible=False, top_level=True)
+        hidden = FakeWindow("hidden", state="withdrawn", visible=False, top_level=True)
+        ordinary_child = FakeWindow("frame")
+        root.winfo_children = lambda: [settings, maker, minimized, hidden, ordinary_child]
+
+        saved = hide_visible_atlas_windows(root)
+        self.assertEqual([window.name for window, _ in saved], ["root", "settings", "maker"])
+        self.assertEqual(minimized.withdrawn, 0)
+        self.assertEqual(hidden.withdrawn, 0)
+        restore_atlas_windows(saved)
+        self.assertEqual((root.deiconified, settings.deiconified, maker.deiconified), (1, 1, 1))
+        self.assertEqual(maker.state(), "zoomed")
+        self.assertEqual((root.lifted, settings.lifted, maker.lifted), (1, 1, 1))
+
     def test_build_version_bumps_patch_without_touching_other_values(self):
         updated, version = bump_version('VERSION = "3.14.15"\n')
         self.assertEqual(version, "3.14.16")
