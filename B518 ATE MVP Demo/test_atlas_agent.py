@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
-from atlas_agent import AgentError, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -336,6 +336,35 @@ class AtlasAgentTests(unittest.TestCase):
             results, errors = discover_bt_csv_results(root, [1], started, next_day)
             self.assertEqual(errors, [])
             self.assertEqual(results[1].sn, "SN001")
+
+    def test_fct_auto_log_demo_ignores_baseline_and_reports_new_sn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stamp = datetime.now().strftime("%Y%m%d_%H-%M-%S.demo")
+            old = root / "OLD" / stamp / "system"
+            old.mkdir(parents=True)
+            (old / "records.csv").write_text("case,status\na,PASS\n", encoding="utf-8")
+            results, stop = [], threading.Event()
+            monitor = FctAutoLogMonitor(root, root, time.time(), lambda _: None, results.append, stop, timeout_seconds=1)
+            monitor.start()
+            current = root / "NEW001" / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            current.mkdir(parents=True)
+            (current / "device.log").write_text("TEST COMPLETE\n", encoding="utf-8")
+            (current / "records.csv").write_text("case,status\na,FAIL\n", encoding="utf-8")
+            monitor.join(0.8); stop.set(); monitor.join(1)
+            self.assertEqual([(item.sn, item.status) for item in results], [("NEW001", "FAIL")])
+
+    def test_bt_auto_log_demo_ignores_baseline_and_keeps_thread_slot(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_bt_result(root, 0, "OLD", "PASSED", started)
+            results, stop = [], threading.Event()
+            monitor = BtAutoLogMonitor(root, started, lambda _: None, results.append, stop, timeout_seconds=1)
+            monitor.start()
+            self.write_bt_result(root, 2, "NEW003", "FAILED", started)
+            monitor.join(.8); stop.set(); monitor.join(1)
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results], [(3, "NEW003", "FAIL")])
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -76,6 +76,24 @@ FCT 6-slot Demo 固定採手動 Slot 模式，即使設定中開啟自動同步�
 或模擬 HMI 的 Fixture Insert 功能觸發。
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
 
+### 無 SN Log Demo（FCT／BT）
+
+若現場展示時 FAE 無法事先取得產品條碼，請在測試**開始前**按「Demo」中的「開始無 SN Log Demo」。
+Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
+設備 HMI 開始測試。Agent 僅接受此按鈕之後新建立或新完成的 Log，並在主畫面的「目前 JOB」表格即時顯示
+SN、位置與 PASS／FAIL。
+
+- FCT 從 `<CSV根路徑>/<SN>/<時間戳>/system/records.csv` 取得 SN 與結果；因原始路徑不含實體 slot，顯示為「檢出 1～N」。
+- BT 從 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 取得結果；Thread0～3 顯示為 slot1～4。
+- 此模式持續到設定的結果逾時時間，或按「停止監聽」結束；只做現場顯示與 Log，不會送出 TCP `ACK`、`RESULT` 或 `NACK`，也不會點擊 BT Start。
+- 同一 SN 在監控期間產生新的重工資料時，畫面更新為最新結果，完整歷程保留於通訊紀錄。
+
+路徑選擇按鈕會以 macOS 原生選擇器顯示隱藏資料夾，可直接選擇 `/vault` 等目錄。若系統無法使用原生
+選擇器，請在 Finder 選擇器按 `Command + Shift + .` 顯示隱藏項目。
+
+DFU、BT 與需要 checkbox 辨識的 FCT 在正式畫面截圖前，Atlas Agent 會暫時隱藏自身視窗；完成、失敗或
+逾時後會自動恢復，避免 Agent 遮住測試 HMI 而影響圖像定位。
+
 ### 主要流程：Catalina 10.15 產出 macOS 10.14／10.15 共用候選版
 
 目前 BT 為 **macOS Mojave 10.14.5 Intel x86_64**，DFU／FCT 為 **macOS Catalina 10.15 Intel x86_64**。

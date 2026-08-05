@@ -73,6 +73,10 @@ DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
 DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 6, "BT": 4}
 COMPACT_HMI_GEOMETRY = "420x820"
 COMPACT_HMI_MIN_SIZE = (400, 700)
+RESULT_COLOURS = {
+    "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00",
+    "NOTEST": "#f04bf1", "WAITING": "#d9d9d9", "TIMEOUT": "#f5a623",
+}
 
 # Dynamic PASS / FAIL / NOTSET / TESTING cells are deliberately excluded from
 # every template.  They change throughout a real test and must not be used for
@@ -149,6 +153,33 @@ def restore_atlas_windows(windows: Iterable[tuple[tk.Misc, str]]) -> None:
             window.lift()
         except tk.TclError:
             continue
+
+
+def choose_directory_showing_hidden(initial: str = "", parent: Optional[tk.Misc] = None) -> str:
+    """Choose a directory while exposing hidden paths such as /vault.
+
+    NSOpenPanel is available in the packaged macOS app.  The Tk fallback keeps
+    development environments usable; Finder's Command-Shift-. remains the
+    fallback way to reveal hidden files there.
+    """
+    if AppKit is not None:
+        try:
+            panel = AppKit.NSOpenPanel.openPanel()
+            panel.setCanChooseFiles_(False)
+            panel.setCanChooseDirectories_(True)
+            panel.setAllowsMultipleSelection_(False)
+            panel.setShowsHiddenFiles_(True)
+            path = Path(initial).expanduser()
+            if path.is_dir():
+                panel.setDirectoryURL_(AppKit.NSURL.fileURLWithPath_(str(path)))
+            if int(panel.runModal()) == int(AppKit.NSModalResponseOK):
+                url = panel.URL()
+                return str(url.path()) if url is not None else ""
+        except Exception:
+            # A native panel is an enhancement, never a reason to make the
+            # path settings unusable on a constrained/old macOS installation.
+            pass
+    return filedialog.askdirectory(parent=parent, initialdir=initial or str(Path.home()))
 
 
 @dataclass
@@ -817,6 +848,120 @@ class FolderMonitor(threading.Thread):
             pass
 
 
+def file_signature(path: Path) -> Optional[tuple[int, int]]:
+    """Return a lightweight signature, or None while a file is unavailable."""
+    try:
+        stat = path.stat()
+        return stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return None
+
+
+def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
+    """List Atlas records.csv files with their timestamp folder and SN parent."""
+    found: list[tuple[datetime, str, Path, Path]] = []
+    try:
+        sn_dirs = list(root.iterdir())
+    except OSError:
+        return found
+    for sn_dir in sn_dirs:
+        if not sn_dir.is_dir() or not SN_PATTERN.fullmatch(sn_dir.name):
+            continue
+        try:
+            folders = list(sn_dir.iterdir())
+        except OSError:
+            continue
+        for folder in folders:
+            match = TIME_FOLDER.match(folder.name)
+            if not folder.is_dir() or not match:
+                continue
+            try:
+                stamp = datetime.strptime(match.group(1), "%Y%m%d_%H-%M-%S")
+            except ValueError:
+                continue
+            records = locate_records(folder)
+            if records is not None:
+                found.append((stamp, sn_dir.name, folder, records))
+    return sorted(found, key=lambda item: (item[0], item[1], str(item[3])))
+
+
+class FctAutoLogMonitor(threading.Thread):
+    """Discover newly-created Atlas result folders without a pre-known SN."""
+    def __init__(self, csv_root: Path, log_root: Path, started_at: float,
+                 on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
+                 stop: threading.Event, timeout_seconds: float = 0.0,
+                 on_timeout: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(daemon=True)
+        self.csv_root, self.log_root, self.started_at = csv_root, log_root, started_at
+        self.on_log, self.on_result, self.stop = on_log, on_result, stop
+        self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.baseline = {records: file_signature(records) for _, _, _, records in fct_record_candidates(csv_root)}
+        self.accepted: dict[str, tuple[datetime, Path]] = {}
+        self.log_positions: dict[Path, int] = {}
+        self.warned: set[tuple[Path, str]] = set()
+
+    def _render_log(self, log_file: Path) -> None:
+        try:
+            size = log_file.stat().st_size
+            offset = self.log_positions.get(log_file, 0)
+            if size < offset:
+                offset = 0
+            if size <= offset:
+                return
+            with log_file.open("r", encoding="utf-8", errors="replace") as source:
+                source.seek(offset)
+                content = source.read()
+                self.log_positions[log_file] = source.tell()
+            if content:
+                self.on_log(content.rstrip())
+        except OSError:
+            pass
+
+    def run(self) -> None:
+        self.on_log(f"FCT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料" +
+                    (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
+        started_wall = datetime.fromtimestamp(self.started_at).replace(microsecond=0)
+        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+        while not self.stop.is_set():
+            for stamp, sn, folder, records in fct_record_candidates(self.csv_root):
+                signature = file_signature(records)
+                if signature is None:
+                    continue
+                # A timestamp folder has only second precision.  Its file must
+                # additionally be absent/changed from the session baseline and
+                # not be older than the button press (with one-second FS grace).
+                baseline_signature = self.baseline.get(records)
+                if stamp < started_wall or (baseline_signature == signature and records in self.baseline):
+                    continue
+                if signature[0] < int((self.started_at - 1.0) * 1_000_000_000):
+                    continue
+                old = self.accepted.get(sn)
+                if old is not None and (stamp, records) <= old:
+                    continue
+                try:
+                    status, detail = parse_records(records)
+                except (OSError, AgentError) as exc:
+                    warning = (records, str(exc))
+                    if warning not in self.warned:
+                        self.warned.add(warning)
+                        self.on_log(f"FCT {sn}: CSV 尚未可讀取：{exc}")
+                    continue
+                if status == "UNKNOWN":
+                    continue
+                log_file = self.log_root / sn / folder.name / "system" / "device.log"
+                if not log_file.is_file():
+                    log_file = folder / "system" / "device.log"
+                self._render_log(log_file)
+                self.accepted[sn] = (stamp, records)
+                self.on_result(TestResult(sn, status, folder, records, detail))
+            if deadline is not None and time.monotonic() >= deadline:
+                self.on_log("FCT 無 SN Log Demo 已逾時結束")
+                if self.on_timeout:
+                    self.on_timeout()
+                return
+            self.stop.wait(.5)
+
+
 @dataclass(frozen=True)
 class BtCsvResult:
     """One fully validated BT TestData result file."""
@@ -928,6 +1073,64 @@ def discover_bt_csv_results(root: Path, slots: Iterable[int], started_at: dateti
             except AgentError as exc:
                 errors.append((path, str(exc)))
     return results, errors
+
+
+class BtAutoLogMonitor(threading.Thread):
+    """Discover post-button BT TestData results without expected SN values."""
+    def __init__(self, csv_root: Path, started_at: datetime,
+                 on_log: Callable[[str], None], on_result: Callable[[BtCsvResult], None],
+                 stop: threading.Event, timeout_seconds: float = 0.0,
+                 on_timeout: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(daemon=True)
+        self.csv_root, self.started_at = csv_root, started_at
+        self.on_log, self.on_result, self.stop = on_log, on_result, stop
+        self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.baseline = self._snapshot()
+        self.accepted: dict[int, BtCsvResult] = {}
+        self.reported_warnings: set[tuple[Path, str]] = set()
+
+    def _snapshot(self) -> dict[Path, Optional[tuple[int, int]]]:
+        paths: dict[Path, Optional[tuple[int, int]]] = {}
+        for directory in bt_result_directories(self.csv_root, self.started_at):
+            for path in directory.glob("*.csv"):
+                paths[path] = file_signature(path)
+        return paths
+
+    def run(self) -> None:
+        self.on_log(f"BT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料" +
+                    (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
+        threshold = self.started_at - timedelta(seconds=BT_START_TOLERANCE_SECONDS)
+        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+        while not self.stop.is_set():
+            for directory in bt_result_directories(self.csv_root, self.started_at):
+                for path in sorted(directory.glob("*.csv")):
+                    signature = file_signature(path)
+                    if signature is None:
+                        continue
+                    if path in self.baseline and self.baseline[path] == signature:
+                        continue
+                    try:
+                        result = parse_bt_result_csv(path)
+                        if result.started_at < threshold:
+                            continue
+                    except AgentError as exc:
+                        warning = (path, str(exc))
+                        if warning not in self.reported_warnings:
+                            self.reported_warnings.add(warning)
+                            self.on_log(f"BT CSV 尚未有效：{path.name} — {exc}")
+                        continue
+                    previous = self.accepted.get(result.slot)
+                    if previous is not None and result.ended_at <= previous.ended_at:
+                        continue
+                    self.accepted[result.slot] = result
+                    self.on_log(f"BT CSV：slot{result.slot} SN={result.sn}，{result.status}，EndTime={result.ended_at:%Y-%m-%d %H:%M:%S}")
+                    self.on_result(result)
+            if deadline is not None and time.monotonic() >= deadline:
+                self.on_log("BT 無 SN Log Demo 已逾時結束")
+                if self.on_timeout:
+                    self.on_timeout()
+                return
+            self.stop.wait(.5)
 
 
 class BtCsvLogMonitor(threading.Thread):
@@ -1299,6 +1502,12 @@ class AtlasAgentApp:
         self.batch_number = 0
         self.batch_results: dict[str, str] = {}
         self.reported_batch_number: Optional[int] = None
+        self.auto_log_demo = False
+        self.auto_discovery_labels: dict[str, str] = {}
+        self.result_rows: dict[str, tuple[str, str, str]] = {}
+        self.result_row_order: list[str] = []
+        self.result_summary = tk.StringVar(value="尚無測試中的 SN")
+        self.visual_hidden_windows: dict[int, list[tuple[tk.Misc, str]]] = {}
         self.port = tk.StringVar(value=pref.port)
         self.csv_path = tk.StringVar(value=pref.csv_path)
         self.log_path = tk.StringVar(value=pref.log_path)
@@ -1381,8 +1590,9 @@ class AtlasAgentApp:
 
         job = ttk.LabelFrame(panel, text="目前 JOB", padding=7)
         job.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self.sn_display = ttk.Label(job, text="尚無測試中的 SN", anchor="w", justify="left", wraplength=370)
-        self.sn_display.pack(fill="x")
+        ttk.Label(job, textvariable=self.result_summary, anchor="w", justify="left", wraplength=370).pack(fill="x")
+        self.result_table = ttk.Frame(job)
+        self.result_table.pack(fill="x", pady=(5, 0))
 
         ip = ttk.LabelFrame(panel, text="Arduino 網路設定", padding=7)
         ip.grid(row=3, column=0, sticky="ew", pady=(8, 0))
@@ -1413,7 +1623,7 @@ class AtlasAgentApp:
         if not self.port.get() and len(ports) == 1: self.port.set(ports[0])
 
     def choose_dir(self, variable: tk.StringVar) -> None:
-        selected = filedialog.askdirectory(initialdir=variable.get() or str(Path.home()))
+        selected = choose_directory_showing_hidden(variable.get(), self.root)
         if selected: variable.set(selected)
 
     def save_preferences(self) -> None:
@@ -1478,7 +1688,7 @@ class AtlasAgentApp:
         template_path, screenshot_path = tk.StringVar(value=self.template_path.get()), tk.StringVar(value=self.screenshot_path.get())
 
         def choose_dialog_dir(variable: tk.StringVar) -> None:
-            selected = filedialog.askdirectory(parent=dialog, initialdir=variable.get() or str(Path.home()))
+            selected = choose_directory_showing_hidden(variable.get(), dialog)
             if selected:
                 variable.set(selected)
 
@@ -1624,6 +1834,58 @@ class AtlasAgentApp:
     def append(self, text: str) -> None:
         self.output.configure(state="normal"); self.output.insert("end", text + "\n"); self.output.see("end"); self.output.configure(state="disabled")
 
+    def reset_result_panel(self, summary: str, rows: Iterable[tuple[str, str, str, str]] = ()) -> None:
+        """Render the compact, operator-facing SN/result panel."""
+        self.result_summary.set(summary)
+        self.result_rows = {}
+        self.result_row_order = []
+        for child in self.result_table.winfo_children():
+            child.destroy()
+        for column, title in enumerate(("位置", "SN", "結果")):
+            ttk.Label(self.result_table, text=title).grid(row=0, column=column, sticky="w", padx=(0, 8))
+        self.result_table.columnconfigure(1, weight=1)
+        for key, label, sn, status in rows:
+            self.set_result_row(key, label, sn, status)
+
+    def set_result_row(self, key: str, label: str, sn: str, status: str) -> None:
+        if key not in self.result_rows:
+            self.result_row_order.append(key)
+        self.result_rows[key] = (label, sn, status)
+        # Auto FCT discovery is deliberately limited to the latest six cards
+        # on the narrow station HMI; the full history remains in the log.
+        if self.auto_log_demo and self.current_station == "FCT":
+            while len(self.result_row_order) > 6:
+                expired = self.result_row_order.pop(0)
+                self.result_rows.pop(expired, None)
+        for child in self.result_table.grid_slaves():
+            if int(child.grid_info().get("row", 0)) > 0:
+                child.destroy()
+        for index, row_key in enumerate(self.result_row_order, start=1):
+            item_label, item_sn, item_status = self.result_rows[row_key]
+            ttk.Label(self.result_table, text=item_label, width=9).grid(row=index, column=0, sticky="w", padx=(0, 8), pady=1)
+            ttk.Label(self.result_table, text=item_sn, width=24).grid(row=index, column=1, sticky="w", padx=(0, 8), pady=1)
+            tk.Label(self.result_table, text=item_status, width=9, relief="flat",
+                     bg=RESULT_COLOURS.get(item_status, "#d9d9d9"), fg="#111").grid(row=index, column=2, sticky="ew", pady=1)
+
+    def update_result_for_sn(self, sn: str, status: str) -> None:
+        for key, (label, current_sn, _) in tuple(self.result_rows.items()):
+            if current_sn == sn:
+                self.set_result_row(key, label, sn, status)
+                return
+        # A real device can report an unexpected serial after a recovery;
+        # preserve it visibly instead of hiding useful production evidence.
+        self.set_result_row("sn:" + sn, "檢出", sn, status)
+
+    def restore_visual_windows(self, batch_number: int) -> None:
+        restore_atlas_windows(self.visual_hidden_windows.pop(batch_number, []))
+
+    def start_visual_worker(self, target: Callable[..., None], args: tuple[object, ...], batch_number: int) -> None:
+        """Hide Agent before an Arduino screenshot, then run the worker."""
+        self.visual_hidden_windows[batch_number] = hide_visible_atlas_windows(self.root)
+        self.root.update_idletasks()
+        self.root.after(TEMPLATE_CAPTURE_HIDE_SETTLE_MS,
+                        lambda: threading.Thread(target=target, args=args, daemon=True).start())
+
     def connect(self) -> None:
         try:
             self.link.connect(self.port.get().strip())
@@ -1756,11 +2018,14 @@ class AtlasAgentApp:
         except ValueError:
             messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數"); return None
         self.stop_monitor()
+        self.auto_log_demo = False
+        self.auto_discovery_labels = {}
         self.sns, self.slots = command.sns, command.slots
         self.current_job_id, self.current_station = command.job_id, command.station
         self.batch_results = {}; self.reported_batch_number = None
-        self.sn_display.configure(text=f"當前 JOB：{command.job_id}；" + "、".join(
-            f"slot{slot}={sn}" for slot, sn in command.assignments))
+        self.reset_result_panel(f"當前 JOB：{command.job_id}",
+                                [(f"slot{slot}", f"slot{slot}", sn, "WAITING")
+                                 for slot, sn in command.assignments])
         self.batch_number += 1
         return root, command, self.batch_number, time.time(), result_timeout
 
@@ -1771,14 +2036,14 @@ class AtlasAgentApp:
     def start_prepared(self, prepared: tuple[Path, TestCommand, int, float, float]) -> list[str]:
         root, command, batch_number, created_after, result_timeout = prepared
         if command.station in ("DFU", "BT"):
-            threading.Thread(target=self.visual_start,
-                             args=(command.station, command.sns, command.slots, root, batch_number,
-                                   created_after, result_timeout), daemon=True).start()
+            self.start_visual_worker(self.visual_start,
+                                     (command.station, command.sns, command.slots, root, batch_number,
+                                      created_after, result_timeout), batch_number)
         elif self.auto_slot_sync.get() and fct_auto_slot_sync_supported(
                 command.slots, command.job_id.startswith("DEMO-")):
-            threading.Thread(target=self.configure_fct_sparse_slots,
-                             args=(command.slots, root, command.sns, batch_number,
-                                   created_after, result_timeout), daemon=True).start()
+            self.start_visual_worker(self.configure_fct_sparse_slots,
+                                     (command.slots, root, command.sns, batch_number,
+                                      created_after, result_timeout), batch_number)
         else:
             if command.station == "FCT" and command.job_id.startswith("DEMO-"):
                 self.append("FCT 6-slot Demo 採手動 Slot 模式：已略過四格 checkbox 同步，等待治具／模擬 HMI 開始測試。")
@@ -1788,6 +2053,9 @@ class AtlasAgentApp:
         return command.sns
 
     def start_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[list[str]]:
+        if self.auto_log_demo and self.monitor is not None:
+            self.append("拒絕開始 JOB：無 SN Log Demo 仍在監控中，請先按「停止監聽」。")
+            return None
         prepared = self.prepare_batch(payload, bt_slot)
         if prepared is None:
             return None
@@ -1798,6 +2066,54 @@ class AtlasAgentApp:
             messagebox.showinfo(TITLE, "請先將工站切換為 BT，再使用個別通道 Start 按鈕。", parent=self.root)
             return
         self.start_batch(self.sn_text.get(), bt_slot=slot)
+
+    def start_auto_log_demo(self, station: str) -> bool:
+        """Start a no-SN demo session before TE begins the instrument test."""
+        if station not in ("FCT", "BT"):
+            messagebox.showinfo(TITLE, "無 SN Log Demo 僅支援 FCT 與 BT。", parent=self.root)
+            return False
+        root_text = self.csv_path.get().strip()
+        root = Path(root_text).expanduser() if root_text else Path(".")
+        if not root.is_dir():
+            messagebox.showerror(TITLE, "請先選擇有效的 CSV／BT TestData 根路徑", parent=self.root)
+            return False
+        try:
+            timeout = float(self.result_timeout.get())
+            if timeout < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(TITLE, "測試結果逾時必須是大於或等於 0 的秒數", parent=self.root)
+            return False
+        self.stop_monitor()
+        self.batch_number += 1
+        batch_number = self.batch_number
+        self.current_job_id = "AUTO-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        self.current_station = station
+        self.sns, self.slots, self.batch_results = [], [], {}
+        self.reported_batch_number = batch_number  # auto demo must never emit RESULT
+        self.auto_log_demo = True
+        self.auto_discovery_labels = {}
+        self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
+        self.monitor_stop = threading.Event()
+        if station == "FCT":
+            log_root = Path(self.log_path.get()).expanduser()
+            if not log_root.is_dir():
+                log_root = root
+            self.monitor = FctAutoLogMonitor(root, log_root, time.time(),
+                                              lambda item: self.events.put(("log", item)),
+                                              lambda result: self.events.put(("auto_fct_result", (batch_number, result))),
+                                              self.monitor_stop, timeout,
+                                              lambda: self.events.put(("auto_timeout", batch_number)))
+        else:
+            started_at = datetime.now()
+            self.monitor = BtAutoLogMonitor(root, started_at,
+                                             lambda item: self.events.put(("log", item)),
+                                             lambda result: self.events.put(("auto_bt_result", (batch_number, result))),
+                                             self.monitor_stop, timeout,
+                                             lambda: self.events.put(("auto_timeout", batch_number)))
+        self.monitor.start()
+        self.append(f"無 SN Log Demo 已啟動：{station}；請由 TE／治具開始測試；JOB={self.current_job_id}")
+        return True
 
     def open_demo_dialog(self) -> None:
         """Collect explicit slot-to-SN mappings for an on-site live demo."""
@@ -1844,6 +2160,14 @@ class AtlasAgentApp:
         buttons = ttk.Frame(frame); buttons.grid(row=first_row + slot_count, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
         ttk.Button(buttons, text="開始流程", command=start).pack(side="right", padx=(0, 6))
+        if station in ("FCT", "BT"):
+            def start_auto() -> None:
+                if self.start_auto_log_demo(station):
+                    dialog.destroy()
+            ttk.Button(buttons, text="開始無 SN Log Demo", command=start_auto).pack(side="left")
+            ttk.Label(frame, text="無 SN Log Demo：先按此按鈕建立時間基準，再由 TE／治具開始測試；Agent 會自動從新 Log 顯示 SN 與結果。",
+                      foreground="#555", wraplength=560).grid(row=first_row + slot_count + 1, column=0, columnspan=2,
+                                                               sticky="w", pady=(8, 0))
         dialog.bind("<Return>", lambda _: start())
 
     def start_local_demo(self, payload: str) -> None:
@@ -2081,6 +2405,8 @@ class AtlasAgentApp:
         except Exception as exc:
             self.events.put(("log", f"FCT sparse slot 流程失敗：{exc}"))
             self.events.put(("start_failed", ("FCT", batch_number)))
+        finally:
+            self.events.put(("restore_visual_windows", batch_number))
 
     def visual_start(self, station: str, sns: list[str], slots: list[int], csv_root: Path, batch_number: int,
                      created_after: float, result_timeout: float) -> None:
@@ -2249,9 +2575,18 @@ class AtlasAgentApp:
         except Exception as exc:
             self.events.put(("log", f"{station} 影像流程失敗：{exc}"))
             self.events.put(("start_failed", (station, batch_number)))
+        finally:
+            self.events.put(("restore_visual_windows", batch_number))
 
     def stop_monitor(self) -> None:
+        was_auto = self.auto_log_demo
         self.monitor_stop.set(); self.monitor = None
+        self.auto_log_demo = False
+        if was_auto:
+            self.result_summary.set(f"無 SN Log Demo：{self.current_station} 已由人員停止")
+            self.append("無 SN Log Demo 已停止；不會回傳 TCP RESULT。")
+        for batch_number in tuple(self.visual_hidden_windows):
+            self.restore_visual_windows(batch_number)
 
     def change_ip(self) -> None:
         value = simpledialog.askstring(TITLE, "新 Arduino IPv4 位址：", parent=self.root)
@@ -2342,6 +2677,8 @@ class AtlasAgentApp:
                     scale_x, scale_y = item
                     self.hid_scale_x.set(f"{scale_x:g}")
                     self.hid_scale_y.set(f"{scale_y:g}")
+                elif kind == "restore_visual_windows":
+                    self.restore_visual_windows(int(item))
                 elif kind == "begin_monitor":
                     root, sns, batch_number, created_after, result_timeout = item
                     if batch_number == self.batch_number:
@@ -2384,7 +2721,27 @@ class AtlasAgentApp:
                         continue
                     self.append(f"{result.sn}: {result.status} — {result.detail}")
                     self.batch_results[result.sn] = result.status
+                    self.update_result_for_sn(result.sn, result.status)
                     self.report_if_batch_complete(batch_number)
+                elif kind == "auto_fct_result":
+                    batch_number, result = item; assert isinstance(result, TestResult)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    label = self.auto_discovery_labels.setdefault(result.sn, f"檢出 {len(self.auto_discovery_labels) + 1}")
+                    self.append(f"{label}：{result.sn} {result.status} — {result.detail}")
+                    self.set_result_row("fct:" + result.sn, label, result.sn, result.status)
+                elif kind == "auto_bt_result":
+                    batch_number, result = item; assert isinstance(result, BtCsvResult)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.append(f"slot{result.slot}：{result.sn} {result.status} — BT TestData")
+                    self.set_result_row(f"bt:{result.slot}", f"slot{result.slot}", result.sn, result.status)
+                elif kind == "auto_timeout":
+                    if int(item) != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.monitor = None
+                    self.result_summary.set(f"無 SN Log Demo：{self.current_station} 已逾時結束")
+                    self.append("無 SN Log Demo 已結束；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
                 elif kind == "timeout":
                     batch_number, pending = item
                     if batch_number != self.batch_number:
@@ -2393,6 +2750,7 @@ class AtlasAgentApp:
                         if sn not in self.batch_results:
                             self.batch_results[sn] = "TIMEOUT"
                             self.append(f"{sn}: TIMEOUT — 等待結果逾時")
+                            self.update_result_for_sn(sn, "TIMEOUT")
                     self.monitor = None
                     self.report_if_batch_complete(batch_number)
         except queue.Empty: pass
