@@ -387,8 +387,12 @@ python3 b482_demo_server.py --csv-root "$HOME/Desktop/AtlasDemoCSV"
 ```
 
 再開啟 `http://127.0.0.1:8080`。DFU_2 可逐筆輸入 SN 並按 `OK`，BT 可按 `Start All`，
-FCT 可按「Simulate Fixture Insert」。模擬器會先寫入 `device.log` 的 TESTING，再於 30 秒
-後寫入每個 SN 的 `records.csv`。使用 Agent 時，CSV 根路徑設成同一個 `AtlasDemoCSV`。
+FCT 可按「Simulate Fixture Insert」。DFU／FCT 會先寫入 `device.log` 的 TESTING，再於 30 秒
+後寫入每個 SN 的 `records.csv`。BT 則仿照實體機台，於 30 秒後寫入
+`YYYY-MM-DD/PASSED|FAILED/[ThreadN][...][SN][PASSED|FAILED][時間].csv`；因此 Agent 選 BT
+時，CSV／BT TestData 根路徑同樣設成此處的 `AtlasDemoCSV`，不要尋找 `records.csv`。
+BT 的 Start 1～4 會分別產生 Thread0～3，Start All 會同時產生四個 Thread；可用
+`--duration 5` 將本機驗證縮短為五秒，未指定時仍為 30 秒。
 這是客戶展示用 HMI，不需要也不會使用 macOS Automation／Accessibility 權限。
 
 也可直接在 Agent 手動輸入 1–4 個 SN 後按「本機模擬」。此模式會先要求確認，接著在目前
