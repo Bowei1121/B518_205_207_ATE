@@ -653,6 +653,29 @@ class AtlasAgentTests(unittest.TestCase):
                 self.assertGreater(max(evidence.checked_score, evidence.unchecked_score), .4)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_group_checkbox_can_be_located_without_trusting_ambiguous_state(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = np.full((24, 24, 3), 255, dtype=np.uint8)
+            cv2.rectangle(control, (3, 3), (20, 20), (70, 70, 70), 2)
+            screen = np.full((60, 60, 3), 240, dtype=np.uint8)
+            screen[18:42, 18:42] = control
+            image = root / "screen.png"
+            checked = root / "checked.png"
+            unchecked = root / "unchecked.png"
+            cv2.imwrite(str(image), screen)
+            # Equal templates deliberately make the visual state ambiguous.
+            cv2.imwrite(str(checked), control)
+            cv2.imwrite(str(unchecked), control)
+            with self.assertRaisesRegex(AgentError, "狀態不明確"):
+                checkbox_state_evidence_in_region(image, checked, unchecked, (10, 10, 40, 40))
+            evidence = checkbox_state_evidence_in_region(
+                image, checked, unchecked, (10, 10, 40, 40), require_confidence=False)
+            self.assertGreater(evidence.checked_score, .9)
+            self.assertEqual(evidence.rectangle[:2], (18, 18))
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_template_larger_than_search_region_has_actionable_error(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:

@@ -891,7 +891,8 @@ def checkbox_edge_template(template: Path):
 
 
 def checkbox_state_evidence_in_region(image: Path, checked_template: Path, unchecked_template: Path,
-                                      region: tuple[int, int, int, int]) -> CheckboxEvidence:
+                                      region: tuple[int, int, int, int],
+                                      require_confidence: bool = True) -> CheckboxEvidence:
     """Classify one checkbox by focus-independent edge geometry.
 
     Both state templates are scored inside the label-relative ROI.  A result
@@ -923,10 +924,12 @@ def checkbox_state_evidence_in_region(image: Path, checked_template: Path, unche
     best_score = max(checked_score, unchecked_score)
     margin = abs(checked_score - unchecked_score)
     score_text = f"checked={checked_score:.2f}, unchecked={unchecked_score:.2f}"
-    if best_score < CHECKBOX_EDGE_SCORE_MINIMUM:
+    if best_score < CHECKBOX_EDGE_SCORE_MINIMUM and require_confidence:
         raise AgentError(f"checkbox 邊緣相似度過低（{score_text}）")
-    if margin < CHECKBOX_EDGE_SCORE_MARGIN:
+    if margin < CHECKBOX_EDGE_SCORE_MARGIN and require_confidence:
         raise AgentError(f"checkbox 狀態不明確（{score_text}）")
+    if best_score < .10:
+        raise AgentError(f"找不到 checkbox 控制項（{score_text}）")
     checked = checked_score > unchecked_score
     return CheckboxEvidence(checked, checked_rectangle if checked else unchecked_rectangle,
                             checked_score, unchecked_score)
@@ -995,7 +998,14 @@ def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_tem
     group_roi = (max(0, group_x - group_roi_width), max(0, group_y - 2),
                  group_roi_width, max(40, group_h + 4))
     try:
-        group_state = checkbox_state_evidence_in_region(image, checked_template, unchecked_template, group_roi)
+        # group0 is an actuator, not a trustworthy source of state: the field
+        # HMI can leave it checked while one child slot is unchecked, and its
+        # native appearance changes when Safari gains focus.  Keep the best
+        # geometric rectangle for clicking, but let the seven child controls
+        # be the sole source of truth for reset and verification.
+        group_state = checkbox_state_evidence_in_region(
+            image, checked_template, unchecked_template, group_roi,
+            require_confidence=False)
     except AgentError as exc:
         raise AgentError(f"group0 checkbox：{exc}") from exc
     anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72, region=region), group_y)
@@ -2644,7 +2654,14 @@ class AtlasAgentApp:
                                          hid_mode: str, delay: float) -> tuple[
                                              tuple[int, int, int, int], tuple[int, int, int, int],
                                              tuple[int, int, int, int]]:
-        """Reset/select seven slots and return freshly located window/input/OK."""
+        """Reset/select seven slots and return freshly located window/input/OK.
+
+        group0 is used only as a bulk actuator.  The seven child slot controls
+        are the authoritative state because the field HMI can display group0
+        as checked even after an operator clears one child slot.
+        """
+        requested = set(slots)
+
         def fresh_layout(label: str):
             before = time.time(); self.link.send_control("SCREENSHOT")
             self.events.put(("log", label))
@@ -2662,12 +2679,7 @@ class AtlasAgentApp:
                     window_rectangle = template_match(shot, window_template)
                     layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
                                                   checked_template, unchecked_template)
-                    # Controls are re-located on every verification image.  A
-                    # moved browser window can therefore never leave barcode
-                    # entry using coordinates from the pre-sync screenshot.
-                    barcode_rectangle = template_match(shot, barcode_template)
-                    ok_rectangle = template_match(shot, ok_template)
-                    selected = (shot, layout, window_rectangle, barcode_rectangle, ok_rectangle)
+                    selected = (shot, layout, window_rectangle)
                     break
                 except AgentError as exc:
                     errors.append(f"{shot.name}: {exc}")
@@ -2676,72 +2688,100 @@ class AtlasAgentApp:
                 raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" + "；".join(errors))
             return selected, shots
 
-        initial, initial_shots = fresh_layout("DFU 七槽：讀取 group0 與 slot checkbox 初始狀態…")
-        _, layout, _, _, _ = initial
-        group_evidence, states, _, _ = layout
-        self.events.put(("log", "DFU 七槽 checkbox 初始分數：group0 " + group_evidence.score_text() + "；" +
-                         "；".join(f"slot{index} {state.score_text()}" for index, state in enumerate(states, start=1))))
-        group_target = target_for(rectangle_center(group_evidence.rectangle))
-        self.events.put(("log", "DFU 七槽：重設 group0，先將七個 slot 回到可預期狀態…"))
-        commands = dfu7_group_reset_commands(group_target, slots, group_evidence.checked, hid_mode)
-        if tuple(slots) != (1, 2, 3, 4, 5, 6, 7):
-            self.events.put(("log", "DFU 七槽：勾選指定 slot " + "、".join(str(slot) for slot in slots)))
-            for index, state in enumerate(states, start=1):
-                if index in slots:
-                    commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-        else:
-            self.events.put(("log", "DFU 七槽：七個 slot 全測，使用 group0 全選"))
-        self.delete_processed_screenshots(initial_shots)
-        self.send_hid_sequence(commands, delay=delay)
+        def state_text(states: list[CheckboxEvidence]) -> str:
+            return "、".join(f"slot{index}={'勾選' if state.checked else '取消'}"
+                               for index, state in enumerate(states, start=1))
 
-        for attempt in range(2):
-            verification, verification_shots = fresh_layout(
-                f"DFU 七槽：驗證 checkbox（第 {attempt + 1} 次）…")
-            selected, layout, window_rectangle, barcode_rectangle, ok_rectangle = verification
-            group_evidence, states, group_label, anchors = layout
-            group_rectangle = group_evidence.rectangle
-            expected_group = tuple(slots) == (1, 2, 3, 4, 5, 6, 7)
-            group_mismatch = group_evidence.checked != expected_group
-            mismatches = [(index, state.rectangle, index in slots) for index, state in enumerate(states, start=1)
-                          if state.checked != (index in slots)]
-            annotations = [("group0 label", group_label, target_for(rectangle_center(group_label)))]
-            annotations.append((f"group0 {'checked' if group_evidence.checked else 'unchecked'}", group_rectangle,
-                                target_for(rectangle_center(group_rectangle))))
-            annotations.extend((f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
-                                target_for(rectangle_center(state.rectangle)))
-                               for index, (state, _) in enumerate(zip(states, anchors), start=1))
-            self.events.put(("log", f"DFU 七槽 checkbox 使用截圖：{selected.name}；匹配疊圖：{self.overlay_path}"))
-            write_match_overlay(selected, annotations, self.overlay_path)
-            current = "、".join(f"slot{index}={'勾選' if state.checked else '取消'}"
-                                   for index, state in enumerate(states, start=1))
-            score_log = "；".join(f"slot{index} {state.score_text()}"
-                                    for index, state in enumerate(states, start=1))
-            self.events.put(("log", f"DFU 七槽 checkbox 複驗分數：group0 {group_evidence.score_text()}；{score_log}"))
-            if not group_mismatch and not mismatches:
-                self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + current))
-                self.events.put(("log", "DFU 七槽：checkbox 同步完成，已以最新截圖重新定位 SN 輸入框與 OK"))
-                self.delete_processed_screenshots(verification_shots)
-                return window_rectangle, barcode_rectangle, ok_rectangle
-            if attempt:
-                self.delete_processed_screenshots(verification_shots)
-                raise AgentError("DFU 七槽 checkbox 驗證失敗，HMI 實際狀態為：" + current +
-                                 f"；分數：group0 {group_evidence.score_text()}；{score_log}"
-                                 "；已停止，未輸入任何條碼。請檢查模板、HMI 焦點與 group0 行為。")
-            self.events.put(("log", "DFU 七槽 checkbox 尚未符合 JOB，進行一次個別補正"))
+        def capture(label: str):
+            snapshot, shots = fresh_layout(label)
+            selected, layout, window_rectangle = snapshot
+            group_control, states, group_label, anchors = layout
+            self.events.put(("log", f"DFU 七槽 checkbox 狀態：{state_text(states)}"))
+            return selected, group_control, states, group_label, anchors, window_rectangle, shots
+
+        def click_and_recapture(commands: list[str], shots: list[Path], label: str):
+            self.delete_processed_screenshots(shots)
+            self.send_hid_sequence(commands, delay=delay)
+            return capture(label)
+
+        # Establish an all-off baseline without trusting group0's visual state.
+        selected, group_control, states, group_label, anchors, window_rectangle, shots = capture(
+            "DFU 七槽：讀取七個 slot checkbox 初始狀態…")
+        self.events.put(("log", "DFU 七槽：group0 僅作為全選控制，狀態以七個 slot 為準"))
+        for reset_attempt in range(3):
+            if not any(state.checked for state in states):
+                break
+            if all(state.checked for state in states):
+                self.events.put(("log", "DFU 七槽：七個 slot 皆已勾選，點擊 group0 取消全選"))
+                commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
+            elif reset_attempt < 2:
+                self.events.put(("log", "DFU 七槽：slot 為混合狀態，點擊 group0 後再以七個 slot 判定"))
+                commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
+            else:
+                self.events.put(("log", "DFU 七槽：group0 無法建立全取消狀態，改為個別取消已勾選 slot"))
+                commands = []
+                for state in states:
+                    if state.checked:
+                        commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
+            selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+                commands, shots, f"DFU 七槽：驗證全取消基準（第 {reset_attempt + 1} 次）…")
+        if any(state.checked for state in states):
+            self.delete_processed_screenshots(shots)
+            raise AgentError("DFU 七槽無法將七個 slot 重設為全取消：" + state_text(states))
+
+        # Apply the requested layout from the known all-off baseline.
+        if requested == set(range(1, 8)):
+            self.events.put(("log", "DFU 七槽：七槽全測，使用 group0 一次全選"))
+            commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
+        else:
+            self.events.put(("log", "DFU 七槽：從全取消基準勾選指定 slot " +
+                             "、".join(map(str, sorted(requested)))))
+            commands = []
+            for index, state in enumerate(states, start=1):
+                if index in requested:
+                    commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
+        selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+            commands, shots, "DFU 七槽：複驗指定 slot…")
+
+        # One individual correction is allowed; group0 is never part of the
+        # pass/fail decision.
+        mismatches = [(index, state) for index, state in enumerate(states, start=1)
+                      if state.checked != (index in requested)]
+        if mismatches:
+            self.events.put(("log", "DFU 七槽：個別補正 " + "、".join(f"slot{index}" for index, _ in mismatches)))
             correction: list[str] = []
-            if group_mismatch:
-                correction.extend(dfu7_group_reset_commands(target_for(rectangle_center(group_rectangle)), slots,
-                                                            group_evidence.checked, hid_mode))
-                if not expected_group:
-                    for index, state in enumerate(states, start=1):
-                        if index in slots:
-                            correction.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-            for _, rectangle, _ in mismatches:
-                if not group_mismatch:
-                    correction.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
-            self.delete_processed_screenshots(verification_shots)
-            self.send_hid_sequence(correction, delay=delay)
-        raise AgentError("DFU 七槽 checkbox 驗證流程異常")
+            for _, state in mismatches:
+                correction.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
+            selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+                correction, shots, "DFU 七槽：補正後最終複驗…")
+            mismatches = [(index, state) for index, state in enumerate(states, start=1)
+                          if state.checked != (index in requested)]
+        if mismatches:
+            current = state_text(states)
+            self.delete_processed_screenshots(shots)
+            raise AgentError("DFU 七槽 checkbox 驗證失敗，HMI 實際狀態為：" + current +
+                             "；已停止，未輸入任何條碼。")
+
+        annotations = [("group0 control", group_control.rectangle,
+                        target_for(rectangle_center(group_control.rectangle)))]
+        annotations.extend((f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
+                            target_for(rectangle_center(state.rectangle)))
+                           for index, state in enumerate(states, start=1))
+        write_match_overlay(selected, annotations, self.overlay_path)
+        self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + state_text(states)))
+
+        # Controls are located only after slot verification succeeds.  This
+        # prevents an intermediate screenshot from being rejected for a
+        # control that is irrelevant to checkbox reset.
+        try:
+            barcode_rectangle = template_match(selected, barcode_template)
+            ok_rectangle = template_match(selected, ok_template)
+        except AgentError as exc:
+            self.delete_processed_screenshots(shots)
+            raise AgentError(f"DFU 七槽 checkbox 已同步，但無法重新定位 SN 輸入框或 OK：{exc}") from exc
+        self.events.put(("log", "DFU 七槽：checkbox 同步完成，已以最新截圖重新定位 SN 輸入框與 OK"))
+        self.delete_processed_screenshots(shots)
+        return window_rectangle, barcode_rectangle, ok_rectangle
 
     def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
                                    created_after: float, result_timeout: float) -> None:
@@ -2919,8 +2959,8 @@ class AtlasAgentApp:
                         resolved[profile["checkbox_checked"]], resolved[profile["checkbox_unchecked"]], region=region)
                     matches.append((match_label("group0 label", rectangle_center(group_label)), group_label,
                                     target_for(rectangle_center(group_label))))
-                    matches.append((match_label(f"group0 {'checked' if group_state.checked else 'unchecked'}",
-                                                rectangle_center(group_state.rectangle)), group_state.rectangle,
+                    matches.append((match_label("group0 control", rectangle_center(group_state.rectangle)),
+                                    group_state.rectangle,
                                     target_for(rectangle_center(group_state.rectangle))))
                     for index, (state, anchor) in enumerate(zip(states, anchors), start=1):
                         matches.append((match_label(f"slot{index} {'checked' if state.checked else 'unchecked'}",
