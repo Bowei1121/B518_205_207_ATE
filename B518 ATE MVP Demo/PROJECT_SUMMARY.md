@@ -38,6 +38,13 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
   模板數量並避開上方結果表格。
 - HTML 模擬 HMI 提供四槽／七槽切換，預設七槽現場流程。
 
+## 2026-08-06 DFU 七槽 checkbox 穩定化
+
+- 七槽 group0／slot checkbox 改用焦點不敏感的灰階邊緣辨識，checked／unchecked 模板會自動裁切主體並允許不同外框尺寸。
+- 稀疏 slot 先由 group0 確定性重設後只勾選指定 slot；全七槽則重設後由 group0 一次全選，並最多進行一次個別補正。
+- 複驗成功後以最後一張尚未刪除的截圖重新定位 SN 輸入框與 OK，逐筆送出 SN＋Enter，最後只點一次 OK。
+- checkbox 模糊時記錄 group0、slot1～7 的 checked／unchecked 分數；任何啟動錯誤在主 HMI 顯示 START_FAILED，本機 Demo 不送 TCP NACK。
+
 ## Git 與交付規則
 
 - Remote：`origin` → `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`

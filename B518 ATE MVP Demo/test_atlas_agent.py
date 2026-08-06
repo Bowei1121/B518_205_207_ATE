@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -220,6 +220,13 @@ class AtlasAgentTests(unittest.TestCase):
                          absolute_click_commands(group) + absolute_click_commands(group))
         self.assertEqual(dfu7_group_reset_commands(group, [1, 2, 3, 4, 5, 6, 7], True),
                          absolute_click_commands(group) + absolute_click_commands(group))
+        self.assertEqual(dfu7_group_reset_commands(group, [1, 2, 3, 4, 5, 6, 7], False),
+                         absolute_click_commands(group) * 3)
+
+    def test_demo_start_failed_does_not_send_nack(self):
+        self.assertFalse(should_send_start_failed_nack("DEMO-20260806-120000", True))
+        self.assertTrue(should_send_start_failed_nack("20260806-001", True))
+        self.assertFalse(should_send_start_failed_nack("20260806-001", False))
 
     def test_dfu7_slot_anchor_order_requires_four_then_three_lower_labels(self):
         anchors = [(10, 100, 20, 10, .9), (100, 100, 20, 10, .9), (200, 100, 20, 10, .9),
@@ -602,6 +609,39 @@ class AtlasAgentTests(unittest.TestCase):
             image, checked_file, unchecked_file = root / "screen.png", root / "checked.png", root / "unchecked.png"
             cv2.imwrite(str(image), screen); cv2.imwrite(str(checked_file), checked); cv2.imwrite(str(unchecked_file), unchecked)
             self.assertEqual([value for value, _ in slot_checkbox_states(image, checked_file, unchecked_file)], expected)
+
+    @unittest.skipIf(cv2 is None, "OpenCV is not installed")
+    def test_checkbox_edge_state_ignores_focus_colour_and_normalizes_margins(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checked = np.full((38, 36, 3), 180, dtype=np.uint8)
+            cv2.rectangle(checked, (8, 8), (28, 28), (245, 245, 245), -1)
+            cv2.rectangle(checked, (8, 8), (28, 28), (80, 80, 80), 1)
+            cv2.line(checked, (12, 18), (17, 24), (20, 20, 20), 3)
+            cv2.line(checked, (17, 24), (26, 12), (20, 20, 20), 3)
+            unchecked = np.full((31, 31, 3), 240, dtype=np.uint8)
+            cv2.rectangle(unchecked, (5, 5), (25, 25), (255, 255, 255), -1)
+            cv2.rectangle(unchecked, (5, 5), (25, 25), (80, 80, 80), 1)
+            checked_file, unchecked_file = root / "checked.png", root / "unchecked.png"
+            cv2.imwrite(str(checked_file), checked); cv2.imwrite(str(unchecked_file), unchecked)
+
+            for expected in (True, False):
+                screen = np.full((80, 80, 3), 245, dtype=np.uint8)
+                if expected:
+                    cv2.rectangle(screen, (28, 28), (48, 48), (0, 180, 0), -1)
+                    cv2.rectangle(screen, (28, 28), (48, 48), (30, 80, 30), 1)
+                    cv2.line(screen, (32, 38), (37, 44), (255, 255, 255), 3)
+                    cv2.line(screen, (37, 44), (46, 32), (255, 255, 255), 3)
+                else:
+                    cv2.rectangle(screen, (28, 28), (48, 48), (255, 255, 255), -1)
+                    cv2.rectangle(screen, (28, 28), (48, 48), (80, 80, 80), 1)
+                screen_file = root / f"screen-{expected}.png"
+                cv2.imwrite(str(screen_file), screen)
+                evidence = checkbox_state_evidence_in_region(
+                    screen_file, checked_file, unchecked_file, (20, 20, 40, 40))
+                self.assertEqual(evidence.checked, expected)
+                self.assertGreater(max(evidence.checked_score, evidence.unchecked_score), .4)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_template_larger_than_search_region_has_actionable_error(self):

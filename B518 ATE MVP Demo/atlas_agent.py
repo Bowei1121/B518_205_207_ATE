@@ -76,7 +76,18 @@ COMPACT_HMI_MIN_SIZE = (400, 700)
 RESULT_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00",
     "NOTEST": "#f04bf1", "WAITING": "#d9d9d9", "TIMEOUT": "#f5a623",
+    "START_FAILED": "#ff0000",
 }
+
+
+def should_send_start_failed_nack(job_id: str, connected: bool) -> bool:
+    """Formal jobs report START_FAILED; local Demo sessions remain display-only."""
+    return connected and not job_id.startswith("DEMO-")
+
+
+CHECKBOX_EDGE_SCORE_MINIMUM = .40
+CHECKBOX_EDGE_SCORE_MARGIN = .08
+CHECKBOX_EDGE_PADDING = 2
 
 # Dynamic PASS / FAIL / NOTSET / TESTING cells are deliberately excluded from
 # every template.  They change throughout a real test and must not be used for
@@ -124,6 +135,19 @@ FCT_CHECKBOX_TEMPLATES = {
 
 class AgentError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class CheckboxEvidence:
+    """Focus-independent checkbox state plus diagnostic match scores."""
+
+    checked: bool
+    rectangle: tuple[int, int, int, int]
+    checked_score: float
+    unchecked_score: float
+
+    def score_text(self) -> str:
+        return f"checked={self.checked_score:.2f}, unchecked={self.unchecked_score:.2f}"
 
 
 def hide_visible_atlas_windows(root: tk.Misc) -> list[tuple[tk.Misc, str]]:
@@ -841,17 +865,78 @@ def slot_checkbox_states(image: Path, checked_template: Path, unchecked_template
     return [(item[2], item[3]) for item in rows]
 
 
+def checkbox_edge_template(template: Path):
+    """Return a tightly cropped grayscale edge template for a checkbox.
+
+    Native macOS/Safari controls invert their foreground and change the accent
+    colour when the instrument window gains focus.  Canny edges retain the
+    square and tick geometry while discarding that colour difference.  The
+    tight crop also normalizes operator-made templates with unequal margins.
+    """
+    if cv2 is None:
+        raise AgentError("checkbox 辨識需要 opencv-python")
+    gray = cv2.imread(str(template), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        raise AgentError(f"無法讀取 checkbox 模板：{template}")
+    edge = cv2.Canny(gray, 40, 120)
+    points = cv2.findNonZero(edge)
+    if points is None:
+        raise AgentError(f"checkbox 模板沒有可辨識邊緣：{template.name}")
+    x, y, width, height = cv2.boundingRect(points)
+    left = max(0, x - CHECKBOX_EDGE_PADDING)
+    top = max(0, y - CHECKBOX_EDGE_PADDING)
+    right = min(edge.shape[1], x + width + CHECKBOX_EDGE_PADDING)
+    bottom = min(edge.shape[0], y + height + CHECKBOX_EDGE_PADDING)
+    return edge[top:bottom, left:right]
+
+
+def checkbox_state_evidence_in_region(image: Path, checked_template: Path, unchecked_template: Path,
+                                      region: tuple[int, int, int, int]) -> CheckboxEvidence:
+    """Classify one checkbox by focus-independent edge geometry.
+
+    Both state templates are scored inside the label-relative ROI.  A result
+    must have enough absolute confidence and separation; otherwise the caller
+    receives both scores and stops before typing any serial number.
+    """
+    if cv2 is None:
+        raise AgentError("checkbox 辨識需要 opencv-python")
+    screen = cv2.imread(str(image), cv2.IMREAD_GRAYSCALE)
+    if screen is None:
+        raise AgentError(f"無法讀取 checkbox 截圖：{image}")
+    x, y, width, height = region
+    roi = screen[y:y + height, x:x + width]
+    if roi.size == 0:
+        raise AgentError("checkbox 搜尋區域無效")
+    screen_edge = cv2.Canny(roi, 40, 120)
+    matches: dict[bool, tuple[float, tuple[int, int, int, int]]] = {}
+    for checked, template in ((True, checked_template), (False, unchecked_template)):
+        needle = checkbox_edge_template(template)
+        needle_height, needle_width = needle.shape[:2]
+        if needle_width > screen_edge.shape[1] or needle_height > screen_edge.shape[0]:
+            matches[checked] = (-1.0, (x, y, needle_width, needle_height))
+            continue
+        result = cv2.matchTemplate(screen_edge, needle, cv2.TM_CCOEFF_NORMED)
+        _, score, _, point = cv2.minMaxLoc(result)
+        matches[checked] = (float(score), (x + point[0], y + point[1], needle_width, needle_height))
+    checked_score, checked_rectangle = matches[True]
+    unchecked_score, unchecked_rectangle = matches[False]
+    best_score = max(checked_score, unchecked_score)
+    margin = abs(checked_score - unchecked_score)
+    score_text = f"checked={checked_score:.2f}, unchecked={unchecked_score:.2f}"
+    if best_score < CHECKBOX_EDGE_SCORE_MINIMUM:
+        raise AgentError(f"checkbox 邊緣相似度過低（{score_text}）")
+    if margin < CHECKBOX_EDGE_SCORE_MARGIN:
+        raise AgentError(f"checkbox 狀態不明確（{score_text}）")
+    checked = checked_score > unchecked_score
+    return CheckboxEvidence(checked, checked_rectangle if checked else unchecked_rectangle,
+                            checked_score, unchecked_score)
+
+
 def checkbox_state_in_region(image: Path, checked_template: Path, unchecked_template: Path,
                              region: tuple[int, int, int, int]) -> tuple[bool, tuple[int, int, int, int]]:
-    """Find one checkbox state inside a deliberately small local region."""
-    candidates: list[tuple[float, bool, tuple[int, int, int, int]]] = []
-    for checked, template in ((True, checked_template), (False, unchecked_template)):
-        for x, y, width, height, score in template_matches(image, template, threshold=.72, region=region):
-            candidates.append((score, checked, (x, y, width, height)))
-    if not candidates:
-        raise AgentError("找不到 checkbox checked / unchecked 模板")
-    _, checked, rectangle = max(candidates, key=lambda item: item[0])
-    return checked, rectangle
+    """Compatibility wrapper returning the focus-independent state and rectangle."""
+    evidence = checkbox_state_evidence_in_region(image, checked_template, unchecked_template, region)
+    return evidence.checked, evidence.rectangle
 
 
 def dfu7_slot_anchor_order(anchors: Iterable[tuple[int, int, int, int, float]], group_y: int) -> list[tuple[int, int, int, int]]:
@@ -871,7 +956,7 @@ def dfu7_slot_anchor_order(anchors: Iterable[tuple[int, int, int, int, float]], 
 def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_template: Path,
                          checked_template: Path, unchecked_template: Path,
                          region: Optional[tuple[int, int, int, int]] = None) -> tuple[
-                             tuple[bool, tuple[int, int, int, int]], list[tuple[bool, tuple[int, int, int, int]]],
+                             CheckboxEvidence, list[CheckboxEvidence],
                              tuple[int, int, int, int], list[tuple[int, int, int, int]]]:
     """Locate group0 and seven card checkboxes using label-relative ROIs."""
     group_hits = template_matches(image, group_label_template, threshold=.72, region=region)
@@ -882,12 +967,19 @@ def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_tem
     group_x, group_y, group_w, group_h, _ = max(group_hits, key=lambda item: (item[1], item[0]))
     group_roi = (max(0, group_x - max(140, group_w * 5)), max(0, group_y - group_h),
                  max(120, group_w * 5), max(group_h * 3, 40))
-    group_state = checkbox_state_in_region(image, checked_template, unchecked_template, group_roi)
+    try:
+        group_state = checkbox_state_evidence_in_region(image, checked_template, unchecked_template, group_roi)
+    except AgentError as exc:
+        raise AgentError(f"group0 checkbox：{exc}") from exc
     anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72, region=region), group_y)
-    states: list[tuple[bool, tuple[int, int, int, int]]] = []
-    for x, y, width, height in anchors:
+    states: list[CheckboxEvidence] = []
+    for index, (x, y, width, height) in enumerate(anchors, start=1):
         checkbox_roi = (x + width, max(0, y - height), max(140, width * 5), max(40, height * 3))
-        states.append(checkbox_state_in_region(image, checked_template, unchecked_template, checkbox_roi))
+        try:
+            states.append(checkbox_state_evidence_in_region(
+                image, checked_template, unchecked_template, checkbox_roi))
+        except AgentError as exc:
+            raise AgentError(f"slot{index} checkbox：{exc}") from exc
     return group_state, states, (group_x, group_y, group_w, group_h), anchors
 
 
@@ -2520,9 +2612,12 @@ class AtlasAgentApp:
     def ensure_dfu7_slot_checkbox_states(self, slots: list[int], screenshot_dir: Path, window_template: Path,
                                          slot_label_template: Path, group_label_template: Path,
                                          checked_template: Path, unchecked_template: Path,
+                                         barcode_template: Path, ok_template: Path,
                                          target_for: Callable[[tuple[int, int]], tuple[int, int]],
-                                         hid_mode: str, delay: float) -> None:
-        """Reset field DFU group0, select requested slots, and verify all seven."""
+                                         hid_mode: str, delay: float) -> tuple[
+                                             tuple[int, int, int, int], tuple[int, int, int, int],
+                                             tuple[int, int, int, int]]:
+        """Reset/select seven slots and return freshly located window/input/OK."""
         def fresh_layout(label: str):
             before = time.time(); self.link.send_control("SCREENSHOT")
             self.events.put(("log", label))
@@ -2537,61 +2632,89 @@ class AtlasAgentApp:
             selected = None
             for shot in shots:
                 try:
-                    template_match(shot, window_template)
+                    window_rectangle = template_match(shot, window_template)
                     layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
                                                   checked_template, unchecked_template)
-                    selected = (shot, layout); break
+                    # Controls are re-located on every verification image.  A
+                    # moved browser window can therefore never leave barcode
+                    # entry using coordinates from the pre-sync screenshot.
+                    barcode_rectangle = template_match(shot, barcode_template)
+                    ok_rectangle = template_match(shot, ok_template)
+                    selected = (shot, layout, window_rectangle, barcode_rectangle, ok_rectangle)
+                    break
                 except AgentError as exc:
                     errors.append(f"{shot.name}: {exc}")
-            self.delete_processed_screenshots(shots)
             if selected is None:
+                self.delete_processed_screenshots(shots)
                 raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" + "；".join(errors))
-            return selected
+            return selected, shots
 
-        _, layout = fresh_layout("DFU 七槽：讀取 group0 與 slot checkbox 初始狀態…")
-        (group_checked, group_rectangle), states, group_label, anchors = layout
-        group_target = target_for(rectangle_center(group_rectangle))
-        commands = dfu7_group_reset_commands(group_target, slots, group_checked, hid_mode)
+        initial, initial_shots = fresh_layout("DFU 七槽：讀取 group0 與 slot checkbox 初始狀態…")
+        _, layout, _, _, _ = initial
+        group_evidence, states, _, _ = layout
+        self.events.put(("log", "DFU 七槽 checkbox 初始分數：group0 " + group_evidence.score_text() + "；" +
+                         "；".join(f"slot{index} {state.score_text()}" for index, state in enumerate(states, start=1))))
+        group_target = target_for(rectangle_center(group_evidence.rectangle))
+        self.events.put(("log", "DFU 七槽：重設 group0，先將七個 slot 回到可預期狀態…"))
+        commands = dfu7_group_reset_commands(group_target, slots, group_evidence.checked, hid_mode)
         if tuple(slots) != (1, 2, 3, 4, 5, 6, 7):
-            for index, (_, rectangle) in enumerate(states, start=1):
+            self.events.put(("log", "DFU 七槽：勾選指定 slot " + "、".join(str(slot) for slot in slots)))
+            for index, state in enumerate(states, start=1):
                 if index in slots:
-                    commands.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+                    commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
+        else:
+            self.events.put(("log", "DFU 七槽：七個 slot 全測，使用 group0 全選"))
+        self.delete_processed_screenshots(initial_shots)
         self.send_hid_sequence(commands, delay=delay)
 
         for attempt in range(2):
-            selected, layout = fresh_layout(f"DFU 七槽：驗證 checkbox（第 {attempt + 1} 次）…")
-            (_, group_rectangle), states, group_label, anchors = layout
+            verification, verification_shots = fresh_layout(
+                f"DFU 七槽：驗證 checkbox（第 {attempt + 1} 次）…")
+            selected, layout, window_rectangle, barcode_rectangle, ok_rectangle = verification
+            group_evidence, states, group_label, anchors = layout
+            group_rectangle = group_evidence.rectangle
             expected_group = tuple(slots) == (1, 2, 3, 4, 5, 6, 7)
-            group_mismatch = layout[0][0] != expected_group
-            mismatches = [(index, rectangle, index in slots) for index, (checked, rectangle) in enumerate(states, start=1)
-                          if checked != (index in slots)]
+            group_mismatch = group_evidence.checked != expected_group
+            mismatches = [(index, state.rectangle, index in slots) for index, state in enumerate(states, start=1)
+                          if state.checked != (index in slots)]
             annotations = [("group0 label", group_label, target_for(rectangle_center(group_label)))]
-            annotations.append((f"group0 {'checked' if layout[0][0] else 'unchecked'}", group_rectangle,
+            annotations.append((f"group0 {'checked' if group_evidence.checked else 'unchecked'}", group_rectangle,
                                 target_for(rectangle_center(group_rectangle))))
-            annotations.extend((f"slot{index} {'checked' if checked else 'unchecked'}", rectangle,
-                                target_for(rectangle_center(rectangle)))
-                               for index, ((checked, rectangle), _) in enumerate(zip(states, anchors), start=1))
+            annotations.extend((f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
+                                target_for(rectangle_center(state.rectangle)))
+                               for index, (state, _) in enumerate(zip(states, anchors), start=1))
+            self.events.put(("log", f"DFU 七槽 checkbox 使用截圖：{selected.name}；匹配疊圖：{self.overlay_path}"))
             write_match_overlay(selected, annotations, self.overlay_path)
-            current = "、".join(f"slot{index}={'勾選' if checked else '取消'}" for index, (checked, _) in enumerate(states, start=1))
+            current = "、".join(f"slot{index}={'勾選' if state.checked else '取消'}"
+                                   for index, state in enumerate(states, start=1))
+            score_log = "；".join(f"slot{index} {state.score_text()}"
+                                    for index, state in enumerate(states, start=1))
+            self.events.put(("log", f"DFU 七槽 checkbox 複驗分數：group0 {group_evidence.score_text()}；{score_log}"))
             if not group_mismatch and not mismatches:
                 self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + current))
-                return
+                self.events.put(("log", "DFU 七槽：checkbox 同步完成，已以最新截圖重新定位 SN 輸入框與 OK"))
+                self.delete_processed_screenshots(verification_shots)
+                return window_rectangle, barcode_rectangle, ok_rectangle
             if attempt:
+                self.delete_processed_screenshots(verification_shots)
                 raise AgentError("DFU 七槽 checkbox 驗證失敗，HMI 實際狀態為：" + current +
+                                 f"；分數：group0 {group_evidence.score_text()}；{score_log}"
                                  "；已停止，未輸入任何條碼。請檢查模板、HMI 焦點與 group0 行為。")
             self.events.put(("log", "DFU 七槽 checkbox 尚未符合 JOB，進行一次個別補正"))
             correction: list[str] = []
             if group_mismatch:
                 correction.extend(dfu7_group_reset_commands(target_for(rectangle_center(group_rectangle)), slots,
-                                                            layout[0][0], hid_mode))
+                                                            group_evidence.checked, hid_mode))
                 if not expected_group:
-                    for index, (_, rectangle) in enumerate(states, start=1):
+                    for index, state in enumerate(states, start=1):
                         if index in slots:
-                            correction.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+                            correction.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
             for _, rectangle, _ in mismatches:
                 if not group_mismatch:
                     correction.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+            self.delete_processed_screenshots(verification_shots)
             self.send_hid_sequence(correction, delay=delay)
+        raise AgentError("DFU 七槽 checkbox 驗證流程異常")
 
     def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
                                    created_after: float, result_timeout: float) -> None:
@@ -2769,13 +2892,13 @@ class AtlasAgentApp:
                         resolved[profile["checkbox_checked"]], resolved[profile["checkbox_unchecked"]], region=region)
                     matches.append((match_label("group0 label", rectangle_center(group_label)), group_label,
                                     target_for(rectangle_center(group_label))))
-                    matches.append((match_label(f"group0 {'checked' if group_state[0] else 'unchecked'}",
-                                                rectangle_center(group_state[1])), group_state[1],
-                                    target_for(rectangle_center(group_state[1]))))
-                    for index, ((is_checked, rectangle), anchor) in enumerate(zip(states, anchors), start=1):
-                        matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
-                                                    rectangle_center(rectangle)), anchor,
-                                        target_for(rectangle_center(rectangle))))
+                    matches.append((match_label(f"group0 {'checked' if group_state.checked else 'unchecked'}",
+                                                rectangle_center(group_state.rectangle)), group_state.rectangle,
+                                    target_for(rectangle_center(group_state.rectangle))))
+                    for index, (state, anchor) in enumerate(zip(states, anchors), start=1):
+                        matches.append((match_label(f"slot{index} {'checked' if state.checked else 'unchecked'}",
+                                                    rectangle_center(state.rectangle)), anchor,
+                                        target_for(rectangle_center(state.rectangle))))
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
@@ -2789,10 +2912,19 @@ class AtlasAgentApp:
                     self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(focus_commands, delay=delay)
                     if dfu7_checkbox_job:
-                        self.ensure_dfu7_slot_checkbox_states(
+                        fresh_window_rect, fresh_barcode_rect, fresh_button_rect = self.ensure_dfu7_slot_checkbox_states(
                             slots, screenshot_dir, window, resolved[profile["slot_label"]],
                             resolved[profile["group_label"]], resolved[profile["checkbox_checked"]],
-                            resolved[profile["checkbox_unchecked"]], target_for, hid_mode, delay)
+                            resolved[profile["checkbox_unchecked"]], resolved[profile["barcode"]],
+                            resolved[profile["ok"]], target_for, hid_mode, delay)
+                        window_center = rectangle_center(fresh_window_rect)
+                        barcode_source = rectangle_center(fresh_barcode_rect)
+                        button_source = rectangle_center(fresh_button_rect)
+                        barcode, button = target_for(barcode_source), target_for(button_source)
+                        self.events.put(("log", f"DFU 七槽：最新定位 SN={barcode_source} → HID {barcode}，"
+                                                 f"OK={button_source} → HID {button}"))
+                        self.events.put(("log", "DFU 七槽：重新點擊測試畫面取得焦點，準備輸入條碼"))
+                        self.send_hid_sequence(click_commands(target_for(window_center), hid_mode), delay=delay)
                     elif sparse_checkbox_job:
                         self.ensure_slot_checkbox_states(slots, screenshot_dir, window,
                                                          resolved[profile["checkbox_checked"]],
@@ -2803,10 +2935,15 @@ class AtlasAgentApp:
                     elif slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
                         self.events.put(("log", "DFU 手動 Slot 模式：已略過 checkbox 模板與同步，依人工設定的 slot 順序輸入 SN。"))
                     if dfu7_profile:
-                        full_commands = dfu_enter_each_ok_once_commands(sns, barcode, button, hid_mode)
                         final_ok = click_commands(button, hid_mode)
-                        self.send_hid_sequence(full_commands[:-len(final_ok)], delay=delay)
+                        for input_index, (slot, sn) in enumerate(zip(slots, sns), start=1):
+                            self.events.put(("log", f"DFU 七槽：輸入第 {input_index}/{len(sns)} 筆條碼 "
+                                                     f"slot{slot}={sn}，Enter 後搬入指定 slot"))
+                            one_sn_commands = dfu_enter_each_ok_once_commands([sn], barcode, button, hid_mode)
+                            self.send_hid_sequence(one_sn_commands[:-len(final_ok)], delay=delay)
+                            self.events.put(("log", f"DFU 七槽：slot{slot} 條碼輸入完成"))
                         monitor_started_after = time.time()
+                        self.events.put(("log", "DFU 七槽：全部條碼已輸入，點擊一次 OK 啟動 ATE"))
                         self.send_hid_sequence(final_ok, delay=delay)
                         created_after = monitor_started_after
                         self.events.put(("log", f"DFU 七槽（{hid_mode}）：每筆 SN 已用 Enter 搬入指定 slot，已按一次 OK 啟動 ATE；啟動 CSV 監聽"))
@@ -2992,7 +3129,15 @@ class AtlasAgentApp:
                     self.report_if_batch_complete(batch_number)
                 elif kind == "start_failed":
                     station, batch_number = item
-                    if batch_number == self.batch_number and self.link.connection:
+                    if batch_number != self.batch_number:
+                        continue
+                    self.monitor_stop.set(); self.monitor = None
+                    self.result_summary.set(f"當前 JOB：{self.current_job_id} — START_FAILED")
+                    for row_key in tuple(self.result_row_order):
+                        label, sn, _ = self.result_rows[row_key]
+                        self.set_result_row(row_key, label, sn, "START_FAILED")
+                    self.append(f"{station} START_FAILED：已停止流程，不會輸入剩餘條碼或點擊 OK。")
+                    if should_send_start_failed_nack(self.current_job_id, self.link.connection):
                         self.safe_send_tcp(f"NACK:{station}:JOB={self.current_job_id};START_FAILED")
                         self.reported_batch_number = batch_number
                 elif kind == "result":

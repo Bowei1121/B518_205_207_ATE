@@ -28,11 +28,14 @@ DFU 會先全螢幕匹配 `test_window.png`，後續條碼框與開始按鈕的�
 - `b482/dfu7_window.png`、`b482/dfu7_sn_input.png`、`b482/dfu7_ok.png`
 - `b482/dfu7_slot_label.png`：下方卡片的共用 `slot` 文字，勿包含 slot 數字或 checkbox。
 - `b482/dfu7_group0_label.png`：下方 group0 文字，勿包含上方表格中的 group0。
-- `b482/slot_checkbox_checked.png`、`b482/slot_checkbox_unchecked.png`：同一解析度下的 checkbox。
+- `b482/slot_checkbox_checked.png`、`b482/slot_checkbox_unchecked.png`：同一解析度下、盡量框選
+  相同主體範圍的 checkbox；可保留少量邊界，不要包含 slot 名稱或其他控制項。
 
 Agent 以 group0 文字左側與每個 slot 文字右側的小範圍辨識 checkbox，並依第一排四個、第二排
 三個映射 slot1～7。因此只需要一組 checked／unchecked 模板，不需要為七個 slot 分別製作模板。
 啟用自動同步時，Agent 會先用 group0 將全部 slot 重設為未勾選，再建立本次所需狀態並截圖驗證。
+七槽 checkbox 會先自動裁出主體，再以灰階邊緣比較方框與勾形，降低視窗焦點造成的灰底黑勾／
+綠底白勾色彩差異；兩種狀態分數不足或過於接近時會停止流程並把完整分數寫入 Log。
 
 `b482_dfu1_manual` 不會自動操作，因其畫面未顯示與 DFU_2 相同的 SN 輸入流程；確認
 其實際輸入規則後再加入專用設定。

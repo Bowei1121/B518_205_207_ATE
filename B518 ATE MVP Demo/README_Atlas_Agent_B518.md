@@ -267,7 +267,14 @@ Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原�
 七槽 Profile 的 checkbox 不會在整張畫面尋找：Agent 先定位下方 group0 文字，再在文字左側找
 checkbox；接著定位下方七個共用 `slot` 標籤，只在每一個標籤右側找 checked／unchecked 狀態。
 這可避開上方結果表格的重複文字，也只需要一組狀態模板。模板名稱與裁切規則請參閱
-`templates/README.md`。
+`templates/README.md`。checkbox 狀態採灰階邊緣與勾形幾何比對，因此 HMI 取得焦點後由灰底黑勾
+變成綠底白勾仍可辨識；checked／unchecked 模板仍應框選相同主體範圍。若兩種狀態分數太接近，
+Agent 會停止並在 Log 列出 group0 與 slot1～7 的 checked／unchecked 分數，不會繼續輸入條碼。
+
+七槽自動同步時，不論原狀態為何都會先透過 group0 回到全未勾選。稀疏 Demo 再逐一勾選指定
+slot；七槽全測則由 group0 一次全選。複驗成功後會用最後一張截圖重新定位 SN 輸入框與 OK，
+再逐筆輸入 SN；只有全部輸入完成後才點一次 OK。任何定位、checkbox、HID 或截圖錯誤都會把
+主 HMI 結果列改為 `START_FAILED`；本機 Demo 不會因此傳送 TCP NACK。
 
 「螢幕截圖路徑」預設為 `~/Desktop`，也可選擇例如 `~/Desktop/ScreenShot`。DFU／BT
 送出 `SCREENSHOT` 後會先等待 5 秒，最長等待共 15 秒，再在該資料夾尋找新產生的
