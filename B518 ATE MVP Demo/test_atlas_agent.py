@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, window_focus_commands, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -124,12 +124,20 @@ class AtlasAgentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 simulator._assignments("FCT", {"sns": seven})
 
-    def test_fct_six_slot_demo_never_uses_four_checkbox_synchronizer(self):
-        self.assertTrue(fct_auto_slot_sync_supported([1, 3, 4]))
-        self.assertFalse(fct_auto_slot_sync_supported([1, 3, 4], demo=True))
-        self.assertFalse(fct_auto_slot_sync_supported([1, 2, 3, 4]))
-        self.assertFalse(fct_auto_slot_sync_supported([1, 4, 6]))
-        self.assertFalse(fct_auto_slot_sync_supported([1, 2, 3, 4, 5, 6]))
+    def test_fct_jobs_always_start_monitor_without_visual_or_checkbox_work(self):
+        for job_id, assignments in (
+                ("JOB-1", ((1, "SN001"), (3, "SN003"), (4, "SN004"))),
+                ("DEMO-20260806-120000", tuple((slot, f"SN{slot:03d}") for slot in range(1, 7)))):
+            app = object.__new__(AtlasAgentApp)
+            calls, logs = [], []
+            app.start_monitor = lambda *args: calls.append(args)
+            app.start_visual_worker = lambda *args: self.fail("FCT must not start visual/HID work")
+            app.append = logs.append
+            command = TestCommand("FCT", job_id, assignments)
+            prepared = (Path("/tmp/fct"), command, 9, 123.0, 300.0)
+            self.assertEqual(AtlasAgentApp.start_prepared(app, prepared), command.sns)
+            self.assertEqual(calls, [(Path("/tmp/fct"), command.sns, 9, 123.0, 300.0)])
+            self.assertIn("FCT 由儀器自動偵測 slot；Agent 已直接開始監聽。", logs)
 
     def test_transparent_tcp_barcode_payload_is_accepted_without_control_replies(self):
         self.assertEqual(incoming_barcode_payload("SN1,SN2"), "SN1,SN2")

@@ -52,10 +52,21 @@ class B482DemoServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             simulator = Simulator(root, duration_seconds=0)
-            state = simulator.start({"station": "FCT", "sns": ["FCTDEMO001"]})
+            # This is the payload produced after the HTML operator leaves
+            # slot2/slot4 unchecked.  Only the selected products may exist.
+            state = simulator.start({"station": "FCT", "sns": ["FCTDEMO001", "FCTDEMO003"]})
             self.wait_for_completion(simulator, state["batch"])
             self.assertEqual(len(list(root.glob("FCTDEMO001/*/system/records.csv"))), 1)
+            self.assertEqual(len(list(root.glob("FCTDEMO003/*/system/records.csv"))), 1)
+            self.assertEqual(list(root.glob("FCTDEMO002/*/system/records.csv")), [])
+            self.assertEqual(list(root.glob("FCTDEMO004/*/system/records.csv")), [])
             self.assertEqual(list(root.glob("*/*/*.csv")), [])
+
+    def test_fct_simulator_page_only_sends_checked_nonempty_slots(self):
+        html = (Path(__file__).parent / "b482_demo_hmi.html").read_text(encoding="utf-8")
+        self.assertIn("fctSlots.filter((value,i)=>fctChecked[i]&&value)", html)
+        self.assertIn("function startFct(){start('FCT',selectedFctSns())}", html)
+        self.assertIn("未勾選的 Slot 固定顯示 NOTEST 且不產生結果", html)
 
 
 if __name__ == "__main__":

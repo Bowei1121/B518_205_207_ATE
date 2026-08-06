@@ -32,7 +32,9 @@ Arduino HID 或 B482 實機已通過。
 - [ ] 用 Agent 的「製作模板」自真實截圖裁切穩定區塊；不要裁切 PASS／FAIL／TESTING 狀態格。
 - [ ] DFU_2：送入 1–4 個 SN，確認每個 SN 皆輸入左下欄位並按 `OK`，再確認測試資料夾開始建立。
 - [ ] BT：確認 Agent 只點擊 `Start All`，再確認測試資料夾開始建立。
-- [ ] FCT：推入治具後確認 Agent 不點擊任何 UI，直接監聽輸出資料夾。
+- [ ] FCT：開啟 DFU 自動同步設定後送稀疏 JOB，仍確認 Agent 不截圖、不點擊任何 UI，直接監聽輸出資料夾。
+- [ ] FCT：移除所有 FCT OpenCV 模板後，slot1、3、4 正式 JOB 與六槽 Demo 仍可開始監聽。
+- [ ] HTML FCT：只勾選部分 slot 後按 Fixture Insert，未勾選項目維持 NOTEST 且不建立結果資料。
 - [ ] 每個 SN 的目錄存在 `YYYYMMDD_HH-MM-SS.* / system / device.log` 與 `records.csv` 或 `record.csv`。
 
 ## 4. Demo 完成條件

@@ -12,7 +12,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - Agent 支援手動條碼與 Demo slot 視窗：DFU 7 格、FCT 6 格、BT 4 格；正式上位機協定維持最多 4 slot。
 - BT 以 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 監聽結果；Thread0～3 對應 slot1～4。
 - 現場可在 FCT／BT Demo 視窗啟動「無 SN Log Demo」：以按鈕時間與啟動前檔案基準排除舊資料，從新 Log 自動取得 SN 與結果，只顯示、不回傳 TCP RESULT。FCT 顯示「檢出 N」，BT 顯示實體 slot。
-- 正式 DFU／BT／FCT checkbox 畫面定位會暫時隱藏 Agent 視窗；路徑選擇器會顯示隱藏資料夾（例如 `/vault`）。
+- 正式 DFU／BT 影像定位會暫時隱藏 Agent 視窗；FCT 不執行截圖或 HID，直接監聽 CSV。路徑選擇器會顯示隱藏資料夾（例如 `/vault`）。
 - 現場 OS：BT 為 macOS Mojave 10.14.5；DFU／FCT 為 Catalina 10.15。共用候選 App 需在 Intel Catalina VM 以 10.14 deployment target 建置，並經兩種 OS 實機驗收。
 
 ## USB CDC／HID 現況
@@ -45,6 +45,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - 複驗成功後以最後一張尚未刪除的截圖重新定位 SN 輸入框與 OK，逐筆送出 SN＋Enter，最後只點一次 OK。
 - checkbox 模糊時記錄 group0、slot1～7 的 checked／unchecked 分數；任何啟動錯誤在主 HMI 顯示 START_FAILED，本機 Demo 不送 TCP NACK。
 - 修正 label-relative ROI 過窄的回歸：slot 搜尋寬度改由同排相鄰錨點間距計算，涵蓋卡片右端 checkbox；以 2026-08-06 現場截圖重算後 checked 分數由 0.20 提升至 0.92～1.00。
+
+## 2026-08-06 FCT 改為儀器自動偵測 slot
+
+- FCT 正式 JOB、稀疏 slot、已知 SN Demo 與六槽 Demo 都直接依 SN 監聽 CSV；Agent 不再截圖、定位視窗、辨識 checkbox 或發送 HID 點擊。
+- `auto_slot_sync` 偏好欄位保留相容性，但設定名稱改為「自動同步 DFU Slot 勾選」，只影響 DFU。
+- FCT 不需要 `fct_window`、checked 或 unchecked 模板；HTML 模擬 HMI 仍保留人工 checkbox，Fixture Insert 只測試已勾選且有 SN 的項目。
 
 ## Git 與交付規則
 

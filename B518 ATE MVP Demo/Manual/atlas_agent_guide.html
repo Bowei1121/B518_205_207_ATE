@@ -109,10 +109,10 @@
         <div class="callout"><span class="callout-title">路徑選取原則</span>DFU／FCT 選包含所有 SN 資料夾的 CSV 最上層；BT 選 TestData 最上層，勿選某日或 PASSED／FAILED 子資料夾。截圖路徑必須與 macOS 截圖實際落檔位置一致。</div>
 
         <h3>流程設定</h3>
-        <p>選擇 DFU 畫面設定、設定結果逾時秒數，並決定是否自動同步 DFU／FCT 的 Slot checkbox。未勾選代表 Demo 手動 Slot 模式：操作人員先在測試 HMI 設定 checkbox，Agent 不會驗證或修正。</p>
+        <p>選擇 DFU 畫面設定、設定結果逾時秒數，並決定是否自動同步 DFU 的 Slot checkbox。此選項只影響 DFU；FCT 永遠由儀器自行偵測有料 slot，Agent 直接監聽 CSV。</p>
         <figure class="manual-figure">
           <img src="assets/atlas_agent/03-settings-flow-v013.png" width="935" height="415" loading="lazy" alt="Atlas Agent 流程設定分頁，顯示 DFU 畫面設定、300 秒逾時與自動同步 Slot 勾選選項">
-          <figcaption><span class="figure-label">圖 3-4</span>「流程設定」分頁。正式產線啟用自動同步時，必須先完成 checked／unchecked checkbox 模板。</figcaption>
+          <figcaption><span class="figure-label">圖 3-4</span>「流程設定」分頁。DFU 啟用自動同步時，必須先完成 checked／unchecked checkbox 模板；FCT 不需要。</figcaption>
         </figure>
 
         <h3>HID 設定</h3>
@@ -147,16 +147,16 @@
           <div class="step"><h3>框選穩定區域</h3><p>保留固定標題、標誌或完整按鈕，避開游標、SN、日期、PASS／FAIL 與測試中狀態。</p></div>
           <div class="step"><h3>儲存並驗證</h3><p>依下拉檔名逐一儲存；執行流程後用「查看匹配疊圖」確認綠框與落點。</p></div>
         </div>
-        <h3>FCT checkbox 範例</h3>
-        <p>FCT 需要 <code>b482/fct_window.png</code>、<code>b482/slot_checkbox_checked.png</code> 與 <code>b482/slot_checkbox_unchecked.png</code>。checked／unchecked 需在相同位置、以相近範圍裁切。七槽 DFU 會自動裁出 checkbox 主體並以灰階邊緣比較方框與勾形，因此視窗取得焦點後由灰底黑勾變成藍底或綠底白勾仍可辨識。group0 只用於操作全選／取消全選，Agent 會以七個 slot checkbox 的實際狀態決定是否繼續；若任一 slot 的兩種狀態分數過近，Agent 會顯示 START_FAILED 並停止輸入條碼。</p>
+        <h3>DFU checkbox 範例</h3>
+        <p>只有 DFU 自動同步需要 <code>b482/slot_checkbox_checked.png</code> 與 <code>b482/slot_checkbox_unchecked.png</code>。checked／unchecked 需在相同位置、以相近範圍裁切。七槽 DFU 會自動裁出 checkbox 主體並以灰階邊緣比較方框與勾形，因此視窗取得焦點後由灰底黑勾變成藍底或綠底白勾仍可辨識。group0 只用於操作全選／取消全選，Agent 會以七個 slot checkbox 的實際狀態決定是否繼續；若任一 slot 的兩種狀態分數過近，Agent 會顯示 START_FAILED 並停止輸入條碼。FCT 不使用這些模板。</p>
         <div class="grid-2">
-          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/09-fct-checked-template.png" width="262" height="97" loading="lazy" alt="FCT slot checkbox 已勾選模板"><figcaption><span class="figure-label">圖 4-2</span>Checked：綠色勾選狀態。</figcaption></figure>
-          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/10-fct-unchecked-template.png" width="261" height="95" loading="lazy" alt="FCT slot checkbox 未勾選模板"><figcaption><span class="figure-label">圖 4-3</span>Unchecked：白色未勾選狀態。</figcaption></figure>
+          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/09-fct-checked-template.png" width="262" height="97" loading="lazy" alt="DFU slot checkbox 已勾選模板範例"><figcaption><span class="figure-label">圖 4-2</span>Checked：勾選狀態範例。</figcaption></figure>
+          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/10-fct-unchecked-template.png" width="261" height="95" loading="lazy" alt="DFU slot checkbox 未勾選模板範例"><figcaption><span class="figure-label">圖 4-3</span>Unchecked：未勾選狀態範例。</figcaption></figure>
         </div>
         <h3>各工站模板清單</h3>
         <div class="table-wrap"><table><thead><tr><th>工站</th><th>必需模板</th><th>用途</th></tr></thead><tbody>
           <tr><td><strong>DFU</strong></td><td><code>b482/dfu2_window.png</code>、<code>dfu2_sn_input.png</code>、<code>dfu2_ok.png</code>、checked、unchecked</td><td>定位 DFU 視窗、輸入 SN、按 OK，並在自動模式同步 checkbox。</td></tr>
-          <tr><td><strong>FCT</strong></td><td><code>b482/fct_window.png</code>、checked、unchecked</td><td>稀疏 slot 時定位與同步 checkbox；全 slot 時可直接監聽。</td></tr>
+          <tr><td><strong>FCT</strong></td><td>不需要模板</td><td>儀器自行偵測 slot；Agent 依指定 SN 直接監聽 CSV。</td></tr>
           <tr><td><strong>BT</strong></td><td><code>b482/bt_window.png</code>、<code>bt_start_all.png</code>、<code>bt_start_1.png</code>～<code>bt_start_4.png</code></td><td>定位 BT 視窗，並點擊 Start All 或指定的單一 slot。</td></tr>
         </tbody></table></div>
         <p>所有檔案均儲存在模板根路徑的 <code>b482/</code> 下。BT 的 Start 1～4 必須各自從現場畫面裁切，不可複製同一份模板後只改檔名。</p>
@@ -170,17 +170,17 @@
         <pre><code>DFU:JOB=20260723-001;1=SN001,2=SN002,4=SN004\r\n</code></pre>
         <div class="grid-3">
           <div class="card"><h3>DFU</h3><p>定位畫面、同步 checkbox、輸入 SN 並監聽 CSV。</p></div>
-          <div class="card"><h3>FCT</h3><p>全 slot 可直接監聽；稀疏 slot 依設定同步 checkbox。</p></div>
+          <div class="card"><h3>FCT</h3><p>不操作測試 HMI；所有正式與稀疏 JOB 都依指定 SN 直接監聽 CSV。</p></div>
           <div class="card"><h3>BT</h3><p>全四 slot 點 Start All；稀疏 slot 分別點 Start 1～4，並監控 TestData CSV。</p></div>
         </div>
         <h3>現場 Demo：slot 與 SN 一一對應</h3>
         <p>主畫面按「Demo」開啟輸入視窗。每格對應一個 slot，留白代表該 slot 不測試；DFU 的 7-slot、FCT 的 6-slot 僅開放此 Demo 視窗，TCP JOB 與一般手動輸入仍限 4 slot。</p>
         <div class="grid-3">
           <figure class="manual-figure is-compact"><img src="assets/atlas_agent/11-dfu-demo-dialog.png" width="560" height="407" loading="lazy" alt="DFU 現場 Demo 條碼輸入視窗，含 Slot 1 到 Slot 7"><figcaption><span class="figure-label">圖 5-1</span>DFU Demo：暫時支援 7 個 slot。</figcaption></figure>
-          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/12-fct-demo-dialog.png" width="529" height="373" loading="lazy" alt="FCT 現場 Demo 條碼輸入視窗，含 Slot 1 到 Slot 6"><figcaption><span class="figure-label">圖 5-2</span>FCT Demo：支援 6 個 slot，固定採手動 Slot 模式。</figcaption></figure>
+          <figure class="manual-figure is-compact"><img src="assets/atlas_agent/12-fct-demo-dialog.png" width="529" height="373" loading="lazy" alt="FCT 現場 Demo 條碼輸入視窗，含 Slot 1 到 Slot 6"><figcaption><span class="figure-label">圖 5-2</span>FCT Demo：支援 6 個 SN；Agent 直接監聽，實機自行偵測 slot。</figcaption></figure>
           <figure class="manual-figure is-compact"><img src="assets/atlas_agent/10-bt-demo-dialog.png" width="515" height="279" loading="lazy" alt="BT 現場 Demo 條碼輸入視窗，含 Slot 1 到 Slot 4"><figcaption><span class="figure-label">圖 5-3</span>BT Demo：支援 4 個 slot。</figcaption></figure>
         </div>
-        <div class="callout warning"><span class="callout-title">手動 Slot 模式</span>未啟用「自動同步 DFU／FCT Slot 勾選」時，請先於測試 HMI 手動確認 checkbox。FCT 6-slot Demo 即使已開啟自動同步，也固定略過四格 checkbox 辨識，由治具或模擬 HMI 啟動測試。</div>
+        <div class="callout warning"><span class="callout-title">FCT 啟動方式</span>FCT 實機自行偵測有料 slot 並開始測試，Agent 不操作 checkbox。使用 HTML 模擬 HMI 時，操作人員可自行勾選要測試的 slot，再按 Fixture Insert；未勾選項目維持 NOTEST 且不產生結果。</div>
         <h3>BT SN 人工覆核</h3>
         <p>BT 由 TestData CSV 的 Thread、Unit Number、SN、狀態與時間判定。若 CSV 實際 SN 與上位機 SN 不符或資料不完整，請於覆核視窗確認後以設備 SN 回報；若取消，Agent 回覆 <code>NACK:BT_SN_MISMATCH</code>。</p>
         <h3>BT 模板與啟動按鈕參考</h3>

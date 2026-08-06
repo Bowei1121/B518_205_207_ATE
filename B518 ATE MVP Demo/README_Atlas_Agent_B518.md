@@ -66,14 +66,13 @@ Demo 視窗以 slot 對應的獨立欄位輸入 SN，留白代表不測試。DFU
 FCT 為 slot 1～6，BT 為 slot 1～4。DFU 7-slot 與 FCT 6-slot 僅限本機 Demo 視窗；一般手動
 逗號輸入、Arduino TCP 與上位機 TCP JOB 仍固定最多 4 個 slot，符合未來正式設備規格。
 
-設定中的「自動同步 DFU／FCT Slot 勾選」預設為關閉，適合現場 Demo：操作人員先在測試 HMI
-手動設定有料／空料 slot，再以 Demo 視窗輸入相同 slot 的條碼。此模式不需要
-`slot_checkbox_checked.png` 與 `slot_checkbox_unchecked.png`，但 Agent 也不會驗證人工設定。
-正式產線請開啟自動同步並建立兩種 checkbox 模板。
+設定中的「自動同步 DFU Slot 勾選」只影響 DFU。停用時，操作人員先在 DFU 測試 HMI
+手動設定有料／空料 slot，再以 Demo 視窗輸入相同 slot 的條碼；啟用時才需要
+`slot_checkbox_checked.png` 與 `slot_checkbox_unchecked.png`。
 
-FCT 6-slot Demo 固定採手動 Slot 模式，即使設定中開啟自動同步，也不會套用既有四格 checkbox
-辨識。操作人員須先確認測試 HMI／治具的 slot；按開始後只會啟動 CSV 監聽，測試仍須由治具
-或模擬 HMI 的 Fixture Insert 功能觸發。
+FCT 正式 JOB、稀疏 slot 與 6-slot Demo 都不截圖、不辨識或操作 checkbox，也不需要任何 FCT
+OpenCV 模板。Agent 直接依指定 SN 監聽 CSV，由實機自行偵測有料 slot 並開始測試；本機模擬時，
+操作人員仍可在 HTML HMI 手動勾選 slot，再按 Fixture Insert 觸發測試。
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
 
 若現場 DFU 是七槽 HMI，請在「設定 → DFU 畫面設定」選擇 `b482_dfu2_7slot`。啟用

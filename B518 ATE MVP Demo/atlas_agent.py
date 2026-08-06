@@ -122,17 +122,6 @@ VISUAL_PROFILES = {
     },
 }
 
-# FCT does not need a Start-button template: the fixture starts the real test.
-# These two small crops identify the four native checkbox controls before a
-# sparse JOB begins.  They are shared with DFU_2 because the simulated HMI uses
-# the same checkbox rendering; create them from the target HMI when necessary.
-FCT_CHECKBOX_TEMPLATES = {
-    "window": "b482/fct_window.png",
-    "checked": "b482/slot_checkbox_checked.png",
-    "unchecked": "b482/slot_checkbox_unchecked.png",
-}
-
-
 class AgentError(RuntimeError):
     pass
 
@@ -372,12 +361,6 @@ def visual_control_search_region(station: str, profile: dict, window_rectangle: 
     if "window_size" in profile:
         return None
     return window_rectangle
-
-
-def fct_auto_slot_sync_supported(slots: Iterable[int], demo: bool = False) -> bool:
-    """Return whether the existing four-checkbox FCT synchronizer can be used."""
-    ordered = list(slots)
-    return not demo and bool(ordered) and max(ordered) <= 4 and ordered != [1, 2, 3, 4]
 
 
 def incoming_barcode_payload(line: str) -> Optional[str]:
@@ -2021,8 +2004,8 @@ class AtlasAgentApp:
         ttk.Label(flow, text="測試結果逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
         ttk.Entry(flow, textvariable=result_timeout, width=10).grid(row=2, column=1, sticky="w", pady=(12, 3))
         ttk.Label(flow, text="0 表示不逾時；未完成 SN 回報 TIMEOUT。", foreground="#555").grid(row=3, column=0, columnspan=2, sticky="w")
-        ttk.Checkbutton(flow, text="自動同步 DFU／FCT Slot 勾選（需要 checkbox 模板）", variable=auto_slot_sync).grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 3))
-        ttk.Label(flow, text="未勾選為 Demo 手動 Slot 模式：請先在測試 HMI 手動設定 checkbox；Agent 不會驗證或修正。", foreground="#a33", wraplength=620).grid(row=5, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(flow, text="自動同步 DFU Slot 勾選（需要 checkbox 模板）", variable=auto_slot_sync).grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 3))
+        ttk.Label(flow, text="未勾選時 DFU 採手動 Slot 模式；FCT 永遠由儀器自動偵測 slot，Agent 不操作 checkbox。", foreground="#a33", wraplength=620).grid(row=5, column=0, columnspan=2, sticky="w")
 
         ttk.Label(hid, text="Arduino HID 控制設定", font=("TkDefaultFont", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
         ttk.Label(hid, text="這些值只影響 Arduino HID 指令，不會使用 macOS 軟體鍵盤／滑鼠控制。", foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 10))
@@ -2110,9 +2093,9 @@ class AtlasAgentApp:
         parent = owner or self.root
         station = self.station.get()
         if station == "FCT":
-            TemplateMakerDialog(parent, template_root, screenshot_root,
-                                list(FCT_CHECKBOX_TEMPLATES.values()),
-                                lambda: self.capture_template_screenshot(screenshot_root))
+            messagebox.showinfo(TITLE,
+                                "FCT 不需要 OpenCV 模板；測試儀器會自動偵測 slot，Agent 直接監聽 CSV。",
+                                parent=parent)
             return
         profile = VISUAL_PROFILES[(dfu_profile if dfu_profile is not None else self.dfu_profile.get()) if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
@@ -2352,16 +2335,8 @@ class AtlasAgentApp:
             self.start_visual_worker(self.visual_start,
                                      (command.station, command.sns, command.slots, root, batch_number,
                                       created_after, result_timeout), batch_number)
-        elif self.auto_slot_sync.get() and fct_auto_slot_sync_supported(
-                command.slots, command.job_id.startswith("DEMO-")):
-            self.start_visual_worker(self.configure_fct_sparse_slots,
-                                     (command.slots, root, command.sns, batch_number,
-                                      created_after, result_timeout), batch_number)
         else:
-            if command.station == "FCT" and command.job_id.startswith("DEMO-"):
-                self.append("FCT 6-slot Demo 採手動 Slot 模式：已略過四格 checkbox 同步，等待治具／模擬 HMI 開始測試。")
-            elif command.station == "FCT" and command.slots != [1, 2, 3, 4]:
-                self.append("FCT 手動 Slot 模式：已略過 checkbox 同步，等待治具／模擬 HMI 開始測試。")
+            self.append("FCT 由儀器自動偵測 slot；Agent 已直接開始監聽。")
             self.start_monitor(root, command.sns, batch_number, created_after, result_timeout)
         return command.sns
 
@@ -2792,71 +2767,6 @@ class AtlasAgentApp:
         self.events.put(("log", "DFU 七槽：checkbox 同步完成，已以最新截圖重新定位 SN 輸入框與 OK"))
         self.delete_processed_screenshots(shots)
         return window_rectangle, barcode_rectangle, ok_rectangle
-
-    def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
-                                   created_after: float, result_timeout: float) -> None:
-        """Set FCT's four visible test checkboxes before beginning file monitoring."""
-        try:
-            delay, scale_x, scale_y, offset_x, offset_y, hid_mode, absolute_width, absolute_height = self.hid_settings()
-            templates = Path(self.template_path.get()).expanduser()
-            resolved = {name: resolve_template_path(templates, item) for name, item in FCT_CHECKBOX_TEMPLATES.items()}
-            missing = [FCT_CHECKBOX_TEMPLATES[name] for name, path in resolved.items() if not path.is_file()]
-            if missing:
-                raise AgentError("缺少 FCT sparse slot 模板：" + "、".join(missing) +
-                                 f"\n目前模板根路徑：{templates}\n請切換 FCT 後用「製作模板」建立 fct_window、slot_checkbox_checked、slot_checkbox_unchecked。")
-            screenshot_dir = Path(self.screenshot_path.get()).expanduser()
-            if not screenshot_dir.is_dir():
-                raise AgentError("請選擇有效的螢幕截圖路徑")
-            before = time.time(); self.link.send_control("SCREENSHOT")
-            self.events.put(("log", f"FCT sparse slot：等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
-            time.sleep(SCREENSHOT_SETTLE_SECONDS)
-            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-            shots: list[Path] = []
-            while time.monotonic() < deadline and not shots:
-                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
-            if not shots:
-                raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
-            shot = None; window_rect = None; states = None; errors: list[str] = []
-            for candidate in shots:
-                try:
-                    candidate_window = template_match(candidate, resolved["window"])
-                    candidate_states = slot_checkbox_states(candidate, resolved["checked"], resolved["unchecked"])
-                    shot, window_rect, states = candidate, candidate_window, candidate_states
-                    break
-                except AgentError as exc:
-                    errors.append(f"{candidate.name}: {exc}")
-            if shot is None or window_rect is None or states is None:
-                raise AgentError("所有新截圖均無法定位 FCT 視窗與四個 checkbox。\n" + "\n".join(errors))
-            if self.auto_scale.get():
-                automatic_scale = macos_screenshot_scale(shot)
-                if automatic_scale:
-                    scale_x, scale_y = automatic_scale; self.events.put(("auto_scale", automatic_scale))
-            def target_for(source: tuple[int, int]) -> tuple[int, int]:
-                logical = hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
-                return absolute_hid_report_coordinate(logical, absolute_width, absolute_height) if hid_mode == "absolute" else logical
-            focus = target_for(rectangle_center(window_rect))
-            commands = click_commands(focus, hid_mode)
-            changes: list[str] = []
-            for index, (is_checked, rectangle) in enumerate(states, start=1):
-                required = index in slots
-                if is_checked != required:
-                    commands.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
-                    changes.append(f"slot{index}={'勾選' if required else '取消'}")
-            write_match_overlay(shot, [("FCT window", window_rect, focus),
-                                       *((f"slot{index} {'checked' if checked else 'unchecked'}", rect,
-                                          target_for(rectangle_center(rect)))
-                                         for index, (checked, rect) in enumerate(states, start=1))], self.overlay_path)
-            self.delete_processed_screenshots(shots)
-            self.send_hid_sequence(commands, delay=delay)
-            self.ensure_slot_checkbox_states(slots, screenshot_dir, resolved["window"], resolved["checked"],
-                                             resolved["unchecked"], target_for, hid_mode, delay)
-            self.events.put(("log", "FCT sparse slot 已同步：" + ("、".join(changes) if changes else "checkbox 已符合 JOB") + "；啟動 CSV 監聽"))
-            self.events.put(("begin_monitor", (csv_root, sns, batch_number, created_after, result_timeout)))
-        except Exception as exc:
-            self.events.put(("log", f"FCT sparse slot 流程失敗：{exc}"))
-            self.events.put(("start_failed", ("FCT", batch_number)))
-        finally:
-            self.events.put(("restore_visual_windows", batch_number))
 
     def visual_start(self, station: str, sns: list[str], slots: list[int], csv_root: Path, batch_number: int,
                      created_after: float, result_timeout: float) -> None:

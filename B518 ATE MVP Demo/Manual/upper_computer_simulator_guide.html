@@ -103,7 +103,7 @@
         </figure>
         <div class="grid-3">
           <div class="card"><h3>DFU</h3><p>韌體更新站。Agent 會依指定 slot 操作 HMI 輸入 SN，完成後監控 Atlas CSV。</p></div>
-          <div class="card"><h3>FCT</h3><p>功能測試站。全 slot 直接監控；稀疏 slot 會先同步測試 checkbox。</p></div>
+          <div class="card"><h3>FCT</h3><p>功能測試站。儀器自行偵測有料 slot；Agent 不操作 HMI，所有 JOB 都直接依 SN 監控結果。</p></div>
           <div class="card"><h3>BT</h3><p>藍牙測試站。Agent 點 Start All 或指定 Start N，並分析 STATUS 與設備 SN。</p></div>
         </div>
         <h3>JOB ID 規則</h3>

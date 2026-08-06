@@ -16,6 +16,9 @@ DFU 會先全螢幕匹配 `test_window.png`，後續條碼框與開始按鈕的�
 輸入框／`OK`，以及 BT 的 `Start All`；刻意不包含會變動的 PASS、FAIL、NOTSET
 或 TESTING 顏色。FCT 沒有 UI 點擊，直接監聽 CSV。
 
+FCT 的正式 JOB、稀疏 slot 與 Demo 都不需要 `fct_window.png`、checked 或 unchecked 模板；
+HTML 模擬 HMI 的 checkbox 僅供操作人員手動選擇，Agent 不會辨識或點擊。
+
 ### DFU 四槽與七槽
 
 - `b482_dfu2`：舊四槽流程；每一筆是「點 SN 欄 → 輸入 → 點 OK」。
