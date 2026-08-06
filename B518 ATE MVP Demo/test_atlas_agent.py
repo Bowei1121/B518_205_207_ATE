@@ -258,10 +258,10 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(absolute_hid_report_coordinate((0, 0), 1440, 900), (0, 0))
         self.assertEqual(absolute_hid_report_coordinate((1439, 899), 1440, 900), (32767, 32767))
         self.assertEqual(click_commands((4915, 22632), "absolute"),
-                         ["M_ABS:4915,22632", "M_ABS_CLICK:L"])
+                         ["M_ABS:4915,22632", "M_ABS:4915,22632", "M_CLICK:L"])
         self.assertEqual(dfu_ok_each_commands(["SN1"], (10, 20), (30, 40), "absolute"),
-                         ["M_ABS:10,20", "M_ABS_CLICK:L", "K_WRITE:SN1",
-                          "M_ABS:30,40", "M_ABS_CLICK:L"])
+                         ["M_ABS:10,20", "M_ABS:10,20", "M_CLICK:L", "K_WRITE:SN1",
+                          "M_ABS:30,40", "M_ABS:30,40", "M_CLICK:L"])
         with self.assertRaises(AgentError):
             absolute_hid_report_coordinate((1440, 0), 1440, 900)
 

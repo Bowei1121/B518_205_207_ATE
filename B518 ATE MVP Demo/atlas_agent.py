@@ -553,13 +553,13 @@ def absolute_click_commands(target: tuple[int, int]) -> list[str]:
 
 def click_commands(target: tuple[int, int], mode: str) -> list[str]:
     if mode == "absolute":
-        # Keep movement and the button report on the same absolute-pointer
-        # interface.  Mojave/Catalina can discard the first absolute report
-        # after the HID endpoint has been idle; M_ABS_CLICK sends the stored
-        # coordinates again with the button state, so the first focus click
-        # cannot fall through to the cursor's previous relative-mouse
-        # position.
-        return [f"M_ABS:{target[0]},{target[1]}", "M_ABS_CLICK:L"]
+        # Mojave/Catalina can discard the first absolute report after the HID
+        # endpoint has been idle, while their mouse stack may ignore button
+        # reports from the custom absolute pointer altogether.  Repeat the
+        # idempotent position report, then click through the standard relative
+        # mouse interface that is accepted by all target macOS versions.
+        move = f"M_ABS:{target[0]},{target[1]}"
+        return [move, move, "M_CLICK:L"]
     return absolute_click_commands(target)
 
 
