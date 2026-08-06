@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -50,6 +50,28 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual((root.deiconified, settings.deiconified, maker.deiconified), (1, 1, 1))
         self.assertEqual(maker.state(), "zoomed")
         self.assertEqual((root.lifted, settings.lifted, maker.lifted), (1, 1, 1))
+
+    def test_activate_atlas_window_restores_foreground_and_modal_grab(self):
+        class FakeWindow:
+            def __init__(self):
+                self.calls = []
+            def winfo_exists(self): return True
+            def deiconify(self): self.calls.append("deiconify")
+            def lift(self): self.calls.append("lift")
+            def focus_force(self): self.calls.append("focus")
+            def grab_set(self): self.calls.append("grab")
+
+        window = FakeWindow()
+        activate_atlas_window(window, modal=True)
+        self.assertEqual(window.calls, ["deiconify", "lift", "focus", "grab"])
+
+    def test_dfu_seven_slot_hmi_has_compact_mode_and_preserves_input_controls(self):
+        hmi = Path(__file__).with_name("b482_demo_hmi.html").read_text(encoding="utf-8")
+        self.assertIn("body.dfu-seven-mode .top", hmi)
+        self.assertIn("#dfu.dfu-seven .cards", hmi)
+        self.assertIn("function updateDfuCompactMode()", hmi)
+        self.assertIn('id="snInput"', hmi)
+        self.assertIn("OK（開始測試）", hmi)
 
     def test_build_version_bumps_patch_without_touching_other_values(self):
         updated, version = bump_version('VERSION = "3.14.15"\n')

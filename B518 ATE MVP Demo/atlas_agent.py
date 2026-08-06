@@ -167,6 +167,25 @@ def restore_atlas_windows(windows: Iterable[tuple[tk.Misc, str]]) -> None:
             continue
 
 
+def activate_atlas_window(window: tk.Misc, *, modal: bool = False) -> None:
+    """Bring an Atlas window back to the operator after a temporary withdraw.
+
+    macOS may reorder sibling transient windows after ``withdraw``.  Calling
+    this once from idle and once shortly afterwards lets the AppKit window
+    server finish that reorder without relying on a permanent topmost flag.
+    """
+    try:
+        if not window.winfo_exists():
+            return
+        window.deiconify()
+        window.lift()
+        window.focus_force()
+        if modal:
+            window.grab_set()
+    except (tk.TclError, AttributeError):
+        return
+
+
 def choose_directory_showing_hidden(initial: str = "", parent: Optional[tk.Misc] = None) -> str:
     """Choose a directory while exposing hidden paths such as /vault.
 
@@ -1383,10 +1402,11 @@ class TemplateMakerDialog:
     PREVIEW_SIZES = ((700, 400), (900, 520), (1200, 700))
     MAX_SOURCE_PIXELS = 24_000_000
 
-    def __init__(self, parent: tk.Tk, template_root: Path, screenshot_root: Path,
+    def __init__(self, parent: tk.Misc, template_root: Path, screenshot_root: Path,
                  suggested_names: Iterable[str] = ("test_window.png",),
                  capture_screenshot: Optional[Callable[[], Path]] = None) -> None:
         self.app_root = parent.winfo_toplevel()
+        self.owner = parent
         self.window = tk.Toplevel(parent)
         self.window.title("製作圖像匹配模板")
         self.window.transient(parent)
@@ -1427,7 +1447,39 @@ class TemplateMakerDialog:
         ttk.Label(self.window, textvariable=self.info).pack(padx=10, anchor="w")
         footer = ttk.Frame(self.window, padding=10); footer.pack(fill="x")
         ttk.Button(footer, text="儲存模板", command=self.save).pack(side="right")
-        ttk.Button(footer, text="取消", command=self.window.destroy).pack(side="right", padx=5)
+        ttk.Button(footer, text="取消", command=self.close).pack(side="right", padx=5)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+        self.window.after_idle(self._restore_modal_focus)
+
+    def _restore_modal_focus(self) -> None:
+        """Return the template dialog above its owner after a screenshot."""
+        activate_atlas_window(self.window, modal=True)
+        # Tk returns from ``withdraw`` before macOS has finalized transient
+        # stacking. Reassert the intended foreground once that has happened.
+        try:
+            if self.window.winfo_exists():
+                self.window.after(150, lambda: activate_atlas_window(self.window, modal=True))
+        except tk.TclError:
+            pass
+
+    def _release_modal_grab(self) -> None:
+        try:
+            if self.window.winfo_exists():
+                self.window.grab_release()
+        except tk.TclError:
+            pass
+
+    def close(self) -> None:
+        """Release modal ownership before returning focus to Settings."""
+        self._release_modal_grab()
+        try:
+            self.window.destroy()
+        except tk.TclError:
+            return
+        try:
+            self.owner.after_idle(lambda: activate_atlas_window(self.owner))
+        except tk.TclError:
+            pass
 
     def choose_image(self) -> None:
         selected = filedialog.askopenfilename(parent=self.window, initialdir=str(self.screenshot_root),
@@ -1449,6 +1501,7 @@ class TemplateMakerDialog:
             messagebox.showerror(TITLE, "目前沒有可用的 Arduino 擷取功能", parent=self.window); return
         self.capture_button.state(["disabled"])
         self.info.set("Atlas Agent 正在暫時隱藏，準備擷取乾淨的螢幕截圖…")
+        self._release_modal_grab()
         self.hidden_windows = hide_visible_atlas_windows(self.app_root)
         # A withdraw request is asynchronous on macOS.  Waiting briefly before
         # the Arduino shortcut prevents the Agent UI from appearing in the PNG.
@@ -1490,10 +1543,12 @@ class TemplateMakerDialog:
     def _captured_screenshot(self, image: Path) -> None:
         self.capture_button.state(["!disabled"])
         self.load(image)
+        self._restore_modal_focus()
 
     def _capture_failed(self, message: str) -> None:
         self.capture_button.state(["!disabled"])
         self.info.set("擷取截圖失敗")
+        self._restore_modal_focus()
         messagebox.showerror(TITLE, message, parent=self.window)
 
     def load(self, path: Path) -> None:
@@ -1795,7 +1850,7 @@ class AtlasAgentApp:
             ttk.Entry(paths, textvariable=variable, width=58).grid(row=row, column=1, sticky="ew", pady=3)
             ttk.Button(paths, text="選擇", command=lambda v=variable: choose_dialog_dir(v)).grid(row=row, column=2, padx=(5, 0), pady=3)
         ttk.Button(paths, text="製作模板", command=lambda: self.open_template_maker(
-            template_path.get(), screenshot_path.get(), dfu_profile.get())).grid(row=4, column=1, sticky="w", pady=(10, 0))
+            template_path.get(), screenshot_path.get(), dfu_profile.get(), dialog)).grid(row=4, column=1, sticky="w", pady=(10, 0))
         ttk.Button(paths, text="查看匹配疊圖", command=self.show_match_overlay).grid(row=4, column=2, sticky="e", pady=(10, 0))
         paths.columnconfigure(1, weight=1)
 
@@ -1890,14 +1945,15 @@ class AtlasAgentApp:
         ttk.Label(dialog, text=f"原圖 {width} × {height} px；檔案：{self.overlay_path}").pack(padx=10, pady=(0, 10))
 
     def open_template_maker(self, template_path: Optional[str] = None, screenshot_path: Optional[str] = None,
-                            dfu_profile: Optional[str] = None) -> None:
+                            dfu_profile: Optional[str] = None, owner: Optional[tk.Misc] = None) -> None:
         template_root = Path(template_path if template_path is not None else self.template_path.get()).expanduser()
         screenshot_root = Path(screenshot_path if screenshot_path is not None else self.screenshot_path.get()).expanduser()
         if not screenshot_root.is_dir():
             messagebox.showerror(TITLE, "請先選擇有效的螢幕截圖路徑"); return
+        parent = owner or self.root
         station = self.station.get()
         if station == "FCT":
-            TemplateMakerDialog(self.root, template_root, screenshot_root,
+            TemplateMakerDialog(parent, template_root, screenshot_root,
                                 list(FCT_CHECKBOX_TEMPLATES.values()),
                                 lambda: self.capture_template_screenshot(screenshot_root))
             return
@@ -1906,7 +1962,7 @@ class AtlasAgentApp:
         suggested.extend(profile[key] for key in ("barcode", "ok", "start", "slot_label", "group_label", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
-        TemplateMakerDialog(self.root, template_root, screenshot_root, suggested,
+        TemplateMakerDialog(parent, template_root, screenshot_root, suggested,
                             lambda: self.capture_template_screenshot(screenshot_root))
 
     def capture_template_screenshot(self, screenshot_root: Optional[Path] = None) -> Path:
