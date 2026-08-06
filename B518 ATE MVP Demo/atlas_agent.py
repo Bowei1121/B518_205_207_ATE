@@ -553,14 +553,20 @@ def absolute_click_commands(target: tuple[int, int]) -> list[str]:
 
 def click_commands(target: tuple[int, int], mode: str) -> list[str]:
     if mode == "absolute":
-        # Mojave/Catalina can discard the first absolute report after the HID
-        # endpoint has been idle, while their mouse stack may ignore button
-        # reports from the custom absolute pointer altogether.  Repeat the
-        # idempotent position report, then click through the standard relative
-        # mouse interface that is accepted by all target macOS versions.
-        move = f"M_ABS:{target[0]},{target[1]}"
-        return [move, move, "M_CLICK:L"]
+        return [f"M_ABS:{target[0]},{target[1]}", "M_CLICK:L"]
     return absolute_click_commands(target)
+
+
+def window_focus_commands(logical_target: tuple[int, int]) -> list[str]:
+    """Activate an unfocused test HMI using only the standard mouse interface.
+
+    The custom absolute pointer remains the accurate mechanism for controls,
+    but macOS may not associate its cursor movement with a button report from
+    the standard relative pointer while the destination application is
+    inactive.  Reset/move/click keeps the initial activation transaction on a
+    single, universally supported HID mouse interface.
+    """
+    return absolute_click_commands(logical_target)
 
 
 def hid_success_reply(command: str) -> str:
@@ -2945,7 +2951,7 @@ class AtlasAgentApp:
                 # Bring the HMI/browser to the foreground before the first
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
-                focus_commands = click_commands(target_for(window_center), hid_mode)
+                focus_commands = window_focus_commands(logical_for(window_center))
                 dfu7_profile = profile["input_mode"] == "enter_each_ok_once"
                 sparse_checkbox_job = (self.auto_slot_sync.get() and slots != [1, 2, 3, 4]
                                        and profile["input_mode"] == "ok_each")
@@ -2995,7 +3001,7 @@ class AtlasAgentApp:
                         self.events.put(("log", f"DFU 七槽：最新定位 SN={barcode_source} → HID {barcode}，"
                                                  f"OK={button_source} → HID {button}"))
                         self.events.put(("log", "DFU 七槽：重新點擊測試畫面取得焦點，準備輸入條碼"))
-                        self.send_hid_sequence(click_commands(target_for(window_center), hid_mode), delay=delay)
+                        self.send_hid_sequence(window_focus_commands(logical_for(window_center)), delay=delay)
                     elif sparse_checkbox_job:
                         self.ensure_slot_checkbox_states(slots, screenshot_dir, window,
                                                          resolved[profile["checkbox_checked"]],
@@ -3048,8 +3054,8 @@ class AtlasAgentApp:
                 # Click the harmless BT title first.  This brings the Safari/
                 # instrument window to the foreground so the following Start
                 # click is not lost to another focused application.
-                focus = target_for(rectangle_center(window_rect))
-                commands = click_commands(focus, hid_mode)
+                focus = logical_for(rectangle_center(window_rect))
+                commands = window_focus_commands(focus)
                 for _, button in buttons:
                     commands.extend(click_commands(button, hid_mode))
                 bt_started_at = datetime.now()

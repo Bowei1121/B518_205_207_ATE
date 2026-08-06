@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -258,10 +258,12 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(absolute_hid_report_coordinate((0, 0), 1440, 900), (0, 0))
         self.assertEqual(absolute_hid_report_coordinate((1439, 899), 1440, 900), (32767, 32767))
         self.assertEqual(click_commands((4915, 22632), "absolute"),
-                         ["M_ABS:4915,22632", "M_ABS:4915,22632", "M_CLICK:L"])
+                         ["M_ABS:4915,22632", "M_CLICK:L"])
+        self.assertEqual(window_focus_commands((500, 300)),
+                         ["M_RESET", "M_MOVE:500,300", "M_CLICK:L"])
         self.assertEqual(dfu_ok_each_commands(["SN1"], (10, 20), (30, 40), "absolute"),
-                         ["M_ABS:10,20", "M_ABS:10,20", "M_CLICK:L", "K_WRITE:SN1",
-                          "M_ABS:30,40", "M_ABS:30,40", "M_CLICK:L"])
+                         ["M_ABS:10,20", "M_CLICK:L", "K_WRITE:SN1",
+                          "M_ABS:30,40", "M_CLICK:L"])
         with self.assertRaises(AgentError):
             absolute_hid_report_coordinate((1440, 0), 1440, 900)
 
