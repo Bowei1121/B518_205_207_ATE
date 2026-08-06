@@ -85,8 +85,8 @@ def should_send_start_failed_nack(job_id: str, connected: bool) -> bool:
     return connected and not job_id.startswith("DEMO-")
 
 
-CHECKBOX_EDGE_SCORE_MINIMUM = .40
-CHECKBOX_EDGE_SCORE_MARGIN = .08
+CHECKBOX_EDGE_SCORE_MINIMUM = .35
+CHECKBOX_EDGE_SCORE_MARGIN = .07
 CHECKBOX_EDGE_PADDING = 2
 
 # Dynamic PASS / FAIL / NOTSET / TESTING cells are deliberately excluded from
@@ -953,6 +953,30 @@ def dfu7_slot_anchor_order(anchors: Iterable[tuple[int, int, int, int, float]], 
     return sorted(top, key=lambda item: item[0]) + sorted(bottom, key=lambda item: item[0])
 
 
+def dfu7_checkbox_search_regions(anchors: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
+    """Cover each full card from its slot label to just before the next card.
+
+    The field/compact HMI places the checkbox at the far-right side of a wide
+    card.  A width derived only from the label itself stops hundreds of pixels
+    too early on Retina screenshots.  Row spacing is stable even when the
+    entire browser moves, so it gives a bounded region without entering the
+    neighbouring card.
+    """
+    if len(anchors) != 7:
+        raise AgentError("DFU 七槽 checkbox 搜尋需要七個 slot 錨點")
+    regions: list[tuple[int, int, int, int]] = []
+    for row in (anchors[:4], anchors[4:]):
+        spacings = [right[0] - left[0] for left, right in zip(row, row[1:]) if right[0] > left[0]]
+        if not spacings:
+            raise AgentError("DFU 七槽無法由 slot 錨點計算卡片寬度")
+        card_spacing = int(round(sum(spacings) / len(spacings)))
+        for x, y, width, height in row:
+            left = x + width
+            regions.append((left, max(0, y - height), max(40, card_spacing - width),
+                            max(40, height * 3)))
+    return regions
+
+
 def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_template: Path,
                          checked_template: Path, unchecked_template: Path,
                          region: Optional[tuple[int, int, int, int]] = None) -> tuple[
@@ -965,16 +989,19 @@ def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_tem
     # The lower selector is the lowest/rightmost occurrence; table group0 text
     # above it is intentionally ignored.
     group_x, group_y, group_w, group_h, _ = max(group_hits, key=lambda item: (item[1], item[0]))
-    group_roi = (max(0, group_x - max(140, group_w * 5)), max(0, group_y - group_h),
-                 max(120, group_w * 5), max(group_h * 3, 40))
+    # group0's checkbox sits immediately to the label's left.  Keeping this
+    # ROI tight avoids matching borders/checkboxes from the results table.
+    group_roi_width = max(60, group_h * 2)
+    group_roi = (max(0, group_x - group_roi_width), max(0, group_y - 2),
+                 group_roi_width, max(40, group_h + 4))
     try:
         group_state = checkbox_state_evidence_in_region(image, checked_template, unchecked_template, group_roi)
     except AgentError as exc:
         raise AgentError(f"group0 checkbox：{exc}") from exc
     anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72, region=region), group_y)
     states: list[CheckboxEvidence] = []
-    for index, (x, y, width, height) in enumerate(anchors, start=1):
-        checkbox_roi = (x + width, max(0, y - height), max(140, width * 5), max(40, height * 3))
+    checkbox_regions = dfu7_checkbox_search_regions(anchors)
+    for index, checkbox_roi in enumerate(checkbox_regions, start=1):
         try:
             states.append(checkbox_state_evidence_in_region(
                 image, checked_template, unchecked_template, checkbox_roi))

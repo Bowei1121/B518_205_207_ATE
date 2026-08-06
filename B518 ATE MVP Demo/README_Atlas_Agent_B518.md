@@ -270,6 +270,8 @@ checkbox；接著定位下方七個共用 `slot` 標籤，只在每一個標籤�
 `templates/README.md`。checkbox 狀態採灰階邊緣與勾形幾何比對，因此 HMI 取得焦點後由灰底黑勾
 變成綠底白勾仍可辨識；checked／unchecked 模板仍應框選相同主體範圍。若兩種狀態分數太接近，
 Agent 會停止並在 Log 列出 group0 與 slot1～7 的 checked／unchecked 分數，不會繼續輸入條碼。
+每個 slot 的搜尋寬度由同一排相鄰 slot 文字間距計算，會涵蓋卡片最右側的 checkbox，但不跨入
+下一張卡片；因此緊湊版、Retina 截圖或整個瀏覽器平移時不需重新調整固定像素寬度。
 
 七槽自動同步時，不論原狀態為何都會先透過 group0 回到全未勾選。稀疏 Demo 再逐一勾選指定
 slot；七槽全測則由 group0 一次全選。複驗成功後會用最後一張截圖重新定位 SN 輸入框與 OK，
