@@ -69,7 +69,7 @@ SCREENSHOT_TIMEOUT_SECONDS = 15.0
 # global screenshot shortcut. This is intentionally separate from the time
 # macOS needs to write the captured PNG to disk.
 TEMPLATE_CAPTURE_HIDE_SETTLE_MS = 350
-DFU_PROFILES = ("b482_dfu2", "generic", "b482_dfu1_manual")
+DFU_PROFILES = ("b482_dfu2", "b482_dfu2_7slot", "generic", "b482_dfu1_manual")
 DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 6, "BT": 4}
 COMPACT_HMI_GEOMETRY = "420x820"
 COMPACT_HMI_MIN_SIZE = (400, 700)
@@ -90,6 +90,18 @@ VISUAL_PROFILES = {
         "window": "b482/dfu2_window.png", "barcode": "b482/dfu2_sn_input.png",
         "ok": "b482/dfu2_ok.png", "checkbox_checked": "b482/slot_checkbox_checked.png",
         "checkbox_unchecked": "b482/slot_checkbox_unchecked.png", "window_size": (1011, 600), "input_mode": "ok_each",
+    },
+    # Field DFU HMI: seven cards (four on the first row, three on the second),
+    # one shared SN input, and one final OK which starts the test.  The label
+    # templates are position anchors; checkbox state is searched only adjacent
+    # to those anchors, never in the upper results table.
+    "b482_dfu2_7slot": {
+        "window": "b482/dfu7_window.png", "barcode": "b482/dfu7_sn_input.png",
+        "ok": "b482/dfu7_ok.png", "slot_label": "b482/dfu7_slot_label.png",
+        "group_label": "b482/dfu7_group0_label.png",
+        "checkbox_checked": "b482/slot_checkbox_checked.png",
+        "checkbox_unchecked": "b482/slot_checkbox_unchecked.png",
+        "input_mode": "enter_each_ok_once", "slot_count": 7,
     },
     "b482_bt": {
         "window": "b482/bt_window.png", "start": "b482/bt_start_all.png",
@@ -425,6 +437,41 @@ def dfu_ok_each_commands(sns: Iterable[str], barcode: tuple[int, int], button: t
     return commands
 
 
+def dfu_enter_each_ok_once_commands(sns: Iterable[str], barcode: tuple[int, int], button: tuple[int, int],
+                                    mode: str = "relative") -> list[str]:
+    """Build field-DFU commands: Enter after each SN, then one final OK.
+
+    K_TYPE is intentionally used instead of K_WRITE because the Arduino
+    firmware appends Enter.  The real field HMI moves the entered serial to
+    the next selected slot on that key press; OK is reserved for starting ATE.
+    """
+    commands: list[str] = []
+    for sn in sns:
+        commands.extend(click_commands(barcode, mode))
+        commands.append(f"K_TYPE:{sn}")
+    commands.extend(click_commands(button, mode))
+    return commands
+
+
+def dfu7_group_reset_commands(group_checkbox: tuple[int, int], slots: Iterable[int],
+                              group_initially_checked: bool, mode: str = "relative") -> list[str]:
+    """Return deterministic group0 reset/select commands for the seven-slot HMI."""
+    requested = tuple(sorted(set(slots)))
+    if any(slot < 1 or slot > 7 for slot in requested):
+        raise AgentError("DFU 七槽 slot 必須介於 1～7")
+    commands: list[str] = []
+    # End at known all-off state even if group0 visual state and individual
+    # controls were previously inconsistent.
+    if group_initially_checked:
+        commands.extend(click_commands(group_checkbox, mode))
+    else:
+        commands.extend(click_commands(group_checkbox, mode))
+        commands.extend(click_commands(group_checkbox, mode))
+    if requested == (1, 2, 3, 4, 5, 6, 7):
+        commands.extend(click_commands(group_checkbox, mode))
+    return commands
+
+
 def dfu_tab_slot_commands(assignments: Iterable[tuple[int, str]]) -> list[str]:
     """Type sparse generic-DFU slots, using Tab to preserve empty positions."""
     commands: list[str] = []
@@ -755,6 +802,56 @@ def slot_checkbox_states(image: Path, checked_template: Path, unchecked_template
     if len(rows) != 4:
         raise AgentError(f"Slot checkbox 僅辨識到 {len(rows)} 個；請從同一張、同一解析度 HMI 截圖製作 checked / unchecked 模板")
     return [(item[2], item[3]) for item in rows]
+
+
+def checkbox_state_in_region(image: Path, checked_template: Path, unchecked_template: Path,
+                             region: tuple[int, int, int, int]) -> tuple[bool, tuple[int, int, int, int]]:
+    """Find one checkbox state inside a deliberately small local region."""
+    candidates: list[tuple[float, bool, tuple[int, int, int, int]]] = []
+    for checked, template in ((True, checked_template), (False, unchecked_template)):
+        for x, y, width, height, score in template_matches(image, template, threshold=.72, region=region):
+            candidates.append((score, checked, (x, y, width, height)))
+    if not candidates:
+        raise AgentError("找不到 checkbox checked / unchecked 模板")
+    _, checked, rectangle = max(candidates, key=lambda item: item[0])
+    return checked, rectangle
+
+
+def dfu7_slot_anchor_order(anchors: Iterable[tuple[int, int, int, int, float]], group_y: int) -> list[tuple[int, int, int, int]]:
+    """Order field-HMI slot labels as four top-row and three bottom-row cards."""
+    lower = [(x, y, width, height) for x, y, width, height, _ in anchors if y > group_y]
+    if len(lower) != 7:
+        raise AgentError(f"DFU 七槽僅辨識到 {len(lower)} 個下方 slot 標籤；請確認 slot_label 模板與畫面比例")
+    lower.sort(key=lambda item: item[1])
+    first_y, label_height = lower[0][1], lower[0][3]
+    top = [item for item in lower if abs(item[1] - first_y) <= max(label_height * 2, 20)]
+    bottom = [item for item in lower if item not in top]
+    if len(top) != 4 or len(bottom) != 3:
+        raise AgentError("DFU 七槽版型必須辨識為第一排 4 個、第二排 3 個 slot 標籤")
+    return sorted(top, key=lambda item: item[0]) + sorted(bottom, key=lambda item: item[0])
+
+
+def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_template: Path,
+                         checked_template: Path, unchecked_template: Path,
+                         region: Optional[tuple[int, int, int, int]] = None) -> tuple[
+                             tuple[bool, tuple[int, int, int, int]], list[tuple[bool, tuple[int, int, int, int]]],
+                             tuple[int, int, int, int], list[tuple[int, int, int, int]]]:
+    """Locate group0 and seven card checkboxes using label-relative ROIs."""
+    group_hits = template_matches(image, group_label_template, threshold=.72, region=region)
+    if not group_hits:
+        raise AgentError("找不到 DFU 七槽 group0 標籤模板")
+    # The lower selector is the lowest/rightmost occurrence; table group0 text
+    # above it is intentionally ignored.
+    group_x, group_y, group_w, group_h, _ = max(group_hits, key=lambda item: (item[1], item[0]))
+    group_roi = (max(0, group_x - max(140, group_w * 5)), max(0, group_y - group_h),
+                 max(120, group_w * 5), max(group_h * 3, 40))
+    group_state = checkbox_state_in_region(image, checked_template, unchecked_template, group_roi)
+    anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72, region=region), group_y)
+    states: list[tuple[bool, tuple[int, int, int, int]]] = []
+    for x, y, width, height in anchors:
+        checkbox_roi = (x + width, max(0, y - height), max(140, width * 5), max(40, height * 3))
+        states.append(checkbox_state_in_region(image, checked_template, unchecked_template, checkbox_roi))
+    return group_state, states, (group_x, group_y, group_w, group_h), anchors
 
 
 def opencv_image_to_tk_png(image) -> str:
@@ -1708,7 +1805,7 @@ class AtlasAgentApp:
         ttk.Label(flow, text="DFU 畫面設定：").grid(row=0, column=0, sticky="w", pady=3)
         ttk.Combobox(flow, textvariable=dfu_profile, width=28, state="readonly",
                      values=DFU_PROFILES).grid(row=0, column=1, sticky="w", pady=3)
-        ttk.Label(flow, text="B482 DFU_2：每個 SN 輸入後按 OK。", foreground="#555").grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Label(flow, text="DFU_2：每筆 SN 後按 OK；DFU_2_7slot：每筆 SN 後按 Enter，全部完成才按一次 OK。", foreground="#555", wraplength=620).grid(row=1, column=0, columnspan=2, sticky="w")
         ttk.Label(flow, text="測試結果逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
         ttk.Entry(flow, textvariable=result_timeout, width=10).grid(row=2, column=1, sticky="w", pady=(12, 3))
         ttk.Label(flow, text="0 表示不逾時；未完成 SN 回報 TIMEOUT。", foreground="#555").grid(row=3, column=0, columnspan=2, sticky="w")
@@ -1806,7 +1903,7 @@ class AtlasAgentApp:
             return
         profile = VISUAL_PROFILES[(dfu_profile if dfu_profile is not None else self.dfu_profile.get()) if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
-        suggested.extend(profile[key] for key in ("barcode", "ok", "start", "checkbox_checked", "checkbox_unchecked") if key in profile)
+        suggested.extend(profile[key] for key in ("barcode", "ok", "start", "slot_label", "group_label", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
         TemplateMakerDialog(self.root, template_root, screenshot_root, suggested,
@@ -2343,6 +2440,82 @@ class AtlasAgentApp:
             self.send_hid_sequence(commands, delay=delay)
         raise AgentError("Slot checkbox 驗證流程異常")
 
+    def ensure_dfu7_slot_checkbox_states(self, slots: list[int], screenshot_dir: Path, window_template: Path,
+                                         slot_label_template: Path, group_label_template: Path,
+                                         checked_template: Path, unchecked_template: Path,
+                                         target_for: Callable[[tuple[int, int]], tuple[int, int]],
+                                         hid_mode: str, delay: float) -> None:
+        """Reset field DFU group0, select requested slots, and verify all seven."""
+        def fresh_layout(label: str):
+            before = time.time(); self.link.send_control("SCREENSHOT")
+            self.events.put(("log", label))
+            time.sleep(SCREENSHOT_SETTLE_SECONDS)
+            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
+            shots: list[Path] = []
+            while time.monotonic() < deadline and not shots:
+                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            if not shots:
+                raise AgentError(f"DFU 七槽 checkbox 截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+            errors: list[str] = []
+            selected = None
+            for shot in shots:
+                try:
+                    template_match(shot, window_template)
+                    layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
+                                                  checked_template, unchecked_template)
+                    selected = (shot, layout); break
+                except AgentError as exc:
+                    errors.append(f"{shot.name}: {exc}")
+            self.delete_processed_screenshots(shots)
+            if selected is None:
+                raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" + "；".join(errors))
+            return selected
+
+        _, layout = fresh_layout("DFU 七槽：讀取 group0 與 slot checkbox 初始狀態…")
+        (group_checked, group_rectangle), states, group_label, anchors = layout
+        group_target = target_for(rectangle_center(group_rectangle))
+        commands = dfu7_group_reset_commands(group_target, slots, group_checked, hid_mode)
+        if tuple(slots) != (1, 2, 3, 4, 5, 6, 7):
+            for index, (_, rectangle) in enumerate(states, start=1):
+                if index in slots:
+                    commands.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+        self.send_hid_sequence(commands, delay=delay)
+
+        for attempt in range(2):
+            selected, layout = fresh_layout(f"DFU 七槽：驗證 checkbox（第 {attempt + 1} 次）…")
+            (_, group_rectangle), states, group_label, anchors = layout
+            expected_group = tuple(slots) == (1, 2, 3, 4, 5, 6, 7)
+            group_mismatch = layout[0][0] != expected_group
+            mismatches = [(index, rectangle, index in slots) for index, (checked, rectangle) in enumerate(states, start=1)
+                          if checked != (index in slots)]
+            annotations = [("group0 label", group_label, target_for(rectangle_center(group_label)))]
+            annotations.append((f"group0 {'checked' if layout[0][0] else 'unchecked'}", group_rectangle,
+                                target_for(rectangle_center(group_rectangle))))
+            annotations.extend((f"slot{index} {'checked' if checked else 'unchecked'}", rectangle,
+                                target_for(rectangle_center(rectangle)))
+                               for index, ((checked, rectangle), _) in enumerate(zip(states, anchors), start=1))
+            write_match_overlay(selected, annotations, self.overlay_path)
+            current = "、".join(f"slot{index}={'勾選' if checked else '取消'}" for index, (checked, _) in enumerate(states, start=1))
+            if not group_mismatch and not mismatches:
+                self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + current))
+                return
+            if attempt:
+                raise AgentError("DFU 七槽 checkbox 驗證失敗，HMI 實際狀態為：" + current +
+                                 "；已停止，未輸入任何條碼。請檢查模板、HMI 焦點與 group0 行為。")
+            self.events.put(("log", "DFU 七槽 checkbox 尚未符合 JOB，進行一次個別補正"))
+            correction: list[str] = []
+            if group_mismatch:
+                correction.extend(dfu7_group_reset_commands(target_for(rectangle_center(group_rectangle)), slots,
+                                                            layout[0][0], hid_mode))
+                if not expected_group:
+                    for index, (_, rectangle) in enumerate(states, start=1):
+                        if index in slots:
+                            correction.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+            for _, rectangle, _ in mismatches:
+                if not group_mismatch:
+                    correction.extend(click_commands(target_for(rectangle_center(rectangle)), hid_mode))
+            self.send_hid_sequence(correction, delay=delay)
+
     def configure_fct_sparse_slots(self, slots: list[int], csv_root: Path, sns: list[str], batch_number: int,
                                    created_after: float, result_timeout: float) -> None:
         """Set FCT's four visible test checkboxes before beginning file monitoring."""
@@ -2419,7 +2592,10 @@ class AtlasAgentApp:
             templates = Path(self.template_path.get()).expanduser()
             if station == "DFU":
                 required = [profile["window"], profile["barcode"]]
-                if self.auto_slot_sync.get() and slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
+                if self.auto_slot_sync.get() and profile["input_mode"] == "enter_each_ok_once":
+                    required.extend((profile["slot_label"], profile["group_label"],
+                                     profile["checkbox_checked"], profile["checkbox_unchecked"]))
+                elif self.auto_slot_sync.get() and slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
                     required.extend((profile["checkbox_checked"], profile["checkbox_unchecked"]))
             else:
                 start_templates = ([profile["start"]] if slots == [1, 2, 3, 4]
@@ -2427,7 +2603,7 @@ class AtlasAgentApp:
                 # BT result status is read from TestData CSV after Start; only
                 # the stable window and Start controls need image templates.
                 required = [profile["window"], *start_templates]
-            if station == "DFU" and profile["input_mode"] == "ok_each":
+            if station == "DFU" and profile["input_mode"] in ("ok_each", "enter_each_ok_once"):
                 required.append(profile["ok"])
             resolved = {item: resolve_template_path(templates, item) for item in required if item}
             missing = [item for item in required if item and not resolved[item].is_file()]
@@ -2502,8 +2678,10 @@ class AtlasAgentApp:
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
                 focus_commands = click_commands(target_for(window_center), hid_mode)
+                dfu7_profile = profile["input_mode"] == "enter_each_ok_once"
                 sparse_checkbox_job = (self.auto_slot_sync.get() and slots != [1, 2, 3, 4]
                                        and profile["input_mode"] == "ok_each")
+                dfu7_checkbox_job = self.auto_slot_sync.get() and dfu7_profile
                 if sparse_checkbox_job:
                     states = slot_checkbox_states(shot, resolved[profile["checkbox_checked"]],
                                                    resolved[profile["checkbox_unchecked"]], region=region)
@@ -2511,11 +2689,24 @@ class AtlasAgentApp:
                         target = target_for(rectangle_center(rectangle))
                         matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
                                                     rectangle_center(rectangle)), rectangle, target))
+                elif dfu7_checkbox_job:
+                    group_state, states, group_label, anchors = dfu7_checkbox_layout(
+                        shot, resolved[profile["slot_label"]], resolved[profile["group_label"]],
+                        resolved[profile["checkbox_checked"]], resolved[profile["checkbox_unchecked"]], region=region)
+                    matches.append((match_label("group0 label", rectangle_center(group_label)), group_label,
+                                    target_for(rectangle_center(group_label))))
+                    matches.append((match_label(f"group0 {'checked' if group_state[0] else 'unchecked'}",
+                                                rectangle_center(group_state[1])), group_state[1],
+                                    target_for(rectangle_center(group_state[1]))))
+                    for index, ((is_checked, rectangle), anchor) in enumerate(zip(states, anchors), start=1):
+                        matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
+                                                    rectangle_center(rectangle)), anchor,
+                                        target_for(rectangle_center(rectangle))))
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
                 matches.append((match_label("SN input", barcode_source), barcode_rect, barcode))
-                if profile["input_mode"] == "ok_each":
+                if profile["input_mode"] in ("ok_each", "enter_each_ok_once"):
                     button_rect = template_match(shot, resolved[profile["ok"]], region=region)
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
@@ -2523,15 +2714,31 @@ class AtlasAgentApp:
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(focus_commands, delay=delay)
-                    if sparse_checkbox_job:
+                    if dfu7_checkbox_job:
+                        self.ensure_dfu7_slot_checkbox_states(
+                            slots, screenshot_dir, window, resolved[profile["slot_label"]],
+                            resolved[profile["group_label"]], resolved[profile["checkbox_checked"]],
+                            resolved[profile["checkbox_unchecked"]], target_for, hid_mode, delay)
+                    elif sparse_checkbox_job:
                         self.ensure_slot_checkbox_states(slots, screenshot_dir, window,
                                                          resolved[profile["checkbox_checked"]],
                                                          resolved[profile["checkbox_unchecked"]],
                                                          target_for, hid_mode, delay)
+                    elif dfu7_profile:
+                        self.events.put(("log", "DFU 七槽手動 Slot 模式：已略過 group0／checkbox 模板與同步，請先在 HMI 人工設定 slot。"))
                     elif slots != [1, 2, 3, 4] and profile["input_mode"] == "ok_each":
                         self.events.put(("log", "DFU 手動 Slot 模式：已略過 checkbox 模板與同步，依人工設定的 slot 順序輸入 SN。"))
-                    self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
-                    self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
+                    if dfu7_profile:
+                        full_commands = dfu_enter_each_ok_once_commands(sns, barcode, button, hid_mode)
+                        final_ok = click_commands(button, hid_mode)
+                        self.send_hid_sequence(full_commands[:-len(final_ok)], delay=delay)
+                        monitor_started_after = time.time()
+                        self.send_hid_sequence(final_ok, delay=delay)
+                        created_after = monitor_started_after
+                        self.events.put(("log", f"DFU 七槽（{hid_mode}）：每筆 SN 已用 Enter 搬入指定 slot，已按一次 OK 啟動 ATE；啟動 CSV 監聽"))
+                    else:
+                        self.send_hid_sequence(dfu_ok_each_commands(sns, barcode, button, hid_mode), delay=delay)
+                        self.events.put(("log", f"DFU（{hid_mode}）：已點擊測試視窗取得焦點；截圖 SN {barcode_source} → HID {barcode}，OK {button_source} → HID {button}；全部 SN 輸入完成，啟動監聽"))
                 else:
                     commands = focus_commands + click_commands(barcode, hid_mode)
                     commands.extend(dfu_tab_slot_commands(zip(slots, sns)))

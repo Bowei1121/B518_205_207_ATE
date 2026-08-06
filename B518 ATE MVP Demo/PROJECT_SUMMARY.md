@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-05（Asia/Taipei）
+最後更新：2026-08-06（Asia/Taipei）
 
 ## 專案目的
 
@@ -27,6 +27,16 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 
 - `7d1e5aa fix: diagnose legacy mouse HID stalls`：韌體 1.0.4、舊 macOS 的較保守 mouse report 節奏、HID ACK 診斷與移除收訊鎖定造成的 UI 延遲。
 - 下一筆提交：無 SN Log Demo、即時 SN／結果表、正式辨識時隱藏 Agent 視窗、原生隱藏路徑選擇器。
+
+## 2026-08-06 DFU 現場流程確認
+
+- FAE 現場確認七槽 DFU 的真實操作是：每筆 SN 輸入後按 Enter 搬入下一個已勾選 slot；所有 SN
+  完成後，僅按一次 OK 以開始 ATE 測試。
+- 新增獨立 `b482_dfu2_7slot` Profile，保留既有四槽 `b482_dfu2`。七槽的 group0 先重設全部
+  slot，再套用本次選擇並截圖驗證；不通過時不會輸入 SN 或點 OK。
+- 七槽 checkbox 以 group0／slot 文字做位置錨點，在相鄰小範圍辨識 checked／unchecked，減少
+  模板數量並避開上方結果表格。
+- HTML 模擬 HMI 提供四槽／七槽切換，預設七槽現場流程。
 
 ## Git 與交付規則
 

@@ -53,7 +53,8 @@ class Simulator:
     def _assignments(station: str, payload: dict) -> list[tuple[int, str]]:
         if station != "BT":
             sns = [str(value).strip() for value in payload.get("sns", []) if str(value).strip()]
-            if not 1 <= len(sns) <= 4 or any(not SN_VALID.fullmatch(sn) for sn in sns) or len(set(sns)) != len(sns):
+            maximum = 7 if station == "DFU" else 4
+            if not 1 <= len(sns) <= maximum or any(not SN_VALID.fullmatch(sn) for sn in sns) or len(set(sns)) != len(sns):
                 raise ValueError("station 或 SN 格式不正確")
             return list(enumerate(sns, start=1))
 

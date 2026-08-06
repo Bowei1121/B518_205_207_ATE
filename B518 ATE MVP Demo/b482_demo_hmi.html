@@ -6,7 +6,7 @@
 <div class="top"><span class="title" id="title">DFU</span><span class="meta"><span>Production name: B482 Demo</span><span>Simulator UI: auto-DFU-20260722.3</span><span id="summary">Ready</span></span></div>
 <div class="tabbar"><button class="tab active" data-panel="dfu">DFU</button><button class="tab" data-panel="fct">FCT</button><button class="tab" data-panel="bt">BT</button></div>
 
-<main id="dfu" class="panel active"><p class="hint">B482 DFU_2 模擬：勾選要測試的 Slot，輸入 SN 後按 OK；未勾選的 Slot 固定顯示 NOTEST。</p><table class="table"><thead><tr><th>#</th><th>GROUP</th><th>SLOT</th><th>SN</th><th class="status-head">STATUS</th><th>PROGRESS</th></tr></thead><tbody id="dfuRows"></tbody></table><div class="cards" id="dfuCards"></div><div class="bottom"><input id="snInput" autocomplete="off" aria-label="SN input"><button class="button" onclick="clearDfu()">Clear</button><button class="button ok" onclick="addSn()">OK</button></div></main>
+<main id="dfu" class="panel active"><p class="hint">DFU 版型：<select id="dfuLayout" onchange="setDfuLayout(this.value)"><option value="7" selected>七槽現場流程（Enter 搬移 SN，OK 開始測試）</option><option value="4">四槽舊版流程（Enter 搬移 SN，OK 開始測試）</option></select></p><p class="hint">先以 group0 或各 slot checkbox 設定欲測試通道；輸入 SN 後按 Enter，全部完成才按 OK。未勾選的 Slot 固定顯示 NOTEST。</p><table class="table"><thead><tr><th>#</th><th>GROUP</th><th>SLOT</th><th>SN</th><th class="status-head">STATUS</th><th>PROGRESS</th></tr></thead><tbody id="dfuRows"></tbody></table><div class="hint"><label><input id="dfuGroup0" type="checkbox" onchange="toggleDfuGroup(this.checked)"> group0（全選／取消全選）</label></div><div class="cards" id="dfuCards"></div><div class="bottom"><input id="snInput" autocomplete="off" aria-label="SN input" onkeydown="if(event.key==='Enter'){event.preventDefault();addSn()}"><button class="button" onclick="clearDfu()">Clear</button><button class="button ok" onclick="startDfu()">OK（開始測試）</button></div></main>
 
 <main id="fct" class="panel"><p class="hint">FCT 模擬：勾選要測試的 Slot，再按下方按鈕模擬治具推入；未勾選的 Slot 固定顯示 NOTEST。</p><table class="table"><thead><tr><th>#</th><th>GROUP</th><th>SLOT</th><th>SN</th><th class="status-head">STATUS</th><th>PROGRESS</th></tr></thead><tbody id="fctRows"></tbody></table><div class="cards" id="fctCards"></div><div class="fctspace"><button class="button" onclick="startFct()">Simulate Fixture Insert</button></div></main>
 
@@ -14,7 +14,7 @@
 
 <div class="footer"><label class="hint"><input type="checkbox" id="failLast"> 模擬最後一台 FAIL</label></div><div id="log" class="log">Simulator ready.</div>
 <script>
-const colors=['c0','c1','c2','c3'];let dfuSlots=Array(4).fill(''),fctSlots=['FCTDEMO001','FCTDEMO002','FCTDEMO003','FCTDEMO004'],dfuChecked=[true,true,true,true],fctChecked=[true,true,true,true],batch=null;
+const colors=['c0','c1','c2','c3'];let dfuSlotCount=7,dfuSlots=Array(7).fill(''),fctSlots=['FCTDEMO001','FCTDEMO002','FCTDEMO003','FCTDEMO004'],dfuChecked=Array(7).fill(true),fctChecked=[true,true,true,true],batch=null;
 // BT 的單通道按鈕可平行啟動。每一個按鈕有自己的 server batch，
 // 但畫面仍合併顯示四個 slot 的最新狀態。
 const btChannels=[
@@ -24,14 +24,17 @@ const btChannels=[
 const activeBtSns=new Set(),btBatches=new Set(),btStatuses={};
 function stateFor(checked,sn){return !checked?'NOTEST':sn?'NOTSET':'NOTSET'}
 function row(sn,i,status,withGroup=true){return `<tr><td>${i+1}</td>${withGroup?'<td>group0</td>':''}<td class="slot">slot${i+1}</td><td>${sn||''}</td><td class="state ${status.toLowerCase()}">${status}</td><td>${status==='TESTING'?'Running':status==='PASS'||status==='FAIL'?'Complete':''}</td></tr>`}
-function card(sn,i,checked,kind){return `<div class="card ${colors[i]}"><div class="card-top"><span>slot${i+1}</span><label><input type="checkbox" ${checked?'checked':''} onchange="toggleSlot('${kind}',${i},this.checked)"> 測試</label></div><div class="sn-display">SN: ${sn||'—'}</div></div>`}
-function renderDfu(statuses={}){dfuRows.innerHTML=dfuSlots.map((sn,i)=>row(sn,i,statuses[sn]||stateFor(dfuChecked[i],sn))).join('');dfuCards.innerHTML=dfuSlots.map((sn,i)=>card(sn,i,dfuChecked[i],'dfu')).join('')}
+function card(sn,i,checked,kind){return `<div class="card ${colors[i%colors.length]}"><div class="card-top"><span>slot${i+1}</span><label><input type="checkbox" ${checked?'checked':''} onchange="toggleSlot('${kind}',${i},this.checked)"> 測試</label></div><div class="sn-display">SN: ${sn||'—'}</div></div>`}
+function dfuCard(sn,i,checked){return `<div class="card ${colors[i%colors.length]}"><div class="card-top"><span>slot${i+1}</span><label><input type="checkbox" ${checked?'checked':''} onchange="toggleSlot('dfu',${i},this.checked)"></label></div><div class="sn-display">SN: ${sn||'—'}</div></div>`}
+function renderDfu(statuses={}){dfuRows.innerHTML=dfuSlots.map((sn,i)=>row(sn,i,statuses[sn]||stateFor(dfuChecked[i],sn))).join('');dfuCards.innerHTML=dfuSlots.map((sn,i)=>dfuCard(sn,i,dfuChecked[i])).join('');dfuGroup0.checked=dfuChecked.every(Boolean)}
 function renderFct(statuses={}){fctRows.innerHTML=fctSlots.map((sn,i)=>row(sn,i,statuses[sn]||stateFor(fctChecked[i],sn))).join('');fctCards.innerHTML=fctSlots.map((sn,i)=>card(sn,i,fctChecked[i],'fct')).join('')}
 function renderBt(statuses={}){btRows.innerHTML=btChannels.map(({sn},i)=>row(sn,i,statuses[sn]||'NOTSET',false)).join('')}
-function toggleSlot(kind,i,checked){if(kind==='dfu'){dfuChecked[i]=checked;renderDfu();startDfuWhenReady()}else{fctChecked[i]=checked;renderFct()}}
-function clearDfu(){dfuSlots=Array(4).fill('');snInput.value='';renderDfu()}
-function startDfuWhenReady(){let selected=dfuSlots.filter((_,i)=>dfuChecked[i]),missing=selected.some(sn=>!sn);if(missing||!selected.length)return;if(batch){log(`DFU ready but cannot start: current batch ${batch} is still active.`);return}log(`DFU all selected slots ready: ${selected.join(', ')}`);start('DFU',selected)}
-function addSn(){let sn=snInput.value.trim(),index=dfuSlots.findIndex((value,i)=>dfuChecked[i]&&!value);if(!sn||index<0){log('DFU SN was ignored: no empty checked slot is available.');return}dfuSlots[index]=sn;snInput.value='';renderDfu();startDfuWhenReady()}
+function toggleSlot(kind,i,checked){if(kind==='dfu'){dfuChecked[i]=checked;renderDfu()}else{fctChecked[i]=checked;renderFct()}}
+function setDfuLayout(value){dfuSlotCount=Number(value);dfuSlots=Array(dfuSlotCount).fill('');dfuChecked=Array(dfuSlotCount).fill(true);snInput.value='';renderDfu();log(`DFU switched to ${dfuSlotCount}-slot layout.`)}
+function toggleDfuGroup(checked){dfuChecked=Array(dfuSlotCount).fill(checked);renderDfu()}
+function clearDfu(){dfuSlots=Array(dfuSlotCount).fill('');snInput.value='';renderDfu()}
+function addSn(){let sn=snInput.value.trim(),index=dfuSlots.findIndex((value,i)=>dfuChecked[i]&&!value);if(!sn||index<0){log('DFU SN was ignored: no empty checked slot is available.');return}dfuSlots[index]=sn;snInput.value='';renderDfu();log(`DFU SN accepted into slot${index+1}; press OK after all selected slots are filled.`)}
+function startDfu(){let selected=dfuSlots.filter((_,i)=>dfuChecked[i]),missing=selected.some(sn=>!sn);if(missing||!selected.length){log('DFU cannot start: every checked slot must have an SN.');return}if(batch){log(`DFU start ignored: current batch ${batch} is still active.`);return}log(`DFU OK clicked: starting ${selected.join(', ')}`);start('DFU',selected)}
 function startFct(){start('FCT',fctSlots.filter((value,i)=>fctChecked[i]))}
 function startBt(n){let requested=n?btChannels.filter(item=>item.slot===n):btChannels;let selected=requested.filter(item=>!activeBtSns.has(item.sn));log(`BT Start ${n||'All'} clicked: ${selected.map(item=>item.sn).join(', ')||'all requested slots are already active'}`);startBtBatch(selected)}
 async function startBtBatch(assignments){if(!assignments.length){log('BT slot 已在測試中，略過重複啟動。');return}let sns=assignments.map(item=>item.sn);sns.forEach(sn=>activeBtSns.add(sn));try{let r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station:'BT',assignments,fail_last:document.querySelector('#failLast').checked})});let data=await r.json();if(data.error){sns.forEach(sn=>activeBtSns.delete(sn));log(data.error);return}btBatches.add(data.batch);log(`BT started: ${sns.join(', ')}`);updateBt(data.status);pollBt(data.batch,sns)}catch(error){sns.forEach(sn=>activeBtSns.delete(sn));log('BT 啟動失敗：'+error)}}

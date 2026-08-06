@@ -76,6 +76,11 @@ FCT 6-slot Demo 固定採手動 Slot 模式，即使設定中開啟自動同步�
 或模擬 HMI 的 Fixture Insert 功能觸發。
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
 
+若現場 DFU 是七槽 HMI，請在「設定 → DFU 畫面設定」選擇 `b482_dfu2_7slot`。啟用
+自動同步時，Agent 會用 group0 重設七個 slot，再依 Demo／JOB 的 slot 對應勾選並截圖驗證；
+停用時則保留人工設定模式。每個 SN 輸入後由 Arduino 送 Enter，只有所有已選 slot 都填入後
+才會點一次 OK 開始 ATE。
+
 ### 無 SN Log Demo（FCT／BT）
 
 若現場展示時 FAE 無法事先取得產品條碼，請在測試**開始前**按「Demo」中的「開始無 SN Log Demo」。
@@ -203,9 +208,9 @@ slot 與 SN；若本機已有未完成 JOB，回覆 `NACK:<工站>:JOB=<id>;BUSY
 FCT 直接開始監聽；DFU 請 Arduino 截圖後依 slot 順序輸入條碼；BT 四個 slot 全滿時按
 Start All，未滿時逐一點擊指定的 Start 1～4，並只監控指定 slot。
 
-DFU generic 的多輸入框流程會依 slot 差距送出 Tab，略過空料位置。DFU_2 是「單一 SN
-輸入框＋OK 後搬到下一個已勾選 slot」的設備流程；使用不連續 slot JOB 前，測試 HMI 的
-checkbox 必須與 JOB 指定的 slot 一致，Agent 會依勾選順序輸入 SN 並在 Log 顯示提示。
+DFU generic 的多輸入框流程會依 slot 差距送出 Tab，略過空料位置。`b482_dfu2` 是「單一 SN
+輸入框＋OK 後搬到下一個已勾選 slot」的四槽設備流程。`b482_dfu2_7slot` 則是「單一 SN
+輸入框＋Enter 後搬到下一個已勾選 slot」，所有 SN 完成後的一次 OK 才代表開始測試。
 
 資料夾結構應為：
 
@@ -259,6 +264,11 @@ Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原�
 移到 OK → 點擊」；Agent 會逐一等待 Arduino 回覆每個 HID 指令成功，確認最後一筆 OK
 點擊完成後才開始監聽 CSV。
 
+七槽 Profile 的 checkbox 不會在整張畫面尋找：Agent 先定位下方 group0 文字，再在文字左側找
+checkbox；接著定位下方七個共用 `slot` 標籤，只在每一個標籤右側找 checked／unchecked 狀態。
+這可避開上方結果表格的重複文字，也只需要一組狀態模板。模板名稱與裁切規則請參閱
+`templates/README.md`。
+
 「螢幕截圖路徑」預設為 `~/Desktop`，也可選擇例如 `~/Desktop/ScreenShot`。DFU／BT
 送出 `SCREENSHOT` 後會先等待 5 秒，最長等待共 15 秒，再在該資料夾尋找新產生的
 圖片。檔名支援 `ScreenShot`、`Screen Shot`、`Screenshot` 與中文版 macOS 的「截圖」；
@@ -267,7 +277,7 @@ Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原�
 程式內「OpenCV 模板路徑」旁的「製作模板」可直接從截圖資料夾選取圖片（或使用最新
 截圖），以滑鼠框選範圍並儲存為 PNG。通用流程可命名為 `test_window.png`、
 `barcode_field.png`、`start_button.png`；B482 流程可使用 `b482/dfu2_window.png`、
-`b482/dfu2_sn_input.png`、`b482/dfu2_ok.png` 或 BT 的 `b482/bt_*.png`。
+`b482/dfu2_sn_input.png`、`b482/dfu2_ok.png`，或七槽的 `b482/dfu7_*.png`，或 BT 的 `b482/bt_*.png`。
 「製作模板」的檔名下拉選單會依目前工站與畫面設定預先列出正確名稱；DFU_2 請依序
 選擇並儲存三個 `b482/dfu2_*.png` 檔案。
 製作模板視窗的「擷取螢幕截圖」會透過已連線的 Arduino 發送 `SCREENSHOT`，等待 macOS
@@ -282,6 +292,9 @@ macOS 視窗的綠色放大按鈕。來源截圖上限為 2400 萬像素，以�
 選 `generic`，則使用根目錄下的 `test_window.png`、`barcode_field.png`、`start_button.png`。
 相容既有作法：根目錄直接有 `dfu2_window.png` 等同名檔案時，Agent 也會自動使用；但
 任意名稱（例如 `123.png`）無法判斷模板用途，仍須改成下拉選單列出的名稱。
+
+若選 `b482_dfu2_7slot`，根資料夾必須有 `b482/dfu7_window.png`、`dfu7_sn_input.png`、
+`dfu7_ok.png`、`dfu7_slot_label.png`、`dfu7_group0_label.png`，以及 checked／unchecked 模板。
 
 ### BT TestData CSV 判定
 
@@ -373,8 +386,8 @@ Intel VM 要建立 Mojave 10.14／Catalina 10.15 共用候選版，執行
 
 ### B482 客戶 Demo 設定
 
-本次提供的 B482 畫面已配置在 `templates/b482/`。選 DFU 時，請選 `b482_dfu2`：
-Agent 會依序填入左下 SN 欄、點擊 `OK`，讓測試程式把 SN 搬入各 Slot。FCT 將在治具
+本次提供的 B482 畫面已配置在 `templates/b482/`。四槽 DFU 選 `b482_dfu2`，每筆 SN 後點
+`OK`；現場七槽 DFU 選 `b482_dfu2_7slot`，每筆 SN 後送 Enter、最後點一次 `OK`。FCT 將在治具
 推入後直接監聽；BT 可定位並點擊 `Start All` 或 `Start 1`～`Start 4`，後續以 TestData
 的 PASSED／FAILED CSV 判讀結果。
 
@@ -386,7 +399,8 @@ Agent 會依序填入左下 SN 欄、點擊 `OK`，讓測試程式把 SN 搬入�
 python3 b482_demo_server.py --csv-root "$HOME/Desktop/AtlasDemoCSV"
 ```
 
-再開啟 `http://127.0.0.1:8080`。DFU_2 可逐筆輸入 SN 並按 `OK`，BT 可按 `Start All`，
+再開啟 `http://127.0.0.1:8080`。DFU 可切換四槽／七槽；每筆 SN 後按 Enter，全部已選 slot
+完成後按 `OK` 開始測試。BT 可按 `Start All`，
 FCT 可按「Simulate Fixture Insert」。DFU／FCT 會先寫入 `device.log` 的 TESTING，再於 30 秒
 後寫入每個 SN 的 `records.csv`。BT 則仿照實體機台，於 30 秒後寫入
 `YYYY-MM-DD/PASSED|FAILED/[ThreadN][...][SN][PASSED|FAILED][時間].csv`；因此 Agent 選 BT

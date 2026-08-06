@@ -10,7 +10,8 @@ from pathlib import Path
 
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
-from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from b482_demo_server import Simulator
+from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -73,6 +74,14 @@ class AtlasAgentTests(unittest.TestCase):
             demo_slot_assignments("FCT", ["SN001"] * 7)
         with self.assertRaises(AgentError):
             demo_slot_assignments("DFU", ["SN001"] * 7)
+
+    def test_html_simulator_accepts_seven_dfu_sns_but_not_fct(self):
+        with tempfile.TemporaryDirectory() as directory:
+            simulator = Simulator(Path(directory), duration_seconds=.01)
+            seven = [f"SN{i}" for i in range(1, 8)]
+            self.assertEqual(simulator._assignments("DFU", {"sns": seven}), list(enumerate(seven, start=1)))
+            with self.assertRaises(ValueError):
+                simulator._assignments("FCT", {"sns": seven})
 
     def test_fct_six_slot_demo_never_uses_four_checkbox_synchronizer(self):
         self.assertTrue(fct_auto_slot_sync_supported([1, 3, 4]))
@@ -153,6 +162,32 @@ class AtlasAgentTests(unittest.TestCase):
             dfu_ok_each_commands(["SN001", "SN002"], (100, 200), (300, 400)),
             ["M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_WRITE:SN001", "M_RESET", "M_MOVE:300,400", "M_CLICK:L",
              "M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_WRITE:SN002", "M_RESET", "M_MOVE:300,400", "M_CLICK:L"])
+
+    def test_dfu7_enters_each_sn_then_clicks_ok_once(self):
+        self.assertEqual(
+            dfu_enter_each_ok_once_commands(["SN001", "SN003", "SN007"], (100, 200), (300, 400)),
+            ["M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_TYPE:SN001",
+             "M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_TYPE:SN003",
+             "M_RESET", "M_MOVE:100,200", "M_CLICK:L", "K_TYPE:SN007",
+             "M_RESET", "M_MOVE:300,400", "M_CLICK:L"])
+
+    def test_dfu7_group_reset_is_deterministic_for_all_and_sparse_slots(self):
+        group = (50, 60)
+        self.assertEqual(dfu7_group_reset_commands(group, [1, 3, 7], True),
+                         absolute_click_commands(group))
+        self.assertEqual(dfu7_group_reset_commands(group, [1, 3, 7], False),
+                         absolute_click_commands(group) + absolute_click_commands(group))
+        self.assertEqual(dfu7_group_reset_commands(group, [1, 2, 3, 4, 5, 6, 7], True),
+                         absolute_click_commands(group) + absolute_click_commands(group))
+
+    def test_dfu7_slot_anchor_order_requires_four_then_three_lower_labels(self):
+        anchors = [(10, 100, 20, 10, .9), (100, 100, 20, 10, .9), (200, 100, 20, 10, .9),
+                   (300, 100, 20, 10, .9), (10, 180, 20, 10, .9), (100, 180, 20, 10, .9),
+                   (200, 180, 20, 10, .9), (10, 20, 20, 10, .9)]
+        self.assertEqual(dfu7_slot_anchor_order(anchors, 50),
+                         [(10, 100, 20, 10), (100, 100, 20, 10), (200, 100, 20, 10),
+                          (300, 100, 20, 10), (10, 180, 20, 10), (100, 180, 20, 10),
+                          (200, 180, 20, 10)])
 
     def test_generic_dfu_tabs_over_unpopulated_slots(self):
         self.assertEqual(dfu_tab_slot_commands([(1, "SN001"), (3, "SN003"), (4, "SN004")]),
