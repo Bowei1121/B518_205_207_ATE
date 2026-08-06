@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bt_result_directories, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_group_reset_commands, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_auto_slot_sync_supported, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -96,6 +96,25 @@ class AtlasAgentTests(unittest.TestCase):
             demo_slot_assignments("FCT", ["SN001"] * 7)
         with self.assertRaises(AgentError):
             demo_slot_assignments("DFU", ["SN001"] * 7)
+
+    def test_dfu7_controls_search_full_screenshot_when_window_is_only_an_anchor(self):
+        anchor = (100, 50, 111, 58)
+        self.assertIsNone(visual_control_search_region("DFU", VISUAL_PROFILES["b482_dfu2_7slot"], anchor, False))
+        self.assertEqual(visual_control_search_region("DFU", VISUAL_PROFILES["b482_dfu2"], anchor, True),
+                         (100, 50, 1011, 600))
+
+    def test_dfu_demo_accepts_slots_five_through_seven_only_for_demo_job(self):
+        class Value:
+            def __init__(self, value): self.value = value
+            def get(self): return self.value
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = object.__new__(AtlasAgentApp)
+            app.csv_path, app.station = Value(directory), Value("DFU")
+            command = TestCommand("DFU", "DEMO-20260806-120000", ((1, "SN001"), (7, "SN007")))
+            self.assertEqual(AtlasAgentApp.validate_command(app, command)[1], command)
+            with self.assertRaises(AgentError):
+                AtlasAgentApp.validate_command(app, TestCommand("DFU", "JOB-1", command.assignments))
 
     def test_html_simulator_accepts_seven_dfu_sns_but_not_fct(self):
         with tempfile.TemporaryDirectory() as directory:

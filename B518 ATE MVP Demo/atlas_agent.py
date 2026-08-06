@@ -332,6 +332,24 @@ def demo_slot_assignments(station: str, values: Iterable[str]) -> tuple[tuple[in
     return tuple(assignments)
 
 
+def visual_control_search_region(station: str, profile: dict, window_rectangle: tuple[int, int, int, int],
+                                 using_bundled_templates: bool) -> Optional[tuple[int, int, int, int]]:
+    """Return the safe region in which a visual profile may search controls.
+
+    The field seven-slot DFU ``window`` template is intentionally allowed to
+    be a small title/logo anchor.  It cannot bound the shared SN input or OK
+    button, so those controls must search the complete screenshot.
+    """
+    if station == "DFU" and profile.get("input_mode") == "enter_each_ok_once":
+        return None
+    if "window_size" in profile and using_bundled_templates:
+        width, height = profile["window_size"]
+        return (window_rectangle[0], window_rectangle[1], width, height)
+    if "window_size" in profile:
+        return None
+    return window_rectangle
+
+
 def fct_auto_slot_sync_supported(slots: Iterable[int], demo: bool = False) -> bool:
     """Return whether the existing four-checkbox FCT synchronizer can be used."""
     ordered = list(slots)
@@ -2152,8 +2170,11 @@ class AtlasAgentApp:
         if command.station != self.station.get():
             raise AgentError(f"收到 {command.station} JOB，但本機工站設定為 {self.station.get()}")
         if any(slot > 4 for slot in command.slots):
-            if command.station != "FCT" or not command.job_id.startswith("DEMO-") or max(command.slots) > 6:
-                raise AgentError("slot 5～6 僅開放給 FCT Demo 視窗；正式 JOB 與一般輸入仍限 slot 1～4")
+            demo = command.job_id.startswith("DEMO-")
+            supported = ((command.station == "DFU" and demo and max(command.slots) <= 7) or
+                         (command.station == "FCT" and demo and max(command.slots) <= 6))
+            if not supported:
+                raise AgentError("slot 5～7 僅開放給 DFU Demo、slot 5～6 僅開放給 FCT Demo；正式 JOB 與一般輸入仍限 slot 1～4")
         return root, command
 
     def validate_batch(self, payload: str, bt_slot: Optional[int] = None) -> Optional[tuple[Path, TestCommand]]:
@@ -2704,17 +2725,14 @@ class AtlasAgentApp:
             # Template matching inside the window prevents matching a stale/other app control.
             bundled_templates = Path(__file__).with_name("templates").resolve()
             using_bundled_templates = templates.resolve() == bundled_templates
-            if "window_size" in profile and using_bundled_templates:
-                width, height = profile["window_size"]
-                region = (window_rect[0], window_rect[1], width, height)
-            elif "window_size" in profile:
+            region = visual_control_search_region(station, profile, window_rect, using_bundled_templates)
+            if station == "DFU" and profile["input_mode"] == "enter_each_ok_once":
+                self.events.put(("log", "DFU 七槽：dfu7_window 可為小型標題錨點；SN 輸入框與 OK 改在完整截圖搜尋"))
+            elif "window_size" in profile and not using_bundled_templates:
                 # A user-created template may come from a Retina display or a
                 # full-screen HTML HMI. Its pixels do not share the 1011×600
                 # B482 reference resolution, so search that screenshot only.
-                region = None
                 self.events.put(("log", "使用自訂 B482 模板：依整張匹配到的螢幕搜尋控制項"))
-            else:
-                region = window_rect
             def logical_for(source: tuple[int, int]) -> tuple[int, int]:
                 return hid_coordinate(source, scale_x, scale_y, offset_x, offset_y)
 
