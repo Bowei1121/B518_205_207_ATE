@@ -269,6 +269,10 @@ class AtlasAgentTests(unittest.TestCase):
                          ["M_ABS:4915,22632", "M_CLICK:L"])
         self.assertEqual(window_focus_commands((500, 300)),
                          ["M_RESET", "M_MOVE:500,300", "M_CLICK:L"])
+        self.assertEqual(window_focus_commands((500, 300), (11385, 10934), "absolute"),
+                         ["M_ABS:11385,10934", "M_DELTA:1,0", "M_DELTA:-1,0", "M_CLICK:L"])
+        with self.assertRaises(AgentError):
+            window_focus_commands((500, 300), mode="absolute")
         self.assertEqual(dfu_ok_each_commands(["SN1"], (10, 20), (30, 40), "absolute"),
                          ["M_ABS:10,20", "M_CLICK:L", "K_WRITE:SN1",
                           "M_ABS:30,40", "M_CLICK:L"])

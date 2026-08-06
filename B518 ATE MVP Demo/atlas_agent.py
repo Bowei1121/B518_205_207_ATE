@@ -540,15 +540,23 @@ def click_commands(target: tuple[int, int], mode: str) -> list[str]:
     return absolute_click_commands(target)
 
 
-def window_focus_commands(logical_target: tuple[int, int]) -> list[str]:
-    """Activate an unfocused test HMI using only the standard mouse interface.
+def window_focus_commands(logical_target: tuple[int, int],
+                          absolute_target: Optional[tuple[int, int]] = None,
+                          mode: str = "relative") -> list[str]:
+    """Activate an unfocused test HMI without an accelerated long mouse move.
 
-    The custom absolute pointer remains the accurate mechanism for controls,
-    but macOS may not associate its cursor movement with a button report from
-    the standard relative pointer while the destination application is
-    inactive.  Reset/move/click keeps the initial activation transaction on a
-    single, universally supported HID mouse interface.
+    A logical screen coordinate is not a reliable relative HID distance:
+    macOS pointer acceleration can make ``M_MOVE:500,300`` travel beyond pixel
+    (500, 300).  In absolute mode the custom pointer therefore performs the
+    exact positioning first.  A one-unit out-and-back report transfers the
+    cursor to the standard mouse interface before its button report, which is
+    required for reliable focus on older macOS versions.
     """
+    if mode == "absolute":
+        if absolute_target is None:
+            raise AgentError("absolute 視窗焦點需要 HID 絕對座標")
+        return [f"M_ABS:{absolute_target[0]},{absolute_target[1]}",
+                "M_DELTA:1,0", "M_DELTA:-1,0", "M_CLICK:L"]
     return absolute_click_commands(logical_target)
 
 
@@ -2861,7 +2869,11 @@ class AtlasAgentApp:
                 # Bring the HMI/browser to the foreground before the first
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
-                focus_commands = window_focus_commands(logical_for(window_center))
+                focus_logical = logical_for(window_center)
+                focus_target = target_for(window_center)
+                focus_commands = window_focus_commands(focus_logical, focus_target, hid_mode)
+                self.events.put(("log", f"DFU 視窗焦點：截圖 {window_center} → logical {focus_logical}"
+                                         f" → HID {focus_target}（{hid_mode}）"))
                 dfu7_profile = profile["input_mode"] == "enter_each_ok_once"
                 sparse_checkbox_job = (self.auto_slot_sync.get() and slots != [1, 2, 3, 4]
                                        and profile["input_mode"] == "ok_each")
@@ -2911,7 +2923,10 @@ class AtlasAgentApp:
                         self.events.put(("log", f"DFU 七槽：最新定位 SN={barcode_source} → HID {barcode}，"
                                                  f"OK={button_source} → HID {button}"))
                         self.events.put(("log", "DFU 七槽：重新點擊測試畫面取得焦點，準備輸入條碼"))
-                        self.send_hid_sequence(window_focus_commands(logical_for(window_center)), delay=delay)
+                        focus_logical = logical_for(window_center)
+                        focus_target = target_for(window_center)
+                        self.send_hid_sequence(
+                            window_focus_commands(focus_logical, focus_target, hid_mode), delay=delay)
                     elif sparse_checkbox_job:
                         self.ensure_slot_checkbox_states(slots, screenshot_dir, window,
                                                          resolved[profile["checkbox_checked"]],
@@ -2964,8 +2979,10 @@ class AtlasAgentApp:
                 # Click the harmless BT title first.  This brings the Safari/
                 # instrument window to the foreground so the following Start
                 # click is not lost to another focused application.
-                focus = logical_for(rectangle_center(window_rect))
-                commands = window_focus_commands(focus)
+                focus_source = rectangle_center(window_rect)
+                focus = logical_for(focus_source)
+                focus_target = target_for(focus_source)
+                commands = window_focus_commands(focus, focus_target, hid_mode)
                 for _, button in buttons:
                     commands.extend(click_commands(button, hid_mode))
                 bt_started_at = datetime.now()

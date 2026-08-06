@@ -52,6 +52,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - `auto_slot_sync` 偏好欄位保留相容性，但設定名稱改為「自動同步 DFU Slot 勾選」，只影響 DFU。
 - FCT 不需要 `fct_window`、checked 或 unchecked 模板；HTML 模擬 HMI 仍保留人工 checkbox，Fixture Insert 只測試已勾選且有 SN 的項目。
 
+## 2026-08-06 DFU 首次視窗焦點座標修正
+
+- 修正 absolute HID 模式仍以 `M_RESET + M_MOVE` 將螢幕座標當相對距離的問題；長距離相對移動會受 macOS 滑鼠加速度影響而衝過定位點。
+- absolute 模式改為先用 `M_ABS` 精準定位，再由標準相對滑鼠做一單位往返後送出左鍵，避免切換 HID pointer interface 時遺失焦點點擊。
+- relative 模式保留原有回左上角再移動的行為；Log 會同時列出截圖、logical 與 HID 焦點座標，方便現場比對。
+
 ## Git 與交付規則
 
 - Remote：`origin` → `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`
