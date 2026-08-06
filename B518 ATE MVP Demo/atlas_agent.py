@@ -2656,30 +2656,55 @@ class AtlasAgentApp:
         requested = set(slots)
 
         def fresh_layout(label: str):
-            before = time.time(); self.link.send_control("SCREENSHOT")
-            self.events.put(("log", label))
-            time.sleep(SCREENSHOT_SETTLE_SECONDS)
-            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-            shots: list[Path] = []
-            while time.monotonic() < deadline and not shots:
-                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
-            if not shots:
-                raise AgentError(f"DFU 七槽 checkbox 截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
-            errors: list[str] = []
-            selected = None
-            for shot in shots:
-                try:
-                    window_rectangle = template_match(shot, window_template)
-                    layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
-                                                  checked_template, unchecked_template)
-                    selected = (shot, layout, window_rectangle)
-                    break
-                except AgentError as exc:
-                    errors.append(f"{shot.name}: {exc}")
-            if selected is None:
+            last_window_errors: list[str] = []
+            last_layout_errors: list[str] = []
+            for capture_attempt in range(2):
+                before = time.time(); self.link.send_control("SCREENSHOT")
+                self.events.put(("log", label if capture_attempt == 0 else
+                                 "DFU 七槽：checkbox 畫面尚未穩定，自動重新截圖一次…"))
+                time.sleep(SCREENSHOT_SETTLE_SECONDS)
+                deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
+                shots: list[Path] = []
+                while time.monotonic() < deadline and not shots:
+                    shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+                if not shots:
+                    if capture_attempt == 0:
+                        continue
+                    raise AgentError(f"DFU 七槽 checkbox 截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+
+                window_errors: list[str] = []
+                layout_errors: list[str] = []
+                matched_window_names: list[str] = []
+                for shot in shots:
+                    try:
+                        window_rectangle = template_match(shot, window_template)
+                    except AgentError as exc:
+                        window_errors.append(f"{shot.name}: {exc}")
+                        continue
+                    matched_window_names.append(shot.name)
+                    try:
+                        layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
+                                                      checked_template, unchecked_template)
+                        return (shot, layout, window_rectangle), shots
+                    except AgentError as exc:
+                        # Do not combine another display's missing-window error
+                        # with the actual checkbox error from the DFU display.
+                        layout_errors.append(f"{shot.name}: {exc}")
+
+                last_window_errors, last_layout_errors = window_errors, layout_errors
                 self.delete_processed_screenshots(shots)
-                raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" + "；".join(errors))
-            return selected, shots
+                if capture_attempt == 0:
+                    if matched_window_names:
+                        self.events.put(("log", "DFU 七槽：已找到 dfu7_window（" +
+                                                 "、".join(matched_window_names) +
+                                                 "），但 checkbox 判讀不穩定；將重新擷取，不是視窗模板遺失。"))
+                    else:
+                        self.events.put(("log", "DFU 七槽：本次多螢幕截圖尚未找到 dfu7_window，將重新擷取一次。"))
+
+            if last_layout_errors:
+                raise AgentError("已找到 DFU 七槽視窗，但 group0／slot checkbox 判讀失敗：" +
+                                 "；".join(last_layout_errors))
+            raise AgentError("兩次截圖均找不到 DFU 七槽視窗模板：" + "；".join(last_window_errors))
 
         def state_text(states: list[CheckboxEvidence]) -> str:
             return "、".join(f"slot{index}={'勾選' if state.checked else '取消'}"

@@ -57,6 +57,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - 修正 absolute HID 模式仍以 `M_RESET + M_MOVE` 將螢幕座標當相對距離的問題；長距離相對移動會受 macOS 滑鼠加速度影響而衝過定位點。
 - absolute 模式改為先用 `M_ABS` 精準定位，再由標準相對滑鼠做一單位往返後送出左鍵，避免切換 HID pointer interface 時遺失焦點點擊。
 - relative 模式保留原有回左上角再移動的行為；Log 會同時列出截圖、logical 與 HID 焦點座標，方便現場比對。
+- 七槽重新截圖會先分流多螢幕候選：其他螢幕缺少 `dfu7_window` 不再掩蓋正確 DFU 螢幕的 checkbox 錯誤；checkbox 暫時不明確時會自動重新截圖一次。
 
 ## Git 與交付規則
 
