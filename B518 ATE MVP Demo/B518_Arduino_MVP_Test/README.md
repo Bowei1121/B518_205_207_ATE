@@ -39,7 +39,7 @@ Mac Agent → Arduino 的 **USB CDC 控制指令固定使用 LF** (`\n`) 結尾�
 | `M_MOVE:X,Y\n` | 先歸零，再右移 X、下移 Y。X/Y 只能是 0 到 10000 的整數。 |
 | `M_DELTA:X,Y\n` | 依序回覆 `ACK:M_DELTA`、不歸零直接相對移動 X、Y steps、`OK:M_DELTA`；可使用負值。 |
 | `M_ABS:X,Y\n` | 使用第二個絕對 HID 指標移到 0–32767 的 X/Y；不受一般相對滑鼠加速度影響。 |
-| `M_ABS_CLICK:L\n` | 在目前絕對 HID 位置按左鍵。 |
+| `M_ABS_CLICK:L\n` | 在目前絕對 HID 位置按左鍵；會連同已儲存座標再送出 absolute report，避免舊版 macOS 第一筆定位被忽略後在原地點擊。 |
 | `M_CLICK:L\n` / `M_CLICK:R\n` | 左／右鍵點擊。 |
 | `M_SCROLL:V\n` | 滾輪移動 V；正數向上、負數向下。 |
 | `K_TYPE:string\n` | 輸入可列印 ASCII 字串，然後送 Enter。 |
