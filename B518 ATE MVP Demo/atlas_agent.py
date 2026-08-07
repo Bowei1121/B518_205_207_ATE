@@ -77,7 +77,7 @@ COMPACT_HMI_MIN_SIZE = (400, 700)
 RESULT_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00",
     "NOTEST": "#f04bf1", "WAITING": "#d9d9d9", "TIMEOUT": "#f5a623",
-    "START_FAILED": "#ff0000",
+    "START_FAILED": "#ff0000", "STALLED": "#f5a623", "COMPLETING": "#d9d9d9",
 }
 
 
@@ -122,6 +122,10 @@ VISUAL_PROFILES = {
         "window": "b482/dfu7_window.png", "barcode": "b482/dfu7_sn_input.png",
         "ok": "b482/dfu7_ok.png", "slot_label": "b482/dfu7_slot_label.png",
         "group_label": "b482/dfu7_group0_label.png",
+        # Optional, operator-created template for the Atlas/DFU application
+        # icon in the macOS Dock.  It is deliberately not a required template:
+        # the safe slot-label anchor remains the portable fallback.
+        "dock_icon": "b482/dfu7_dock_icon.png",
         "checkbox_checked": "b482/slot_checkbox_checked.png",
         "checkbox_unchecked": "b482/slot_checkbox_unchecked.png",
         "input_mode": "enter_each_ok_once", "slot_count": 7,
@@ -278,6 +282,15 @@ class TestResult:
     folder: Path
     records: Path
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class FctActiveProgress:
+    """Live, transient state discovered under Logs/Atlas/active."""
+    slot: int
+    sn: str
+    status: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -1033,6 +1046,21 @@ def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_tem
     return group_state, states, (group_x, group_y, group_w, group_h), anchors
 
 
+def dfu7_safe_focus_anchor(image: Path, slot_label_template: Path, group_label_template: Path) -> tuple[int, int, int, int]:
+    """Return slot1's stable text anchor; it is safe to click to focus the HMI.
+
+    A dfu7_window template may intentionally be just a small title/logo, so
+    its match center is not a dependable click point.  Slot labels retain the
+    same geometry in focused and unfocused states and are inside the window.
+    """
+    groups = template_matches(image, group_label_template, threshold=.72)
+    if not groups:
+        raise AgentError("找不到 DFU 七槽 group0 標籤，無法使用安全焦點錨點")
+    group_y = max(groups, key=lambda item: (item[1], item[0]))[1]
+    anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72), group_y)
+    return anchors[0]
+
+
 def opencv_image_to_tk_png(image) -> str:
     """Encode an OpenCV BGR image for Tk without swapping red/blue channels."""
     if cv2 is None:
@@ -1174,20 +1202,80 @@ def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
     return sorted(found, key=lambda item: (item[0], item[1], str(item[3])))
 
 
+ACTIVE_SLOT_FOLDER = re.compile(r"^group0-slot(?P<slot>[1-9][0-9]*)$", re.IGNORECASE)
+ACTIVE_SN_LINE = re.compile(r"(?:serial\s*(?:number)?|\bSN\b)\s*[:=]\s*([A-Za-z0-9][A-Za-z0-9._-]{3,})", re.IGNORECASE)
+ACTIVE_TEST_START = re.compile(r"(?:\[?TEST START\]?|StartTest)\s*[:\-]?\s*(.*)", re.IGNORECASE)
+ACTIVE_TEST_DONE = re.compile(r"(?:\[?TEST (?:PASS|FAIL|END|COMPLETE)\]?|Test Complete)", re.IGNORECASE)
+
+
+def fct_active_slot_folders(root: Path) -> dict[int, Path]:
+    """Return currently present transient active folders, keyed by physical slot."""
+    active = root / "active"
+    try:
+        children = list(active.iterdir())
+    except OSError:
+        return {}
+    found: dict[int, Path] = {}
+    for child in children:
+        match = ACTIVE_SLOT_FOLDER.fullmatch(child.name)
+        if child.is_dir() and match:
+            found[int(match.group("slot"))] = child
+    return found
+
+
+def newest_active_device_log(folder: Path) -> Optional[Path]:
+    """Locate the newest live device.log regardless of the active layout."""
+    try:
+        logs = [path for path in folder.rglob("device.log") if path.is_file()]
+    except OSError:
+        return None
+    return max(logs, key=lambda path: file_signature(path) or (0, 0), default=None)
+
+
+def active_log_progress(log_file: Optional[Path]) -> tuple[str, str]:
+    """Extract only conservative live progress from a still-growing device.log."""
+    if log_file is None:
+        return "", "active 資料夾已建立，等待 device.log"
+    try:
+        text = log_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "", "等待 device.log 可讀取"
+    sn_matches = ACTIVE_SN_LINE.findall(text)
+    sn = sn_matches[-1].upper() if sn_matches else ""
+    started = ACTIVE_TEST_START.findall(text)
+    completed = ACTIVE_TEST_DONE.findall(text)
+    current = started[-1].strip() if started else ""
+    if current:
+        detail = f"測試中：{current[-80:]}"
+    elif completed:
+        detail = "測試步驟持續更新，等待 unitest 最終結果"
+    else:
+        detail = "已偵測 active Log，等待測試步驟"
+    return sn, detail
+
+
 class FctAutoLogMonitor(threading.Thread):
     """Discover newly-created Atlas result folders without a pre-known SN."""
     def __init__(self, csv_root: Path, log_root: Path, started_at: float,
                  on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
                  stop: threading.Event, timeout_seconds: float = 0.0,
-                 on_timeout: Optional[Callable[[], None]] = None) -> None:
+                 on_timeout: Optional[Callable[[], None]] = None,
+                 on_progress: Optional[Callable[[FctActiveProgress], None]] = None) -> None:
         super().__init__(daemon=True)
         self.csv_root, self.log_root, self.started_at = csv_root, log_root, started_at
-        self.on_log, self.on_result, self.stop = on_log, on_result, stop
+        self.on_log, self.on_result, self.on_progress, self.stop = on_log, on_result, on_progress or (lambda _: None), stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
         self.baseline = {records: file_signature(records) for _, _, _, records in fct_record_candidates(csv_root)}
         self.accepted: dict[str, tuple[datetime, Path]] = {}
         self.log_positions: dict[Path, int] = {}
         self.warned: set[tuple[Path, str]] = set()
+        self.active_baseline = {
+            slot: file_signature(newest_active_device_log(folder))
+            for slot, folder in fct_active_slot_folders(log_root).items()
+        }
+        self.active_seen: dict[int, tuple[Path, float, str, str]] = {}
+        self.active_last_emitted: dict[int, tuple[str, str]] = {}
+        self.active_log_signatures: dict[int, Optional[tuple[int, int]]] = {}
 
     def _render_log(self, log_file: Path) -> None:
         try:
@@ -1212,6 +1300,31 @@ class FctAutoLogMonitor(threading.Thread):
         started_wall = datetime.fromtimestamp(self.started_at).replace(microsecond=0)
         deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
+            now = time.time()
+            active_now = fct_active_slot_folders(self.log_root)
+            for slot, folder in active_now.items():
+                log_file = newest_active_device_log(folder)
+                signature = file_signature(log_file) if log_file is not None else None
+                if slot in self.active_baseline and slot not in self.active_seen and self.active_baseline[slot] == signature:
+                    continue
+                if log_file is not None:
+                    self._render_log(log_file)
+                sn, detail = active_log_progress(log_file)
+                previous = self.active_seen.get(slot)
+                last_activity = now if previous is None or previous[0] != folder or self.active_log_signatures.get(slot) != signature else previous[1]
+                self.active_log_signatures[slot] = signature
+                status = "STALLED" if now - last_activity >= 60 else "TESTING"
+                self.active_seen[slot] = (folder, last_activity, detail, sn)
+                emitted = (status, f"{sn}|{detail}")
+                if self.active_last_emitted.get(slot) != emitted:
+                    self.active_last_emitted[slot] = emitted
+                    self.on_progress(FctActiveProgress(slot, sn, status, detail))
+            for slot, (folder, _, detail, sn) in tuple(self.active_seen.items()):
+                if slot not in active_now:
+                    emitted = ("COMPLETING", f"{sn}|{detail}")
+                    if self.active_last_emitted.get(slot) != emitted:
+                        self.active_last_emitted[slot] = emitted
+                        self.on_progress(FctActiveProgress(slot, sn, "COMPLETING", "active 資料已結束，等待 unitest 最終結果"))
             for stamp, sn, folder, records in fct_record_candidates(self.csv_root):
                 signature = file_signature(records)
                 if signature is None:
@@ -1851,6 +1964,8 @@ class AtlasAgentApp:
         self.reported_batch_number: Optional[int] = None
         self.auto_log_demo = False
         self.auto_discovery_labels: dict[str, str] = {}
+        self.auto_fct_active_slots: dict[int, str] = {}
+        self.auto_fct_sn_slots: dict[str, int] = {}
         self.result_rows: dict[str, tuple[str, str, str]] = {}
         self.result_row_order: list[str] = []
         self.result_summary = tk.StringVar(value="尚無測試中的 SN")
@@ -2039,7 +2154,7 @@ class AtlasAgentApp:
             if selected:
                 variable.set(selected)
 
-        for row, (label, variable) in enumerate((("CSV／BT TestData 根路徑：", csv_path), ("Log 根路徑（選填）：", log_path),
+        for row, (label, variable) in enumerate((("CSV／FCT unitest／BT TestData 根路徑：", csv_path), ("FCT active Log 根路徑（選填）：", log_path),
                                                    ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
             ttk.Label(paths, text=label).grid(row=row, column=0, sticky="w", pady=3)
             ttk.Entry(paths, textvariable=variable, width=58).grid(row=row, column=1, sticky="ew", pady=3)
@@ -2154,7 +2269,7 @@ class AtlasAgentApp:
             return
         profile = VISUAL_PROFILES[(dfu_profile if dfu_profile is not None else self.dfu_profile.get()) if station == "DFU" else "b482_bt"]
         suggested = [profile["window"]]
-        suggested.extend(profile[key] for key in ("barcode", "ok", "start", "slot_label", "group_label", "checkbox_checked", "checkbox_unchecked") if key in profile)
+        suggested.extend(profile[key] for key in ("barcode", "ok", "start", "slot_label", "group_label", "dock_icon", "checkbox_checked", "checkbox_unchecked") if key in profile)
         if station == "BT":
             suggested.extend(profile["starts"].values())
         TemplateMakerDialog(parent, template_root, screenshot_root, suggested,
@@ -2418,7 +2533,7 @@ class AtlasAgentApp:
         root_text = self.csv_path.get().strip()
         root = Path(root_text).expanduser() if root_text else Path(".")
         if not root.is_dir():
-            messagebox.showerror(TITLE, "請先選擇有效的 CSV／BT TestData 根路徑", parent=self.root)
+            messagebox.showerror(TITLE, "請先選擇有效的 CSV／FCT unitest／BT TestData 根路徑", parent=self.root)
             return False
         try:
             timeout = float(self.result_timeout.get())
@@ -2436,17 +2551,22 @@ class AtlasAgentApp:
         self.reported_batch_number = batch_number  # auto demo must never emit RESULT
         self.auto_log_demo = True
         self.auto_discovery_labels = {}
+        self.auto_fct_active_slots = {}
+        self.auto_fct_sn_slots = {}
         self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
         self.monitor_stop = threading.Event()
         if station == "FCT":
             log_root = Path(self.log_path.get()).expanduser()
             if not log_root.is_dir():
-                log_root = root
+                # Operators normally select Logs/Atlas/unitest as the CSV
+                # root.  The live folders are its sibling Logs/Atlas/active.
+                log_root = root.parent if root.name.lower() == "unitest" else root
             self.monitor = FctAutoLogMonitor(root, log_root, time.time(),
                                               lambda item: self.events.put(("log", item)),
                                               lambda result: self.events.put(("auto_fct_result", (batch_number, result))),
                                               self.monitor_stop, timeout,
-                                              lambda: self.events.put(("auto_timeout", batch_number)))
+                                              lambda: self.events.put(("auto_timeout", batch_number)),
+                                              lambda progress: self.events.put(("auto_fct_progress", (batch_number, progress))))
         else:
             started_at = datetime.now()
             self.monitor = BtAutoLogMonitor(root, started_at,
@@ -2719,39 +2839,28 @@ class AtlasAgentApp:
                         continue
                     raise AgentError(f"DFU 七槽 checkbox 截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
 
-                window_errors: list[str] = []
                 layout_errors: list[str] = []
-                matched_window_names: list[str] = []
                 for shot in shots:
-                    try:
-                        window_rectangle = template_match(shot, window_template)
-                    except AgentError as exc:
-                        window_errors.append(f"{shot.name}: {exc}")
-                        continue
-                    matched_window_names.append(shot.name)
                     try:
                         layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
                                                       checked_template, unchecked_template)
-                        return (shot, layout, window_rectangle), shots
+                        # dfu7_window can be a tiny visual title marker.  It is
+                        # useful for diagnostics, but never a requirement for
+                        # state verification and never used as a click point.
+                        return (shot, layout, dfu7_safe_focus_anchor(
+                            shot, slot_label_template, group_label_template)), shots
                     except AgentError as exc:
-                        # Do not combine another display's missing-window error
-                        # with the actual checkbox error from the DFU display.
                         layout_errors.append(f"{shot.name}: {exc}")
 
-                last_window_errors, last_layout_errors = window_errors, layout_errors
+                last_layout_errors = layout_errors
                 self.delete_processed_screenshots(shots)
                 if capture_attempt == 0:
-                    if matched_window_names:
-                        self.events.put(("log", "DFU 七槽：已找到 dfu7_window（" +
-                                                 "、".join(matched_window_names) +
-                                                 "），但 checkbox 判讀不穩定；將重新擷取，不是視窗模板遺失。"))
-                    else:
-                        self.events.put(("log", "DFU 七槽：本次多螢幕截圖尚未找到 dfu7_window，將重新擷取一次。"))
+                    self.events.put(("log", "DFU 七槽：checkbox 判讀不穩定，將重新擷取一次；不以 dfu7_window 小模板作為複驗依據。"))
 
             if last_layout_errors:
-                raise AgentError("已找到 DFU 七槽視窗，但 group0／slot checkbox 判讀失敗：" +
+                raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" +
                                  "；".join(last_layout_errors))
-            raise AgentError("兩次截圖均找不到 DFU 七槽視窗模板：" + "；".join(last_window_errors))
+            raise AgentError("兩次截圖均無法判讀 DFU 七槽 checkbox")
 
         def state_text(states: list[CheckboxEvidence]) -> str:
             return "、".join(f"slot{index}={'勾選' if state.checked else '取消'}"
@@ -2759,10 +2868,10 @@ class AtlasAgentApp:
 
         def capture(label: str):
             snapshot, shots = fresh_layout(label)
-            selected, layout, window_rectangle = snapshot
+            selected, layout, safe_focus_anchor = snapshot
             group_control, states, group_label, anchors = layout
             self.events.put(("log", f"DFU 七槽 checkbox 狀態：{state_text(states)}"))
-            return selected, group_control, states, group_label, anchors, window_rectangle, shots
+            return selected, group_control, states, group_label, anchors, safe_focus_anchor, shots
 
         def click_and_recapture(commands: list[str], shots: list[Path], label: str):
             self.delete_processed_screenshots(shots)
@@ -2770,7 +2879,7 @@ class AtlasAgentApp:
             return capture(label)
 
         # Establish an all-off baseline without trusting group0's visual state.
-        selected, group_control, states, group_label, anchors, window_rectangle, shots = capture(
+        selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = capture(
             "DFU 七槽：讀取七個 slot checkbox 初始狀態…")
         self.events.put(("log", "DFU 七槽：group0 僅作為全選控制，狀態以七個 slot 為準"))
         for reset_attempt in range(3):
@@ -2788,7 +2897,7 @@ class AtlasAgentApp:
                 for state in states:
                     if state.checked:
                         commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-            selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+            selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
                 commands, shots, f"DFU 七槽：驗證全取消基準（第 {reset_attempt + 1} 次）…")
         if any(state.checked for state in states):
             self.delete_processed_screenshots(shots)
@@ -2805,7 +2914,7 @@ class AtlasAgentApp:
             for index, state in enumerate(states, start=1):
                 if index in requested:
                     commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-        selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+        selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
             commands, shots, "DFU 七槽：複驗指定 slot…")
 
         # One individual correction is allowed; group0 is never part of the
@@ -2817,7 +2926,7 @@ class AtlasAgentApp:
             correction: list[str] = []
             for _, state in mismatches:
                 correction.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-            selected, group_control, states, group_label, anchors, window_rectangle, shots = click_and_recapture(
+            selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
                 correction, shots, "DFU 七槽：補正後最終複驗…")
             mismatches = [(index, state) for index, state in enumerate(states, start=1)
                           if state.checked != (index in requested)]
@@ -2846,7 +2955,7 @@ class AtlasAgentApp:
             raise AgentError(f"DFU 七槽 checkbox 已同步，但無法重新定位 SN 輸入框或 OK：{exc}") from exc
         self.events.put(("log", "DFU 七槽：checkbox 同步完成，已以最新截圖重新定位 SN 輸入框與 OK"))
         self.delete_processed_screenshots(shots)
-        return window_rectangle, barcode_rectangle, ok_rectangle
+        return safe_focus_anchor, barcode_rectangle, ok_rectangle
 
     def visual_start(self, station: str, sns: list[str], slots: list[int], csv_root: Path, batch_number: int,
                      created_after: float, result_timeout: float) -> None:
@@ -2880,6 +2989,12 @@ class AtlasAgentApp:
             root_fallbacks = [item for item, path in resolved.items() if path.parent == templates and Path(item).parent != Path(".")]
             if root_fallbacks:
                 self.events.put(("log", "相容模式：使用模板根目錄檔案「" + "、".join(root_fallbacks) + "」"))
+            # The Dock icon is a focus aid only.  It must not make a field
+            # deployment fail when the operator has not made that template.
+            if station == "DFU" and profile.get("dock_icon"):
+                dock_candidate = resolve_template_path(templates, profile["dock_icon"])
+                if dock_candidate.is_file():
+                    resolved[profile["dock_icon"]] = dock_candidate
             before = time.time(); self.link.send_control("SCREENSHOT")
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir(): raise AgentError("請選擇有效的螢幕截圖路徑")
@@ -2892,8 +3007,27 @@ class AtlasAgentApp:
             if not shots: raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
             window = resolved[profile["window"]]
             shot = None
+            window_rect = None
             match_errors: list[str] = []
             for candidate in shots:
+                # For the field seven-slot profile, a Dock match identifies
+                # the intended display more reliably than its deliberately
+                # small dfu7_window title marker.  The normal window template
+                # remains the fallback if no Dock template is supplied.
+                if station == "DFU" and profile["input_mode"] == "enter_each_ok_once":
+                    dock_template = resolved.get(profile.get("dock_icon", ""))
+                    if dock_template is not None:
+                        try:
+                            dock_rect = template_match(candidate, dock_template, threshold=.72)
+                            shot = candidate
+                            try:
+                                window_rect = template_match(candidate, window)
+                            except AgentError:
+                                window_rect = dock_rect
+                                self.events.put(("log", "DFU 七槽：以 Dock Atlas 圖示鎖定目標螢幕；dfu7_window 僅保留診斷用途"))
+                            break
+                        except AgentError as exc:
+                            match_errors.append(f"{candidate.name}: Dock Atlas 圖示 {exc}")
                 try:
                     window_rect = template_match(candidate, window)
                     shot = candidate
@@ -2941,15 +3075,34 @@ class AtlasAgentApp:
                 # Bring the HMI/browser to the foreground before the first
                 # input click. The matched title region is deliberately a
                 # non-interactive, safe part of the test window.
-                focus_logical = logical_for(window_center)
-                focus_target = target_for(window_center)
-                focus_commands = window_focus_commands(focus_logical, focus_target, hid_mode)
-                self.events.put(("log", f"DFU 視窗焦點：截圖 {window_center} → logical {focus_logical}"
-                                         f" → HID {focus_target}（{hid_mode}）"))
                 dfu7_profile = profile["input_mode"] == "enter_each_ok_once"
                 sparse_checkbox_job = (self.auto_slot_sync.get() and slots != [1, 2, 3, 4]
                                        and profile["input_mode"] == "ok_each")
                 dfu7_checkbox_job = self.auto_slot_sync.get() and dfu7_profile
+                focus_source = window_center
+                focus_kind = "DFU 視窗安全區"
+                if dfu7_profile:
+                    # Never click the center of a small dfu7_window title
+                    # template: it may be a false match on the desktop.  The
+                    # Dock icon is preferred; slot1 text is the safe fallback.
+                    dock_template = resolved.get(profile.get("dock_icon", ""))
+                    if dock_template is not None:
+                        try:
+                            dock_rect = template_match(shot, dock_template, threshold=.72)
+                            focus_source, focus_kind = rectangle_center(dock_rect), "Dock Atlas 圖示"
+                            matches.append((match_label("Dock Atlas", focus_source), dock_rect, target_for(focus_source)))
+                        except AgentError as exc:
+                            self.events.put(("log", f"DFU 七槽：Dock 圖示未匹配，改用 slot1 安全錨點：{exc}"))
+                    if focus_kind != "Dock Atlas 圖示":
+                        safe_rect = dfu7_safe_focus_anchor(shot, resolved[profile["slot_label"]],
+                                                            resolved[profile["group_label"]])
+                        focus_source, focus_kind = rectangle_center(safe_rect), "slot1 安全錨點"
+                        matches.append((match_label("slot1 focus", focus_source), safe_rect, target_for(focus_source)))
+                focus_logical = logical_for(focus_source)
+                focus_target = target_for(focus_source)
+                focus_commands = window_focus_commands(focus_logical, focus_target, hid_mode)
+                self.events.put(("log", f"DFU 視窗焦點（{focus_kind}）：截圖 {focus_source} → logical {focus_logical}"
+                                         f" → HID {focus_target}（{hid_mode}）"))
                 if sparse_checkbox_job:
                     states = slot_checkbox_states(shot, resolved[profile["checkbox_checked"]],
                                                    resolved[profile["checkbox_unchecked"]], region=region)
@@ -2958,18 +3111,7 @@ class AtlasAgentApp:
                         matches.append((match_label(f"slot{index} {'checked' if is_checked else 'unchecked'}",
                                                     rectangle_center(rectangle)), rectangle, target))
                 elif dfu7_checkbox_job:
-                    group_state, states, group_label, anchors = dfu7_checkbox_layout(
-                        shot, resolved[profile["slot_label"]], resolved[profile["group_label"]],
-                        resolved[profile["checkbox_checked"]], resolved[profile["checkbox_unchecked"]], region=region)
-                    matches.append((match_label("group0 label", rectangle_center(group_label)), group_label,
-                                    target_for(rectangle_center(group_label))))
-                    matches.append((match_label("group0 control", rectangle_center(group_state.rectangle)),
-                                    group_state.rectangle,
-                                    target_for(rectangle_center(group_state.rectangle))))
-                    for index, (state, anchor) in enumerate(zip(states, anchors), start=1):
-                        matches.append((match_label(f"slot{index} {'checked' if state.checked else 'unchecked'}",
-                                                    rectangle_center(state.rectangle)), anchor,
-                                        target_for(rectangle_center(state.rectangle))))
+                    self.events.put(("log", "DFU 七槽：先取得測試 HMI 焦點，再以新截圖讀取 checkbox 狀態"))
                 barcode_rect = template_match(shot, resolved[profile["barcode"]], region=region)
                 barcode_source = rectangle_center(barcode_rect)
                 barcode = target_for(barcode_source)
@@ -2982,19 +3124,23 @@ class AtlasAgentApp:
                     write_match_overlay(shot, matches, self.overlay_path)
                     self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(focus_commands, delay=delay)
+                    if dfu7_profile:
+                        # Let native checkbox rendering switch to its focused
+                        # appearance before collecting the authoritative state.
+                        time.sleep(.8)
                     if dfu7_checkbox_job:
-                        fresh_window_rect, fresh_barcode_rect, fresh_button_rect = self.ensure_dfu7_slot_checkbox_states(
+                        fresh_focus_rect, fresh_barcode_rect, fresh_button_rect = self.ensure_dfu7_slot_checkbox_states(
                             slots, screenshot_dir, window, resolved[profile["slot_label"]],
                             resolved[profile["group_label"]], resolved[profile["checkbox_checked"]],
                             resolved[profile["checkbox_unchecked"]], resolved[profile["barcode"]],
                             resolved[profile["ok"]], target_for, hid_mode, delay)
-                        window_center = rectangle_center(fresh_window_rect)
+                        window_center = rectangle_center(fresh_focus_rect)
                         barcode_source = rectangle_center(fresh_barcode_rect)
                         button_source = rectangle_center(fresh_button_rect)
                         barcode, button = target_for(barcode_source), target_for(button_source)
                         self.events.put(("log", f"DFU 七槽：最新定位 SN={barcode_source} → HID {barcode}，"
                                                  f"OK={button_source} → HID {button}"))
-                        self.events.put(("log", "DFU 七槽：重新點擊測試畫面取得焦點，準備輸入條碼"))
+                        self.events.put(("log", "DFU 七槽：以 slot1 安全錨點重新取得測試畫面焦點，準備輸入條碼"))
                         focus_logical = logical_for(window_center)
                         focus_target = target_for(window_center)
                         self.send_hid_sequence(
@@ -3229,9 +3375,25 @@ class AtlasAgentApp:
                     batch_number, result = item; assert isinstance(result, TestResult)
                     if batch_number != self.batch_number or not self.auto_log_demo:
                         continue
-                    label = self.auto_discovery_labels.setdefault(result.sn, f"檢出 {len(self.auto_discovery_labels) + 1}")
+                    slot = self.auto_fct_sn_slots.get(result.sn)
+                    if slot is not None:
+                        label, key = f"slot{slot}", f"fct-active:{slot}"
+                    else:
+                        label = self.auto_discovery_labels.setdefault(result.sn, f"檢出 {len(self.auto_discovery_labels) + 1}")
+                        key = "fct:" + result.sn
                     self.append(f"{label}：{result.sn} {result.status} — {result.detail}")
-                    self.set_result_row("fct:" + result.sn, label, result.sn, result.status)
+                    self.set_result_row(key, label, result.sn, result.status)
+                elif kind == "auto_fct_progress":
+                    batch_number, progress = item; assert isinstance(progress, FctActiveProgress)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    key = f"fct-active:{progress.slot}"
+                    self.auto_fct_active_slots[progress.slot] = key
+                    if progress.sn:
+                        self.auto_fct_sn_slots[progress.sn] = progress.slot
+                    display_sn = progress.sn or "辨識中"
+                    self.set_result_row(key, f"slot{progress.slot}", display_sn, progress.status)
+                    self.append(f"FCT active slot{progress.slot}：{display_sn} {progress.status} — {progress.detail}")
                 elif kind == "auto_bt_result":
                     batch_number, result = item; assert isinstance(result, BtCsvResult)
                     if batch_number != self.batch_number or not self.auto_log_demo:

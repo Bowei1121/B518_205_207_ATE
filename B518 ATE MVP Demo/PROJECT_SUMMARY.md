@@ -67,6 +67,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - 此變更只影響模板製作用的「擷取螢幕截圖」；正式測試流程、選擇既有截圖及使用最新截圖均不變。
 - 模板放大預覽會依螢幕尺寸限制畫布高度，預留底部取消／儲存操作區，避免按鈕超出 1440×900 等較矮螢幕。
 
+## 2026-08-07 現場 active Log 與 DFU Dock 聚焦
+
+- FCT 測試開始時會先在 `Logs/Atlas/active/group0-slotN` 建立暫存資料夾，持續更新測試步驟與 `device.log`，完成後刪除 active 資料，再將最終結果搬到 `Logs/Atlas/unitest/<SN>/<timestamp>/system/records.csv`。
+- 無 SN FCT Demo 改為雙階段：active 出現即在結果面板顯示 `slotN`、SN（若 Log 已讀出）與 `TESTING`；active 消失時顯示 `COMPLETING`；只有 unitest 的完整 `records.csv` 才更新最終 PASS／FAIL。60 秒無活動時顯示 `STALLED`，但繼續等候直到既有逾時或人工停止。
+- 七槽 DFU 不再把小型 `dfu7_window` 模板的中心當作點擊座標，也不會在取得 HMI 焦點前讀 checkbox。現在可選擇製作 `b482/dfu7_dock_icon.png`，優先點擊 Dock 中已固定的 Atlas 圖示；未提供時改點擊 slot1 文字安全錨點，再重新截圖判讀聚焦後的 checkbox。
+
 ## Git 與交付規則
 
 - Remote：`origin` → `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`

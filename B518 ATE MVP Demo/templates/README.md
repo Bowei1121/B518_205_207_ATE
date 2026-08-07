@@ -29,6 +29,8 @@ HTML 模擬 HMI 的 checkbox 僅供操作人員手動選擇，Agent 不會辨識
 照片：
 
 - `b482/dfu7_window.png`、`b482/dfu7_sn_input.png`、`b482/dfu7_ok.png`
+- `b482/dfu7_dock_icon.png`（建議）：Dock 中已固定的 Atlas／DFU 應用程式圖示。此模板只用於
+  取得 HMI 焦點，不是必要模板；沒有它時 Agent 會點擊 slot1 文字安全區作為後備。
 - `b482/dfu7_slot_label.png`：下方卡片的共用 `slot` 文字，勿包含 slot 數字或 checkbox。
 - `b482/dfu7_group0_label.png`：下方 group0 文字，勿包含上方表格中的 group0。
 - `b482/slot_checkbox_checked.png`、`b482/slot_checkbox_unchecked.png`：同一解析度下、盡量框選
@@ -41,6 +43,9 @@ slot checkbox 的搜尋範圍會依同一排相鄰 slot 文字間距延伸到卡
 僅作為操作全選／取消全選的控制，其顏色或勾選外觀不是判定依據；重設與最終複驗都以 slot1～7 的實際狀態為準。
 七槽 checkbox 會先自動裁出主體，再以灰階邊緣比較方框與勾形，降低視窗焦點造成的灰底黑勾／
 藍底或綠底白勾色彩差異；兩種狀態分數不足或過於接近時會停止流程並把完整分數寫入 Log。
+
+若使用 Dock 焦點模板，請先把 Atlas 應用程式固定在 Dock、關閉 Dock 放大效果，並只框選圖示本體，
+不要包含會隨滑鼠移動或執行狀態改變的 Dock 指示點。
 
 `b482_dfu1_manual` 不會自動操作，因其畫面未顯示與 DFU_2 相同的 SN 輸入流程；確認
 其實際輸入規則後再加入專用設定。
