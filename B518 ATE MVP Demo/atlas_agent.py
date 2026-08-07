@@ -1053,6 +1053,19 @@ def preview_geometry(image_width: int, image_height: int, viewport_width: int, v
     return scale, max(1, round(image_width * scale)), max(1, round(image_height * scale))
 
 
+def bounded_template_preview_size(requested_width: int, requested_height: int,
+                                  screen_width: int, screen_height: int) -> tuple[int, int]:
+    """Keep the template canvas on screen while reserving the footer controls."""
+    if min(requested_width, requested_height, screen_width, screen_height) <= 0:
+        raise AgentError("螢幕或預覽尺寸無效")
+    # Reserve room for the title bar, toolbar, focused-capture instruction,
+    # selection status and the Cancel/Save footer. The width margin also keeps
+    # the native window border away from the screen edge.
+    max_width = max(320, screen_width - 80)
+    max_height = max(240, screen_height - 300)
+    return min(requested_width, max_width), min(requested_height, max_height)
+
+
 class FolderMonitor(threading.Thread):
     def __init__(self, csv_root: Path, log_root: Path, sns: Iterable[str], on_log: Callable[[str], None], on_result: Callable[[TestResult], None], stop: threading.Event,
                  created_after: float = 0.0, timeout_seconds: float = 0.0,
@@ -1603,7 +1616,7 @@ class TemplateMakerDialog:
         ))
         ttk.Label(self.window, textvariable=self.focus_instruction, foreground="#d35400",
                   wraplength=1050, justify="left").pack(fill="x", padx=10, pady=(0, 8))
-        width, height = self.PREVIEW_SIZES[self.preview_index]
+        width, height = self._preview_viewport()
         self.canvas = tk.Canvas(self.window, width=width, height=height, bg="#333", cursor="crosshair", highlightthickness=0)
         self.canvas.pack(padx=10, pady=(0, 5))
         self.canvas.bind("<ButtonPress-1>", self.begin)
@@ -1748,10 +1761,17 @@ class TemplateMakerDialog:
             self.selection = None
             self.render_preview()
 
+    def _preview_viewport(self) -> tuple[int, int]:
+        requested_width, requested_height = self.PREVIEW_SIZES[self.preview_index]
+        return bounded_template_preview_size(
+            requested_width, requested_height,
+            self.window.winfo_screenwidth(), self.window.winfo_screenheight(),
+        )
+
     def render_preview(self) -> None:
         assert self.original is not None
         height, width = self.original.shape[:2]
-        viewport_width, viewport_height = self.PREVIEW_SIZES[self.preview_index]
+        viewport_width, viewport_height = self._preview_viewport()
         self.scale, self.shown_width, self.shown_height = preview_geometry(width, height, viewport_width, viewport_height)
         shown = cv2.resize(self.original, (self.shown_width, self.shown_height), interpolation=cv2.INTER_AREA) if self.scale != 1 else self.original
         # Delete the native image before creating the next one; repeated loads
