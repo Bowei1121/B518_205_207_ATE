@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-06（Asia/Taipei）
+最後更新：2026-08-07（Asia/Taipei）
 
 ## 專案目的
 
@@ -58,6 +58,13 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - absolute 模式改為先用 `M_ABS` 精準定位，再由標準相對滑鼠做一單位往返後送出左鍵，避免切換 HID pointer interface 時遺失焦點點擊。
 - relative 模式保留原有回左上角再移動的行為；Log 會同時列出截圖、logical 與 HID 焦點座標，方便現場比對。
 - 七槽重新截圖會先分流多螢幕候選：其他螢幕缺少 `dfu7_window` 不再掩蓋正確 DFU 螢幕的 checkbox 錯誤；checkbox 暫時不明確時會自動重新截圖一次。
+
+## 2026-08-07 Focused checkbox 模板擷取
+
+- 現場確認測試 HMI 未聚焦時 checked checkbox 為白底黑勾，聚焦後則可能成為藍／綠底白勾；兩種外觀直接混用會降低模板相似度。
+- 模板製作改採人工聚焦倒數：擷取前先顯示確認提醒，Atlas Agent 隱藏後保留 5 秒，操作人員須手動點擊測試 HMI 的標題列或空白安全區，之後 Arduino 才送出截圖快捷鍵。
+- 模板頁常駐顯示人工聚焦提醒，並警告不可點擊 checkbox；checked／unchecked 必須取自相同聚焦狀態與相同裁切範圍。
+- 此變更只影響模板製作用的「擷取螢幕截圖」；正式測試流程、選擇既有截圖及使用最新截圖均不變。
 
 ## Git 與交付規則
 

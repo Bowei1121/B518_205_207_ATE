@@ -69,6 +69,7 @@ SCREENSHOT_TIMEOUT_SECONDS = 15.0
 # global screenshot shortcut. This is intentionally separate from the time
 # macOS needs to write the captured PNG to disk.
 TEMPLATE_CAPTURE_HIDE_SETTLE_MS = 350
+TEMPLATE_FOCUS_COUNTDOWN_SECONDS = 5
 DFU_PROFILES = ("b482_dfu2", "b482_dfu2_7slot", "generic", "b482_dfu1_manual")
 DEMO_SLOT_LIMITS = {"DFU": 7, "FCT": 6, "BT": 4}
 COMPACT_HMI_GEOMETRY = "420x820"
@@ -78,6 +79,17 @@ RESULT_COLOURS = {
     "NOTEST": "#f04bf1", "WAITING": "#d9d9d9", "TIMEOUT": "#f5a623",
     "START_FAILED": "#ff0000",
 }
+
+
+def focused_template_capture_message(seconds: int = TEMPLATE_FOCUS_COUNTDOWN_SECONDS) -> str:
+    """Operator instruction shown before a focused template screenshot."""
+    return (
+        f"按下「確定」後 Atlas Agent 會暫時隱藏。\n\n"
+        f"請在 {seconds} 秒內手動點擊測試 HMI 的標題列或空白安全區，"
+        "讓測試視窗取得焦點。\n"
+        "請勿點擊 checkbox，以免改變 Slot 勾選狀態。\n\n"
+        "倒數結束後，Arduino 會自動擷取螢幕。"
+    )
 
 
 def should_send_start_failed_nack(job_id: str, connected: bool) -> bool:
@@ -1585,6 +1597,12 @@ class TemplateMakerDialog:
         self.name = tk.StringVar(value=self.suggested_names[0])
         ttk.Combobox(controls, textvariable=self.name, values=self.suggested_names,
                      width=32).pack(side="left", fill="x", expand=True)
+        self.focus_instruction = tk.StringVar(value=(
+            f"Focused 模板擷取：按下擷取並確認後，請在 {TEMPLATE_FOCUS_COUNTDOWN_SECONDS} 秒內手動點擊測試 HMI "
+            "的標題列或空白安全區；請勿點擊 checkbox。"
+        ))
+        ttk.Label(self.window, textvariable=self.focus_instruction, foreground="#d35400",
+                  wraplength=1050, justify="left").pack(fill="x", padx=10, pady=(0, 8))
         width, height = self.PREVIEW_SIZES[self.preview_index]
         self.canvas = tk.Canvas(self.window, width=width, height=height, bg="#333", cursor="crosshair", highlightthickness=0)
         self.canvas.pack(padx=10, pady=(0, 5))
@@ -1647,14 +1665,23 @@ class TemplateMakerDialog:
     def capture_new_screenshot(self) -> None:
         if self.capture_screenshot is None:
             messagebox.showerror(TITLE, "目前沒有可用的 Arduino 擷取功能", parent=self.window); return
+        if not messagebox.askokcancel(
+                "Focused 模板擷取",
+                focused_template_capture_message(),
+                parent=self.window):
+            self.info.set("已取消擷取；尚未隱藏視窗或送出 SCREENSHOT。")
+            return
         self.capture_button.state(["disabled"])
-        self.info.set("Atlas Agent 正在暫時隱藏，準備擷取乾淨的螢幕截圖…")
+        self.info.set(
+            f"Atlas Agent 即將隱藏；請在 {TEMPLATE_FOCUS_COUNTDOWN_SECONDS} 秒內手動點擊測試 HMI…"
+        )
         self._release_modal_grab()
         self.hidden_windows = hide_visible_atlas_windows(self.app_root)
         # A withdraw request is asynchronous on macOS.  Waiting briefly before
         # the Arduino shortcut prevents the Agent UI from appearing in the PNG.
         self.app_root.update_idletasks()
-        self.window.after(TEMPLATE_CAPTURE_HIDE_SETTLE_MS, self._start_hidden_capture)
+        focus_delay_ms = TEMPLATE_CAPTURE_HIDE_SETTLE_MS + TEMPLATE_FOCUS_COUNTDOWN_SECONDS * 1000
+        self.window.after(focus_delay_ms, self._start_hidden_capture)
 
     def _start_hidden_capture(self) -> None:
         if self.capture_screenshot is None:
