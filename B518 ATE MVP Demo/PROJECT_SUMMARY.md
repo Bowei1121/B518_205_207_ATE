@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-07（Asia/Taipei）
+最後更新：2026-08-08（Asia/Taipei）
 
 ## 專案目的
 
@@ -72,6 +72,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - FCT 測試開始時會先在 `Logs/Atlas/active/group0-slotN` 建立暫存資料夾，持續更新測試步驟與 `device.log`，完成後刪除 active 資料，再將最終結果搬到 `Logs/Atlas/unitest/<SN>/<timestamp>/system/records.csv`。
 - 無 SN FCT Demo 改為雙階段：active 出現即在結果面板顯示 `slotN`、SN（若 Log 已讀出）與 `TESTING`；active 消失時顯示 `COMPLETING`；只有 unitest 的完整 `records.csv` 才更新最終 PASS／FAIL。60 秒無活動時顯示 `STALLED`，但繼續等候直到既有逾時或人工停止。
 - 七槽 DFU 不再把小型 `dfu7_window` 模板的中心當作點擊座標，也不會在取得 HMI 焦點前讀 checkbox。現在可選擇製作 `b482/dfu7_dock_icon.png`，優先點擊 Dock 中已固定的 Atlas 圖示；未提供時改點擊 slot1 文字安全錨點，再重新截圖判讀聚焦後的 checkbox。
+
+## 2026-08-08 本次改動統整
+
+- 本次修改已提交至本機 Git：`32d5c86 feat: improve DFU focus and FCT active log demo`；依目前指示暫不推送 remote，待回公司內網後再處理。
+- DFU 七槽聚焦優先使用可選 Dock Atlas 圖示模板，降低小型視窗模板中心偏移造成的誤點；沒有 Dock 模板時維持 slot1 文字錨點的安全 fallback。
+- FCT 無 SN Demo 已可使用 active／unitest 兩階段 Log 顯示即時進度、停滯與最終結果，避免只靠固定逾時時間等待。
 
 ## Git 與交付規則
 
