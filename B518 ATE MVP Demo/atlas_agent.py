@@ -522,25 +522,6 @@ def dfu_enter_each_ok_once_commands(sns: Iterable[str], barcode: tuple[int, int]
     return commands
 
 
-def dfu7_group_reset_commands(group_checkbox: tuple[int, int], slots: Iterable[int],
-                              group_initially_checked: bool, mode: str = "relative") -> list[str]:
-    """Return deterministic group0 reset/select commands for the seven-slot HMI."""
-    requested = tuple(sorted(set(slots)))
-    if any(slot < 1 or slot > 7 for slot in requested):
-        raise AgentError("DFU 七槽 slot 必須介於 1～7")
-    commands: list[str] = []
-    # End at known all-off state even if group0 visual state and individual
-    # controls were previously inconsistent.
-    if group_initially_checked:
-        commands.extend(click_commands(group_checkbox, mode))
-    else:
-        commands.extend(click_commands(group_checkbox, mode))
-        commands.extend(click_commands(group_checkbox, mode))
-    if requested == (1, 2, 3, 4, 5, 6, 7):
-        commands.extend(click_commands(group_checkbox, mode))
-    return commands
-
-
 def dfu_tab_slot_commands(assignments: Iterable[tuple[int, str]]) -> list[str]:
     """Type sparse generic-DFU slots, using Tab to preserve empty positions."""
     commands: list[str] = []
@@ -1009,31 +990,18 @@ def dfu7_checkbox_search_regions(anchors: list[tuple[int, int, int, int]]) -> li
 def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_template: Path,
                          checked_template: Path, unchecked_template: Path,
                          region: Optional[tuple[int, int, int, int]] = None) -> tuple[
-                             CheckboxEvidence, list[CheckboxEvidence],
-                             tuple[int, int, int, int], list[tuple[int, int, int, int]]]:
-    """Locate group0 and seven card checkboxes using label-relative ROIs."""
+                             list[CheckboxEvidence], list[tuple[int, int, int, int]]]:
+    """Locate the seven card checkboxes using lower-panel label-relative ROIs.
+
+    ``group0`` is deliberately used only as a layout landmark: it separates the
+    lower slot cards from the result table.  It is never classified or clicked.
+    """
     group_hits = template_matches(image, group_label_template, threshold=.72, region=region)
     if not group_hits:
         raise AgentError("找不到 DFU 七槽 group0 標籤模板")
     # The lower selector is the lowest/rightmost occurrence; table group0 text
     # above it is intentionally ignored.
     group_x, group_y, group_w, group_h, _ = max(group_hits, key=lambda item: (item[1], item[0]))
-    # group0's checkbox sits immediately to the label's left.  Keeping this
-    # ROI tight avoids matching borders/checkboxes from the results table.
-    group_roi_width = max(60, group_h * 2)
-    group_roi = (max(0, group_x - group_roi_width), max(0, group_y - 2),
-                 group_roi_width, max(40, group_h + 4))
-    try:
-        # group0 is an actuator, not a trustworthy source of state: the field
-        # HMI can leave it checked while one child slot is unchecked, and its
-        # native appearance changes when Safari gains focus.  Keep the best
-        # geometric rectangle for clicking, but let the seven child controls
-        # be the sole source of truth for reset and verification.
-        group_state = checkbox_state_evidence_in_region(
-            image, checked_template, unchecked_template, group_roi,
-            require_confidence=False)
-    except AgentError as exc:
-        raise AgentError(f"group0 checkbox：{exc}") from exc
     anchors = dfu7_slot_anchor_order(template_matches(image, slot_label_template, threshold=.72, region=region), group_y)
     states: list[CheckboxEvidence] = []
     checkbox_regions = dfu7_checkbox_search_regions(anchors)
@@ -1043,7 +1011,7 @@ def dfu7_checkbox_layout(image: Path, slot_label_template: Path, group_label_tem
                 image, checked_template, unchecked_template, checkbox_roi))
         except AgentError as exc:
             raise AgentError(f"slot{index} checkbox：{exc}") from exc
-    return group_state, states, (group_x, group_y, group_w, group_h), anchors
+    return states, anchors
 
 
 def dfu7_safe_focus_anchor(image: Path, slot_label_template: Path, group_label_template: Path) -> tuple[int, int, int, int]:
@@ -2814,11 +2782,11 @@ class AtlasAgentApp:
                                          hid_mode: str, delay: float) -> tuple[
                                              tuple[int, int, int, int], tuple[int, int, int, int],
                                              tuple[int, int, int, int]]:
-        """Reset/select seven slots and return freshly located window/input/OK.
+        """Synchronize seven slots one-by-one and return fresh input/OK anchors.
 
-        group0 is used only as a bulk actuator.  The seven child slot controls
-        are the authoritative state because the field HMI can display group0
-        as checked even after an operator clears one child slot.
+        The group0 shortcut is intentionally never classified or clicked.  The
+        first screenshot determines each slot's actual state; only mismatched
+        slot controls are toggled, and a second screenshot is authoritative.
         """
         requested = set(slots)
 
@@ -2842,12 +2810,13 @@ class AtlasAgentApp:
                 layout_errors: list[str] = []
                 for shot in shots:
                     try:
-                        layout = dfu7_checkbox_layout(shot, slot_label_template, group_label_template,
-                                                      checked_template, unchecked_template)
+                        states, anchors = dfu7_checkbox_layout(
+                            shot, slot_label_template, group_label_template,
+                            checked_template, unchecked_template)
                         # dfu7_window can be a tiny visual title marker.  It is
                         # useful for diagnostics, but never a requirement for
                         # state verification and never used as a click point.
-                        return (shot, layout, dfu7_safe_focus_anchor(
+                        return (shot, states, anchors, dfu7_safe_focus_anchor(
                             shot, slot_label_template, group_label_template)), shots
                     except AgentError as exc:
                         layout_errors.append(f"{shot.name}: {exc}")
@@ -2858,7 +2827,7 @@ class AtlasAgentApp:
                     self.events.put(("log", "DFU 七槽：checkbox 判讀不穩定，將重新擷取一次；不以 dfu7_window 小模板作為複驗依據。"))
 
             if last_layout_errors:
-                raise AgentError("無法定位 DFU 七槽 group0／slot checkbox：" +
+                raise AgentError("無法定位 DFU 七槽 slot checkbox：" +
                                  "；".join(last_layout_errors))
             raise AgentError("兩次截圖均無法判讀 DFU 七槽 checkbox")
 
@@ -2868,66 +2837,30 @@ class AtlasAgentApp:
 
         def capture(label: str):
             snapshot, shots = fresh_layout(label)
-            selected, layout, safe_focus_anchor = snapshot
-            group_control, states, group_label, anchors = layout
+            selected, states, anchors, safe_focus_anchor = snapshot
             self.events.put(("log", f"DFU 七槽 checkbox 狀態：{state_text(states)}"))
-            return selected, group_control, states, group_label, anchors, safe_focus_anchor, shots
+            return selected, states, anchors, safe_focus_anchor, shots
 
         def click_and_recapture(commands: list[str], shots: list[Path], label: str):
             self.delete_processed_screenshots(shots)
             self.send_hid_sequence(commands, delay=delay)
             return capture(label)
 
-        # Establish an all-off baseline without trusting group0's visual state.
-        selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = capture(
+        # First screenshot: determine the current state of all seven slots.
+        selected, states, anchors, safe_focus_anchor, shots = capture(
             "DFU 七槽：讀取七個 slot checkbox 初始狀態…")
-        self.events.put(("log", "DFU 七槽：group0 僅作為全選控制，狀態以七個 slot 為準"))
-        for reset_attempt in range(3):
-            if not any(state.checked for state in states):
-                break
-            if all(state.checked for state in states):
-                self.events.put(("log", "DFU 七槽：七個 slot 皆已勾選，點擊 group0 取消全選"))
-                commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
-            elif reset_attempt < 2:
-                self.events.put(("log", "DFU 七槽：slot 為混合狀態，點擊 group0 後再以七個 slot 判定"))
-                commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
-            else:
-                self.events.put(("log", "DFU 七槽：group0 無法建立全取消狀態，改為個別取消已勾選 slot"))
-                commands = []
-                for state in states:
-                    if state.checked:
-                        commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-            selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
-                commands, shots, f"DFU 七槽：驗證全取消基準（第 {reset_attempt + 1} 次）…")
-        if any(state.checked for state in states):
-            self.delete_processed_screenshots(shots)
-            raise AgentError("DFU 七槽無法將七個 slot 重設為全取消：" + state_text(states))
-
-        # Apply the requested layout from the known all-off baseline.
-        if requested == set(range(1, 8)):
-            self.events.put(("log", "DFU 七槽：七槽全測，使用 group0 一次全選"))
-            commands = click_commands(target_for(rectangle_center(group_control.rectangle)), hid_mode)
-        else:
-            self.events.put(("log", "DFU 七槽：從全取消基準勾選指定 slot " +
-                             "、".join(map(str, sorted(requested)))))
-            commands = []
-            for index, state in enumerate(states, start=1):
-                if index in requested:
-                    commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-        selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
-            commands, shots, "DFU 七槽：複驗指定 slot…")
-
-        # One individual correction is allowed; group0 is never part of the
-        # pass/fail decision.
         mismatches = [(index, state) for index, state in enumerate(states, start=1)
                       if state.checked != (index in requested)]
-        if mismatches:
-            self.events.put(("log", "DFU 七槽：個別補正 " + "、".join(f"slot{index}" for index, _ in mismatches)))
-            correction: list[str] = []
+        if not mismatches:
+            self.events.put(("log", "DFU 七槽：初始 slot 狀態已符合本次需求，不需點擊 checkbox"))
+        else:
+            self.events.put(("log", "DFU 七槽：逐一切換不符 slot " +
+                             "、".join(f"slot{index}" for index, _ in mismatches)))
+            commands: list[str] = []
             for _, state in mismatches:
-                correction.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
-            selected, group_control, states, group_label, anchors, safe_focus_anchor, shots = click_and_recapture(
-                correction, shots, "DFU 七槽：補正後最終複驗…")
+                commands.extend(click_commands(target_for(rectangle_center(state.rectangle)), hid_mode))
+            selected, states, anchors, safe_focus_anchor, shots = click_and_recapture(
+                commands, shots, "DFU 七槽：第二張截圖複驗指定 slot…")
             mismatches = [(index, state) for index, state in enumerate(states, start=1)
                           if state.checked != (index in requested)]
         if mismatches:
@@ -2936,11 +2869,9 @@ class AtlasAgentApp:
             raise AgentError("DFU 七槽 checkbox 驗證失敗，HMI 實際狀態為：" + current +
                              "；已停止，未輸入任何條碼。")
 
-        annotations = [("group0 control", group_control.rectangle,
-                        target_for(rectangle_center(group_control.rectangle)))]
-        annotations.extend((f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
+        annotations = [(f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
                             target_for(rectangle_center(state.rectangle)))
-                           for index, state in enumerate(states, start=1))
+                       for index, state in enumerate(states, start=1)]
         write_match_overlay(selected, annotations, self.overlay_path)
         self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + state_text(states)))
 

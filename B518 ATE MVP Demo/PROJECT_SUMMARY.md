@@ -41,7 +41,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 ## 2026-08-06 DFU 七槽 checkbox 穩定化
 
 - 七槽 group0／slot checkbox 改用焦點不敏感的灰階邊緣辨識，checked／unchecked 模板會自動裁切主體並允許不同外框尺寸。
-- 稀疏 slot 先由 group0 確定性重設後只勾選指定 slot；全七槽則重設後由 group0 一次全選，並最多進行一次個別補正。
+- 當時版本的稀疏 slot 曾由 group0 重設後再選取；此作法已於 2026-08-08 取消，現行版本改為逐一比對並切換 slot。
 - 複驗成功後以最後一張尚未刪除的截圖重新定位 SN 輸入框與 OK，逐筆送出 SN＋Enter，最後只點一次 OK。
 - checkbox 模糊時記錄 group0、slot1～7 的 checked／unchecked 分數；任何啟動錯誤在主 HMI 顯示 START_FAILED，本機 Demo 不送 TCP NACK。
 - 修正 label-relative ROI 過窄的回歸：slot 搜尋寬度改由同排相鄰錨點間距計算，涵蓋卡片右端 checkbox；以 2026-08-06 現場截圖重算後 checked 分數由 0.20 提升至 0.92～1.00。
@@ -78,6 +78,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - 本次修改已提交至本機 Git：`32d5c86 feat: improve DFU focus and FCT active log demo`；依目前指示暫不推送 remote，待回公司內網後再處理。
 - DFU 七槽聚焦優先使用可選 Dock Atlas 圖示模板，降低小型視窗模板中心偏移造成的誤點；沒有 Dock 模板時維持 slot1 文字錨點的安全 fallback。
 - FCT 無 SN Demo 已可使用 active／unitest 兩階段 Log 顯示即時進度、停滯與最終結果，避免只靠固定逾時時間等待。
+
+## 2026-08-08 DFU 七槽取消 group0 快捷同步
+
+- 七槽 DFU 自動同步不再辨識、點擊或驗證 group0 checkbox，避免 group0 外觀、狀態不一致或誤判中斷流程。
+- 第一張聚焦後截圖讀取 slot1～7 的實際 checkbox 狀態；只逐一切換與本次 JOB／Demo 所需狀態不符的 slot。
+- 第二張截圖是唯一複驗依據；若仍與需求不符則停止流程，不輸入 SN、不點擊 OK。group0 文字模板僅保留作為下方 slot 區的版面定位標記。
 
 ## Git 與交付規則
 

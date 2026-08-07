@@ -76,7 +76,7 @@ OpenCV 模板。Agent 直接依指定 SN 監聽 CSV，由實機自行偵測有�
 DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程。
 
 若現場 DFU 是七槽 HMI，請在「設定 → DFU 畫面設定」選擇 `b482_dfu2_7slot`。啟用
-自動同步時，Agent 會用 group0 重設七個 slot，再依 Demo／JOB 的 slot 對應勾選並截圖驗證；
+自動同步時，Agent 會逐一讀取並切換七個 slot，再以第二張截圖驗證；
 停用時則保留人工設定模式。每個 SN 輸入後由 Arduino 送 Enter，只有所有已選 slot 都填入後
 才會點一次 OK 開始 ATE。
 
@@ -268,17 +268,17 @@ Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原�
 移到 OK → 點擊」；Agent 會逐一等待 Arduino 回覆每個 HID 指令成功，確認最後一筆 OK
 點擊完成後才開始監聽 CSV。
 
-七槽 Profile 的 checkbox 不會在整張畫面尋找：Agent 先定位下方 group0 文字，再在文字左側找
-checkbox 點擊位置；接著定位下方七個共用 `slot` 標籤，只在每一個標籤右側找 checked／unchecked 狀態。
+七槽 Profile 的 checkbox 不會在整張畫面尋找：Agent 先定位下方 group0 文字，用它區分下方 slot 區；
+接著定位下方七個共用 `slot` 標籤，只在每一個標籤右側找 checked／unchecked 狀態。
 這可避開上方結果表格的重複文字，也只需要一組狀態模板。模板名稱與裁切規則請參閱
 `templates/README.md`。slot checkbox 狀態採灰階邊緣與勾形幾何比對，因此 HMI 取得焦點後由灰底黑勾
-變成藍底或綠底白勾仍可辨識；checked／unchecked 模板仍應框選相同主體範圍。group0 只當作全選／取消全選的操作控制，
-不以其顏色或勾選外觀判定流程成功；最終一律以 slot1～7 的實際狀態為準。若任一 slot 的兩種狀態分數太接近，Agent 會停止並在 Log 列出分數，不會繼續輸入條碼。
+變成藍底或綠底白勾仍可辨識；checked／unchecked 模板仍應框選相同主體範圍。Agent 不會辨識或點擊 group0，
+全程只以 slot1～7 的實際狀態為準。若任一 slot 的兩種狀態分數太接近，Agent 會停止並在 Log 列出分數，不會繼續輸入條碼。
 每個 slot 的搜尋寬度由同一排相鄰 slot 文字間距計算，會涵蓋卡片最右側的 checkbox，但不跨入
 下一張卡片；因此緊湊版、Retina 截圖或整個瀏覽器平移時不需重新調整固定像素寬度。
 
-七槽自動同步時，不論原狀態為何都會先透過 group0 回到全未勾選。稀疏 Demo 再逐一勾選指定
-slot；七槽全測則由 group0 一次全選。複驗成功後會用最後一張截圖重新定位 SN 輸入框與 OK，
+七槽自動同步時，第一張截圖先確認七個 slot 現況，Agent 僅逐一點擊與本次 JOB 不符的 slot，
+再以第二張截圖確認最終狀態。複驗成功後會用最後一張截圖重新定位 SN 輸入框與 OK，
 再逐筆輸入 SN；只有全部輸入完成後才點一次 OK。任何定位、checkbox、HID 或截圖錯誤都會把
 主 HMI 結果列改為 `START_FAILED`；本機 Demo 不會因此傳送 TCP NACK。
 

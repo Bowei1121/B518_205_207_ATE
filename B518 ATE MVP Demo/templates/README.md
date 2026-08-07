@@ -32,15 +32,15 @@ HTML 模擬 HMI 的 checkbox 僅供操作人員手動選擇，Agent 不會辨識
 - `b482/dfu7_dock_icon.png`（建議）：Dock 中已固定的 Atlas／DFU 應用程式圖示。此模板只用於
   取得 HMI 焦點，不是必要模板；沒有它時 Agent 會點擊 slot1 文字安全區作為後備。
 - `b482/dfu7_slot_label.png`：下方卡片的共用 `slot` 文字，勿包含 slot 數字或 checkbox。
-- `b482/dfu7_group0_label.png`：下方 group0 文字，勿包含上方表格中的 group0。
+- `b482/dfu7_group0_label.png`：下方 group0 文字，勿包含上方表格中的 group0。此模板僅用來區分下方 slot 卡片與上方結果表格；Agent 不會辨識或點擊 group0 checkbox。
 - `b482/slot_checkbox_checked.png`、`b482/slot_checkbox_unchecked.png`：同一解析度下、盡量框選
   相同主體範圍的 checkbox；可保留少量邊界，不要包含 slot 名稱或其他控制項。
 
-Agent 以 group0 文字左側定位全選控制，並在每個 slot 文字右側的小範圍辨識 checkbox，再依第一排四個、第二排
+Agent 以 group0 文字區分下方 slot 區，並在每個 slot 文字右側的小範圍辨識 checkbox，再依第一排四個、第二排
 三個映射 slot1～7。因此只需要一組 checked／unchecked 模板，不需要為七個 slot 分別製作模板。
 slot checkbox 的搜尋範圍會依同一排相鄰 slot 文字間距延伸到卡片右端，不會只以文字寬度估算。
-啟用自動同步時，Agent 會先用 group0 將全部 slot 重設為未勾選，再建立本次所需狀態並截圖驗證。group0
-僅作為操作全選／取消全選的控制，其顏色或勾選外觀不是判定依據；重設與最終複驗都以 slot1～7 的實際狀態為準。
+啟用自動同步時，Agent 會先以第一張截圖讀取 slot1～7 的實際狀態，僅逐一點擊與本次 JOB 不符的 slot，
+再以第二張截圖驗證最終狀態。Agent 不會點擊 group0，因此不受 group0 勾選外觀或誤判影響。
 七槽 checkbox 會先自動裁出主體，再以灰階邊緣比較方框與勾形，降低視窗焦點造成的灰底黑勾／
 藍底或綠底白勾色彩差異；兩種狀態分數不足或過於接近時會停止流程並把完整分數寫入 Log。
 
