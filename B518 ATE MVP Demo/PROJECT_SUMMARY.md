@@ -110,6 +110,36 @@ git push origin main
 git push github main
 ```
 
+### 外網打包虛擬機（macOS 10.15）：從 GitHub 取得程式碼
+
+公司 Gitea 是內網，外網打包時改由 GitHub 取得程式碼。
+
+**情況 A：虛擬機上尚未 clone（全新環境）**
+
+```bash
+# 用 HTTPS，不需要 SSH key，直接可用
+git clone https://github.com/Bowei1121/B518_205_207_ATE.git
+
+# 或用 SSH（需先在 VM 設定 SSH key，步驟同下方「初次設定」）
+git clone git@github.com:Bowei1121/B518_205_207_ATE.git
+```
+
+**情況 B：虛擬機上已從 Gitea clone 過，需切換來源**
+
+```bash
+# 把 origin fetch 改成 GitHub（不需要重新 clone）
+git remote set-url origin https://github.com/Bowei1121/B518_205_207_ATE.git
+
+# 拉取最新程式
+git pull origin main
+
+# 確認 remote 設定
+git remote -v
+```
+
+> ⚠️ 打包 VM 通常只需要**拉取（pull）**，不需要 push，因此用 HTTPS 即可、不需要設定 SSH key。
+> 若之後回到公司內網，再執行 `git remote set-url origin http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 切換回 Gitea。
+
 ### 初次在新機器上設定（首次 clone 後執行）
 
 ```bash
