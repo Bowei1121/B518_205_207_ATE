@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -501,6 +501,48 @@ class AtlasAgentTests(unittest.TestCase):
             sn, detail = active_log_progress(log, active.parent)
             self.assertEqual(sn, "HK5HUX6STQ800003YV")
             self.assertIn("等待", detail)
+
+    def test_fct_active_log_does_not_treat_number_sof0_as_a_barcode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            active = Path(directory) / "active" / "group0-slot6"
+            active.mkdir(parents=True)
+            log = active / "device.log"
+            log.write_text("FCT active slot3: NUMBER_SOF0 COMPLETING - active\n", encoding="utf-8")
+            sn, _ = active_log_progress(log, active)
+            self.assertEqual(sn, "")
+
+    def test_fct_monitor_roots_accepts_atlas_active_and_final_selections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Logs" / "Atlas"
+            active, unitest, archive = atlas / "active", atlas / "unitest", atlas / "unit-archive"
+            active.mkdir(parents=True); unitest.mkdir(); archive.mkdir()
+            self.assertEqual(resolve_fct_monitor_roots(atlas).active_root, active)
+            self.assertEqual(resolve_fct_monitor_roots(active).final_root, unitest)
+            self.assertEqual(resolve_fct_monitor_roots(unitest).active_root, active)
+            self.assertEqual(resolve_fct_monitor_roots(archive).final_root, archive)
+
+    def test_fct_no_sn_slot_fails_only_after_active_is_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, final_root = atlas / "active", atlas / "unitest"
+            active = active_root / "group0-slot6"
+            active_root.mkdir(parents=True); final_root.mkdir()
+            progress, completed, stop = [], threading.Event(), threading.Event()
+            monitor = FctAutoLogMonitor(final_root, active_root, time.time(), lambda _: None,
+                                        lambda _: None, stop, on_progress=progress.append,
+                                        on_complete=completed.set, completion_settle_seconds=0)
+            monitor.start()
+            active.mkdir(); (active / "device.log").write_text("NUMBER_SOF0 COMPLETING\n", encoding="utf-8")
+            time.sleep(.6)
+            (active / "device.log").unlink(); active.rmdir()
+            monitor.join(1.5); stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertIn((6, "", "FAIL"), [(item.slot, item.sn, item.status) for item in progress])
+
+    def test_fct_result_rows_sort_by_physical_slot(self):
+        self.assertEqual(sorted(["fct-active:6", "fct-active:2", "fct:SN001", "fct-active:1"],
+                                key=fct_result_row_sort_key),
+                         ["fct-active:1", "fct-active:2", "fct-active:6", "fct:SN001"])
 
     def test_bt_auto_log_demo_ignores_baseline_and_keeps_thread_slot(self):
         started = datetime.now().replace(microsecond=0)

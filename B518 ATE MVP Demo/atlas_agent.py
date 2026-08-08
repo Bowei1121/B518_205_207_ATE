@@ -56,6 +56,8 @@ BT_START_TOLERANCE_SECONDS = 2
 FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS = 60
 FCT_INACTIVITY_TIMEOUT_SECONDS = 120
 FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS = 900
+FCT_AUTO_COMPLETION_SETTLE_SECONDS = 3.0
+FCT_FINAL_DIRECTORY_NAMES = ("unitest", "unit-archive")
 BT_RESULT_FIELDS = ("SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without
 # adding a DATA: frame.  Keep the raw payload acceptance narrow enough that a
@@ -391,6 +393,14 @@ class FctActiveProgress:
     sn: str
     status: str
     detail: str
+
+
+@dataclass(frozen=True)
+class FctMonitorRoots:
+    """Resolved Atlas roots for one FCT no-SN monitoring session."""
+    atlas_root: Path
+    active_root: Path
+    final_root: Path
 
 
 @dataclass(frozen=True)
@@ -1380,8 +1390,10 @@ class FolderMonitor(threading.Thread):
             pass
 
 
-def file_signature(path: Path) -> Optional[tuple[int, int]]:
+def file_signature(path: Optional[Path]) -> Optional[tuple[int, int]]:
     """Return a lightweight signature, or None while a file is unavailable."""
+    if path is None:
+        return None
     try:
         stat = path.stat()
         return stat.st_mtime_ns, stat.st_size
@@ -1417,19 +1429,51 @@ def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
     return sorted(found, key=lambda item: (item[0], item[1], str(item[3])))
 
 
+def resolve_fct_monitor_roots(selected_root: Path, log_root: Optional[Path] = None) -> FctMonitorRoots:
+    """Resolve any supported Atlas selection to active and final-result roots.
+
+    Operators may browse to ``Logs/Atlas``, ``active``, ``unitest`` or the
+    older ``unit-archive`` folder.  Keep that choice forgiving while ensuring
+    active discovery and final records.csv parsing never scan each other.
+    """
+    selected = selected_root.expanduser()
+    hint = log_root.expanduser() if log_root else None
+
+    def atlas_parent(path: Path) -> Path:
+        return path.parent if path.name.lower() in ("active", *FCT_FINAL_DIRECTORY_NAMES) else path
+
+    atlas_root = atlas_parent(selected)
+    hint_atlas = atlas_parent(hint) if hint else atlas_root
+    if selected.name.lower() == "active":
+        active_root = selected
+    elif hint and hint.name.lower() == "active":
+        active_root = hint
+    elif (hint_atlas / "active").is_dir() or hint is not None:
+        active_root = hint_atlas / "active"
+    else:
+        active_root = atlas_root / "active"
+
+    if selected.name.lower() in FCT_FINAL_DIRECTORY_NAMES:
+        final_root = selected
+    elif hint and hint.name.lower() in FCT_FINAL_DIRECTORY_NAMES:
+        final_root = hint
+    else:
+        final_root = next(
+            (atlas_root / name for name in FCT_FINAL_DIRECTORY_NAMES if (atlas_root / name).is_dir()),
+            atlas_root / "unitest",
+        )
+    return FctMonitorRoots(atlas_root=atlas_root, active_root=active_root, final_root=final_root)
+
+
 ACTIVE_SLOT_FOLDER = re.compile(r"^group0-slot(?P<slot>[1-9][0-9]*)$", re.IGNORECASE)
-ACTIVE_SN_LINE = re.compile(
-    r"(?:serial\s*(?:number)?|\bSN\b|with\s+sn)\s*[:=]?\s*([A-Za-z0-9][A-Za-z0-9._-]{3,})",
-    re.IGNORECASE,
-)
 ACTIVE_TEST_START = re.compile(r"(?:\[?TEST START\]?|StartTest)\s*[:\-]?\s*(.*)", re.IGNORECASE)
 ACTIVE_TEST_DONE = re.compile(r"(?:\[?TEST (?:PASS|FAIL|END|COMPLETE)\]?|Test Complete)", re.IGNORECASE)
-ACTIVE_RECORD_SN_KEYS = {"MLB_SN", "PRIMARYIDENTITY", "SERIALNUMBER", "SERIAL_NUMBER", "SN"}
+ACTIVE_RECORD_SN_KEYS = {"MLB_SN", "PRIMARYIDENTITY", "SERIALNUMBER", "SERIAL_NUMBER"}
 
 
 def fct_active_slot_folders(root: Path) -> dict[int, Path]:
     """Return currently present transient active folders, keyed by physical slot."""
-    active = root / "active"
+    active = root if root.name.lower() == "active" else root / "active"
     try:
         children = list(active.iterdir())
     except OSError:
@@ -1504,9 +1548,10 @@ def active_log_progress(log_file: Optional[Path], active_folder: Optional[Path] 
         text = log_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return record_sn, "等待 device.log 可讀取"
-    sn_matches = ACTIVE_SN_LINE.findall(text)
-    log_sn = next((value.upper() for value in reversed(sn_matches) if is_plausible_active_sn(value)), "")
-    sn = record_sn or log_sn
+    # device.log is valuable for the live test description, but its text also
+    # contains fixture/test names such as NUMBER_SOF0.  Only the explicitly
+    # named fields in active records.csv are trusted as a product barcode.
+    sn = record_sn
     started = ACTIVE_TEST_START.findall(text)
     completed = ACTIVE_TEST_DONE.findall(text)
     current = started[-1].strip() if started else ""
@@ -1519,17 +1564,29 @@ def active_log_progress(log_file: Optional[Path], active_folder: Optional[Path] 
     return sn, detail
 
 
+def fct_result_row_sort_key(key: str) -> tuple[int, int, str]:
+    """Keep transient FCT rows in physical slot order, not discovery order."""
+    match = re.fullmatch(r"fct-active:(\d+)", key)
+    if match:
+        return 0, int(match.group(1)), ""
+    return 1, 0, key
+
+
 class FctAutoLogMonitor(threading.Thread):
-    """Discover newly-created Atlas result folders without a pre-known SN."""
+    """Discover active FCT slots, then wait for their final unitest records."""
     def __init__(self, csv_root: Path, log_root: Path, started_at: float,
                  on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
                  stop: threading.Event, timeout_seconds: float = 0.0,
                  on_timeout: Optional[Callable[[], None]] = None,
-                 on_progress: Optional[Callable[[FctActiveProgress], None]] = None) -> None:
+                 on_progress: Optional[Callable[[FctActiveProgress], None]] = None,
+                 on_complete: Optional[Callable[[], None]] = None,
+                 completion_settle_seconds: float = FCT_AUTO_COMPLETION_SETTLE_SECONDS) -> None:
         super().__init__(daemon=True)
         self.csv_root, self.log_root, self.started_at = csv_root, log_root, started_at
         self.on_log, self.on_result, self.on_progress, self.stop = on_log, on_result, on_progress or (lambda _: None), stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.on_complete = on_complete
+        self.completion_settle_seconds = max(0.0, completion_settle_seconds)
         self.baseline = {records: file_signature(records) for _, _, _, records in fct_record_candidates(csv_root)}
         self.accepted: dict[str, tuple[datetime, Path]] = {}
         self.log_positions: dict[Path, int] = {}
@@ -1541,6 +1598,8 @@ class FctAutoLogMonitor(threading.Thread):
         self.active_seen: dict[int, tuple[Path, float, str, str]] = {}
         self.active_last_emitted: dict[int, tuple[str, str]] = {}
         self.active_log_signatures: dict[int, object] = {}
+        self.active_missing_sn_finalized: set[int] = set()
+        self.completion_started_at: Optional[float] = None
         self.first_activity_seen = False
         self.first_activity_warning_sent = False
 
@@ -1563,7 +1622,7 @@ class FctAutoLogMonitor(threading.Thread):
 
     def run(self) -> None:
         self.on_log(
-            f"FCT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料；"
+            f"FCT 無 SN Log Demo 已啟動；active：{self.log_root}；最終結果：{self.csv_root}；僅接受啟動後的新資料；"
             f"{FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒未建立 active 會提示；"
             f"active Log {FCT_INACTIVITY_TIMEOUT_SECONDS} 秒未更新標示 STALLED" +
             (f"；總保護逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定總保護逾時")
@@ -1593,10 +1652,15 @@ class FctAutoLogMonitor(threading.Thread):
                     self.on_progress(FctActiveProgress(slot, sn, status, detail))
             for slot, (folder, _, detail, sn) in tuple(self.active_seen.items()):
                 if slot not in active_now:
-                    emitted = ("COMPLETING", f"{sn}|{detail}")
+                    if sn:
+                        status, final_detail = "COMPLETING", "active 資料已結束，等待 unitest 最終結果"
+                    else:
+                        status, final_detail = "FAIL", "active 資料已結束，但未取得 MLB_SN／PrimaryIdentity；SN 讀取失敗"
+                        self.active_missing_sn_finalized.add(slot)
+                    emitted = (status, f"{sn}|{final_detail}")
                     if self.active_last_emitted.get(slot) != emitted:
                         self.active_last_emitted[slot] = emitted
-                        self.on_progress(FctActiveProgress(slot, sn, "COMPLETING", "active 資料已結束，等待 unitest 最終結果"))
+                        self.on_progress(FctActiveProgress(slot, sn, status, final_detail))
             for stamp, sn, folder, records in fct_record_candidates(self.csv_root):
                 signature = file_signature(records)
                 if signature is None:
@@ -1629,6 +1693,22 @@ class FctAutoLogMonitor(threading.Thread):
                 self.accepted[sn] = (stamp, records)
                 self.first_activity_seen = True
                 self.on_result(TestResult(sn, status, folder, records, detail))
+            active_finished = bool(self.active_seen) and not active_now
+            all_terminal = active_finished and all(
+                (not sn and slot in self.active_missing_sn_finalized) or (bool(sn) and sn in self.accepted)
+                for slot, (_, _, _, sn) in self.active_seen.items()
+            )
+            if all_terminal:
+                if self.completion_started_at is None:
+                    self.completion_started_at = time.monotonic()
+                    self.on_log(f"FCT active 已結束，等待 {self.completion_settle_seconds:g} 秒穩定期後完成本輪")
+                elif time.monotonic() - self.completion_started_at >= self.completion_settle_seconds:
+                    self.on_log("FCT 本輪完成：所有 active slot 均已取得最終結果或定案 SN 讀取失敗")
+                    if self.on_complete:
+                        self.on_complete()
+                    return
+            else:
+                self.completion_started_at = None
             if not self.first_activity_seen and not self.first_activity_warning_sent and now - self.started_at >= FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS:
                 self.first_activity_warning_sent = True
                 self.on_log(f"FCT 尚未偵測到新的 active Log 或 unitest 結果（已等待 {FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒）；持續監聽中，請確認 TE／治具是否已開始測試。")
@@ -2668,8 +2748,11 @@ class AtlasAgentApp:
         # Auto FCT discovery is deliberately limited to the latest six cards
         # on the narrow station HMI; the full history remains in the log.
         if self.auto_log_demo and self.current_station == "FCT":
+            self.result_row_order.sort(key=fct_result_row_sort_key)
             while len(self.result_row_order) > 6:
-                expired = self.result_row_order.pop(0)
+                expired = next((row_key for row_key in self.result_row_order
+                                if not row_key.startswith("fct-active:")), self.result_row_order[0])
+                self.result_row_order.remove(expired)
                 self.result_rows.pop(expired, None)
         for child in self.result_table.grid_slaves():
             if int(child.grid_info().get("row", 0)) > 0:
@@ -2908,17 +2991,16 @@ class AtlasAgentApp:
         self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
         self.monitor_stop = threading.Event()
         if station == "FCT":
-            log_root = Path(self.log_path.get()).expanduser()
-            if not log_root.is_dir():
-                # Operators normally select Logs/Atlas/unitest as the CSV
-                # root.  The live folders are its sibling Logs/Atlas/active.
-                log_root = root.parent if root.name.lower() == "unitest" else root
-            self.monitor = FctAutoLogMonitor(root, log_root, time.time(),
+            log_text = self.log_path.get().strip()
+            log_root = Path(log_text).expanduser() if log_text else None
+            roots = resolve_fct_monitor_roots(root, log_root)
+            self.monitor = FctAutoLogMonitor(roots.final_root, roots.active_root, time.time(),
                                               lambda item: self.events.put(("log", item)),
                                               lambda result: self.events.put(("auto_fct_result", (batch_number, result))),
                                               self.monitor_stop, timeout,
                                               lambda: self.events.put(("auto_timeout", batch_number)),
-                                              lambda progress: self.events.put(("auto_fct_progress", (batch_number, progress))))
+                                              lambda progress: self.events.put(("auto_fct_progress", (batch_number, progress))),
+                                              lambda: self.events.put(("auto_fct_complete", batch_number)))
         else:
             started_at = datetime.now()
             self.monitor = BtAutoLogMonitor(root, started_at,
@@ -3721,9 +3803,15 @@ class AtlasAgentApp:
                     self.auto_fct_active_slots[progress.slot] = key
                     if progress.sn:
                         self.auto_fct_sn_slots[progress.sn] = progress.slot
-                    display_sn = progress.sn or "辨識中"
+                    display_sn = progress.sn or ("SN 讀取失敗" if progress.status == "FAIL" else "SN 讀取中")
                     self.set_result_row(key, f"slot{progress.slot}", display_sn, progress.status)
                     self.append(f"FCT active slot{progress.slot}：{display_sn} {progress.status} — {progress.detail}")
+                elif kind == "auto_fct_complete":
+                    if int(item) != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.monitor = None
+                    self.result_summary.set("無 SN Log Demo：FCT 本輪完成")
+                    self.append("FCT 本輪完成；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
                 elif kind == "auto_bt_result":
                     batch_number, result = item; assert isinstance(result, BtCsvResult)
                     if batch_number != self.batch_number or not self.auto_log_demo:
