@@ -87,6 +87,72 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 
 ## Git 與交付規則
 
-- Remote：`origin` → `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`
-- 每次程式修改完成後，必須自動 commit 並 push 至 `origin/main`。
-- `release-hid-calibration/` 是本機打包輸出，不納入 Git。
+### Remote 設定
+
+本專案同時推送至**公司內網 Gitea** 與 **GitHub**：
+
+| Remote 名稱 | 用途 | URL |
+|---|---|---|
+| `origin` (fetch) | 公司內網 Gitea | `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` |
+| `origin` (push) | 公司內網 Gitea + GitHub（**雙推送**） | 見下方說明 |
+| `github` | 僅推送 GitHub（外網備用） | `git@github.com:Bowei1121/B518_205_207_ATE.git` |
+
+`origin` 已設定雙 push URL，執行一次 `git push origin main` 即同時推送兩個平台。
+在外網時公司 Gitea 那條會失敗（內網 IP），但 GitHub 仍會成功，兩條互不影響。
+
+### 日常推送指令
+
+```bash
+# 一次推送到公司 Gitea + GitHub（建議）
+git push origin main
+
+# 只推 GitHub（外網、公司內網斷線時）
+git push github main
+```
+
+### 初次在新機器上設定（首次 clone 後執行）
+
+```bash
+# 1. 產生 SSH Key（若尚未有）
+ssh-keygen -t ed25519 -C "Bowei1121@github" -f ~/.ssh/id_ed25519_github -N ""
+
+# 2. 設定 SSH config（寫入 ~/.ssh/config）
+cat >> ~/.ssh/config << 'EOF'
+
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  AddKeysToAgent yes
+EOF
+chmod 600 ~/.ssh/config
+
+# 3. 複製公鑰，貼到 GitHub → Settings → SSH Keys
+cat ~/.ssh/id_ed25519_github.pub
+
+# 4. 驗證 SSH 連線
+ssh -T git@github.com
+# 預期輸出：Hi Bowei1121! You've successfully authenticated...
+
+# 5. 加入 GitHub 為 origin 的第二個 push URL
+git remote set-url --add --push origin http://10.64.76.34:3000/8362/B518-205_207_ATE.git
+git remote set-url --add --push origin git@github.com:Bowei1121/B518_205_207_ATE.git
+
+# 6. 加入 github 單獨 remote（外網備用）
+git remote add github git@github.com:Bowei1121/B518_205_207_ATE.git
+
+# 7. 確認設定正確
+git remote -v
+# 預期輸出：
+# github  git@github.com:Bowei1121/B518_205_207_ATE.git (fetch)
+# github  git@github.com:Bowei1121/B518_205_207_ATE.git (push)
+# origin  http://10.64.76.34:3000/8362/B518-205_207_ATE.git (fetch)
+# origin  http://10.64.76.34:3000/8362/B518-205_207_ATE.git (push)
+# origin  git@github.com:Bowei1121/B518_205_207_ATE.git (push)
+```
+
+### 其他規則
+
+- 每次程式修改完成後，必須 commit 並 push 至 `origin/main`。
+- `release-hid-calibration/` 是本機打包輸出，不納入 Git（已加入 `.gitignore`）。
+- `dist-*/`、`.venv*/` 同樣排除在外。
