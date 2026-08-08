@@ -28,6 +28,14 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - `7d1e5aa fix: diagnose legacy mouse HID stalls`：韌體 1.0.4、舊 macOS 的較保守 mouse report 節奏、HID ACK 診斷與移除收訊鎖定造成的 UI 延遲。
 - 下一筆提交：無 SN Log Demo、即時 SN／結果表、正式辨識時隱藏 Agent 視窗、原生隱藏路徑選擇器。
 
+## 2026-08-08 截圖與七槽 DFU 診斷更新
+
+- Agent 執行期間暫時關閉 macOS 截圖浮動預覽；正常退出與下次啟動皆會復原原始設定。
+- 截圖等待改為「新檔案大小／修改時間穩定」即繼續，取消固定五秒等待。
+- 七槽 DFU 仍以 4+3 為唯一有效版型。只辨識到六槽時會重新透過 Dock Atlas 圖示聚焦並重試；仍失敗則回報 `DFU_HMI_NOT_READY`，不執行 checkbox、SN 或 OK 操作。
+- 每次視覺流程保存完整原圖、成功／失敗疊圖與 JSON 診斷到 `match_sessions`；主畫面可檢視最近十次 session。
+- 公司外網無法連線 Gitea 時，可依本摘要的 GitHub remote／SSH 設定提交；本次依現場限制僅提交本機 Git，不推送 Gitea。
+
 ## 2026-08-06 DFU 現場流程確認
 
 - FAE 現場確認七槽 DFU 的真實操作是：每筆 SN 輸入後按 Enter 搬入下一個已勾選 slot；所有 SN

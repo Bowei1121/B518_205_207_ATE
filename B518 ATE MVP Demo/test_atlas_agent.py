@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, FctAutoLogMonitor, FolderMonitor, Preferences, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, window_focus_commands, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -19,6 +19,37 @@ from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
 
 
 class AtlasAgentTests(unittest.TestCase):
+    def test_dfu7_requires_exactly_seven_lower_slot_labels(self):
+        anchors = [(index * 100, 300, 50, 20, .95) for index in range(6)]
+        with self.assertRaises(DfuHmiNotReadyError) as raised:
+            dfu7_slot_anchor_order(anchors, 100)
+        self.assertEqual(raised.exception.slot_count, 6)
+        self.assertIn("DFU_HMI_NOT_READY", str(raised.exception))
+
+    def test_match_trace_keeps_failure_source_before_cleanup(self):
+        if cv2 is None:
+            self.skipTest("OpenCV unavailable")
+        import numpy as np
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "capture.png"
+            self.assertTrue(cv2.imwrite(str(source), np.zeros((20, 30, 3), dtype=np.uint8)))
+            recorder = MatchTraceRecorder(root / "sessions", limit=1)
+            session = recorder.start("DEMO-1")
+            recorder.record("window_match", source, success=False, message="not found")
+            entry = recorder.read_entries(session)[0]
+            self.assertFalse(entry["success"])
+            self.assertTrue((session / entry["source"]).is_file())
+            self.assertTrue((session / entry["overlay"]).is_file())
+
+    def test_screenshot_preview_guard_is_noop_off_macos(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "restore.json"
+            guard = ScreenshotPreviewGuard(marker, platform="linux")
+            self.assertIsNone(guard.disable_for_session())
+            self.assertFalse(marker.exists())
+            self.assertIsNone(guard.restore())
+
     def test_focused_template_capture_instruction_requires_manual_hmi_focus(self):
         message = focused_template_capture_message(5)
         self.assertIn("5 秒", message)

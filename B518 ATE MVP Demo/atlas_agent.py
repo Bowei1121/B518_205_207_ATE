@@ -12,7 +12,10 @@ import csv
 import json
 import queue
 import re
+import shutil
 import struct
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -63,8 +66,10 @@ ARDUINO_PROTOCOL_VERSION = 1
 ARDUINO_INFO_TIMEOUT_MS = 1500
 ARDUINO_INFO_MAX_ATTEMPTS = 3
 ARDUINO_INFO_RETRY_DELAYS_MS = (350, 900)
-SCREENSHOT_SETTLE_SECONDS = 5.0
 SCREENSHOT_TIMEOUT_SECONDS = 15.0
+SCREENSHOT_STABLE_SECONDS = .35
+SCREENSHOT_POLL_SECONDS = .15
+MATCH_TRACE_SESSION_LIMIT = 10
 # Allow the macOS window server to remove Atlas Agent before Arduino sends the
 # global screenshot shortcut. This is intentionally separate from the time
 # macOS needs to write the captured PNG to disk.
@@ -140,6 +145,95 @@ VISUAL_PROFILES = {
 
 class AgentError(RuntimeError):
     pass
+
+
+class DfuHmiNotReadyError(AgentError):
+    """The field DFU HMI has not rendered its required seven lower slots."""
+
+    def __init__(self, slot_count: int) -> None:
+        self.slot_count = slot_count
+        super().__init__(f"DFU_HMI_NOT_READY：目前只辨識到 {slot_count} 個下方 slot；"
+                         "請確認七槽 HMI 已完整載入後重試。")
+
+
+class ScreenshotPreviewGuard:
+    """Temporarily suppress the macOS screenshot thumbnail for this App run.
+
+    The original preference is recorded before changing it.  A small recovery
+    marker means the next Agent launch can repair the user setting after a
+    crash or power loss that bypassed the normal Tk close handler.
+    """
+
+    DOMAIN = "com.apple.screencapture"
+    KEY = "show-thumbnail"
+
+    def __init__(self, marker: Path, *, platform: str = sys.platform,
+                 runner: Callable[..., object] = subprocess.run) -> None:
+        self.marker = marker
+        self.platform = platform
+        self.runner = runner
+        self.active = False
+
+    def _run_defaults(self, arguments: list[str]):
+        return self.runner(["defaults", *arguments], capture_output=True,
+                           text=True, timeout=2, check=False)
+
+    def _read_original(self) -> tuple[bool, bool]:
+        result = self._run_defaults(["read", self.DOMAIN, self.KEY])
+        if getattr(result, "returncode", 1) != 0:
+            return False, False
+        value = str(getattr(result, "stdout", "")).strip().lower()
+        if value in ("1", "true", "yes"):
+            return True, True
+        if value in ("0", "false", "no"):
+            return True, False
+        raise AgentError(f"無法判讀截圖浮動預覽設定：{value or '空白'}")
+
+    def _restore_state(self, state: dict[str, object]) -> None:
+        if bool(state.get("existed")):
+            value = "true" if bool(state.get("value")) else "false"
+            result = self._run_defaults(["write", self.DOMAIN, self.KEY, "-bool", value])
+        else:
+            result = self._run_defaults(["delete", self.DOMAIN, self.KEY])
+            # `defaults delete` returns non-zero when the key is already gone.
+            if getattr(result, "returncode", 1) != 0:
+                return
+        if getattr(result, "returncode", 1) != 0:
+            raise AgentError(str(getattr(result, "stderr", "")).strip() or "無法恢復截圖浮動預覽設定")
+
+    def disable_for_session(self) -> Optional[str]:
+        if self.platform != "darwin":
+            return None
+        try:
+            if self.marker.is_file():
+                stale = json.loads(self.marker.read_text(encoding="utf-8"))
+                self._restore_state(stale)
+                self.marker.unlink(missing_ok=True)
+            existed, value = self._read_original()
+            self.marker.parent.mkdir(parents=True, exist_ok=True)
+            self.marker.write_text(json.dumps({"existed": existed, "value": value}), encoding="utf-8")
+            result = self._run_defaults(["write", self.DOMAIN, self.KEY, "-bool", "false"])
+            if getattr(result, "returncode", 1) != 0:
+                raise AgentError(str(getattr(result, "stderr", "")).strip() or "無法關閉截圖浮動預覽")
+            self.active = True
+            return None
+        except (OSError, ValueError, subprocess.SubprocessError, AgentError) as exc:
+            try:
+                self.marker.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return f"無法暫時關閉 macOS 截圖浮動預覽：{exc}"
+
+    def restore(self) -> Optional[str]:
+        if self.platform != "darwin" or not self.marker.is_file():
+            return None
+        try:
+            self._restore_state(json.loads(self.marker.read_text(encoding="utf-8")))
+            self.marker.unlink(missing_ok=True)
+            self.active = False
+            return None
+        except (OSError, ValueError, subprocess.SubprocessError, AgentError) as exc:
+            return f"無法恢復 macOS 截圖浮動預覽設定：{exc}"
 
 
 @dataclass(frozen=True)
@@ -679,6 +773,110 @@ def write_match_overlay(image_path: Path, matches: Iterable[tuple[str, tuple[int
     return output_path
 
 
+def write_match_diagnostic(image_path: Path, output_path: Path,
+                           matches: Iterable[tuple[str, tuple[int, int, int, int], tuple[int, int]]] = (),
+                           message: str = "", failed: bool = False) -> Path:
+    """Save a green success or red failure screenshot for a match session."""
+    if cv2 is None:
+        raise AgentError("製作匹配疊圖需要 opencv-python")
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise AgentError(f"無法讀取截圖：{image_path}")
+    colour = (0, 0, 255) if failed else (0, 180, 0)
+    for label, (x, y, width, height), hid_point in matches:
+        cv2.rectangle(image, (x, y), (x + width, y + height), colour, 3)
+        center = (x + width // 2, y + height // 2)
+        cv2.drawMarker(image, center, (0, 0, 255), cv2.MARKER_CROSS, 28, 2)
+        cv2.putText(image, f"{label} -> {hid_point[0]},{hid_point[1]}", (x, max(24, y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, .58, colour, 2, cv2.LINE_AA)
+    if message:
+        shown = message.replace("\n", " ")[:170]
+        cv2.rectangle(image, (0, 0), (image.shape[1], 42), (245, 245, 245), -1)
+        cv2.putText(image, shown, (12, 29), cv2.FONT_HERSHEY_SIMPLEX, .55, colour, 2, cv2.LINE_AA)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(output_path), image):
+        raise AgentError(f"無法儲存匹配診斷圖：{output_path}")
+    return output_path
+
+
+class MatchTraceRecorder:
+    """Persist every visual stage of one test flow for field diagnosis."""
+
+    def __init__(self, root: Path, limit: int = MATCH_TRACE_SESSION_LIMIT) -> None:
+        self.root = root
+        self.limit = limit
+        self.session: Optional[Path] = None
+        self.entries: list[dict[str, object]] = []
+        self.counter = 0
+        self.lock = threading.Lock()
+
+    def start(self, job_id: str) -> Path:
+        with self.lock:
+            self.root.mkdir(parents=True, exist_ok=True)
+            safe_job = re.sub(r"[^A-Za-z0-9._-]", "_", job_id)[:80]
+            self.session = self.root / (datetime.now().strftime("%Y%m%d-%H%M%S-%f") + "-" + safe_job)
+            self.session.mkdir(parents=True, exist_ok=False)
+            self.entries, self.counter = [], 0
+            self._write_manifest()
+            sessions = sorted((path for path in self.root.iterdir() if path.is_dir()),
+                              key=lambda path: path.stat().st_mtime, reverse=True)
+            for stale in sessions[self.limit:]:
+                shutil.rmtree(stale, ignore_errors=True)
+            return self.session
+
+    def _write_manifest(self) -> None:
+        if self.session is None:
+            return
+        (self.session / "manifest.json").write_text(json.dumps({"entries": self.entries}, ensure_ascii=False, indent=2),
+                                                     encoding="utf-8")
+
+    def record(self, stage: str, image_path: Optional[Path], *, success: bool,
+               message: str = "", matches: Iterable[tuple[str, tuple[int, int, int, int], tuple[int, int]]] = (),
+               metadata: Optional[dict[str, object]] = None) -> None:
+        with self.lock:
+            if self.session is None:
+                return
+            self.counter += 1
+            stem = f"{self.counter:03d}_{re.sub(r'[^A-Za-z0-9._-]', '_', stage)}"
+            source_name = overlay_name = ""
+            if image_path is not None and image_path.is_file():
+                suffix = image_path.suffix.lower() or ".png"
+                source = self.session / f"{stem}_source{suffix}"
+                try:
+                    shutil.copy2(image_path, source)
+                    source_name = source.name
+                    overlay = self.session / f"{stem}_overlay.png"
+                    write_match_diagnostic(source, overlay, matches, message, failed=not success)
+                    overlay_name = overlay.name
+                except (OSError, AgentError):
+                    # The raw visual worker must never fail because trace
+                    # storage is unavailable on a constrained station Mac.
+                    pass
+            self.entries.append({
+                "index": self.counter, "stage": stage, "success": success,
+                "time": datetime.now().isoformat(timespec="seconds"), "message": message,
+                "source": source_name, "overlay": overlay_name, "metadata": metadata or {},
+            })
+            try:
+                self._write_manifest()
+            except OSError:
+                pass
+
+    def sessions(self) -> list[Path]:
+        try:
+            return sorted((path for path in self.root.iterdir() if path.is_dir()),
+                          key=lambda path: path.stat().st_mtime, reverse=True)
+        except OSError:
+            return []
+
+    @staticmethod
+    def read_entries(session: Path) -> list[dict[str, object]]:
+        try:
+            return list(json.loads((session / "manifest.json").read_text(encoding="utf-8")).get("entries", []))
+        except (OSError, ValueError, TypeError):
+            return []
+
+
 def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, fail_last: bool,
                              stop: threading.Event, delay: float = 0.75) -> list[Path]:
     """Create Atlas-shaped result files for a no-hardware local demonstration."""
@@ -771,9 +969,52 @@ def new_screenshots(desktop: Path, after: float) -> list[Path]:
         normalized = re.sub(r"[ _-]", "", path.name.lower())
         return "screenshot" in normalized or "截圖" in path.name
 
-    images = [p for p in desktop.iterdir() if p.is_file() and is_screenshot_name(p)
-              and p.suffix.lower() in (".png", ".jpg", ".jpeg") and p.stat().st_mtime >= after]
+    images: list[Path] = []
+    try:
+        candidates = list(desktop.iterdir())
+    except OSError:
+        return images
+    for path in candidates:
+        try:
+            if (path.is_file() and is_screenshot_name(path)
+                    and path.suffix.lower() in (".png", ".jpg", ".jpeg")
+                    and path.stat().st_mtime >= after):
+                images.append(path)
+        except OSError:
+            continue
     return sorted(images, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def wait_for_new_stable_screenshots(desktop: Path, after: float, timeout: float = SCREENSHOT_TIMEOUT_SECONDS,
+                                    stable_seconds: float = SCREENSHOT_STABLE_SECONDS,
+                                    poll_seconds: float = SCREENSHOT_POLL_SECONDS) -> list[Path]:
+    """Return post-command screenshots once their file size and mtime settle.
+
+    This replaces the former fixed five-second sleep.  The short stability
+    window prevents OpenCV from opening a PNG while macOS is still writing it,
+    while allowing normal screenshots to continue as soon as they exist.
+    """
+    deadline = time.monotonic() + timeout
+    previous: Optional[tuple[tuple[str, int, int], ...]] = None
+    stable_since: Optional[float] = None
+    while time.monotonic() < deadline:
+        shots = new_screenshots(desktop, after)
+        signature_parts: list[tuple[str, int, int]] = []
+        for shot in shots:
+            try:
+                stat = shot.stat()
+                signature_parts.append((shot.name, stat.st_size, stat.st_mtime_ns))
+            except OSError:
+                continue
+        signature = tuple(signature_parts)
+        if signature:
+            if signature == previous:
+                if stable_since is not None and time.monotonic() - stable_since >= stable_seconds:
+                    return shots
+            else:
+                previous, stable_since = signature, time.monotonic()
+        time.sleep(poll_seconds)
+    return []
 
 
 def latest_screenshot(desktop: Path, after: float) -> Optional[Path]:
@@ -953,7 +1194,7 @@ def dfu7_slot_anchor_order(anchors: Iterable[tuple[int, int, int, int, float]], 
     """Order field-HMI slot labels as four top-row and three bottom-row cards."""
     lower = [(x, y, width, height) for x, y, width, height, _ in anchors if y > group_y]
     if len(lower) != 7:
-        raise AgentError(f"DFU 七槽僅辨識到 {len(lower)} 個下方 slot 標籤；請確認 slot_label 模板與畫面比例")
+        raise DfuHmiNotReadyError(len(lower))
     lower.sort(key=lambda item: item[1])
     first_y, label_height = lower[0][1], lower[0][3]
     top = [item for item in lower if abs(item[1] - first_y) <= max(label_height * 2, 20)]
@@ -1918,6 +2159,9 @@ class AtlasAgentApp:
         self.root.minsize(*COMPACT_HMI_MIN_SIZE)
         self.pref_file = Path.home() / "Library" / "Application Support" / "AtlasAgentB518" / "preferences.json"
         pref = Preferences.load(self.pref_file)
+        self.screenshot_preview_guard = ScreenshotPreviewGuard(
+            self.pref_file.with_name("screenshot_preview_restore.json"))
+        self.match_traces = MatchTraceRecorder(self.pref_file.with_name("match_sessions"))
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.hid_replies: queue.Queue[str] = queue.Queue()
         self.link = SerialLink(lambda line: self.events.put(("serial", line)))
@@ -1969,6 +2213,11 @@ class AtlasAgentApp:
         self.station.trace_add("write", self._update_station_controls)
         self._update_station_controls()
         self.refresh_ports()
+        preview_warning = self.screenshot_preview_guard.disable_for_session()
+        if preview_warning:
+            self.root.after(150, lambda: self.append("WARN: " + preview_warning))
+        elif sys.platform == "darwin":
+            self.root.after(150, lambda: self.append("macOS 截圖浮動預覽已於 Agent 執行期間暫時關閉"))
         if cv2 is None:
             self.root.after(150, lambda: messagebox.showerror(
                 TITLE, "缺少 OpenCV 圖像處理元件；模板製作與 DFU／BT 定位無法使用。\n"
@@ -2129,7 +2378,7 @@ class AtlasAgentApp:
             ttk.Button(paths, text="選擇", command=lambda v=variable: choose_dialog_dir(v)).grid(row=row, column=2, padx=(5, 0), pady=3)
         ttk.Button(paths, text="製作模板", command=lambda: self.open_template_maker(
             template_path.get(), screenshot_path.get(), dfu_profile.get(), dialog)).grid(row=4, column=1, sticky="w", pady=(10, 0))
-        ttk.Button(paths, text="查看匹配疊圖", command=self.show_match_overlay).grid(row=4, column=2, sticky="e", pady=(10, 0))
+        ttk.Button(paths, text="查看本次匹配紀錄", command=self.show_match_overlay).grid(row=4, column=2, sticky="e", pady=(10, 0))
         paths.columnconfigure(1, weight=1)
 
         dfu_profile = tk.StringVar(value=self.dfu_profile.get())
@@ -2199,28 +2448,81 @@ class AtlasAgentApp:
         ttk.Button(buttons, text="套用", command=save).pack(side="right", padx=(0, 6))
 
     def show_match_overlay(self) -> None:
-        if not self.overlay_path.is_file():
-            messagebox.showinfo(TITLE, "尚無匹配疊圖；請先執行一次 DFU 或 BT 開始流程。", parent=self.root)
-            return
         if cv2 is None:
             messagebox.showerror(TITLE, "查看匹配疊圖需要 opencv-python", parent=self.root); return
-        image = cv2.imread(str(self.overlay_path))
-        if image is None:
-            messagebox.showerror(TITLE, "無法讀取匹配疊圖", parent=self.root); return
-        height, width = image.shape[:2]
-        scale, shown_width, shown_height = preview_geometry(width, height, 1100, 650)
-        shown = cv2.resize(image, (shown_width, shown_height), interpolation=cv2.INTER_AREA) if scale != 1 else image
+        sessions = self.match_traces.sessions()
+        if not sessions:
+            messagebox.showinfo(TITLE, "尚無本次流程的匹配紀錄；請先執行一次 DFU 或 BT 開始流程。", parent=self.root)
+            return
         dialog = tk.Toplevel(self.root)
-        dialog.title("OpenCV 匹配疊圖（綠框＝模板；紅十字＝截圖座標）")
-        dialog.transient(self.root); dialog.resizable(False, False)
-        try:
-            photo = tk.PhotoImage(data=opencv_image_to_tk_png(shown))
-        except (AgentError, tk.TclError) as exc:
-            dialog.destroy(); messagebox.showerror(TITLE, str(exc), parent=self.root); return
-        label = ttk.Label(dialog, image=photo)
-        label.image = photo  # Keep the Tk image alive until this dialog closes.
-        label.pack(padx=10, pady=10)
-        ttk.Label(dialog, text=f"原圖 {width} × {height} px；檔案：{self.overlay_path}").pack(padx=10, pady=(0, 10))
+        dialog.title("本次 OpenCV 匹配紀錄（綠色＝成功；紅色＝失敗）")
+        dialog.transient(self.root)
+        dialog.minsize(760, 560)
+        outer = ttk.Frame(dialog, padding=10); outer.pack(fill="both", expand=True)
+        outer.columnconfigure(1, weight=1); outer.rowconfigure(1, weight=1)
+        session_names = [session.name for session in sessions]
+        selected_session = tk.StringVar(value=session_names[0])
+        selected_entry = tk.StringVar()
+        entries: list[dict[str, object]] = []
+        image_label = ttk.Label(outer)
+        detail = tk.StringVar(value="")
+
+        def current_session() -> Path:
+            return next((item for item in sessions if item.name == selected_session.get()), sessions[0])
+
+        def render_entry(index: int) -> None:
+            if not entries:
+                selected_entry.set(""); image_label.configure(image=""); detail.set("此流程尚未產生視覺匹配紀錄。"); return
+            index = max(0, min(index, len(entries) - 1))
+            choice.current(index)
+            entry = entries[index]
+            filename = str(entry.get("overlay") or entry.get("source") or "")
+            image_path = current_session() / filename
+            message = str(entry.get("message", ""))
+            detail.set(f"{entry.get('time', '')}｜{entry.get('stage', '')}｜"
+                       f"{'成功' if entry.get('success') else '失敗'}\n{message}\n{image_path}")
+            image = cv2.imread(str(image_path)) if filename else None
+            if image is None:
+                image_label.configure(image="", text="此階段沒有可讀取的截圖。")
+                return
+            height, width = image.shape[:2]
+            scale, shown_width, shown_height = preview_geometry(width, height, 980, 610)
+            shown = cv2.resize(image, (shown_width, shown_height), interpolation=cv2.INTER_AREA) if scale != 1 else image
+            try:
+                photo = tk.PhotoImage(data=opencv_image_to_tk_png(shown))
+            except (AgentError, tk.TclError) as exc:
+                image_label.configure(image="", text=str(exc)); return
+            image_label.configure(image=photo, text="")
+            image_label.image = photo
+
+        def load_session(*_ignored) -> None:
+            nonlocal entries
+            entries = self.match_traces.read_entries(current_session())
+            values = [f"{item.get('index', 0):03d} {'OK' if item.get('success') else 'FAIL'}  {item.get('stage', '')}"
+                      for item in entries]
+            choice.configure(values=values)
+            render_entry(0)
+
+        ttk.Label(outer, text="流程紀錄").grid(row=0, column=0, sticky="w")
+        session_box = ttk.Combobox(outer, textvariable=selected_session, values=session_names,
+                                   state="readonly", width=44)
+        session_box.grid(row=0, column=1, sticky="ew", padx=(8, 0)); session_box.bind("<<ComboboxSelected>>", load_session)
+        ttk.Label(outer, text="階段").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        choice = ttk.Combobox(outer, textvariable=selected_entry, state="readonly", width=44)
+        choice.grid(row=1, column=1, sticky="new", padx=(8, 0), pady=(10, 0))
+        choice.bind("<<ComboboxSelected>>", lambda _event: render_entry(choice.current()))
+        image_label.grid(row=2, column=0, columnspan=2, pady=(10, 4))
+        ttk.Label(outer, textvariable=detail, justify="left", wraplength=980).grid(row=3, column=0, columnspan=2, sticky="ew")
+        buttons = ttk.Frame(outer); buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        ttk.Button(buttons, text="上一張", command=lambda: render_entry(choice.current() - 1)).pack(side="left", padx=3)
+        ttk.Button(buttons, text="下一張", command=lambda: render_entry(choice.current() + 1)).pack(side="left", padx=3)
+        def open_folder() -> None:
+            try:
+                subprocess.Popen(["open", str(current_session())])
+            except OSError as exc:
+                messagebox.showerror(TITLE, f"無法開啟紀錄資料夾：{exc}", parent=dialog)
+        ttk.Button(buttons, text="開啟紀錄資料夾", command=open_folder).pack(side="left", padx=3)
+        load_session()
 
     def open_template_maker(self, template_path: Optional[str] = None, screenshot_path: Optional[str] = None,
                             dfu_profile: Optional[str] = None, owner: Optional[tk.Misc] = None) -> None:
@@ -2251,16 +2553,30 @@ class AtlasAgentApp:
         before = time.time()
         self.link.send_control("SCREENSHOT")
         self.events.put(("log", "TX: SCREENSHOT（製作模板）"))
-        time.sleep(SCREENSHOT_SETTLE_SECONDS)
-        deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-        shots: list[Path] = []
-        while time.monotonic() < deadline and not shots:
-            shots = new_screenshots(screenshot_root, before)
-            time.sleep(.25)
+        shots = wait_for_new_stable_screenshots(screenshot_root, before)
         if not shots:
             raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
         self.events.put(("log", f"模板截圖完成：{shots[0].name}（共 {len(shots)} 張）"))
         return shots[0]
+
+    def start_match_trace(self, job_id: str) -> None:
+        """Start a field-diagnostic visual session without affecting the flow."""
+        try:
+            self.match_traces.start(job_id)
+        except OSError as exc:
+            self.append(f"WARN: 無法建立本次匹配紀錄：{exc}")
+
+    def trace_match(self, stage: str, image: Optional[Path], success: bool, message: str = "",
+                    matches: Iterable[tuple[str, tuple[int, int, int, int], tuple[int, int]]] = (),
+                    metadata: Optional[dict[str, object]] = None) -> None:
+        self.match_traces.record(stage, image, success=success, message=message,
+                                  matches=matches, metadata=metadata)
+
+    def save_match_overlay(self, stage: str, image: Path,
+                           matches: Iterable[tuple[str, tuple[int, int, int, int], tuple[int, int]]],
+                           message: str = "", metadata: Optional[dict[str, object]] = None) -> None:
+        write_match_overlay(image, matches, self.overlay_path)
+        self.trace_match(stage, image, True, message, matches, metadata)
 
     def append(self, text: str) -> None:
         self.output.configure(state="normal"); self.output.insert("end", text + "\n"); self.output.see("end"); self.output.configure(state="disabled")
@@ -2456,6 +2772,7 @@ class AtlasAgentApp:
         self.auto_discovery_labels = {}
         self.sns, self.slots = command.sns, command.slots
         self.current_job_id, self.current_station = command.job_id, command.station
+        self.start_match_trace(command.job_id)
         self.batch_results = {}; self.reported_batch_number = None
         self.reset_result_panel(f"當前 JOB：{command.job_id}",
                                 [(f"slot{slot}", f"slot{slot}", sn, "WAITING")
@@ -2739,11 +3056,7 @@ class AtlasAgentApp:
         for attempt in range(2):
             before = time.time(); self.link.send_control("SCREENSHOT")
             self.events.put(("log", f"驗證 Slot checkbox（第 {attempt + 1} 次截圖）…"))
-            time.sleep(SCREENSHOT_SETTLE_SECONDS)
-            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-            shots: list[Path] = []
-            while time.monotonic() < deadline and not shots:
-                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            shots = wait_for_new_stable_screenshots(screenshot_dir, before)
             if not shots:
                 raise AgentError(f"驗證 Slot checkbox 時等待螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
             selected = None; states = None; errors: list[str] = []
@@ -2779,7 +3092,8 @@ class AtlasAgentApp:
                                          checked_template: Path, unchecked_template: Path,
                                          barcode_template: Path, ok_template: Path,
                                          target_for: Callable[[tuple[int, int]], tuple[int, int]],
-                                         hid_mode: str, delay: float) -> tuple[
+                                         hid_mode: str, delay: float,
+                                         refocus: Optional[Callable[[], None]] = None) -> tuple[
                                              tuple[int, int, int, int], tuple[int, int, int, int],
                                              tuple[int, int, int, int]]:
         """Synchronize seven slots one-by-one and return fresh input/OK anchors.
@@ -2793,17 +3107,14 @@ class AtlasAgentApp:
         def fresh_layout(label: str):
             last_window_errors: list[str] = []
             last_layout_errors: list[str] = []
-            for capture_attempt in range(2):
+            incomplete_slots: Optional[int] = None
+            for capture_attempt in range(3):
                 before = time.time(); self.link.send_control("SCREENSHOT")
                 self.events.put(("log", label if capture_attempt == 0 else
-                                 "DFU 七槽：checkbox 畫面尚未穩定，自動重新截圖一次…"))
-                time.sleep(SCREENSHOT_SETTLE_SECONDS)
-                deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-                shots: list[Path] = []
-                while time.monotonic() < deadline and not shots:
-                    shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+                                 "DFU 七槽：HMI 尚未完整，將重新聚焦 Dock 後再次擷取…"))
+                shots = wait_for_new_stable_screenshots(screenshot_dir, before)
                 if not shots:
-                    if capture_attempt == 0:
+                    if capture_attempt < 2:
                         continue
                     raise AgentError(f"DFU 七槽 checkbox 截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
 
@@ -2820,12 +3131,25 @@ class AtlasAgentApp:
                             shot, slot_label_template, group_label_template)), shots
                     except AgentError as exc:
                         layout_errors.append(f"{shot.name}: {exc}")
+                        if isinstance(exc, DfuHmiNotReadyError):
+                            incomplete_slots = exc.slot_count
+                        self.trace_match("dfu7_checkbox_layout", shot, False, str(exc),
+                                         metadata={"capture_attempt": capture_attempt + 1,
+                                                   "slot_count": exc.slot_count if isinstance(exc, DfuHmiNotReadyError) else None})
 
                 last_layout_errors = layout_errors
                 self.delete_processed_screenshots(shots)
-                if capture_attempt == 0:
-                    self.events.put(("log", "DFU 七槽：checkbox 判讀不穩定，將重新擷取一次；不以 dfu7_window 小模板作為複驗依據。"))
+                if capture_attempt < 2:
+                    if incomplete_slots == 6:
+                        self.events.put(("log", "DFU_HMI_NOT_READY：目前只顯示六槽；重新點擊 Dock Atlas 圖示並等待七槽完整載入。"))
+                    else:
+                        self.events.put(("log", "DFU 七槽：checkbox 判讀不穩定，重新聚焦後再次擷取；不以 dfu7_window 小模板作為複驗依據。"))
+                    if refocus is not None:
+                        refocus()
+                        time.sleep(.6)
 
+            if incomplete_slots is not None:
+                raise DfuHmiNotReadyError(incomplete_slots)
             if last_layout_errors:
                 raise AgentError("無法定位 DFU 七槽 slot checkbox：" +
                                  "；".join(last_layout_errors))
@@ -2872,7 +3196,9 @@ class AtlasAgentApp:
         annotations = [(f"slot{index} {'checked' if state.checked else 'unchecked'}", state.rectangle,
                             target_for(rectangle_center(state.rectangle)))
                        for index, state in enumerate(states, start=1)]
-        write_match_overlay(selected, annotations, self.overlay_path)
+        self.save_match_overlay("dfu7_checkbox_verified", selected, annotations,
+                                "DFU 七槽 checkbox 驗證成功",
+                                {"requested_slots": sorted(requested), "slot_count": len(states)})
         self.events.put(("log", "DFU 七槽 checkbox 驗證成功：" + state_text(states)))
 
         # Controls are located only after slot verification succeeds.  This
@@ -2929,13 +3255,12 @@ class AtlasAgentApp:
             before = time.time(); self.link.send_control("SCREENSHOT")
             screenshot_dir = Path(self.screenshot_path.get()).expanduser()
             if not screenshot_dir.is_dir(): raise AgentError("請選擇有效的螢幕截圖路徑")
-            self.events.put(("log", f"等待 {SCREENSHOT_SETTLE_SECONDS:g} 秒讓 macOS 完成儲存螢幕截圖…"))
-            time.sleep(SCREENSHOT_SETTLE_SECONDS)
-            deadline = time.monotonic() + (SCREENSHOT_TIMEOUT_SECONDS - SCREENSHOT_SETTLE_SECONDS)
-            shots: list[Path] = []
-            while time.monotonic() < deadline and not shots:
-                shots = new_screenshots(screenshot_dir, before); time.sleep(.25)
+            self.events.put(("log", "等待 macOS 完成儲存螢幕截圖（偵測檔案大小穩定後立即繼續）…"))
+            shots = wait_for_new_stable_screenshots(screenshot_dir, before)
             if not shots: raise AgentError(f"等待 Arduino 產生螢幕截圖逾時（共 {SCREENSHOT_TIMEOUT_SECONDS:g} 秒）")
+            for candidate in shots:
+                self.trace_match("initial_capture", candidate, True, "取得本次流程初始截圖",
+                                 metadata={"screenshot_count": len(shots)})
             window = resolved[profile["window"]]
             shot = None
             window_rect = None
@@ -2959,12 +3284,15 @@ class AtlasAgentApp:
                             break
                         except AgentError as exc:
                             match_errors.append(f"{candidate.name}: Dock Atlas 圖示 {exc}")
+                            self.trace_match("dfu7_dock_match", candidate, False, str(exc))
                 try:
                     window_rect = template_match(candidate, window)
                     shot = candidate
                     break
                 except AgentError as exc:
                     match_errors.append(f"{candidate.name}: {exc}")
+                    self.trace_match("window_match", candidate, False, str(exc),
+                                     metadata={"template": str(window)})
             if shot is None:
                 raise AgentError("所有新截圖均找不到測試視窗模板。\n" + "\n".join(match_errors))
             self.events.put(("log", f"使用截圖：{shot.name}（共找到 {len(shots)} 張螢幕截圖）"))
@@ -3052,7 +3380,8 @@ class AtlasAgentApp:
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
                     matches.append((match_label("OK", button_source), button_rect, button))
-                    write_match_overlay(shot, matches, self.overlay_path)
+                    self.save_match_overlay("dfu_initial_controls", shot, matches,
+                                            "DFU 初始視窗、輸入框與 OK 定位完成")
                     self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(focus_commands, delay=delay)
                     if dfu7_profile:
@@ -3064,7 +3393,8 @@ class AtlasAgentApp:
                             slots, screenshot_dir, window, resolved[profile["slot_label"]],
                             resolved[profile["group_label"]], resolved[profile["checkbox_checked"]],
                             resolved[profile["checkbox_unchecked"]], resolved[profile["barcode"]],
-                            resolved[profile["ok"]], target_for, hid_mode, delay)
+                            resolved[profile["ok"]], target_for, hid_mode, delay,
+                            refocus=lambda: self.send_hid_sequence(focus_commands, delay=delay))
                         window_center = rectangle_center(fresh_focus_rect)
                         barcode_source = rectangle_center(fresh_barcode_rect)
                         button_source = rectangle_center(fresh_button_rect)
@@ -3108,7 +3438,8 @@ class AtlasAgentApp:
                     button_source = rectangle_center(button_rect)
                     button = target_for(button_source)
                     matches.append((match_label("Start", button_source), button_rect, button))
-                    write_match_overlay(shot, matches, self.overlay_path)
+                    self.save_match_overlay("dfu_controls", shot, matches,
+                                            "DFU 視窗與控制項定位完成")
                     self.delete_processed_screenshots(shots)
                     self.send_hid_sequence(commands + click_commands(button, hid_mode), delay=delay)
                     self.events.put(("log", f"DFU：視窗定位 {window_center}，開始按鈕 {button}；啟動監聽"))
@@ -3123,7 +3454,8 @@ class AtlasAgentApp:
                     button = target_for(button_source)
                     buttons.append((button_label, button))
                     matches.append((match_label(button_label, button_source), button_rect, button))
-                write_match_overlay(shot, matches, self.overlay_path)
+                self.save_match_overlay("bt_controls", shot, matches,
+                                        "BT 視窗與 Start 控制項定位完成")
                 self.delete_processed_screenshots(shots)
                 # Click the harmless BT title first.  This brings the Safari/
                 # instrument window to the foreground so the following Start
@@ -3353,7 +3685,11 @@ class AtlasAgentApp:
 
     def close(self) -> None:
         self.save_preferences()
-        self.stop_monitor(); self.link.close(); self.root.destroy()
+        self.stop_monitor(); self.link.close()
+        warning = self.screenshot_preview_guard.restore()
+        if warning:
+            messagebox.showwarning(TITLE, warning, parent=self.root)
+        self.root.destroy()
 
 
 def main() -> int:

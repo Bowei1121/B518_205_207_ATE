@@ -283,9 +283,16 @@ Agent 回傳給上位機的 ACK／NACK／RESULT 則維持 CRLF，Arduino 會原�
 主 HMI 結果列改為 `START_FAILED`；本機 Demo 不會因此傳送 TCP NACK。
 
 「螢幕截圖路徑」預設為 `~/Desktop`，也可選擇例如 `~/Desktop/ScreenShot`。DFU／BT
-送出 `SCREENSHOT` 後會先等待 5 秒，最長等待共 15 秒，再在該資料夾尋找新產生的
-圖片。檔名支援 `ScreenShot`、`Screen Shot`、`Screenshot` 與中文版 macOS 的「截圖」；
-此設定也會隨其他偏好一起保存。
+送出 `SCREENSHOT` 後，Agent 會輪詢新檔案並確認檔案大小與修改時間已穩定後立即繼續，
+不再固定等待 5 秒；最長仍等待 15 秒。Agent 執行期間會暫時關閉 macOS 的截圖浮動預覽，
+正常關閉時恢復原設定；若意外中斷，下次啟動會先自動復原。檔名支援 `ScreenShot`、
+`Screen Shot`、`Screenshot` 與中文版 macOS 的「截圖」；此設定也會隨其他偏好一起保存。
+
+每次 DFU／BT 正式流程或 Demo 都會在
+`~/Library/Application Support/AtlasAgentB518/match_sessions/` 建立獨立匹配紀錄，保留初始、
+Dock 聚焦、checkbox 判讀、複驗與失敗畫面的原圖、疊圖與 JSON 分數。主畫面的「查看本次匹配紀錄」
+可逐張檢視，且保留最近十次流程。七槽 DFU 必須找到第一排四槽、第二排三槽；若只找到六槽，
+Agent 會重新點擊 Dock Atlas 圖示並重試，仍未完整時回報 `DFU_HMI_NOT_READY`，不會切換 slot、輸入 SN 或按 OK。
 
 程式內「OpenCV 模板路徑」旁的「製作模板」可直接從截圖資料夾選取圖片（或使用最新
 截圖），以滑鼠框選範圍並儲存為 PNG。通用流程可命名為 `test_window.png`、
