@@ -87,6 +87,13 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - DFU 七槽聚焦優先使用可選 Dock Atlas 圖示模板，降低小型視窗模板中心偏移造成的誤點；沒有 Dock 模板時維持 slot1 文字錨點的安全 fallback。
 - FCT 無 SN Demo 已可使用 active／unitest 兩階段 Log 顯示即時進度、停滯與最終結果，避免只靠固定逾時時間等待。
 
+## 2026-08-08 FCT 即時 SN 與彈性逾時
+
+- 現場截圖顯示 active Log 的暫存值可能是年份／步驟（例如 `2022`、`COMPLETING`），不可當成條碼或最終結果。
+- FCT 無 SN Demo 現在優先監看 `active/group0-slotN/**/records.csv` 的 `MLB_SN`／`PrimaryIdentity`，取得完整英數 SN 後立即顯示在 HMI；device.log 僅作為備援，並拒絕純數字或過短 token。
+- PASS／FAIL 仍只由 active 結束後搬入 `unitest/<SN>/<timestamp>/system/records.csv` 的完整 status 判定；active 階段只會顯示 TESTING、STALLED 或 COMPLETING。
+- 無 SN FCT 監控改為三層：60 秒未見 active／新結果提示尚未開始、active Log 120 秒未更新標示 STALLED、設定中的「結果總保護逾時」才停止；新預設與建議為 900 秒，設為 0 可取消總保護上限。
+
 ## 2026-08-08 DFU 七槽取消 group0 快捷同步
 
 - 七槽 DFU 自動同步不再辨識、點擊或驗證 group0 checkbox，避免 group0 外觀、狀態不一致或誤判中斷流程。

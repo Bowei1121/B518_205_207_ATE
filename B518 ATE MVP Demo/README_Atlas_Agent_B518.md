@@ -87,7 +87,10 @@ DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程
 FCT 選擇 `Logs/Atlas/unitest` 作為「CSV／FCT unitest／BT TestData 根路徑」。Agent 會自動使用同層
 `Logs/Atlas/active/group0-slotN` 顯示即時 slot、可讀取的 SN 與 `TESTING`；active 資料夾在測試結束後
 會消失，因此 PASS／FAIL 一律以稍後搬入 `unitest/<SN>/<timestamp>/system/records.csv` 的完整資料為準。
-若 60 秒沒有新的 active Log，面板會標示 `STALLED` 供人員檢查，但不會提早把測試判定為失敗。
+active 資料夾中的 `records.csv` 一旦寫出 `MLB_SN` 或 `PrimaryIdentity`，Agent 會優先用它顯示完整條碼；
+只含數字的時間、slot 或暫存值不會當作 SN。無 SN FCT Demo 採三層等待：60 秒尚未偵測 active／新結果時
+提示尚未開始、任一 active Log 連續 120 秒未更新時標示 `STALLED`，只有「結果總保護逾時」才會真正停止。
+建議總保護設為 900 秒；測試期間 Log 仍持續更新時不會因 60／120 秒提示被中斷。
 Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
 設備 HMI 開始測試。Agent 僅接受此按鈕之後新建立或新完成的 Log，並在主畫面的「目前 JOB」表格即時顯示
 SN、位置與 PASS／FAIL。

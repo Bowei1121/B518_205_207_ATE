@@ -53,6 +53,9 @@ BT_RESULT_FILENAME = re.compile(
 )
 BT_THREAD_TO_SLOT = {0: 1, 1: 2, 2: 3, 3: 4}
 BT_START_TOLERANCE_SECONDS = 2
+FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS = 60
+FCT_INACTIVITY_TIMEOUT_SECONDS = 120
+FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS = 900
 BT_RESULT_FIELDS = ("SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without
 # adding a DATA: frame.  Keep the raw payload acceptance narrow enough that a
@@ -354,7 +357,10 @@ class Preferences:
     absolute_width: int = 1440
     absolute_height: int = 900
     auto_scale: bool = True
-    result_timeout_seconds: float = 300.0
+    # The normal known-SN monitor may use a shorter timeout.  The FCT no-SN
+    # monitor additionally observes the live active log, so its default hard
+    # safety cap is deliberately longer than one test cycle.
+    result_timeout_seconds: float = FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS
     auto_slot_sync: bool = False
 
     @classmethod
@@ -1412,9 +1418,13 @@ def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
 
 
 ACTIVE_SLOT_FOLDER = re.compile(r"^group0-slot(?P<slot>[1-9][0-9]*)$", re.IGNORECASE)
-ACTIVE_SN_LINE = re.compile(r"(?:serial\s*(?:number)?|\bSN\b)\s*[:=]\s*([A-Za-z0-9][A-Za-z0-9._-]{3,})", re.IGNORECASE)
+ACTIVE_SN_LINE = re.compile(
+    r"(?:serial\s*(?:number)?|\bSN\b|with\s+sn)\s*[:=]?\s*([A-Za-z0-9][A-Za-z0-9._-]{3,})",
+    re.IGNORECASE,
+)
 ACTIVE_TEST_START = re.compile(r"(?:\[?TEST START\]?|StartTest)\s*[:\-]?\s*(.*)", re.IGNORECASE)
 ACTIVE_TEST_DONE = re.compile(r"(?:\[?TEST (?:PASS|FAIL|END|COMPLETE)\]?|Test Complete)", re.IGNORECASE)
+ACTIVE_RECORD_SN_KEYS = {"MLB_SN", "PRIMARYIDENTITY", "SERIALNUMBER", "SERIAL_NUMBER", "SN"}
 
 
 def fct_active_slot_folders(root: Path) -> dict[int, Path]:
@@ -1441,16 +1451,62 @@ def newest_active_device_log(folder: Path) -> Optional[Path]:
     return max(logs, key=lambda path: file_signature(path) or (0, 0), default=None)
 
 
-def active_log_progress(log_file: Optional[Path]) -> tuple[str, str]:
-    """Extract only conservative live progress from a still-growing device.log."""
+def active_folder_signature(folder: Path, log_file: Optional[Path] = None) -> tuple[Optional[tuple[int, int]], Optional[tuple[int, int]]]:
+    """Fingerprint both live sources so a newly written records.csv is noticed."""
+    log_file = log_file or newest_active_device_log(folder)
+    try:
+        records = [path for path in folder.rglob("records.csv") if path.is_file()]
+    except OSError:
+        records = []
+    newest_records = max(records, key=lambda path: file_signature(path) or (0, 0), default=None)
+    return file_signature(log_file), file_signature(newest_records)
+
+
+def is_plausible_active_sn(value: str) -> bool:
+    """Reject timestamps, slot numbers and other log tokens masquerading as SNs."""
+    value = value.strip().upper()
+    return bool(SN_PATTERN.fullmatch(value) and len(value) >= 8
+                and any(char.isalpha() for char in value) and any(char.isdigit() for char in value))
+
+
+def active_records_sn(folder: Path) -> str:
+    """Read a complete serial as soon as active records.csv has created it.
+
+    The transient active folder is named after the physical slot, not the DUT.
+    Atlas writes ``MLB_SN,<barcode>`` / ``PrimaryIdentity,<barcode>`` into its
+    growing records.csv before moving the final folder to unitest, therefore it
+    is the most reliable early source of the real barcode.
+    """
+    try:
+        candidates = [path for path in folder.rglob("records.csv") if path.is_file()]
+    except OSError:
+        return ""
+    for records in sorted(candidates, key=lambda path: file_signature(path) or (0, 0), reverse=True):
+        try:
+            with records.open("r", encoding="utf-8-sig", newline="") as source:
+                for row in csv.reader(source):
+                    if len(row) < 2 or row[0].strip().upper() not in ACTIVE_RECORD_SN_KEYS:
+                        continue
+                    candidate = row[1].strip().upper()
+                    if is_plausible_active_sn(candidate):
+                        return candidate
+        except (OSError, csv.Error):
+            continue
+    return ""
+
+
+def active_log_progress(log_file: Optional[Path], active_folder: Optional[Path] = None) -> tuple[str, str]:
+    """Extract only conservative live progress from active records.csv/device.log."""
+    record_sn = active_records_sn(active_folder) if active_folder is not None else ""
     if log_file is None:
-        return "", "active 資料夾已建立，等待 device.log"
+        return record_sn, "active 資料夾已建立，等待 device.log"
     try:
         text = log_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return "", "等待 device.log 可讀取"
+        return record_sn, "等待 device.log 可讀取"
     sn_matches = ACTIVE_SN_LINE.findall(text)
-    sn = sn_matches[-1].upper() if sn_matches else ""
+    log_sn = next((value.upper() for value in reversed(sn_matches) if is_plausible_active_sn(value)), "")
+    sn = record_sn or log_sn
     started = ACTIVE_TEST_START.findall(text)
     completed = ACTIVE_TEST_DONE.findall(text)
     current = started[-1].strip() if started else ""
@@ -1479,12 +1535,14 @@ class FctAutoLogMonitor(threading.Thread):
         self.log_positions: dict[Path, int] = {}
         self.warned: set[tuple[Path, str]] = set()
         self.active_baseline = {
-            slot: file_signature(newest_active_device_log(folder))
+            slot: active_folder_signature(folder)
             for slot, folder in fct_active_slot_folders(log_root).items()
         }
         self.active_seen: dict[int, tuple[Path, float, str, str]] = {}
         self.active_last_emitted: dict[int, tuple[str, str]] = {}
-        self.active_log_signatures: dict[int, Optional[tuple[int, int]]] = {}
+        self.active_log_signatures: dict[int, object] = {}
+        self.first_activity_seen = False
+        self.first_activity_warning_sent = False
 
     def _render_log(self, log_file: Path) -> None:
         try:
@@ -1504,8 +1562,12 @@ class FctAutoLogMonitor(threading.Thread):
             pass
 
     def run(self) -> None:
-        self.on_log(f"FCT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料" +
-                    (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
+        self.on_log(
+            f"FCT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料；"
+            f"{FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒未建立 active 會提示；"
+            f"active Log {FCT_INACTIVITY_TIMEOUT_SECONDS} 秒未更新標示 STALLED" +
+            (f"；總保護逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定總保護逾時")
+        )
         started_wall = datetime.fromtimestamp(self.started_at).replace(microsecond=0)
         deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
@@ -1513,16 +1575,17 @@ class FctAutoLogMonitor(threading.Thread):
             active_now = fct_active_slot_folders(self.log_root)
             for slot, folder in active_now.items():
                 log_file = newest_active_device_log(folder)
-                signature = file_signature(log_file) if log_file is not None else None
+                signature = active_folder_signature(folder, log_file)
                 if slot in self.active_baseline and slot not in self.active_seen and self.active_baseline[slot] == signature:
                     continue
+                self.first_activity_seen = True
                 if log_file is not None:
                     self._render_log(log_file)
-                sn, detail = active_log_progress(log_file)
+                sn, detail = active_log_progress(log_file, folder)
                 previous = self.active_seen.get(slot)
                 last_activity = now if previous is None or previous[0] != folder or self.active_log_signatures.get(slot) != signature else previous[1]
                 self.active_log_signatures[slot] = signature
-                status = "STALLED" if now - last_activity >= 60 else "TESTING"
+                status = "STALLED" if now - last_activity >= FCT_INACTIVITY_TIMEOUT_SECONDS else "TESTING"
                 self.active_seen[slot] = (folder, last_activity, detail, sn)
                 emitted = (status, f"{sn}|{detail}")
                 if self.active_last_emitted.get(slot) != emitted:
@@ -1564,9 +1627,13 @@ class FctAutoLogMonitor(threading.Thread):
                     log_file = folder / "system" / "device.log"
                 self._render_log(log_file)
                 self.accepted[sn] = (stamp, records)
+                self.first_activity_seen = True
                 self.on_result(TestResult(sn, status, folder, records, detail))
+            if not self.first_activity_seen and not self.first_activity_warning_sent and now - self.started_at >= FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS:
+                self.first_activity_warning_sent = True
+                self.on_log(f"FCT 尚未偵測到新的 active Log 或 unitest 結果（已等待 {FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒）；持續監聽中，請確認 TE／治具是否已開始測試。")
             if deadline is not None and time.monotonic() >= deadline:
-                self.on_log("FCT 無 SN Log Demo 已逾時結束")
+                self.on_log("FCT 無 SN Log Demo 已達總保護逾時，停止監聽")
                 if self.on_timeout:
                     self.on_timeout()
                 return
@@ -2314,7 +2381,7 @@ class AtlasAgentApp:
         try:
             result_timeout = max(0.0, float(self.result_timeout.get()))
         except ValueError:
-            result_timeout = 300.0
+            result_timeout = FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS
         Preferences(port=self.port.get(), csv_path=self.csv_path.get(), log_path=self.log_path.get(),
                     template_path=self.template_path.get(), station=self.station.get(),
                     dfu_profile=self.dfu_profile.get(), screenshot_path=self.screenshot_path.get(),
@@ -2388,9 +2455,9 @@ class AtlasAgentApp:
         ttk.Combobox(flow, textvariable=dfu_profile, width=28, state="readonly",
                      values=DFU_PROFILES).grid(row=0, column=1, sticky="w", pady=3)
         ttk.Label(flow, text="DFU_2：每筆 SN 後按 OK；DFU_2_7slot：每筆 SN 後按 Enter，全部完成才按一次 OK。", foreground="#555", wraplength=620).grid(row=1, column=0, columnspan=2, sticky="w")
-        ttk.Label(flow, text="測試結果逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
+        ttk.Label(flow, text="結果總保護逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
         ttk.Entry(flow, textvariable=result_timeout, width=10).grid(row=2, column=1, sticky="w", pady=(12, 3))
-        ttk.Label(flow, text="0 表示不逾時；未完成 SN 回報 TIMEOUT。", foreground="#555").grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Label(flow, text="0 表示不逾時。FCT 無 SN Demo：60 秒未開始提示、active Log 120 秒未更新顯示 STALLED；建議總保護至少 900 秒。", foreground="#555", wraplength=650).grid(row=3, column=0, columnspan=2, sticky="w")
         ttk.Checkbutton(flow, text="自動同步 DFU Slot 勾選（需要 checkbox 模板）", variable=auto_slot_sync).grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 3))
         ttk.Label(flow, text="未勾選時 DFU 採手動 Slot 模式；FCT 永遠由儀器自動偵測 slot，Agent 不操作 checkbox。", foreground="#a33", wraplength=620).grid(row=5, column=0, columnspan=2, sticky="w")
 
