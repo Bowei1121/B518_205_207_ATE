@@ -2,8 +2,17 @@ __pycache__/
 *.pyc
 build/
 dist/
+dist-*/
 .DS_Store
 *.zip
 *.jpg
 *.png
 !B518 ATE MVP Demo/Manual/assets/**/*.png
+
+# Local build outputs — never commit these
+B518 ATE MVP Demo/release-hid-calibration/
+B518 ATE MVP Demo/release-macos*/
+
+# Virtual environments
+.venv/
+.venv-*/
