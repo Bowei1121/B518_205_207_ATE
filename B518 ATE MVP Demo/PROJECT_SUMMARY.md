@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-08（Asia/Taipei）
+最後更新：2026-08-10（Asia/Taipei）
 
 ## 專案目的
 
@@ -11,7 +11,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - 開發用 B482 模擬 HMI：`b482_demo_server.py` + `b482_demo_hmi.html`，開啟 `http://127.0.0.1:8080`。
 - Agent 支援手動條碼與 Demo slot 視窗：DFU 7 格、FCT 6 格、BT 4 格；正式上位機協定維持最多 4 slot。
 - BT 以 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 監聽結果；Thread0～3 對應 slot1～4。
-- 現場可在 FCT／BT Demo 視窗啟動「無 SN Log Demo」：以按鈕時間與啟動前檔案基準排除舊資料，從新 Log 自動取得 SN 與結果，只顯示、不回傳 TCP RESULT。FCT 以 `active/group0-slotN` 固定顯示實體 slot；只信任 active records.csv 的 `MLB_SN`／`PrimaryIdentity`／`SerialNumber`，並以 unitest 最終 records.csv 定案 PASS／FAIL。`NUMBER_SOF0` 代表 SN 讀取失敗，不是產品條碼。
+- 現場可在 FCT／BT Demo 視窗啟動「無 SN Log Demo」：以按鈕時間與啟動前檔案基準排除舊資料，從新 Log 自動取得 SN 與結果，只顯示、不回傳 TCP RESULT。FCT 以 `active/group0-slotN` 固定顯示實體 slot；只信任 active records.csv 的 `MLB_SN`／`PrimaryIdentity`／`SerialNumber`，並以設定的 `unit-archive` 最終 records.csv 定案 PASS／FAIL。`NUMBER_SOF0` 代表 SN 讀取失敗，不是產品條碼。
 - 正式 DFU／BT 影像定位會暫時隱藏 Agent 視窗；FCT 不執行截圖或 HID，直接監聽 CSV。路徑選擇器會顯示隱藏資料夾（例如 `/vault`）。
 - 現場 OS：BT 為 macOS Mojave 10.14.5；DFU／FCT 為 Catalina 10.15。共用候選 App 需在 Intel Catalina VM 以 10.14 deployment target 建置，並經兩種 OS 實機驗收。
 
@@ -26,7 +26,13 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 ## 最近提交
 
 - `7d1e5aa fix: diagnose legacy mouse HID stalls`：韌體 1.0.4、舊 macOS 的較保守 mouse report 節奏、HID ACK 診斷與移除收訊鎖定造成的 UI 延遲。
-- 下一筆提交：FCT 無 SN active→unitest 兩階段監控、slot 排序與 SN 讀取失敗定案。
+- 下一筆提交：FCT active→unit-archive 明確路徑、可信 SN 鎖定與最終結果監控修正。
+
+## 2026-08-10 FCT active → unit-archive 修正
+
+- FCT 無 SN Demo 現在要求以兩個既有欄位明確指定路徑：`CSV／BT TestData 根路徑` 選擇 `unit-archive`，`Log 根路徑` 選擇 `active`；不再自動猜測 `unitest`／`unit-archive`。
+- 每個 `group0-slotN` 一旦從 active `records.csv` 取得可信 SN，會鎖定至本輪結束。active 在測試完成時清空或搬移檔案，不會把已顯示的條碼覆寫回「SN 讀取中」。
+- active 消失後，已鎖定 SN 顯示 `COMPLETING` 並只在設定的 `unit-archive/<SN>/<timestamp>/system/records.csv` 尋找最終 PASS／FAIL；始終沒有可信 SN 才定案為「SN 讀取失敗／FAIL」。
 
 ## 2026-08-08 截圖與七槽 DFU 診斷更新
 

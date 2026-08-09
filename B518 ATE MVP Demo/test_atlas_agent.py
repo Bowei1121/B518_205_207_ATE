@@ -511,15 +511,52 @@ class AtlasAgentTests(unittest.TestCase):
             sn, _ = active_log_progress(log, active)
             self.assertEqual(sn, "")
 
-    def test_fct_monitor_roots_accepts_atlas_active_and_final_selections(self):
+    def test_fct_monitor_roots_requires_explicit_active_and_final_selections(self):
         with tempfile.TemporaryDirectory() as directory:
             atlas = Path(directory) / "Logs" / "Atlas"
             active, unitest, archive = atlas / "active", atlas / "unitest", atlas / "unit-archive"
             active.mkdir(parents=True); unitest.mkdir(); archive.mkdir()
-            self.assertEqual(resolve_fct_monitor_roots(atlas).active_root, active)
-            self.assertEqual(resolve_fct_monitor_roots(active).final_root, unitest)
-            self.assertEqual(resolve_fct_monitor_roots(unitest).active_root, active)
-            self.assertEqual(resolve_fct_monitor_roots(archive).final_root, archive)
+            roots = resolve_fct_monitor_roots(archive, active)
+            self.assertEqual(roots.active_root, active)
+            self.assertEqual(roots.final_root, archive)
+            with self.assertRaisesRegex(AgentError, "直接選擇 active"):
+                resolve_fct_monitor_roots(archive)
+            with self.assertRaisesRegex(AgentError, "unit-archive"):
+                resolve_fct_monitor_roots(atlas, active)
+
+    def test_fct_latches_active_sn_when_records_are_cleared_before_final_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_system = active_root / "group0-slot2" / "system"
+            active_root.mkdir(parents=True); archive_root.mkdir()
+            serial = "HK5HUX6STQ800003YV"
+            progress, results, completed, stop = [], [], threading.Event(), threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, time.time(), lambda _: None,
+                                        results.append, stop, on_progress=progress.append,
+                                        on_complete=completed.set, completion_settle_seconds=0)
+            monitor.start()
+            active_system.mkdir(parents=True)
+            active_records = active_system / "records.csv"
+            active_records.write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            # The monitor polls every 0.5 seconds; allow a full poll to latch
+            # the barcode before reproducing Atlas' active-folder cleanup.
+            time.sleep(.7)
+            # The real instrument can clear active records while moving final
+            # data.  The session must retain the earlier valid barcode.
+            active_records.unlink()
+            time.sleep(.35)
+            final_system = archive_root / serial / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            final_system.mkdir(parents=True)
+            (final_system / "records.csv").write_text("case,status\na,PASS\n", encoding="utf-8")
+            (active_system / "device.log").unlink(missing_ok=True)
+            active_system.rmdir(); active_system.parent.rmdir()
+            monitor.join(2); stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertIn((serial, "PASS"), [(item.sn, item.status) for item in results])
+            slot2 = [(item.sn, item.status) for item in progress if item.slot == 2]
+            self.assertIn((serial, "COMPLETING"), slot2)
+            self.assertNotIn(("", "FAIL"), slot2)
 
     def test_fct_no_sn_slot_fails_only_after_active_is_removed(self):
         with tempfile.TemporaryDirectory() as directory:

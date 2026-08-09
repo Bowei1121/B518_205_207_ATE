@@ -1430,39 +1430,26 @@ def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
 
 
 def resolve_fct_monitor_roots(selected_root: Path, log_root: Optional[Path] = None) -> FctMonitorRoots:
-    """Resolve any supported Atlas selection to active and final-result roots.
+    """Resolve the explicitly configured FCT active and final-result roots.
 
-    Operators may browse to ``Logs/Atlas``, ``active``, ``unitest`` or the
-    older ``unit-archive`` folder.  Keep that choice forgiving while ensuring
-    active discovery and final records.csv parsing never scan each other.
+    ``selected_root`` is deliberately the final-result root and ``log_root``
+    is deliberately the live ``active`` root.  Do not guess between unitest
+    and unit-archive: different stations can retain both folders, while a
+    no-SN session must only accept the result location selected by the user.
     """
     selected = selected_root.expanduser()
     hint = log_root.expanduser() if log_root else None
-
-    def atlas_parent(path: Path) -> Path:
-        return path.parent if path.name.lower() in ("active", *FCT_FINAL_DIRECTORY_NAMES) else path
-
-    atlas_root = atlas_parent(selected)
-    hint_atlas = atlas_parent(hint) if hint else atlas_root
-    if selected.name.lower() == "active":
-        active_root = selected
-    elif hint and hint.name.lower() == "active":
-        active_root = hint
-    elif (hint_atlas / "active").is_dir() or hint is not None:
-        active_root = hint_atlas / "active"
-    else:
-        active_root = atlas_root / "active"
-
-    if selected.name.lower() in FCT_FINAL_DIRECTORY_NAMES:
-        final_root = selected
-    elif hint and hint.name.lower() in FCT_FINAL_DIRECTORY_NAMES:
-        final_root = hint
-    else:
-        final_root = next(
-            (atlas_root / name for name in FCT_FINAL_DIRECTORY_NAMES if (atlas_root / name).is_dir()),
-            atlas_root / "unitest",
-        )
-    return FctMonitorRoots(atlas_root=atlas_root, active_root=active_root, final_root=final_root)
+    if not selected.is_dir():
+        raise AgentError(f"FCT 最終結果根路徑不存在或無法讀取：{selected}")
+    if selected.name.lower() not in FCT_FINAL_DIRECTORY_NAMES:
+        raise AgentError("FCT 最終結果根路徑必須直接選擇 unit-archive（或相容設備的 unitest）資料夾")
+    if hint is None:
+        raise AgentError("FCT 無 SN Log Demo 請在「Log 根路徑」直接選擇 active 資料夾")
+    if not hint.is_dir():
+        raise AgentError(f"FCT active Log 根路徑不存在或無法讀取：{hint}")
+    if hint.name.lower() != "active":
+        raise AgentError("FCT Log 根路徑必須直接選擇 active 資料夾")
+    return FctMonitorRoots(atlas_root=selected.parent, active_root=hint, final_root=selected)
 
 
 ACTIVE_SLOT_FOLDER = re.compile(r"^group0-slot(?P<slot>[1-9][0-9]*)$", re.IGNORECASE)
@@ -1598,6 +1585,7 @@ class FctAutoLogMonitor(threading.Thread):
         self.active_seen: dict[int, tuple[Path, float, str, str]] = {}
         self.active_last_emitted: dict[int, tuple[str, str]] = {}
         self.active_log_signatures: dict[int, object] = {}
+        self.active_sn_conflicts: set[tuple[int, str, str]] = set()
         self.active_missing_sn_finalized: set[int] = set()
         self.completion_started_at: Optional[float] = None
         self.first_activity_seen = False
@@ -1640,10 +1628,21 @@ class FctAutoLogMonitor(threading.Thread):
                 self.first_activity_seen = True
                 if log_file is not None:
                     self._render_log(log_file)
-                sn, detail = active_log_progress(log_file, folder)
+                discovered_sn, detail = active_log_progress(log_file, folder)
                 previous = self.active_seen.get(slot)
                 last_activity = now if previous is None or previous[0] != folder or self.active_log_signatures.get(slot) != signature else previous[1]
                 self.active_log_signatures[slot] = signature
+                # Atlas may truncate or remove the active records.csv while it
+                # moves data to unit-archive.  Once a slot has a trusted
+                # barcode, retain it for this session instead of reverting the
+                # UI to "SN 讀取中" during cleanup.
+                latched_sn = previous[3] if previous else ""
+                if latched_sn and discovered_sn and discovered_sn != latched_sn:
+                    conflict = (slot, latched_sn, discovered_sn)
+                    if conflict not in self.active_sn_conflicts:
+                        self.active_sn_conflicts.add(conflict)
+                        self.on_log(f"FCT active slot{slot}：偵測到衝突 SN {discovered_sn}；保留首次可信 SN {latched_sn}")
+                sn = latched_sn or discovered_sn
                 status = "STALLED" if now - last_activity >= FCT_INACTIVITY_TIMEOUT_SECONDS else "TESTING"
                 self.active_seen[slot] = (folder, last_activity, detail, sn)
                 emitted = (status, f"{sn}|{detail}")
@@ -2518,7 +2517,13 @@ class AtlasAgentApp:
             if selected:
                 variable.set(selected)
 
-        for row, (label, variable) in enumerate((("CSV／FCT unitest／BT TestData 根路徑：", csv_path), ("FCT active Log 根路徑（選填）：", log_path),
+        if self.station.get() == "FCT":
+            path_fields = (("FCT 最終結果根路徑（unit-archive）：", csv_path),
+                           ("FCT 即時 Log 根路徑（active）：", log_path))
+        else:
+            path_fields = (("CSV／BT TestData 根路徑：", csv_path),
+                           ("Log 根路徑（選填）：", log_path))
+        for row, (label, variable) in enumerate((*path_fields,
                                                    ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
             ttk.Label(paths, text=label).grid(row=row, column=0, sticky="w", pady=3)
             ttk.Entry(paths, textvariable=variable, width=58).grid(row=row, column=1, sticky="ew", pady=3)
@@ -2968,7 +2973,7 @@ class AtlasAgentApp:
         root_text = self.csv_path.get().strip()
         root = Path(root_text).expanduser() if root_text else Path(".")
         if not root.is_dir():
-            messagebox.showerror(TITLE, "請先選擇有效的 CSV／FCT unitest／BT TestData 根路徑", parent=self.root)
+            messagebox.showerror(TITLE, "請先選擇有效的 CSV／BT TestData 根路徑；FCT 請選 unit-archive", parent=self.root)
             return False
         try:
             timeout = float(self.result_timeout.get())
@@ -2993,7 +2998,12 @@ class AtlasAgentApp:
         if station == "FCT":
             log_text = self.log_path.get().strip()
             log_root = Path(log_text).expanduser() if log_text else None
-            roots = resolve_fct_monitor_roots(root, log_root)
+            try:
+                roots = resolve_fct_monitor_roots(root, log_root)
+            except AgentError as exc:
+                messagebox.showerror(TITLE, str(exc), parent=self.root)
+                self.auto_log_demo = False
+                return False
             self.monitor = FctAutoLogMonitor(roots.final_root, roots.active_root, time.time(),
                                               lambda item: self.events.put(("log", item)),
                                               lambda result: self.events.put(("auto_fct_result", (batch_number, result))),

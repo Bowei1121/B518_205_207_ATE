@@ -84,20 +84,22 @@ DFU 與 BT Demo 則使用 Arduino 截圖、HID 與畫面監聽執行真實流程
 
 若現場展示時 FAE 無法事先取得產品條碼，請在測試**開始前**按「Demo」中的「開始無 SN Log Demo」。
 
-FCT 可選擇 `Logs/Atlas`、`active`、`unitest` 或 `unit-archive` 作為「CSV／FCT unitest／BT TestData 根路徑」；
-Agent 會自動解析同一套 `active` 與最終結果根路徑。`Logs/Atlas/active/group0-slotN` 代表實體 slot，HMI 一律依
-slot1→slot6 排列。active 資料夾在測試結束後會消失，因此 PASS／FAIL 一律以稍後搬入
-`unitest/<SN>/<timestamp>/system/records.csv` 的完整資料為準。active 資料夾中的 `records.csv` 一旦寫出
+FCT 必須使用兩個既有設定欄位：將「CSV／BT TestData 根路徑」直接選擇為 `unit-archive`，將「Log 根路徑」
+直接選擇為 `active`。Agent 不會自動猜測 `unitest` 或 `unit-archive`，因此可避免讀取到其他舊資料。
+`active/group0-slotN` 代表實體 slot，HMI 一律依 slot1→slot6 排列。active 資料夾在測試結束後會消失，
+因此 PASS／FAIL 一律以稍後搬入 `unit-archive/<SN>/<timestamp>/system/records.csv` 的完整資料為準。active
+資料夾中的 `records.csv` 一旦寫出
 `MLB_SN`、`PrimaryIdentity` 或 `SerialNumber`，Agent 才會採用它顯示完整條碼；`NUMBER_SOF0`、時間、slot
 及測項名稱都不是產品 SN。若 active 結束前仍沒有可信 SN，該 slot 會定案顯示「SN 讀取失敗／FAIL」；取得可信
-SN 但尚未有 unitest 最終檔時則顯示 `COMPLETING`。無 SN FCT Demo 採三層等待：60 秒尚未偵測 active／新結果時
+SN 後會鎖定至本輪結束，即使 active 清空資料也不會退回「SN 讀取中」；尚未有 unit-archive 最終檔時則顯示
+`COMPLETING`。無 SN FCT Demo 採三層等待：60 秒尚未偵測 active／新結果時
 提示尚未開始、任一 active Log 連續 120 秒未更新時標示 `STALLED`，只有「結果總保護逾時」才會真正停止。
 建議總保護設為 900 秒；測試期間 Log 仍持續更新時不會因 60／120 秒提示被中斷。
 Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
 設備 HMI 開始測試。Agent 僅接受此按鈕之後新建立或新完成的 Log，並在主畫面的「目前 JOB」表格即時顯示
 SN、位置與 PASS／FAIL。
 
-- FCT 由 `active/group0-slotN` 取得實體 slot 與可信 SN，再從最終 `unitest/<SN>/<時間戳>/system/records.csv` 取得 PASS／FAIL；active 全數結束且每個 slot 都有最終結果或無 SN FAIL 後，三秒穩定期自動結束本輪。
+- FCT 由 `active/group0-slotN` 取得實體 slot 與可信 SN，再從設定的 `unit-archive/<SN>/<時間戳>/system/records.csv` 取得 PASS／FAIL；active 全數結束且每個 slot 都有最終結果或無 SN FAIL 後，三秒穩定期自動結束本輪。
 - BT 從 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 取得結果；Thread0～3 顯示為 slot1～4。
 - 此模式持續到設定的結果逾時時間，或按「停止監聽」結束；只做現場顯示與 Log，不會送出 TCP `ACK`、`RESULT` 或 `NACK`，也不會點擊 BT Start。
 - 同一 SN 在監控期間產生新的重工資料時，畫面更新為最新結果，完整歷程保留於通訊紀錄。
