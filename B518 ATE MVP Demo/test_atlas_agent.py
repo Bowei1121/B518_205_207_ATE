@@ -569,6 +569,52 @@ class AtlasAgentTests(unittest.TestCase):
             self.assertIn((serial, "COMPLETING"), slot2)
             self.assertNotIn(("", "FAIL"), slot2)
 
+    def test_fct_final_archive_accepts_new_timestamp_when_move_preserves_csv_mtime(self):
+        """Atlas may preserve records.csv mtime when moving active data to unit-archive."""
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_root.mkdir(parents=True); archive_root.mkdir()
+            serial = "HK5HUX6STQ800003YV"
+            results, completed, stop = [], threading.Event(), threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, time.time(), lambda _: None,
+                                        results.append, stop, on_complete=completed.set,
+                                        completion_settle_seconds=0)
+            monitor.start()
+            active_system = active_root / "group0-slot1" / "system"
+            active_system.mkdir(parents=True)
+            (active_system / "records.csv").write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            time.sleep(.7)
+            final_system = archive_root / serial / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            final_system.mkdir(parents=True)
+            final_records = final_system / "records.csv"
+            final_records.write_text("case,status\nRF,PASS\n", encoding="utf-8")
+            # Simulate a filesystem move which preserves an older file mtime.
+            preserved_time = time.time() - 300
+            os.utime(final_records, (preserved_time, preserved_time))
+            (active_system / "records.csv").unlink()
+            active_system.rmdir(); active_system.parent.rmdir()
+            monitor.join(2); stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertEqual([(item.sn, item.status) for item in results], [(serial, "PASS")])
+
+    def test_fct_active_session_does_not_hit_total_timeout_while_active_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_system = active_root / "group0-slot1" / "system"
+            active_root.mkdir(parents=True); archive_root.mkdir(parents=True)
+            timed_out, stop = threading.Event(), threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, time.time(), lambda _: None,
+                                        lambda _: None, stop, timeout_seconds=.2,
+                                        on_timeout=timed_out.set)
+            monitor.start()
+            active_system.mkdir(parents=True)
+            (active_system / "records.csv").write_text("MLB_SN,HK5HUX6STQ800003YV\n", encoding="utf-8")
+            time.sleep(.8)
+            stop.set(); monitor.join(1)
+            self.assertFalse(timed_out.is_set())
+
     def test_records_ignores_empty_metadata_statuses_but_requires_test_status(self):
         with tempfile.TemporaryDirectory() as directory:
             records = Path(directory) / "records.csv"

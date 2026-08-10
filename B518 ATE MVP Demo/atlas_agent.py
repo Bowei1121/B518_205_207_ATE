@@ -57,6 +57,7 @@ FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS = 60
 FCT_INACTIVITY_TIMEOUT_SECONDS = 120
 FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS = 900
 FCT_AUTO_COMPLETION_SETTLE_SECONDS = 3.0
+FCT_FINAL_TIMESTAMP_GRACE_SECONDS = 5.0
 FCT_FINAL_DIRECTORY_NAMES = ("unitest", "unit-archive")
 BT_RESULT_FIELDS = ("SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without
@@ -1407,13 +1408,45 @@ def file_signature(path: Optional[Path]) -> Optional[tuple[int, int]]:
         return None
 
 
-def fct_record_candidates(root: Path) -> list[tuple[datetime, str, Path, Path]]:
-    """List Atlas records.csv files with their timestamp folder and SN parent."""
-    found: list[tuple[datetime, str, Path, Path]] = []
+def _normalised_sn(value: str) -> str:
+    """Compare archive directory names using the same canonical form as active SNs."""
+    return value.strip().upper()
+
+
+def fct_final_sn_directory(root: Path, serial: str) -> tuple[Optional[Path], str]:
+    """Find the archive directory for one active-latched SN without fuzzy matching."""
+    expected = _normalised_sn(serial)
+    direct = root / serial
+    if direct.is_dir():
+        return direct, ""
     try:
-        sn_dirs = list(root.iterdir())
-    except OSError:
-        return found
+        matches = [child for child in root.iterdir()
+                   if child.is_dir() and _normalised_sn(child.name) == expected]
+    except OSError as exc:
+        return None, f"無法讀取最終結果根路徑：{exc}"
+    if len(matches) == 1:
+        return matches[0], f"使用大小寫不同的資料夾名稱 {matches[0].name}"
+    if len(matches) > 1:
+        return None, f"找到多個同名 SN 資料夾，無法安全選擇：{', '.join(item.name for item in matches)}"
+    return None, f"找不到 SN 資料夾：{root / serial}"
+
+
+def fct_record_candidates(root: Path, serial: str = "") -> list[tuple[datetime, str, Path, Path]]:
+    """List Atlas records.csv files with their timestamp folder and SN parent.
+
+    When ``serial`` is supplied, inspect only that active-latched DUT folder.
+    This makes an FCT final lookup deterministic and avoids unrelated archive
+    folders hiding useful diagnostics.
+    """
+    found: list[tuple[datetime, str, Path, Path]] = []
+    if serial:
+        directory, _ = fct_final_sn_directory(root, serial)
+        sn_dirs = [directory] if directory is not None else []
+    else:
+        try:
+            sn_dirs = list(root.iterdir())
+        except OSError:
+            return found
     for sn_dir in sn_dirs:
         if not sn_dir.is_dir() or not SN_PATTERN.fullmatch(sn_dir.name):
             continue
@@ -1596,6 +1629,10 @@ class FctAutoLogMonitor(threading.Thread):
         self.completion_started_at: Optional[float] = None
         self.first_activity_seen = False
         self.first_activity_warning_sent = False
+        self.final_wait_started_at: Optional[float] = None
+        self.final_deadline: Optional[float] = None
+        self.final_progress_signatures: dict[str, tuple[int, int]] = {}
+        self.final_diagnostics: set[tuple[str, str]] = set()
 
     def _render_log(self, log_file: Path) -> None:
         try:
@@ -1614,17 +1651,43 @@ class FctAutoLogMonitor(threading.Thread):
         except OSError:
             pass
 
+    def _final_diagnostic(self, serial: str, detail: str) -> None:
+        """Render each archive rejection reason once per session and SN."""
+        key = (serial, detail)
+        if key not in self.final_diagnostics:
+            self.final_diagnostics.add(key)
+            self.on_log(f"FCT 最終結果 {serial}：{detail}")
+
+    def _final_candidates_for_sn(self, serial: str) -> list[tuple[datetime, str, Path, Path]]:
+        directory, note = fct_final_sn_directory(self.csv_root, serial)
+        if directory is None:
+            self._final_diagnostic(serial, note)
+            return []
+        if note:
+            self._final_diagnostic(serial, note)
+        candidates = fct_record_candidates(self.csv_root, serial)
+        if not candidates:
+            self._final_diagnostic(
+                serial,
+                f"已找到資料夾 {directory}，但尚未找到 <時間戳>/system/records.csv",
+            )
+        return candidates
+
     def run(self) -> None:
         self.on_log(
             f"FCT 無 SN Log Demo 已啟動；active：{self.log_root}；最終結果：{self.csv_root}；僅接受啟動後的新資料；"
             f"{FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒未建立 active 會提示；"
-            f"active Log {FCT_INACTIVITY_TIMEOUT_SECONDS} 秒未更新標示 STALLED" +
-            (f"；總保護逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定總保護逾時")
+            f"active Log {FCT_INACTIVITY_TIMEOUT_SECONDS} 秒未更新標示 STALLED；active 存在時不因總保護停止" +
+            (f"；active 結束後等待最終結果保護逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定最終結果保護逾時")
         )
         started_wall = datetime.fromtimestamp(self.started_at).replace(microsecond=0)
-        deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
+        # The first deadline protects an accidentally started empty session.
+        # Once active data exists, an instrument may legitimately run longer
+        # than its nominal cycle, so this deadline must no longer stop it.
+        waiting_deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
             now = time.time()
+            monotonic_now = time.monotonic()
             active_now = fct_active_slot_folders(self.log_root)
             for slot, folder in active_now.items():
                 log_file = newest_active_device_log(folder)
@@ -1632,6 +1695,7 @@ class FctAutoLogMonitor(threading.Thread):
                 if slot in self.active_baseline and slot not in self.active_seen and self.active_baseline[slot] == signature:
                     continue
                 self.first_activity_seen = True
+                waiting_deadline = None
                 if log_file is not None:
                     self._render_log(log_file)
                 discovered_sn, detail = active_log_progress(log_file, folder)
@@ -1666,47 +1730,62 @@ class FctAutoLogMonitor(threading.Thread):
                     if self.active_last_emitted.get(slot) != emitted:
                         self.active_last_emitted[slot] = emitted
                         self.on_progress(FctActiveProgress(slot, sn, status, final_detail))
-            latched_sns = {
-                sn for _, _, _, sn in self.active_seen.values() if sn
-            }
-            for stamp, sn, folder, records in fct_record_candidates(self.csv_root):
-                # A station may retain results from other cycles or create
-                # unrelated archives concurrently.  Only a barcode latched
-                # from this session's active/group0-slotN may finish a slot.
-                if sn not in latched_sns:
-                    continue
-                signature = file_signature(records)
-                if signature is None:
-                    continue
-                # A timestamp folder has only second precision.  Its file must
-                # additionally be absent/changed from the session baseline and
-                # not be older than the button press (with one-second FS grace).
-                baseline_signature = self.baseline.get(records)
-                if stamp < started_wall or (baseline_signature == signature and records in self.baseline):
-                    continue
-                if signature[0] < int((self.started_at - 1.0) * 1_000_000_000):
-                    continue
-                old = self.accepted.get(sn)
-                if old is not None and (stamp, records) <= old:
-                    continue
-                try:
-                    status, detail = parse_records(records)
-                except (OSError, AgentError) as exc:
-                    warning = (records, str(exc))
-                    if warning not in self.warned:
-                        self.warned.add(warning)
-                        self.on_log(f"FCT {sn}: CSV 尚未可讀取：{exc}")
-                    continue
-                if status == "UNKNOWN":
-                    continue
-                log_file = folder / "system" / "device.log"
-                self._render_log(log_file)
-                self.accepted[sn] = (stamp, records)
-                self.first_activity_seen = True
-                self.on_result(TestResult(sn, status, folder, records, detail))
             active_finished = bool(self.active_seen) and not active_now
+            if active_finished and self.final_wait_started_at is None:
+                self.final_wait_started_at = monotonic_now
+                self.final_deadline = (monotonic_now + self.timeout_seconds) if self.timeout_seconds else None
+                self.on_log("FCT active 資料夾已結束；開始以已鎖定 SN 搜尋最終 unit-archive 結果")
+            elif active_now:
+                self.final_wait_started_at = None
+                self.final_deadline = None
+
+            latched_sns = sorted({_normalised_sn(sn) for _, _, _, sn in self.active_seen.values() if sn})
+            for latched_sn in latched_sns:
+                for stamp, archive_sn, folder, records in self._final_candidates_for_sn(latched_sn):
+                    # A station may retain results from other cycles or create
+                    # unrelated archives concurrently. Only the active-latched
+                    # DUT directory can finish this session.
+                    if _normalised_sn(archive_sn) != latched_sn:
+                        continue
+                    signature = file_signature(records)
+                    if signature is None:
+                        continue
+                    # The timestamp directory and session baseline are reliable
+                    # proof of a new run. Do not reject a valid final archive only
+                    # because Atlas preserved records.csv mtime while moving it.
+                    baseline_signature = self.baseline.get(records)
+                    if stamp < started_wall - timedelta(seconds=FCT_FINAL_TIMESTAMP_GRACE_SECONDS):
+                        self._final_diagnostic(latched_sn, f"略過舊時間戳資料夾：{folder.name}（早於本輪開始）")
+                        continue
+                    if baseline_signature == signature and records in self.baseline:
+                        self._final_diagnostic(latched_sn, f"略過本輪開始前既有且未變更的 records.csv：{records}")
+                        continue
+                    if self.final_progress_signatures.get(latched_sn) != signature:
+                        self.final_progress_signatures[latched_sn] = signature
+                        if self.final_deadline is not None:
+                            self.final_deadline = monotonic_now + self.timeout_seconds
+                        self.on_log(f"FCT 最終結果 {latched_sn}：偵測到候選檔 {folder.name}/system/{records.name}，等待完整解析")
+                    old = self.accepted.get(latched_sn)
+                    if old is not None and (stamp, records) <= old:
+                        continue
+                    try:
+                        status, detail = parse_records(records)
+                    except (OSError, AgentError) as exc:
+                        warning = (records, str(exc))
+                        if warning not in self.warned:
+                            self.warned.add(warning)
+                            self.on_log(f"FCT {latched_sn}: CSV 尚未可讀取：{exc}")
+                        continue
+                    if status == "UNKNOWN":
+                        self._final_diagnostic(latched_sn, f"候選 CSV 尚無完整 PASS／FAIL：{records}")
+                        continue
+                    log_file = folder / "system" / "device.log"
+                    self._render_log(log_file)
+                    self.accepted[latched_sn] = (stamp, records)
+                    self.first_activity_seen = True
+                    self.on_result(TestResult(latched_sn, status, folder, records, detail))
             all_terminal = active_finished and all(
-                (not sn and slot in self.active_missing_sn_finalized) or (bool(sn) and sn in self.accepted)
+                (not sn and slot in self.active_missing_sn_finalized) or (bool(sn) and _normalised_sn(sn) in self.accepted)
                 for slot, (_, _, _, sn) in self.active_seen.items()
             )
             if all_terminal:
@@ -1723,8 +1802,13 @@ class FctAutoLogMonitor(threading.Thread):
             if not self.first_activity_seen and not self.first_activity_warning_sent and now - self.started_at >= FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS:
                 self.first_activity_warning_sent = True
                 self.on_log(f"FCT 尚未偵測到新的 active Log 或 {self.csv_root.name} 結果（已等待 {FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒）；持續監聽中，請確認 TE／治具是否已開始測試。")
-            if deadline is not None and time.monotonic() >= deadline:
-                self.on_log("FCT 無 SN Log Demo 已達總保護逾時，停止監聽")
+            if waiting_deadline is not None and monotonic_now >= waiting_deadline:
+                self.on_log("FCT 無 SN Log Demo 尚未偵測到 active，已達等待開始保護逾時，停止監聽")
+                if self.on_timeout:
+                    self.on_timeout()
+                return
+            if self.final_deadline is not None and monotonic_now >= self.final_deadline:
+                self.on_log("FCT active 已結束，但等待 unit-archive 最終結果已達保護逾時，停止監聽")
                 if self.on_timeout:
                     self.on_timeout()
                 return
@@ -2554,7 +2638,7 @@ class AtlasAgentApp:
         ttk.Label(flow, text="DFU_2：每筆 SN 後按 OK；DFU_2_7slot：每筆 SN 後按 Enter，全部完成才按一次 OK。", foreground="#555", wraplength=620).grid(row=1, column=0, columnspan=2, sticky="w")
         ttk.Label(flow, text="結果總保護逾時(s)：").grid(row=2, column=0, sticky="w", pady=(12, 3))
         ttk.Entry(flow, textvariable=result_timeout, width=10).grid(row=2, column=1, sticky="w", pady=(12, 3))
-        ttk.Label(flow, text="0 表示不逾時。FCT 無 SN Demo：60 秒未開始提示、active Log 120 秒未更新顯示 STALLED；建議總保護至少 900 秒。", foreground="#555", wraplength=650).grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Label(flow, text="0 表示不逾時。FCT 無 SN Demo：60 秒未開始提示、active Log 120 秒未更新顯示 STALLED；active 存在時不會因保護逾時停止，active 結束後才開始等待 unit-archive 的保護逾時。", foreground="#555", wraplength=650).grid(row=3, column=0, columnspan=2, sticky="w")
         ttk.Checkbutton(flow, text="自動同步 DFU Slot 勾選（需要 checkbox 模板）", variable=auto_slot_sync).grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 3))
         ttk.Label(flow, text="未勾選時 DFU 採手動 Slot 模式；FCT 永遠由儀器自動偵測 slot，Agent 不操作 checkbox。", foreground="#a33", wraplength=620).grid(row=5, column=0, columnspan=2, sticky="w")
 

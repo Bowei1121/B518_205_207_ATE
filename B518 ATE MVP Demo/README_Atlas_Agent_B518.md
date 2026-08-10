@@ -93,8 +93,9 @@ FCT 必須使用兩個既有設定欄位：將「CSV／BT TestData 根路徑」�
 及測項名稱都不是產品 SN。若 active 結束前仍沒有可信 SN，該 slot 會定案顯示「SN 讀取失敗／FAIL」；取得可信
 SN 後會鎖定至本輪結束，即使 active 清空資料也不會退回「SN 讀取中」；尚未有 unit-archive 最終檔時則顯示
 `COMPLETING`。無 SN FCT Demo 採三層等待：60 秒尚未偵測 active／新結果時
-提示尚未開始、任一 active Log 連續 120 秒未更新時標示 `STALLED`，只有「結果總保護逾時」才會真正停止。
-建議總保護設為 900 秒；測試期間 Log 仍持續更新時不會因 60／120 秒提示被中斷。
+提示尚未開始、任一 active Log 連續 120 秒未更新時標示 `STALLED`。只要任一 active slot 仍存在，
+Agent 不會因結果保護逾時停止；active 全數結束後才開始以設定秒數等待 `unit-archive` 最終結果。
+建議最終結果保護設為 900 秒；測試期間 Log 仍持續更新時不會因 60／120 秒提示被中斷。
 現場 `unit-archive` 的 `records.csv` 可能包含 `status` 空白的軟體版本／設定資訊列；Agent 會忽略這些
 非測試列，只以非空白的測試 status 判定結果：任一 FAIL 為 FAIL，至少一筆且全部為 PASS 才是 PASS。
 Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
@@ -103,7 +104,7 @@ SN、位置與 PASS／FAIL。
 
 - FCT 由 `active/group0-slotN` 取得實體 slot 與可信 SN，再從設定的 `unit-archive/<SN>/<時間戳>/system/records.csv` 取得 PASS／FAIL；active 全數結束且每個 slot 都有最終結果或無 SN FAIL 後，三秒穩定期自動結束本輪。
 - BT 從 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 取得結果；Thread0～3 顯示為 slot1～4。
-- 此模式持續到設定的結果逾時時間，或按「停止監聽」結束；只做現場顯示與 Log，不會送出 TCP `ACK`、`RESULT` 或 `NACK`，也不會點擊 BT Start。
+- 此模式會持續監控 active；active 結束後才適用設定的最終結果逾時，也可按「停止監聽」結束；只做現場顯示與 Log，不會送出 TCP `ACK`、`RESULT` 或 `NACK`，也不會點擊 BT Start。
 - 同一 SN 在監控期間產生新的重工資料時，畫面更新為最新結果，完整歷程保留於通訊紀錄。
 
 路徑選擇按鈕會以 macOS 原生選擇器顯示隱藏資料夾，可直接選擇 `/vault` 等目錄。若系統無法使用原生
