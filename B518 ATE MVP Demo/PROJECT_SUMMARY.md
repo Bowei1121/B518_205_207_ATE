@@ -33,6 +33,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - FCT 無 SN Demo 現在要求以兩個既有欄位明確指定路徑：`CSV／BT TestData 根路徑` 選擇 `unit-archive`，`Log 根路徑` 選擇 `active`；不再自動猜測 `unitest`／`unit-archive`。
 - 每個 `group0-slotN` 一旦從 active `records.csv` 取得可信 SN，會鎖定至本輪結束。active 在測試完成時清空或搬移檔案，不會把已顯示的條碼覆寫回「SN 讀取中」。
 - active 消失後，已鎖定 SN 顯示 `COMPLETING` 並只在設定的 `unit-archive/<SN>/<timestamp>/system/records.csv` 尋找最終 PASS／FAIL；始終沒有可信 SN 才定案為「SN 讀取失敗／FAIL」。
+- 2026-08-10 現場 `COMPLETING` 不結束的根因已確認：真實 FCT `records.csv` 含有 status 空白的軟體／設定 metadata 列，舊判定要求所有列都為 PASS，因而把有效全 PASS 檔誤判為 UNKNOWN。現行判定忽略空白 status，只以非空白測試列判斷；並只接受本輪 active 已鎖定 SN 的最終檔，避免其他 cycle 汙染畫面。
 
 ## 2026-08-08 截圖與七槽 DFU 診斷更新
 

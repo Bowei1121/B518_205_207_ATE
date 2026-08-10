@@ -963,7 +963,7 @@ def locate_records(folder: Path) -> Optional[Path]:
 
 
 def parse_records(records: Path) -> tuple[str, str]:
-    """Any FAIL is FAIL; a non-empty complete PASS column is PASS."""
+    """Judge populated test statuses while ignoring Atlas metadata rows."""
     with records.open("r", encoding="utf-8-sig", newline="") as source:
         rows = list(csv.DictReader(source))
     if not rows or not rows[0]:
@@ -971,7 +971,13 @@ def parse_records(records: Path) -> tuple[str, str]:
     status_key = next((key for key in rows[0] if key and key.strip().lower() == "status"), None)
     if status_key is None:
         raise AgentError("records.csv 缺少 status 欄位")
-    statuses = [str(row.get(status_key, "")).strip().upper() for row in rows]
+    # Real FCT archives contain software/configuration metadata rows whose
+    # status cell is intentionally empty.  They are not unfinished tests and
+    # must not prevent an otherwise complete PASS file from being accepted.
+    statuses = [
+        value for row in rows
+        if (value := str(row.get(status_key, "")).strip().upper())
+    ]
     if any(value == "FAIL" for value in statuses):
         return "FAIL", "status 欄位含 FAIL"
     if statuses and all(value == "PASS" for value in statuses):
@@ -1545,7 +1551,7 @@ def active_log_progress(log_file: Optional[Path], active_folder: Optional[Path] 
     if current:
         detail = f"測試中：{current[-80:]}"
     elif completed:
-        detail = "測試步驟持續更新，等待 unitest 最終結果"
+        detail = "測試步驟持續更新，等待最終結果"
     else:
         detail = "已偵測 active Log，等待測試步驟"
     return sn, detail
@@ -1560,7 +1566,7 @@ def fct_result_row_sort_key(key: str) -> tuple[int, int, str]:
 
 
 class FctAutoLogMonitor(threading.Thread):
-    """Discover active FCT slots, then wait for their final unitest records."""
+    """Discover active FCT slots, then wait for configured final records."""
     def __init__(self, csv_root: Path, log_root: Path, started_at: float,
                  on_log: Callable[[str], None], on_result: Callable[[TestResult], None],
                  stop: threading.Event, timeout_seconds: float = 0.0,
@@ -1652,7 +1658,7 @@ class FctAutoLogMonitor(threading.Thread):
             for slot, (folder, _, detail, sn) in tuple(self.active_seen.items()):
                 if slot not in active_now:
                     if sn:
-                        status, final_detail = "COMPLETING", "active 資料已結束，等待 unitest 最終結果"
+                        status, final_detail = "COMPLETING", f"active 資料已結束，等待 {self.csv_root.name} 最終結果"
                     else:
                         status, final_detail = "FAIL", "active 資料已結束，但未取得 MLB_SN／PrimaryIdentity；SN 讀取失敗"
                         self.active_missing_sn_finalized.add(slot)
@@ -1660,7 +1666,15 @@ class FctAutoLogMonitor(threading.Thread):
                     if self.active_last_emitted.get(slot) != emitted:
                         self.active_last_emitted[slot] = emitted
                         self.on_progress(FctActiveProgress(slot, sn, status, final_detail))
+            latched_sns = {
+                sn for _, _, _, sn in self.active_seen.values() if sn
+            }
             for stamp, sn, folder, records in fct_record_candidates(self.csv_root):
+                # A station may retain results from other cycles or create
+                # unrelated archives concurrently.  Only a barcode latched
+                # from this session's active/group0-slotN may finish a slot.
+                if sn not in latched_sns:
+                    continue
                 signature = file_signature(records)
                 if signature is None:
                     continue
@@ -1685,9 +1699,7 @@ class FctAutoLogMonitor(threading.Thread):
                     continue
                 if status == "UNKNOWN":
                     continue
-                log_file = self.log_root / sn / folder.name / "system" / "device.log"
-                if not log_file.is_file():
-                    log_file = folder / "system" / "device.log"
+                log_file = folder / "system" / "device.log"
                 self._render_log(log_file)
                 self.accepted[sn] = (stamp, records)
                 self.first_activity_seen = True
@@ -1710,7 +1722,7 @@ class FctAutoLogMonitor(threading.Thread):
                 self.completion_started_at = None
             if not self.first_activity_seen and not self.first_activity_warning_sent and now - self.started_at >= FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS:
                 self.first_activity_warning_sent = True
-                self.on_log(f"FCT 尚未偵測到新的 active Log 或 unitest 結果（已等待 {FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒）；持續監聽中，請確認 TE／治具是否已開始測試。")
+                self.on_log(f"FCT 尚未偵測到新的 active Log 或 {self.csv_root.name} 結果（已等待 {FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS} 秒）；持續監聽中，請確認 TE／治具是否已開始測試。")
             if deadline is not None and time.monotonic() >= deadline:
                 self.on_log("FCT 無 SN Log Demo 已達總保護逾時，停止監聽")
                 if self.on_timeout:

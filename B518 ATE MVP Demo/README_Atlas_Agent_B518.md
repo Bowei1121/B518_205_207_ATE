@@ -95,6 +95,8 @@ SN 後會鎖定至本輪結束，即使 active 清空資料也不會退回「SN 
 `COMPLETING`。無 SN FCT Demo 採三層等待：60 秒尚未偵測 active／新結果時
 提示尚未開始、任一 active Log 連續 120 秒未更新時標示 `STALLED`，只有「結果總保護逾時」才會真正停止。
 建議總保護設為 900 秒；測試期間 Log 仍持續更新時不會因 60／120 秒提示被中斷。
+現場 `unit-archive` 的 `records.csv` 可能包含 `status` 空白的軟體版本／設定資訊列；Agent 會忽略這些
+非測試列，只以非空白的測試 status 判定結果：任一 FAIL 為 FAIL，至少一筆且全部為 PASS 才是 PASS。
 Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
 設備 HMI 開始測試。Agent 僅接受此按鈕之後新建立或新完成的 Log，並在主畫面的「目前 JOB」表格即時顯示
 SN、位置與 PASS／FAIL。

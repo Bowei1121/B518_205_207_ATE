@@ -472,22 +472,29 @@ class AtlasAgentTests(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(results[1].sn, "SN001")
 
-    def test_fct_auto_log_demo_ignores_baseline_and_reports_new_sn(self):
+    def test_fct_auto_log_demo_ignores_baseline_and_reports_latched_active_sn(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory); active_root = root / "active"; final_root = root / "unit-archive"
+            active_root.mkdir(); final_root.mkdir()
             stamp = datetime.now().strftime("%Y%m%d_%H-%M-%S.demo")
-            old = root / "OLD" / stamp / "system"
+            old = final_root / "OLD" / stamp / "system"
             old.mkdir(parents=True)
             (old / "records.csv").write_text("case,status\na,PASS\n", encoding="utf-8")
             results, stop = [], threading.Event()
-            monitor = FctAutoLogMonitor(root, root, time.time(), lambda _: None, results.append, stop, timeout_seconds=1)
+            monitor = FctAutoLogMonitor(final_root, active_root, time.time(), lambda _: None,
+                                        results.append, stop, timeout_seconds=2)
             monitor.start()
-            current = root / "NEW001" / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            active = active_root / "group0-slot1" / "system"
+            active.mkdir(parents=True)
+            serial = "NEW00001"
+            (active / "records.csv").write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            time.sleep(.6)
+            current = final_root / serial / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
             current.mkdir(parents=True)
             (current / "device.log").write_text("TEST COMPLETE\n", encoding="utf-8")
             (current / "records.csv").write_text("case,status\na,FAIL\n", encoding="utf-8")
-            monitor.join(0.8); stop.set(); monitor.join(1)
-            self.assertEqual([(item.sn, item.status) for item in results], [("NEW001", "FAIL")])
+            monitor.join(1.2); stop.set(); monitor.join(1)
+            self.assertEqual([(item.sn, item.status) for item in results], [(serial, "FAIL")])
 
     def test_fct_active_records_reveal_barcode_without_using_timestamp_tokens(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -548,7 +555,11 @@ class AtlasAgentTests(unittest.TestCase):
             time.sleep(.35)
             final_system = archive_root / serial / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
             final_system.mkdir(parents=True)
-            (final_system / "records.csv").write_text("case,status\na,PASS\n", encoding="utf-8")
+            # Actual FCT records include metadata rows with empty statuses.
+            # Those rows must not keep a completed test at COMPLETING.
+            (final_system / "records.csv").write_text(
+                "attributeName,testName,status\nSwName,,\n,Fixture,PASS\n",
+                encoding="utf-8")
             (active_system / "device.log").unlink(missing_ok=True)
             active_system.rmdir(); active_system.parent.rmdir()
             monitor.join(2); stop.set(); monitor.join(1)
@@ -557,6 +568,22 @@ class AtlasAgentTests(unittest.TestCase):
             slot2 = [(item.sn, item.status) for item in progress if item.slot == 2]
             self.assertIn((serial, "COMPLETING"), slot2)
             self.assertNotIn(("", "FAIL"), slot2)
+
+    def test_records_ignores_empty_metadata_statuses_but_requires_test_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            records = Path(directory) / "records.csv"
+            records.write_text(
+                "attributeName,testName,status\nSwName,,\nSwVersion,,\n,Fixture,PASS\n,RF,PASS\n",
+                encoding="utf-8")
+            self.assertEqual(parse_records(records)[0], "PASS")
+            records.write_text(
+                "attributeName,testName,status\nSwName,,\n,Fixture,PASS\n,RF,FAIL\n",
+                encoding="utf-8")
+            self.assertEqual(parse_records(records)[0], "FAIL")
+            records.write_text(
+                "attributeName,testName,status\nSwName,,\nSwVersion,,\n",
+                encoding="utf-8")
+            self.assertEqual(parse_records(records)[0], "UNKNOWN")
 
     def test_fct_no_sn_slot_fails_only_after_active_is_removed(self):
         with tempfile.TemporaryDirectory() as directory:
