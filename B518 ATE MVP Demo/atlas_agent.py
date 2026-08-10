@@ -57,7 +57,9 @@ FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS = 60
 FCT_INACTIVITY_TIMEOUT_SECONDS = 120
 FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS = 900
 FCT_AUTO_COMPLETION_SETTLE_SECONDS = 3.0
-FCT_FINAL_TIMESTAMP_GRACE_SECONDS = 5.0
+# Final archives may be named from the station start time.  Allow a short
+# late-attach window while still rejecting files from an earlier cycle.
+FCT_FINAL_TIMESTAMP_GRACE_SECONDS = 30.0
 FCT_FINAL_DIRECTORY_NAMES = ("unitest", "unit-archive")
 BT_RESULT_FIELDS = ("SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime")
 # The Arduino TCP bridge deliberately transfers upper-computer payloads without

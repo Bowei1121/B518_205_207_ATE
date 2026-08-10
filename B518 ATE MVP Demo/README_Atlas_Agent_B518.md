@@ -100,7 +100,8 @@ Agent 不會因結果保護逾時停止；active 全數結束後才開始以設�
 非測試列，只以非空白的測試 status 判定結果：任一 FAIL 為 FAIL，至少一筆且全部為 PASS 才是 PASS。
 Agent 會立即記錄時間與既有檔案清單，然後關閉 Demo 視窗；TE 再將產品放入 FCT／BT 儀器並由治具或
 設備 HMI 開始測試。Agent 僅接受此按鈕之後新建立或新完成的 Log，並在主畫面的「目前 JOB」表格即時顯示
-SN、位置與 PASS／FAIL。
+SN、位置與 PASS／FAIL。若最終時間戳資料夾使用「測試開始時間」命名，允許比無 SN Demo 啟動時間早
+30 秒；超過 30 秒仍視為前一輪資料而略過。即使在此容差內，Demo 啟動前已存在且未變更的檔案仍不會被接受。
 
 - FCT 由 `active/group0-slotN` 取得實體 slot 與可信 SN，再從設定的 `unit-archive/<SN>/<時間戳>/system/records.csv` 取得 PASS／FAIL；active 全數結束且每個 slot 都有最終結果或無 SN FAIL 後，三秒穩定期自動結束本輪。
 - BT 從 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 取得結果；Thread0～3 顯示為 slot1～4。

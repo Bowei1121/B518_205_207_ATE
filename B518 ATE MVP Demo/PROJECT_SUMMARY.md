@@ -35,6 +35,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - active 消失後，已鎖定 SN 顯示 `COMPLETING` 並只在設定的 `unit-archive/<SN>/<timestamp>/system/records.csv` 尋找最終 PASS／FAIL；始終沒有可信 SN 才定案為「SN 讀取失敗／FAIL」。
 - 2026-08-10 現場 `COMPLETING` 不結束的根因已確認：真實 FCT `records.csv` 含有 status 空白的軟體／設定 metadata 列，舊判定要求所有列都為 PASS，因而把有效全 PASS 檔誤判為 UNKNOWN。現行判定忽略空白 status，只以非空白測試列判斷；並只接受本輪 active 已鎖定 SN 的最終檔，避免其他 cycle 汙染畫面。
 - 最終檔搜尋改為直接鎖定 `unit-archive/<已鎖定SN>`；每個 SN 都會記錄「找不到資料夾／尚未有時間戳 records.csv／舊資料／CSV 未完成」等原因。判斷新一輪資料以時間戳資料夾與啟動前檔案基準為主，不再因 Atlas 搬移時保留 `records.csv` 舊修改時間而拒絕有效結果。
+- `unit-archive` 的時間戳資料夾若採測試開始時間命名，允許比無 SN Demo 啟動時間早 30 秒；仍以啟動前檔案基準排除既有未變更資料，避免讀取前一輪結果。
 - 無 SN FCT Demo 的結果保護逾時只用於「尚未出現任何 active」與「active 已全數結束後等待 unit-archive」兩階段；active 仍存在時不會自動停止，以容納現場差異很大的測試時間。
 
 ## 2026-08-08 截圖與七槽 DFU 診斷更新
