@@ -222,3 +222,9 @@ git remote -v
 - 每次程式修改完成後，必須 commit 並 push 至 `origin/main`。
 - `release-hid-calibration/` 是本機打包輸出，不納入 Git（已加入 `.gitignore`）。
 - `dist-*/`、`.venv*/` 同樣排除在外。
+
+### 2026-08-11 FCT 最終結果畫面鎖定
+
+- 現場影片顯示 unit-archive 的 PASS／FAIL 曾短暫顯示後又被 active 的 `COMPLETING` 覆寫；原因是 active 目錄清理與 Tk 事件佇列可能在最終結果後仍送出舊進度事件。
+- FCT 監聽器現在會把已解析 archive 結果的實體 slot 標記為終態；該 slot 後續不再發出 `TESTING`／`COMPLETING`。
+- 主 HMI 也保留終態 slot 清單，忽略任何較晚到達的 FCT active 進度事件。沒有可信 SN 的 slot 仍獨立在 active 消失後顯示「SN 讀取失敗／FAIL」，不會影響其他 slot 已取得的 PASS／FAIL。

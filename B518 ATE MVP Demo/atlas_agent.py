@@ -1654,6 +1654,11 @@ class FctAutoLogMonitor(threading.Thread):
         self.active_log_signatures: dict[int, object] = {}
         self.active_sn_conflicts: set[tuple[int, str, str]] = set()
         self.active_missing_sn_finalized: set[int] = set()
+        # A final archive result is terminal for its physical slot.  The
+        # station may leave an active folder around briefly (or the UI queue
+        # may still contain a prior COMPLETING event), but neither must ever
+        # overwrite the PASS/FAIL that has already been accepted.
+        self.finalized_slots: set[int] = set()
         self.completion_started_at: Optional[float] = None
         self.first_activity_seen = False
         self.first_activity_warning_sent = False
@@ -1702,6 +1707,14 @@ class FctAutoLogMonitor(threading.Thread):
             )
         return candidates
 
+    def _slots_for_latched_sn(self, serial: str) -> list[int]:
+        """Return all physical slots that latched ``serial`` this session."""
+        expected = _normalised_sn(serial)
+        return [
+            slot for slot, (_, _, _, latched) in self.active_seen.items()
+            if _normalised_sn(latched) == expected
+        ]
+
     def run(self) -> None:
         self.on_log(
             f"FCT 無 SN Log Demo 已啟動；active：{self.log_root}；最終結果：{self.csv_root}；僅接受啟動後的新資料；"
@@ -1720,6 +1733,10 @@ class FctAutoLogMonitor(threading.Thread):
             monotonic_now = time.monotonic()
             active_now = fct_active_slot_folders(self.log_root)
             for slot, folder in active_now.items():
+                if slot in self.finalized_slots:
+                    # Keep the archive result terminal even when Atlas has
+                    # not yet removed its transient active folder.
+                    continue
                 log_file = newest_active_device_log(folder)
                 signature = active_folder_signature(folder, log_file)
                 if slot in self.active_baseline and slot not in self.active_seen and self.active_baseline[slot] == signature:
@@ -1750,6 +1767,8 @@ class FctAutoLogMonitor(threading.Thread):
                     self.active_last_emitted[slot] = emitted
                     self.on_progress(FctActiveProgress(slot, sn, status, detail))
             for slot, (folder, _, detail, sn) in tuple(self.active_seen.items()):
+                if slot in self.finalized_slots:
+                    continue
                 if slot not in active_now:
                     if sn:
                         status, final_detail = "COMPLETING", f"active 資料已結束，等待 {self.csv_root.name} 最終結果"
@@ -1834,7 +1853,15 @@ class FctAutoLogMonitor(threading.Thread):
                     log_file = records.parent / "device.log"
                     self._render_log(log_file)
                     self.accepted[latched_sn] = (stamp, records)
+                    finalized_slots = self._slots_for_latched_sn(latched_sn)
+                    self.finalized_slots.update(finalized_slots)
                     self.on_log(f"FCT 最終結果 {latched_sn}：已判讀 {records} → {status}")
+                    if finalized_slots:
+                        self.on_log(
+                            "FCT 最終結果已鎖定：" + ", ".join(
+                                f"slot{slot}={status}" for slot in finalized_slots
+                            )
+                        )
                     self.first_activity_seen = True
                     self.on_result(TestResult(latched_sn, status, folder, records, detail))
                     break
@@ -2474,6 +2501,7 @@ class AtlasAgentApp:
         self.auto_discovery_labels: dict[str, str] = {}
         self.auto_fct_active_slots: dict[int, str] = {}
         self.auto_fct_sn_slots: dict[str, int] = {}
+        self.auto_fct_final_slots: set[int] = set()
         self.result_rows: dict[str, tuple[str, str, str]] = {}
         self.result_row_order: list[str] = []
         self.result_summary = tk.StringVar(value="尚無測試中的 SN")
@@ -3143,6 +3171,7 @@ class AtlasAgentApp:
         self.auto_discovery_labels = {}
         self.auto_fct_active_slots = {}
         self.auto_fct_sn_slots = {}
+        self.auto_fct_final_slots = set()
         self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
         self.monitor_stop = threading.Event()
         if station == "FCT":
@@ -3950,6 +3979,7 @@ class AtlasAgentApp:
                     slot = self.auto_fct_sn_slots.get(result.sn)
                     if slot is not None:
                         label, key = f"slot{slot}", f"fct-active:{slot}"
+                        self.auto_fct_final_slots.add(slot)
                     else:
                         label = self.auto_discovery_labels.setdefault(result.sn, f"檢出 {len(self.auto_discovery_labels) + 1}")
                         key = "fct:" + result.sn
@@ -3960,6 +3990,12 @@ class AtlasAgentApp:
                     if batch_number != self.batch_number or not self.auto_log_demo:
                         continue
                     key = f"fct-active:{progress.slot}"
+                    if progress.slot in self.auto_fct_final_slots:
+                        self.append(
+                            f"FCT active slot{progress.slot}：略過 {progress.status}，"
+                            "此 slot 已鎖定最終 PASS／FAIL"
+                        )
+                        continue
                     self.auto_fct_active_slots[progress.slot] = key
                     if progress.sn:
                         self.auto_fct_sn_slots[progress.sn] = progress.slot

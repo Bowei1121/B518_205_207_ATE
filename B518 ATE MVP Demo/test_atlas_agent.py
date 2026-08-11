@@ -569,6 +569,37 @@ class AtlasAgentTests(unittest.TestCase):
             self.assertIn((serial, "COMPLETING"), slot2)
             self.assertNotIn(("", "FAIL"), slot2)
 
+    def test_fct_final_result_locks_slot_against_later_active_progress(self):
+        """A late TESTING/COMPLETING update must not erase final PASS/FAIL."""
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_system = active_root / "group0-slot1" / "system"
+            active_root.mkdir(parents=True); archive_root.mkdir()
+            serial = "HK5HUX6STQ800003YV"
+            progress, results, stop = [], [], threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, time.time(), lambda _: None,
+                                        results.append, stop, on_progress=progress.append)
+            monitor.start()
+            active_system.mkdir(parents=True)
+            (active_system / "records.csv").write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            time.sleep(.7)
+            final_system = archive_root / serial / datetime.now().strftime("%Y%m%d_%H-%M-%S.demo") / "system"
+            final_system.mkdir(parents=True)
+            (final_system / "records.csv").write_text("case,status\nRF,PASS\n", encoding="utf-8")
+            time.sleep(.8)
+            # Keep active alive and alter it after the archive is accepted.
+            # A non-terminal update must no longer be emitted for slot1.
+            (active_system / "device.log").write_text("StartTest: RF\n", encoding="utf-8")
+            time.sleep(.7)
+            stop.set(); monitor.join(1)
+            self.assertEqual([(item.sn, item.status) for item in results], [(serial, "PASS")])
+            self.assertIn(1, monitor.finalized_slots)
+            self.assertEqual(
+                [(item.status, item.sn) for item in progress if item.slot == 1][-1],
+                ("TESTING", serial),
+            )
+
     def test_fct_final_archive_accepts_new_timestamp_when_move_preserves_csv_mtime(self):
         """Atlas may preserve records.csv mtime when moving active data to unit-archive."""
         with tempfile.TemporaryDirectory() as directory:
