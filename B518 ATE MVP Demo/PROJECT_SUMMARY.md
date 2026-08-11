@@ -38,6 +38,11 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - `unit-archive` 的時間戳資料夾若採測試開始時間命名，允許比無 SN Demo 啟動時間早 30 秒；仍以啟動前檔案基準排除既有未變更資料，避免讀取前一輪結果。
 - 無 SN FCT Demo 的結果保護逾時只用於「尚未出現任何 active」與「active 已全數結束後等待 unit-archive」兩階段；active 仍存在時不會自動停止，以容納現場差異很大的測試時間。
 
+## 2026-08-11 FCT 無 SN Demo 時間容差
+
+- `unit-archive/<SN>/<timestamp>` 若以測試開始時間命名，允許其時間戳最多早於無 SN Demo 啟動時間 30 秒，以支援操作人員在測試開始後短暫延遲才啟動 Demo 的情況。
+- 超過 30 秒的時間戳仍視為前一輪資料而拒絕；Demo 啟動前已存在且未變更的 `records.csv` 也持續拒絕，避免時間容差造成舊結果誤配。
+
 ## 2026-08-08 截圖與七槽 DFU 診斷更新
 
 - Agent 執行期間暫時關閉 macOS 截圖浮動預覽；正常退出與下次啟動皆會復原原始設定。
