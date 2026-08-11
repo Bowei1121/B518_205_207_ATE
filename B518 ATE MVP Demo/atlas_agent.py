@@ -46,7 +46,14 @@ except ImportError:
     AppKit = None
 
 TITLE = f"Atlas Agent B518 ATE-V{VERSION}"
-TIME_FOLDER = re.compile(r"^(\d{8}_\d{2}-\d{2}-\d{2})(?:\.[^/]*)?$")
+# Atlas archives use both zero-padded and non-padded hours, for example
+# ``20220618_02-28-01.374-04426F`` and ``20220618_2-28-01.374-04426F``.
+# Keep the suffix deliberately permissive: its checksum/identifier format is
+# station-owned, while the timestamp prefix is the only part Agent relies on.
+TIME_FOLDER = re.compile(
+    r"^(?P<date>\d{8})_(?P<hour>\d{1,2})-(?P<minute>\d{2})-(?P<second>\d{2})"
+    r"(?P<suffix>(?:\.[^/]*)?)$"
+)
 BT_RESULT_FILENAME = re.compile(
     r"^\[Thread(?P<thread>[0-3])\]\[[^\]]+\]\[(?P<sn>[^\]]+)\]"
     r"\[(?P<status>PASSED|FAILED)\]\[(?P<started>\d{14})\]\.csv$"
@@ -921,6 +928,29 @@ def write_local_demo_results(csv_root: Path, sns: Iterable[str], station: str, f
     return records
 
 
+def parse_timestamp_folder(name: str) -> Optional[datetime]:
+    """Parse an Atlas result-folder timestamp without trusting file mtimes.
+
+    The station-owned suffix may contain a checksum, while legacy stations may
+    omit the leading zero from the hour.  Fractional seconds are retained so
+    that two archives created in the same second can still be ordered safely.
+    """
+    match = TIME_FOLDER.fullmatch(name)
+    if not match:
+        return None
+    suffix = match.group("suffix") or ""
+    fraction = re.match(r"\.(\d{1,6})(?:-|$)", suffix)
+    microsecond = int(fraction.group(1).ljust(6, "0")) if fraction else 0
+    try:
+        return datetime.strptime(
+            f"{match.group('date')}_{int(match.group('hour')):02d}-"
+            f"{match.group('minute')}-{match.group('second')}",
+            "%Y%m%d_%H-%M-%S",
+        ).replace(microsecond=microsecond)
+    except ValueError:
+        return None
+
+
 def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None, created_after: Optional[float] = None) -> Optional[Path]:
     """Return the latest valid timestamp directory nearest to current system time."""
     if not sn_dir.is_dir():
@@ -928,17 +958,15 @@ def nearest_timestamp_folder(sn_dir: Path, now: Optional[datetime] = None, creat
     now = now or datetime.now()
     choices: list[tuple[float, datetime, Path]] = []
     for child in sn_dir.iterdir():
-        match = TIME_FOLDER.match(child.name)
-        if not child.is_dir() or not match:
+        if not child.is_dir():
             continue
         try:
             if created_after is not None and child.stat().st_mtime <= created_after:
                 continue
         except OSError:
             continue
-        try:
-            stamp = datetime.strptime(match.group(1), "%Y%m%d_%H-%M-%S")
-        except ValueError:
+        stamp = parse_timestamp_folder(child.name)
+        if stamp is None:
             continue
         choices.append((abs((stamp - now).total_seconds()), stamp, child))
     # Nearest prevents stale rework selection; timestamp breaks same-distance ties.
@@ -1457,12 +1485,10 @@ def fct_record_candidates(root: Path, serial: str = "") -> list[tuple[datetime, 
         except OSError:
             continue
         for folder in folders:
-            match = TIME_FOLDER.match(folder.name)
-            if not folder.is_dir() or not match:
+            if not folder.is_dir():
                 continue
-            try:
-                stamp = datetime.strptime(match.group(1), "%Y%m%d_%H-%M-%S")
-            except ValueError:
+            stamp = parse_timestamp_folder(folder.name)
+            if stamp is None:
                 continue
             records = locate_records(folder)
             if records is not None:
@@ -1667,6 +1693,7 @@ class FctAutoLogMonitor(threading.Thread):
             return []
         if note:
             self._final_diagnostic(serial, note)
+        self._final_diagnostic(serial, f"搜尋 SN 路徑：{directory}")
         candidates = fct_record_candidates(self.csv_root, serial)
         if not candidates:
             self._final_diagnostic(
@@ -1682,7 +1709,8 @@ class FctAutoLogMonitor(threading.Thread):
             f"active Log {FCT_INACTIVITY_TIMEOUT_SECONDS} 秒未更新標示 STALLED；active 存在時不因總保護停止" +
             (f"；active 結束後等待最終結果保護逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定最終結果保護逾時")
         )
-        started_wall = datetime.fromtimestamp(self.started_at).replace(microsecond=0)
+        started_wall = datetime.fromtimestamp(self.started_at)
+        archive_threshold = started_wall - timedelta(seconds=FCT_FINAL_TIMESTAMP_GRACE_SECONDS)
         # The first deadline protects an accidentally started empty session.
         # Once active data exists, an instrument may legitimately run longer
         # than its nominal cycle, so this deadline must no longer stop it.
@@ -1743,7 +1771,15 @@ class FctAutoLogMonitor(threading.Thread):
 
             latched_sns = sorted({_normalised_sn(sn) for _, _, _, sn in self.active_seen.values() if sn})
             for latched_sn in latched_sns:
-                for stamp, archive_sn, folder, records in self._final_candidates_for_sn(latched_sn):
+                self._final_diagnostic(
+                    latched_sn,
+                    f"資料夾名稱時間門檻：{archive_threshold.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}"
+                    f"（Demo 啟動 {started_wall.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}，容差 {FCT_FINAL_TIMESTAMP_GRACE_SECONDS:g} 秒）",
+                )
+                # Select the newest folder-name timestamp first.  Do not use
+                # Finder/CSV modification times as a result-time proxy: Atlas
+                # can preserve those while it moves completed files.
+                for stamp, archive_sn, folder, records in reversed(self._final_candidates_for_sn(latched_sn)):
                     # A station may retain results from other cycles or create
                     # unrelated archives concurrently. Only the active-latched
                     # DUT directory can finish this session.
@@ -1752,12 +1788,19 @@ class FctAutoLogMonitor(threading.Thread):
                     signature = file_signature(records)
                     if signature is None:
                         continue
-                    # The timestamp directory and session baseline are reliable
-                    # proof of a new run. Do not reject a valid final archive only
-                    # because Atlas preserved records.csv mtime while moving it.
+                    # The timestamp directory and session baseline isolate this
+                    # Demo run.  The signature comparison is only used to tell
+                    # an unchanged pre-existing file from one whose contents
+                    # were completed after this Demo began; it is not a time
+                    # comparison and does not reject preserved CSV mtimes.
                     baseline_signature = self.baseline.get(records)
-                    if stamp < started_wall - timedelta(seconds=FCT_FINAL_TIMESTAMP_GRACE_SECONDS):
-                        self._final_diagnostic(latched_sn, f"略過舊時間戳資料夾：{folder.name}（早於本輪開始）")
+                    if stamp < archive_threshold:
+                        self._final_diagnostic(
+                            latched_sn,
+                            f"略過資料夾 {folder.name}：名稱時間 "
+                            f"{stamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} 早於門檻 "
+                            f"{archive_threshold.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}",
+                        )
                         continue
                     if baseline_signature == signature and records in self.baseline:
                         self._final_diagnostic(latched_sn, f"略過本輪開始前既有且未變更的 records.csv：{records}")
@@ -1766,7 +1809,10 @@ class FctAutoLogMonitor(threading.Thread):
                         self.final_progress_signatures[latched_sn] = signature
                         if self.final_deadline is not None:
                             self.final_deadline = monotonic_now + self.timeout_seconds
-                        self.on_log(f"FCT 最終結果 {latched_sn}：偵測到候選檔 {folder.name}/system/{records.name}，等待完整解析")
+                        self.on_log(
+                            f"FCT 最終結果 {latched_sn}：採用最新候選 {folder.name}/system/{records.name}；"
+                            f"資料夾時間 {stamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}；等待完整解析"
+                        )
                     old = self.accepted.get(latched_sn)
                     if old is not None and (stamp, records) <= old:
                         continue
@@ -1777,15 +1823,21 @@ class FctAutoLogMonitor(threading.Thread):
                         if warning not in self.warned:
                             self.warned.add(warning)
                             self.on_log(f"FCT {latched_sn}: CSV 尚未可讀取：{exc}")
-                        continue
+                        # This is the newest eligible archive. Waiting for it
+                        # is safer than falling back to an older rework result.
+                        break
                     if status == "UNKNOWN":
                         self._final_diagnostic(latched_sn, f"候選 CSV 尚無完整 PASS／FAIL：{records}")
-                        continue
-                    log_file = folder / "system" / "device.log"
+                        # Do not let an older archive win while the newest
+                        # folder is still being written by Atlas.
+                        break
+                    log_file = records.parent / "device.log"
                     self._render_log(log_file)
                     self.accepted[latched_sn] = (stamp, records)
+                    self.on_log(f"FCT 最終結果 {latched_sn}：已判讀 {records} → {status}")
                     self.first_activity_seen = True
                     self.on_result(TestResult(latched_sn, status, folder, records, detail))
+                    break
             all_terminal = active_finished and all(
                 (not sn and slot in self.active_missing_sn_finalized) or (bool(sn) and _normalised_sn(sn) in self.accepted)
                 for slot, (_, _, _, sn) in self.active_seen.items()

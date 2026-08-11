@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-10（Asia/Taipei）
+最後更新：2026-08-11（Asia/Taipei）
 
 ## 專案目的
 
@@ -42,6 +42,12 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 
 - `unit-archive/<SN>/<timestamp>` 若以測試開始時間命名，允許其時間戳最多早於無 SN Demo 啟動時間 30 秒，以支援操作人員在測試開始後短暫延遲才啟動 Demo 的情況。
 - 超過 30 秒的時間戳仍視為前一輪資料而拒絕；Demo 啟動前已存在且未變更的 `records.csv` 也持續拒絕，避免時間容差造成舊結果誤配。
+
+## 2026-08-11 FCT unit-archive 資料夾時間戳修正
+
+- FCT 最終結果只依 `unit-archive/<已鎖定SN>/<時間戳-ID>/system/records.csv`（亦相容 `record.csv`）的**資料夾名稱時間**選擇本輪檔案；不再以 Finder Date Modified、CSV mtime 或 CSV 內部時間拒絕結果。這符合 Atlas 搬移完成資料時可能保留舊檔案修改時間的行為。
+- 時間戳同時支援 `_HH-MM-SS` 與現場舊版系統使用的 `_H-MM-SS`，並保留毫秒，例如 `20220618_2-28-01.374-04426F`。系統年份即使停留在 2022 也不影響，因為儀器與 Agent 共用同一台 Mac 的系統時間。
+- 同一 SN 有多筆合格 archive 時一律優先解析資料夾名稱時間最新的一筆；最新檔仍在寫入或 UNKNOWN 時持續等候，不回退採用較舊重工結果。啟動前快照僅隔離未變更的舊檔，啟動後新增或內容完成的檔案可正常使用。
 
 ## 2026-08-08 截圖與七槽 DFU 診斷更新
 

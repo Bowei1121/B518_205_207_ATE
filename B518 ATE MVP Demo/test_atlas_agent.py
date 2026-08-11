@@ -11,7 +11,7 @@ from pathlib import Path
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_record_candidates, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, parse_timestamp_folder, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -597,6 +597,76 @@ class AtlasAgentTests(unittest.TestCase):
             monitor.join(2); stop.set(); monitor.join(1)
             self.assertTrue(completed.is_set())
             self.assertEqual([(item.sn, item.status) for item in results], [(serial, "PASS")])
+
+    def test_fct_archive_folder_timestamp_accepts_one_digit_hour_and_milliseconds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, serial = Path(directory), "HK5HUX6STQ800003YV"
+            for name, filename in (
+                ("20220618_2-28-01.374-04426F", "records.csv"),
+                ("20220618_02-28-02.005-any-station-id", "record.csv"),
+            ):
+                system = root / serial / name / "system"
+                system.mkdir(parents=True)
+                (system / filename).write_text("case,status\nRF,PASS\n", encoding="utf-8")
+            candidates = fct_record_candidates(root, serial)
+            self.assertEqual([item[0] for item in candidates], [
+                datetime(2022, 6, 18, 2, 28, 1, 374000),
+                datetime(2022, 6, 18, 2, 28, 2, 5000),
+            ])
+            self.assertEqual(parse_timestamp_folder("20220618_2-28-01.374-04426F"), candidates[0][0])
+
+    def test_fct_archive_timestamp_grace_uses_folder_name_not_csv_mtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_root.mkdir(parents=True); archive_root.mkdir()
+            serial = "HK5HUX6STQ800003YV"
+            started = datetime(2022, 6, 18, 2, 28, 31).timestamp()
+            results, completed, stop = [], threading.Event(), threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, started, lambda _: None,
+                                        results.append, stop, on_complete=completed.set,
+                                        completion_settle_seconds=0)
+            monitor.start()
+            active_system = active_root / "group0-slot1" / "system"
+            active_system.mkdir(parents=True)
+            (active_system / "records.csv").write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            time.sleep(.7)
+            final_system = archive_root / serial / "20220618_2-28-01.374-04426F" / "system"
+            final_system.mkdir(parents=True)
+            final_records = final_system / "records.csv"
+            final_records.write_text("case,status\nRF,PASS\n", encoding="utf-8")
+            os.utime(final_records, (1, 1))
+            (active_system / "records.csv").unlink(); active_system.rmdir(); active_system.parent.rmdir()
+            monitor.join(2); stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertEqual([(item.sn, item.status) for item in results], [(serial, "PASS")])
+
+    def test_fct_archive_rejects_folder_older_than_thirty_second_grace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atlas = Path(directory) / "Atlas"
+            active_root, archive_root = atlas / "active", atlas / "unit-archive"
+            active_root.mkdir(parents=True); archive_root.mkdir()
+            serial = "HK5HUX6STQ800003YV"
+            started_wall = datetime.now().replace(microsecond=0)
+            logs, results, stop = [], [], threading.Event()
+            monitor = FctAutoLogMonitor(archive_root, active_root, started_wall.timestamp(), logs.append,
+                                        results.append, stop, completion_settle_seconds=0)
+            monitor.start()
+            active_system = active_root / "group0-slot1" / "system"
+            active_system.mkdir(parents=True)
+            (active_system / "records.csv").write_text(f"MLB_SN,{serial}\n", encoding="utf-8")
+            time.sleep(.7)
+            old_time = started_wall - timedelta(seconds=31)
+            old_stamp = (
+                f"{old_time:%Y%m%d}_{old_time.hour}-{old_time:%M-%S}.000-old"
+            )
+            final_system = archive_root / serial / old_stamp / "system"
+            final_system.mkdir(parents=True)
+            (final_system / "records.csv").write_text("case,status\nRF,PASS\n", encoding="utf-8")
+            (active_system / "records.csv").unlink(); active_system.rmdir(); active_system.parent.rmdir()
+            time.sleep(.8); stop.set(); monitor.join(1)
+            self.assertEqual(results, [])
+            self.assertTrue(any("早於門檻" in message for message in logs))
 
     def test_fct_active_session_does_not_hit_total_timeout_while_active_exists(self):
         with tempfile.TemporaryDirectory() as directory:
