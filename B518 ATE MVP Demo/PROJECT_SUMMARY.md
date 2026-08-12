@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-11（Asia/Taipei）
+最後更新：2026-08-12（Asia/Taipei）
 
 ## 專案目的
 
@@ -10,6 +10,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 
 - 開發用 B482 模擬 HMI：`b482_demo_server.py` + `b482_demo_hmi.html`，開啟 `http://127.0.0.1:8080`。
 - Agent 支援手動條碼與 Demo slot 視窗：DFU 7 格、FCT 6 格、BT 4 格；正式上位機協定維持最多 4 slot。
+- DFU 7-slot Demo 支援掃碼槍輸入：每次掃碼尾端的 CR／Enter 只會將焦點循環移至下一個 Slot（slot7 回 slot1），不會啟動測試；跳到已有條碼的欄位時會全選原內容，方便重掃覆寫。流程只能由操作人員按下「開始流程」按鈕啟動。FCT／BT Demo 維持原本的 Enter 行為。
 - BT 以 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 監聽結果；Thread0～3 對應 slot1～4。
 - 現場可在 FCT／BT Demo 視窗啟動「無 SN Log Demo」：以按鈕時間與啟動前檔案基準排除舊資料，從新 Log 自動取得 SN 與結果，只顯示、不回傳 TCP RESULT。FCT 以 `active/group0-slotN` 固定顯示實體 slot；只信任 active records.csv 的 `MLB_SN`／`PrimaryIdentity`／`SerialNumber`，並以設定的 `unit-archive` 最終 records.csv 定案 PASS／FAIL。`NUMBER_SOF0` 代表 SN 讀取失敗，不是產品條碼。
 - 正式 DFU／BT 影像定位會暫時隱藏 Agent 視窗；FCT 不執行截圖或 HID，直接監聽 CSV。路徑選擇器會顯示隱藏資料夾（例如 `/vault`）。

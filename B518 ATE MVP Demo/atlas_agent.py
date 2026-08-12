@@ -490,6 +490,19 @@ def demo_slot_assignments(station: str, values: Iterable[str]) -> tuple[tuple[in
     return tuple(assignments)
 
 
+def next_dfu_demo_slot_index(current_index: int, slot_count: int = DEMO_SLOT_LIMITS["DFU"]) -> int:
+    """Return the next DFU Demo entry index, wrapping after the last slot.
+
+    Barcode scanners commonly append Return/CR after each scan.  The Demo
+    dialog treats that suffix as navigation only; it must never submit a job.
+    """
+    if slot_count < 1:
+        raise ValueError("slot_count 必須大於 0")
+    if not 0 <= current_index < slot_count:
+        raise ValueError("current_index 超出 DFU Demo slot 範圍")
+    return (current_index + 1) % slot_count
+
+
 def visual_control_search_region(station: str, profile: dict, window_rectangle: tuple[int, int, int, int],
                                  using_bundled_templates: bool) -> Optional[tuple[int, int, int, int]]:
     """Return the safe region in which a visual profile may search controls.
@@ -3225,9 +3238,25 @@ class AtlasAgentApp:
             ttk.Label(frame, text="手動 Slot 模式：請先在測試 HMI 手動確認 checkbox 狀態。", foreground="#a33").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
         first_row = 3
         entries = [tk.StringVar() for _ in range(slot_count)]
+        entry_widgets: list[ttk.Entry] = []
         for index, variable in enumerate(entries, start=1):
             ttk.Label(frame, text=f"Slot {index}").grid(row=first_row + index - 1, column=0, sticky="w", pady=3)
-            ttk.Entry(frame, textvariable=variable, width=48).grid(row=first_row + index - 1, column=1, sticky="ew", pady=3)
+            entry = ttk.Entry(frame, textvariable=variable, width=48)
+            entry.grid(row=first_row + index - 1, column=1, sticky="ew", pady=3)
+            entry_widgets.append(entry)
+
+        if station == "DFU":
+            def advance_after_scan(current_index: int, _event: tk.Event[tk.Misc] | None = None) -> str:
+                """Use scanner Return as cyclic Demo-field navigation, not submit."""
+                next_entry = entry_widgets[next_dfu_demo_slot_index(current_index, len(entry_widgets))]
+                next_entry.focus_set()
+                next_entry.selection_range(0, tk.END)
+                next_entry.icursor(tk.END)
+                return "break"
+
+            for index, entry in enumerate(entry_widgets):
+                entry.bind("<Return>", lambda event, index=index: advance_after_scan(index, event))
+                entry.bind("<KP_Enter>", lambda event, index=index: advance_after_scan(index, event))
 
         def start() -> None:
             try:
@@ -3254,7 +3283,11 @@ class AtlasAgentApp:
             ttk.Label(frame, text="無 SN Log Demo：先按此按鈕建立時間基準，再由 TE／治具開始測試；Agent 會自動從新 Log 顯示 SN 與結果。",
                       foreground="#555", wraplength=560).grid(row=first_row + slot_count + 1, column=0, columnspan=2,
                                                                sticky="w", pady=(8, 0))
-        dialog.bind("<Return>", lambda _: start())
+        # FCT/BT preserve the historical keyboard submit shortcut.  DFU uses
+        # scan-to-next navigation above so a scanner CR cannot start a test.
+        if station != "DFU":
+            dialog.bind("<Return>", lambda _: start())
+        dialog.after_idle(entry_widgets[0].focus_set)
 
     def start_local_demo(self, payload: str) -> None:
         validated = self.validate_batch(payload)
