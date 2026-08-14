@@ -14,6 +14,23 @@
 #include <HID.h>
 #include "firmware_version.h"
 
+// 0 builds the Mojave-compatibility/diagnostic variant: the report-ID-3
+// absolute pointer descriptor is not appended, so the composite HID interface
+// contains only the stock Mouse (ID 1) and Keyboard (ID 2) collections.
+// M_ABS/M_ABS_CLICK then answer ERR:ABS_UNSUPPORTED instead of moving.
+#ifndef B518_ENABLE_ABSOLUTE_POINTER
+#define B518_ENABLE_ABSOLUTE_POINTER 1
+#endif
+
+// The UNO R4 core's HID_::SendReport busy-waits on the previous report's
+// completion callback. A host that never arms the HID interrupt endpoint
+// (observed on macOS 10.14 with this composite device) would therefore hang
+// the sketch inside any Mouse/Keyboard call. These TinyUSB device-state
+// queries are exported by the core and let every HID handler refuse loudly
+// (ERR:HID_NOT_READY) instead of dying silently.
+extern "C" bool tud_hid_n_ready(uint8_t instance);
+extern "C" bool tud_mounted(void);
+
 // -------- Network configuration: change these values for the installation.
 const byte DEFAULT_IP[] = {192, 168, 1, 100};
 IPAddress ETHERNET_DNS(192, 168, 1, 1);
@@ -37,6 +54,7 @@ const uint8_t MOUSE_REPORT_DELAY_MS = 8;
 const int32_t HID_VALUE_MAX = 10000;
 const uint16_t ABSOLUTE_HID_MAX = 32767;
 
+#if B518_ENABLE_ABSOLUTE_POINTER
 // A second HID pointer report uses absolute, 16-bit X/Y values. macOS does
 // not apply regular mouse acceleration to an absolute pointing report, which
 // makes image-match coordinates repeatable. Report ID 1 remains the legacy
@@ -100,12 +118,16 @@ private:
   uint8_t buttons;
 
   void send() {
+    // Same protection as hidReady(): never enter the core's busy-wait when
+    // the host has not armed the endpoint.
+    if (!tud_mounted() || !tud_hid_n_ready(0)) return;
     AbsolutePointerReport report = {buttons, x, y};
     HID().SendReport(3, &report, sizeof(report));
   }
 };
 
 AbsolutePointer absolutePointer;
+#endif  // B518_ENABLE_ABSOLUTE_POINTER
 
 struct NetworkSettings {
   uint8_t magic0;
@@ -130,8 +152,26 @@ size_t usbFrameLength = 0;
 bool discardUsbFrame = false;
 bool firmwareFault = false;
 const char *lastFirmwareFault = "NONE";
+bool hidEverReady = false;
+bool startupHidReleaseDone = false;
 
 bool looksLikeControlCommand(size_t commandLength);
+
+bool hidReady() {
+  bool ready = tud_mounted() && tud_hid_n_ready(0);
+  if (ready) hidEverReady = true;
+  return ready;
+}
+
+// Refuse a HID command instead of entering the core's SendReport busy-wait
+// when the host never armed the interrupt endpoint. ACK has already been sent
+// by then, so the host log reads "ACK then ERR:HID_NOT_READY" — the explicit
+// signature of "macOS did not bind this HID interface".
+bool ensureHidReady() {
+  if (hidReady()) return true;
+  Serial.println("ERR:HID_NOT_READY");
+  return false;
+}
 
 void clearFirmwareFault() {
   firmwareFault = false;
@@ -160,12 +200,22 @@ void setup() {
 
   Keyboard.begin();
   Mouse.begin();
+  // The key-stuck protection release is deferred to loop(): calling
+  // Keyboard/Mouse before the host arms the HID endpoint would hang inside
+  // the core's SendReport busy-wait (observed on macOS 10.14), killing CDC
+  // before the first command could ever be answered.
+}
+
+void releaseStartupHidState() {
+  if (startupHidReleaseDone || !hidReady()) return;
+  startupHidReleaseDone = true;
   Keyboard.releaseAll();
   Mouse.release(MOUSE_LEFT);
   Mouse.release(MOUSE_RIGHT);
 }
 
 void loop() {
+  releaseStartupHidState();
   acceptTcpClient();
   bridgeTcpToUsb();
   bridgeUsbToTcpOrHid();
@@ -253,6 +303,7 @@ void processUsbFrame() {
     resetNetworkSettings();
   } else if (equalsCommand("M_RESET", commandLength)) {
     Serial.println("ACK:M_RESET");
+    if (!ensureHidReady()) return;
     mouseReset();
     Serial.println("OK:M_RESET");
   } else if (startsWith("M_MOVE:", commandLength)) {
@@ -262,14 +313,31 @@ void processUsbFrame() {
     Serial.println("ACK:M_DELTA");
     handleMouseDelta(commandLength);
   } else if (startsWith("M_ABS:", commandLength)) {
+    Serial.println("ACK:M_ABS");
+#if B518_ENABLE_ABSOLUTE_POINTER
     handleAbsoluteMove(commandLength);
+#else
+    // A capability response, deliberately not reportFirmwareError: the
+    // BT-compatibility build must not latch FAULT for an expected reply.
+    Serial.println("ERR:ABS_UNSUPPORTED");
+#endif
   } else if (equalsCommand("M_ABS_CLICK:L", commandLength)) {
+    Serial.println("ACK:M_ABS_CLICK:L");
+#if B518_ENABLE_ABSOLUTE_POINTER
+    if (!ensureHidReady()) return;
     absolutePointer.click(MOUSE_LEFT);
     Serial.println("OK:M_ABS_CLICK:L");
+#else
+    Serial.println("ERR:ABS_UNSUPPORTED");
+#endif
   } else if (equalsCommand("M_CLICK:L", commandLength)) {
+    Serial.println("ACK:M_CLICK:L");
+    if (!ensureHidReady()) return;
     mouseClick(MOUSE_LEFT);
     Serial.println("OK:M_CLICK:L");
   } else if (equalsCommand("M_CLICK:R", commandLength)) {
+    Serial.println("ACK:M_CLICK:R");
+    if (!ensureHidReady()) return;
     mouseClick(MOUSE_RIGHT);
     Serial.println("OK:M_CLICK:R");
   } else if (startsWith("M_SCROLL:", commandLength)) {
@@ -279,6 +347,7 @@ void processUsbFrame() {
   } else if (startsWith("K_WRITE:", commandLength)) {
     handleWrite(commandLength);
   } else if (equalsCommand("K_KEY:TAB", commandLength)) {
+    if (!ensureHidReady()) return;
     Keyboard.write(KEY_TAB);
     Keyboard.releaseAll();
     Serial.println("OK:K_KEY:TAB");
@@ -288,6 +357,7 @@ void processUsbFrame() {
     // station can use the existing Agent log to distinguish a command/frame
     // problem from a HID action that never returns to this firmware.
     Serial.println("ACK:SCREENSHOT");
+    if (!ensureHidReady()) return;
     takeScreenshot();
     Serial.println("OK:SCREENSHOT");
   } else if (looksLikeControlCommand(commandLength)) {
@@ -312,7 +382,15 @@ void printFirmwareInfo() {
   Serial.print(";FAULT=");
   Serial.print(firmwareFault ? 1 : 0);
   Serial.print(";LAST=");
-  Serial.println(lastFirmwareFault);
+  Serial.print(lastFirmwareFault);
+  // Diagnostics for the macOS 10.14 (BT) HID-binding investigation. Both host
+  // apps tolerate extra KEY=VALUE fields, so PROTO stays 1.
+  Serial.print(";ABS=");
+  Serial.print(B518_ENABLE_ABSOLUTE_POINTER ? 1 : 0);
+  Serial.print(";HID=");
+  Serial.print(hidReady() ? "READY" : "NOT_READY");
+  Serial.print(";HIDSEEN=");
+  Serial.println(hidEverReady ? 1 : 0);
 }
 
 bool looksLikeControlCommand(size_t commandLength) {
@@ -491,6 +569,7 @@ void handleMouseMove(size_t commandLength) {
     return;
   }
 
+  if (!ensureHidReady()) return;
   mouseReset();
   moveMouseBy(x, y);
   Serial.println("OK:M_MOVE");
@@ -511,10 +590,12 @@ void handleMouseDelta(size_t commandLength) {
 
   // Unlike M_MOVE, calibration deliberately does not reset to the origin.
   // This makes an arrow press a visible, repeatable relative HID movement.
+  if (!ensureHidReady()) return;
   moveMouseBy(x, y);
   Serial.println("OK:M_DELTA");
 }
 
+#if B518_ENABLE_ABSOLUTE_POINTER
 void handleAbsoluteMove(size_t commandLength) {
   const size_t prefixLength = strlen("M_ABS:");
   size_t comma = prefixLength;
@@ -529,9 +610,11 @@ void handleAbsoluteMove(size_t commandLength) {
     return;
   }
 
+  if (!ensureHidReady()) return;
   absolutePointer.move((uint16_t)x, (uint16_t)y);
   Serial.println("OK:M_ABS");
 }
+#endif  // B518_ENABLE_ABSOLUTE_POINTER
 
 void handleScroll(size_t commandLength) {
   const size_t prefixLength = strlen("M_SCROLL:");
@@ -540,6 +623,7 @@ void handleScroll(size_t commandLength) {
     reportFirmwareError("M_SCROLL_FORMAT", "M_SCROLL_FORMAT");
     return;
   }
+  if (!ensureHidReady()) return;
   while (amount != 0) {
     int8_t step = amount > 127 ? 127 : (amount < -127 ? -127 : (int8_t)amount);
     Mouse.move(0, 0, step);
@@ -557,6 +641,9 @@ void handleType(size_t commandLength) {
       return;
     }
   }
+  // ACK only after validation so a format error still yields a single ERR.
+  Serial.println("ACK:K_TYPE");
+  if (!ensureHidReady()) return;
   for (size_t i = prefixLength; i < commandLength; ++i) Keyboard.write(usbFrame[i]);
   Keyboard.write(KEY_RETURN);  // MVP barcode input always completes with Enter.
   Keyboard.releaseAll();
@@ -571,6 +658,9 @@ void handleWrite(size_t commandLength) {
       return;
     }
   }
+  // ACK only after validation so a format error still yields a single ERR.
+  Serial.println("ACK:K_WRITE");
+  if (!ensureHidReady()) return;
   for (size_t i = prefixLength; i < commandLength; ++i) Keyboard.write(usbFrame[i]);
   Keyboard.releaseAll();
   Serial.println("OK:K_WRITE");
