@@ -413,6 +413,15 @@ Arduino USB CDC 串口並連線。連線後工具會先發送 `GET_INFO`；只�
 左／上遞減，可直接與 OpenCV 疊圖顯示的匹配座標比較。座標只會在收到
 `OK:M_RESET` 或 `OK:M_DELTA` 後更新；僅完成 Serial 寫入或收到 `ERR:*` 不會改變座標。
 
+0.2.0 起工具加入 BT（macOS 10.14）分流診斷能力：指令逾時的狀態訊息會標明卡在哪一段
+——「未收到 ACK」代表 USB CDC 傳輸或 framing 問題；「ACK 後逾時」代表 HID 層（macOS
+未接受 report 或韌體卡死）。「絕對指標測試 (M_ABS)」區塊可直接測 report ID 3 絕對定位與
+`M_ABS_CLICK:L`；若韌體為停用絕對指標的 BT 相容版（回 `ERR:ABS_UNSUPPORTED`），按鈕會
+自動停用並註明相容模式，不視為故障。「一鍵診斷報告」會依序執行 GET_INFO → M_RESET →
+M_DELTA（右／左 30）→ K_WRITE → M_ABS → 結尾 GET_INFO 複測，並產出可複製的逐層判定
+報告：結尾 GET_INFO 逾時代表韌體已卡死在 HID 忙等中，需拔插 USB 並確認燒錄 1.1.0（含
+`ERR:HID_NOT_READY` readiness 防護）。鍵盤步驟會在目前聚焦處輸入 `HID_DIAG`。
+
 宿主開發 Mac 要建立本機驗證版，執行 `./build_hid_calibration_app.sh`。Catalina 10.15
 Intel VM 要建立 Mojave 10.14／Catalina 10.15 共用候選版，執行
 `./build_hid_calibration_macos10_14_common.sh`。兩個腳本都只安裝 PySerial 與 PyInstaller，不會為了

@@ -38,12 +38,12 @@ Mac Agent → Arduino 的 **USB CDC 控制指令固定使用 LF** (`\n`) 結尾�
 | `M_RESET\n` | 依序回覆 `ACK:M_RESET`、向左上盲移 3000 × 3000、`OK:M_RESET`。 |
 | `M_MOVE:X,Y\n` | 先歸零，再右移 X、下移 Y。X/Y 只能是 0 到 10000 的整數。 |
 | `M_DELTA:X,Y\n` | 依序回覆 `ACK:M_DELTA`、不歸零直接相對移動 X、Y steps、`OK:M_DELTA`；可使用負值。 |
-| `M_ABS:X,Y\n` | 使用第二個絕對 HID 指標移到 0–32767 的 X/Y；不受一般相對滑鼠加速度影響。 |
-| `M_ABS_CLICK:L\n` | 在目前絕對 HID 位置按左鍵；保留作為診斷指令。正式 Agent 的控制項定位使用 `M_ABS` 後以標準 `M_CLICK:L` 點擊；第一次視窗 focus 則完全使用標準 `M_RESET`／`M_MOVE`／`M_CLICK:L`。 |
-| `M_CLICK:L\n` / `M_CLICK:R\n` | 左／右鍵點擊。 |
+| `M_ABS:X,Y\n` | 依序回覆 `ACK:M_ABS`、使用第二個絕對 HID 指標移到 0–32767 的 X/Y、`OK:M_ABS`；不受一般相對滑鼠加速度影響。編譯時停用絕對指標的韌體改回 `ERR:ABS_UNSUPPORTED`（不鎖存 FAULT）。 |
+| `M_ABS_CLICK:L\n` | 依序回覆 `ACK:M_ABS_CLICK:L`、在目前絕對 HID 位置按左鍵、`OK:M_ABS_CLICK:L`；保留作為診斷指令。正式 Agent 的控制項定位使用 `M_ABS` 後以標準 `M_CLICK:L` 點擊；第一次視窗 focus 則完全使用標準 `M_RESET`／`M_MOVE`／`M_CLICK:L`。停用絕對指標的韌體回 `ERR:ABS_UNSUPPORTED`。 |
+| `M_CLICK:L\n` / `M_CLICK:R\n` | 依序回覆 `ACK:M_CLICK:L`（或 `:R`）、左／右鍵點擊、`OK:M_CLICK:L`（或 `:R`）。 |
 | `M_SCROLL:V\n` | 滾輪移動 V；正數向上、負數向下。 |
-| `K_TYPE:string\n` | 輸入可列印 ASCII 字串，然後送 Enter。 |
-| `K_WRITE:string\n` | 輸入可列印 ASCII 字串，不附加 Enter。 |
+| `K_TYPE:string\n` | 驗證通過後依序回覆 `ACK:K_TYPE`、輸入可列印 ASCII 字串並送 Enter、`OK:K_TYPE`。 |
+| `K_WRITE:string\n` | 驗證通過後依序回覆 `ACK:K_WRITE`、輸入可列印 ASCII 字串（不附加 Enter）、`OK:K_WRITE`。 |
 | `K_KEY:TAB\n` | 輸入一個 Tab，用於切換下一個 DFU 條碼欄位。 |
 | `K_SHORTCUT:SCREENSHOT\n` | 送出 macOS Command + Shift + 3，且前後均釋放按鍵。 |
 | `SCREENSHOT\n` | `K_SHORTCUT:SCREENSHOT` 的建議別名，供 Atlas Agent 使用；依序回覆 `ACK:SCREENSHOT` 與 `OK:SCREENSHOT`。 |
@@ -59,7 +59,17 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 
 `NET_SET` 接受單播 IPv4 host 位址，並排除 `x.x.x.0` 與 `x.x.x.255`。設定儲存在 UNO R4 的 EEPROM，斷電或重開機後仍會保留。網路設定指令只會在 Arduino 從 Mac 的 USB CDC 收到時被執行；TCP 收到的資料只會透明轉送到 USB，無法修改設定。
 
-`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標、`FAULT` 為異常鎖存狀態，`LAST` 為最後一個異常代碼。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。所有 `ACK:` 表示韌體已解析命令、即將呼叫對應 HID；`OK:` 表示 HID 函式已返回。兩者都不保證 macOS 一定接受 HID report。
+`INFO:` 的欄位含義：`PRODUCT` 為產品識別、`FW` 為韌體 SemVer、`PROTO` 為控制協定版本、`BOARD` 為燒錄時選擇的編譯目標、`FAULT` 為異常鎖存狀態，`LAST` 為最後一個異常代碼。1.1.0 起新增三個診斷欄位（協定仍為 PROTO=1，舊 App 會自動忽略）：`ABS` 為編譯時是否含絕對指標（1/0）、`HID` 為目前 macOS 是否已就緒接收 HID report（`READY`/`NOT_READY`）、`HIDSEEN` 為本次上電後 HID 是否曾就緒過（1/0）。`GET_INFO` 適合 Serial Monitor 人工查驗；Atlas Agent 為了相容舊板，僅送 `GET_IP`，再接收新版附帶的 `INFO:`。所有 `ACK:` 表示韌體已解析命令、即將呼叫對應 HID；`OK:` 表示 HID 函式已返回。兩者都不保證 macOS 一定接受 HID report。
+
+### macOS 10.14（BT 站）相容性與 HID readiness 防護
+
+UNO R4 核心的 `SendReport` 會等待前一筆 report 的完成回呼；若 macOS 從未綁定／啟用這個 HID 介面（BT 站 Mojave 10.14 曾觀察到此情況），任何 `Mouse.`／`Keyboard.` 呼叫都可能讓韌體卡死在忙等中，導致 CDC 完全斷訊、必須拔插 USB。1.1.0 起：
+
+- 每個 HID 指令在 ACK 後會先檢查 TinyUSB 裝置狀態（`tud_mounted` + `tud_hid_n_ready`）；未就緒時回 `ERR:HID_NOT_READY` 而不是卡死。現場看到「`ACK:` 之後緊接 `ERR:HID_NOT_READY`」即代表 macOS 未綁定 HID 介面，而非指令或線路問題。
+- 開機時的按鍵釋放保護（key-stuck protection）延後到 HID 首次就緒後才執行，避免 `setup()` 在未列舉完成前就卡死。
+- 殘餘風險：若 host 在一段移動序列「中途」停止輪詢 HID endpoint，核心內部的忙等仍可能卡住；此情況需拔插 USB。目前不引入 WDT。
+
+`B518_ENABLE_ABSOLUTE_POINTER` 編譯開關（預設 `1`）：設為 `0` 可產出「無絕對指標」的診斷／相容版——report descriptor 只含標準滑鼠（ID 1）與鍵盤（ID 2），用於二分 macOS 10.14 是否因附加的 report ID 3 絕對指標 collection 而拒絕整個 HID 介面。停用時 `M_ABS`／`M_ABS_CLICK:L` 回 `ERR:ABS_UNSUPPORTED`（能力回覆，不鎖存 FAULT、不點亮 LED），`GET_INFO` 回 `ABS=0`。在 Arduino IDE 可於 sketch 檔案第一行（所有 `#include` 之前）加入 `#define B518_ENABLE_ABSOLUTE_POINTER 0` 後再 Verify／Upload。
 
 ### 板載異常 LED
 

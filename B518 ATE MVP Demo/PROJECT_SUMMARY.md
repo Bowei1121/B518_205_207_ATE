@@ -1,6 +1,6 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-12（Asia/Taipei）
+最後更新：2026-08-14（Asia/Taipei）
 
 ## 專案目的
 
@@ -21,8 +21,11 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - USB CDC 本地控制命令使用 LF；TCP JOB／ACK／RESULT 保留 CRLF。
 - `ERR:TCP_NOT_CONNECTED` 是 TCP bridge 診斷，不能視為本地 HID 指令失敗。
 - 每次 HID 命令前會清除 App 端舊事件並 flush serial output；接收執行緒是唯一 serial reader，避免搶走第一筆回覆。
-- 最新韌體版本為 **1.0.4**：`M_RESET`、`M_DELTA`、`M_MOVE` 先回 `ACK`、HID 函式返回後回 `OK`。舊版 macOS 仍需實機驗證滑鼠相對位移與 M_RESET 是否能回 `OK`。
-- 若見 `ACK:M_RESET` 但沒有 `OK:M_RESET`，代表 CDC 指令已送達、問題在滑鼠 HID 執行／舊 OS 接受 report 的路徑；若完全無 ACK，則先查 CDC 傳輸或命令 framing。
+- 最新韌體版本為 **1.1.0**（BT_Claude 分支）：所有 HID 指令（含 `M_ABS`、`M_ABS_CLICK`、`M_CLICK`、`K_WRITE`、`K_TYPE`）先回 `ACK`、HID 函式返回後回 `OK`。
+- 若見 `ACK:M_RESET` 但沒有 `OK:M_RESET`，代表 CDC 指令已送達、問題在滑鼠 HID 執行／舊 OS 接受 report 的路徑；若完全無 ACK，則先查 CDC 傳輸或命令 framing。1.1.0 起多一種明確錯誤：`ACK:` 後緊接 `ERR:HID_NOT_READY` 代表 macOS 未綁定／未啟用 Arduino 的 HID 介面（BT／10.14 症狀），韌體不再卡死在 HID 忙等中。
+- BT（Mojave 10.14.5）現場症狀：CDC 正常（GET_INFO 通過、TX/RX 有紀錄）但滑鼠鍵盤皆不動——推斷為整個複合 HID 介面未被 Mojave 綁定，頭號嫌疑是附加的 report ID 3 絕對指標 collection。二分驗證流程與決策樹見 `B518_Arduino_MVP_Test/README.md` 的「macOS 10.14（BT 站）相容性」章節：`Arduino_mouse_move_via_usb.ino`（最簡版）→ 1.1.0 `B518_ENABLE_ABSOLUTE_POINTER 0`（無絕對指標）→ 1.1.0 完整版。
+- `GET_INFO` 於 1.1.0 新增 `ABS`／`HID`／`HIDSEEN` 診斷欄位；PROTO 維持 1，新舊 App 與韌體互相相容。
+- HID 校正工具 **0.2.0**：逾時訊息會標明卡在「未收到 ACK」（CDC／framing）或「ACK 後逾時」（HID 層）；新增「絕對指標測試 (M_ABS)」區塊（韌體回 `ERR:ABS_UNSUPPORTED` 時自動停用並顯示 BT 相容模式）與「一鍵診斷報告」（GET_INFO → M_RESET → M_DELTA → K_WRITE → M_ABS → 結尾 GET_INFO 複測；結尾複測逾時代表韌體已卡死、需拔插 USB 並燒錄 1.1.0）。
 
 ## 最近提交
 
