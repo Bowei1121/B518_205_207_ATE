@@ -12,8 +12,11 @@ from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
 from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_record_candidates, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, next_dfu_demo_slot_index, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, parse_timestamp_folder, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
-from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
-                             expected_success_reply, keyboard_write_command,
+from hid_calibration import (ABS_UNSUPPORTED_REPLY, ABSOLUTE_HID_MAX, HID_NOT_READY_REPLY,
+                             SCREENSHOT_COMMAND, absolute_command, command_stage_message,
+                             delta_command, diagnostic_plan, direction_delta,
+                             expected_success_reply, firmware_supports_absolute,
+                             format_diagnostic_report, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
                              parse_delay_seconds, parse_firmware_info, parse_step)
 
@@ -378,7 +381,99 @@ class AtlasAgentTests(unittest.TestCase):
         self.assertEqual(expected_success_reply("M_DELTA:-5,0"), "OK:M_DELTA")
         self.assertEqual(expected_success_reply("SCREENSHOT"), "OK:SCREENSHOT")
         self.assertEqual(expected_success_reply("K_WRITE:TEST"), "OK:K_WRITE")
+        self.assertEqual(expected_success_reply("M_ABS:100,200"), "OK:M_ABS")
+        self.assertEqual(expected_success_reply("M_ABS_CLICK:L"), "OK:M_ABS_CLICK:L")
+        self.assertEqual(expected_success_reply("M_CLICK:L"), "OK:M_CLICK:L")
         self.assertEqual(expected_success_reply("UNKNOWN"), "")
+
+    def test_calibration_absolute_command_validates_16_bit_hid_range(self):
+        self.assertEqual(absolute_command(0, 0), "M_ABS:0,0")
+        self.assertEqual(absolute_command("16384", "16384"), "M_ABS:16384,16384")
+        self.assertEqual(absolute_command(ABSOLUTE_HID_MAX, ABSOLUTE_HID_MAX),
+                         f"M_ABS:{ABSOLUTE_HID_MAX},{ABSOLUTE_HID_MAX}")
+        with self.assertRaises(ValueError):
+            absolute_command(-1, 0)
+        with self.assertRaises(ValueError):
+            absolute_command(0, ABSOLUTE_HID_MAX + 1)
+        with self.assertRaises(ValueError):
+            absolute_command("abc", 0)
+
+    def test_calibration_accepts_new_firmware_acks_as_optional_progress(self):
+        self.assertTrue(is_hid_progress_reply("M_ABS:100,200", "ACK:M_ABS"))
+        self.assertTrue(is_hid_progress_reply("M_ABS_CLICK:L", "ACK:M_ABS_CLICK:L"))
+        self.assertTrue(is_hid_progress_reply("M_CLICK:L", "ACK:M_CLICK:L"))
+        self.assertTrue(is_hid_progress_reply("K_WRITE:TEST", "ACK:K_WRITE"))
+        self.assertFalse(is_hid_progress_reply("M_ABS:100,200", "OK:M_ABS"))
+
+    def test_calibration_reads_absolute_capability_from_info_line(self):
+        base = "INFO:PRODUCT=B518_ARDUINO_MVP;FW=1.1.0;PROTO=1;BOARD=UNO_R4_MINIMA;FAULT=0;LAST=NONE"
+        self.assertTrue(firmware_supports_absolute(base + ";ABS=1;HID=READY;HIDSEEN=1"))
+        self.assertFalse(firmware_supports_absolute(base + ";ABS=0;HID=NOT_READY;HIDSEEN=0"))
+        self.assertIsNone(firmware_supports_absolute(base))
+        self.assertIsNone(firmware_supports_absolute("IP:192.168.1.100"))
+        # The identity parser must keep accepting the extended 1.1.0 line.
+        self.assertEqual(
+            parse_firmware_info(base + ";ABS=1;HID=READY;HIDSEEN=1"),
+            ("B518_ARDUINO_MVP", "1.1.0", 1, "UNO_R4_MINIMA"),
+        )
+
+    def test_calibration_stage_message_separates_cdc_from_hid_failures(self):
+        ok = command_stage_message("M_RESET", True, "ok")
+        self.assertIn("HID 已執行", ok)
+        acked_timeout = command_stage_message("M_RESET", True, "timeout")
+        self.assertIn("ACK", acked_timeout)
+        self.assertIn("未綁定 HID", acked_timeout)
+        silent_timeout = command_stage_message("M_RESET", False, "timeout")
+        self.assertIn("未收到 ACK", silent_timeout)
+        self.assertIn("framing", silent_timeout)
+        not_ready = command_stage_message("M_RESET", True, HID_NOT_READY_REPLY)
+        self.assertIn("macOS 未綁定", not_ready)
+        compat = command_stage_message("M_ABS:1,1", True, ABS_UNSUPPORTED_REPLY)
+        self.assertIn("非故障", compat)
+
+    def test_calibration_diagnostic_plan_ends_with_hang_detecting_get_info(self):
+        with_abs = diagnostic_plan(True)
+        without_abs = diagnostic_plan(False)
+        self.assertEqual(with_abs[0][1], "GET_INFO")
+        self.assertEqual(with_abs[-1][1], "GET_INFO")
+        self.assertEqual(without_abs[-1][1], "GET_INFO")
+        self.assertTrue(any(command.startswith("M_ABS:") for _, command in with_abs))
+        self.assertFalse(any(command.startswith("M_ABS:") for _, command in without_abs))
+        self.assertEqual(len(with_abs), len(without_abs) + 1)
+
+    def test_calibration_diagnostic_report_identifies_bt_hid_binding_failure(self):
+        results = [
+            ("CDC 通道", "GET_INFO", True, "ok"),
+            ("滑鼠歸位", "M_RESET", True, HID_NOT_READY_REPLY),
+            ("CDC 通道（結尾複測）", "GET_INFO", True, "ok"),
+        ]
+        report = format_diagnostic_report(results, "0.2.0")
+        self.assertIn("USB CDC 通道：正常", report)
+        self.assertIn("macOS 未綁定 HID 介面", report)
+        self.assertIn("未卡死", report)
+
+    def test_calibration_diagnostic_report_flags_hung_firmware(self):
+        results = [
+            ("CDC 通道", "GET_INFO", True, "ok"),
+            ("滑鼠歸位", "M_RESET", True, "timeout"),
+            ("CDC 通道（結尾複測）", "GET_INFO", False, "timeout"),
+        ]
+        report = format_diagnostic_report(results, "0.2.0")
+        self.assertIn("ACK 後逾時", report)
+        self.assertIn("卡死", report)
+        self.assertIn("1.1.0", report)
+
+    def test_calibration_diagnostic_report_treats_compat_mode_as_healthy(self):
+        results = [
+            ("CDC 通道", "GET_INFO", True, "ok"),
+            ("滑鼠歸位", "M_RESET", True, "ok"),
+            ("絕對定位（畫面中央）", "M_ABS:16383,16383", True, ABS_UNSUPPORTED_REPLY),
+            ("CDC 通道（結尾複測）", "GET_INFO", True, "ok"),
+        ]
+        report = format_diagnostic_report(results, "0.2.0")
+        self.assertIn("相對滑鼠／鍵盤 HID：正常", report)
+        self.assertIn("BT 相容模式", report)
+        self.assertIn("非故障", report)
 
     @unittest.skipIf(cv2 is None, "OpenCV is not installed")
     def test_match_overlay_is_saved_with_match_annotations(self):
