@@ -229,3 +229,9 @@ git remote -v
 - 現場影片顯示 unit-archive 的 PASS／FAIL 曾短暫顯示後又被 active 的 `COMPLETING` 覆寫；原因是 active 目錄清理與 Tk 事件佇列可能在最終結果後仍送出舊進度事件。
 - FCT 監聽器現在會把已解析 archive 結果的實體 slot 標記為終態；該 slot 後續不再發出 `TESTING`／`COMPLETING`。
 - 主 HMI 也保留終態 slot 清單，忽略任何較晚到達的 FCT active 進度事件。沒有可信 SN 的 slot 仍獨立在 active 消失後顯示「SN 讀取失敗／FAIL」，不會影響其他 slot 已取得的 PASS／FAIL。
+
+### 2026-08-21 BT HID 相容性與全域技能規劃
+
+- BT（macOS 10.14）與 DFU／FCT（macOS 10.15）的 Arduino HID 相容性問題採獨立 `BT-Codex` worktree 處理，避免影響既有可用的 `main` Demo 流程。
+- 現場資料顯示 Arduino 可被 macOS 列舉為 HID；待驗證重點是 Uno R4 複合 CDC／HID 裝置在舊版 macOS 的 HID report 傳送與完成回覆，而非單純 USB CDC 連線。
+- 已規劃將外部 `mattpocock/skills` 的工程技能以 `~/.codex/skills/` 全域安裝方式使用；建議採選擇性安裝，避免所有專案都被不相關的流程規則影響。
