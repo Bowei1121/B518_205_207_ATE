@@ -767,11 +767,80 @@ class AtlasAgentTests(unittest.TestCase):
             root = Path(directory)
             self.write_bt_result(root, 0, "OLD", "PASSED", started)
             results, stop = [], threading.Event()
-            monitor = BtAutoLogMonitor(root, started, lambda _: None, results.append, stop, timeout_seconds=1)
+            monitor = BtAutoLogMonitor(root, started, lambda _: None, results.append, stop,
+                                       timeout_seconds=1, stability_seconds=0)
             monitor.start()
             self.write_bt_result(root, 2, "NEW003", "FAILED", started)
             monitor.join(.8); stop.set(); monitor.join(1)
             self.assertEqual([(item.slot, item.sn, item.status) for item in results], [(3, "NEW003", "FAIL")])
+
+    def test_bt_auto_log_demo_accepts_strict_blank_failed_sn_as_notest(self):
+        """A BT exporter empty-SN FAILED CSV denotes an empty fixture, not FAIL."""
+        started = datetime(2025, 8, 20, 1, 18, 18)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self.write_bt_result(root, 3, "", "FAILED", started)
+            result = parse_bt_result_csv(path, allow_blank_sn=True)
+            self.assertEqual((result.slot, result.sn, result.status), (4, "", "NOTEST"))
+
+    def test_bt_auto_log_demo_waits_for_stable_file_and_completes_single_thread(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, completed, stop = [], threading.Event(), threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[3], timeout_seconds=2, stability_seconds=.02,
+                on_complete=completed.set,
+            )
+            monitor.start()
+            self.write_bt_result(root, 2, "BT003", "PASSED", started)
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results], [(3, "BT003", "PASS")])
+
+    def test_bt_auto_log_demo_locks_first_batch_timestamp_and_ignores_other_batch(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, stop = [], threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[1, 2], timeout_seconds=2, stability_seconds=.02,
+                on_review=lambda review: "continue",
+            )
+            monitor.start()
+            self.write_bt_result(root, 0, "BT001", "PASSED", started)
+            self.write_bt_result(root, 1, "OTHER002", "FAILED", started + timedelta(seconds=1))
+            time.sleep(.2)
+            self.write_bt_result(root, 1, "BT002", "FAILED", started)
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results],
+                             [(1, "BT001", "PASS"), (2, "BT002", "FAIL")])
+
+    def test_bt_auto_log_demo_can_switch_batch_only_after_manual_review(self):
+        """A different timestamp is never mixed in unless the operator chooses it."""
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, switched, stop = [], threading.Event(), threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[1, 2], timeout_seconds=2, stability_seconds=.02,
+                on_review=lambda review: "switch" if review.reason == "batch_conflict" else "keep",
+                on_batch_switch=switched.set,
+            )
+            monitor.start()
+            self.write_bt_result(root, 0, "OLD001", "PASSED", started)
+            self.write_bt_result(root, 0, "NEW001", "PASSED", started + timedelta(seconds=1))
+            self.write_bt_result(root, 1, "NEW002", "FAILED", started + timedelta(seconds=1))
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertTrue(switched.is_set())
+            self.assertEqual(sorted((item.slot, item.sn, item.status) for item in results[-2:]),
+                             [(1, "NEW001", "PASS"), (2, "NEW002", "FAIL")])
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:
