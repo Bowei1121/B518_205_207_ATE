@@ -13,7 +13,7 @@ Atlas Agent 透過 Arduino UNO R4 的 USB CDC 接收工作指令，並以 Arduin
 - DFU 7-slot Demo 支援掃碼槍輸入：每次掃碼尾端的 CR／Enter 只會將焦點循環移至下一個 Slot（slot7 回 slot1），不會啟動測試；跳到已有條碼的欄位時會全選原內容，方便重掃覆寫。流程只能由操作人員按下「開始流程」按鈕啟動。FCT／BT Demo 維持原本的 Enter 行為。
 - BT 以 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv` 監聽結果；Thread0～3 對應 slot1～4。
 - 現場可在 FCT／BT Demo 視窗啟動「無 SN Log Demo」：以按鈕時間與啟動前檔案基準排除舊資料，從新 Log 自動取得 SN 與結果，只顯示、不回傳 TCP RESULT。FCT 以 `active/group0-slotN` 固定顯示實體 slot；只信任 active records.csv 的 `MLB_SN`／`PrimaryIdentity`／`SerialNumber`，並以設定的 `unit-archive` 最終 records.csv 定案 PASS／FAIL。`NUMBER_SOF0` 代表 SN 讀取失敗，不是產品條碼。
-- 正式 DFU／BT 影像定位會暫時隱藏 Agent 視窗；FCT 不執行截圖或 HID，直接監聽 CSV。路徑選擇器會顯示隱藏資料夾（例如 `/vault`）。
+- 正式 DFU／BT 影像定位會暫時隱藏 Agent 視窗；FCT 不執行截圖或 HID，直接監聽 CSV。路徑選擇器由 Tk 管理，避免舊版 macOS 在右鍵或顯示設定時崩潰；隱藏項目以 `Command + Shift + .` 顯示，或直接貼上 `/vault/...` 路徑。
 - 現場 OS：BT 為 macOS Mojave 10.14.5；DFU／FCT 為 Catalina 10.15。共用候選 App 需在 Intel Catalina VM 以 10.14 deployment target 建置，並經兩種 OS 實機驗收。
 
 ## USB CDC／HID 現況

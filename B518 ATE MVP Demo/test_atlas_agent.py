@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import atlas_agent as atlas_agent_module
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
@@ -19,6 +20,43 @@ from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
 
 
 class AtlasAgentTests(unittest.TestCase):
+    def test_directory_chooser_does_not_enter_raw_appkit_modal_loop(self):
+        """Tk must own the modal loop; raw NSOpenPanel crashes old macOS."""
+        class FakeOpenPanel:
+            calls = 0
+
+            @classmethod
+            def openPanel(cls):
+                cls.calls += 1
+                raise AssertionError("raw AppKit modal dialog must not be opened")
+
+        original_appkit = atlas_agent_module.AppKit
+        original_askdirectory = atlas_agent_module.filedialog.askdirectory
+        captured = {}
+        parent = object()
+        atlas_agent_module.AppKit = type(
+            "FakeAppKit", (), {"NSOpenPanel": FakeOpenPanel}
+        )
+        atlas_agent_module.filedialog.askdirectory = (
+            lambda **options: captured.update(options) or "/vault/B482_RFTEST/TestData"
+        )
+        try:
+            with tempfile.TemporaryDirectory() as initial:
+                selected = atlas_agent_module.choose_directory_showing_hidden(
+                    initial, parent
+                )
+                selected_initial = captured["initialdir"]
+        finally:
+            atlas_agent_module.AppKit = original_appkit
+            atlas_agent_module.filedialog.askdirectory = original_askdirectory
+
+        self.assertEqual(FakeOpenPanel.calls, 0)
+        self.assertEqual(selected, "/vault/B482_RFTEST/TestData")
+        self.assertIs(captured["parent"], parent)
+        self.assertEqual(selected_initial, initial)
+        self.assertTrue(captured["mustexist"])
+        self.assertIn("Command + Shift + .", captured["title"])
+
     def test_dfu7_requires_exactly_seven_lower_slot_labels(self):
         anchors = [(index * 100, 300, 50, 20, .95) for index in range(6)]
         with self.assertRaises(DfuHmiNotReadyError) as raised:

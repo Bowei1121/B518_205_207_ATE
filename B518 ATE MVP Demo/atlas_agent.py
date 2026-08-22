@@ -325,30 +325,25 @@ def activate_atlas_window(window: tk.Misc, *, modal: bool = False) -> None:
 
 
 def choose_directory_showing_hidden(initial: str = "", parent: Optional[tk.Misc] = None) -> str:
-    """Choose a directory while exposing hidden paths such as /vault.
+    """Choose a directory using Tk's own macOS modal-dialog integration.
 
-    NSOpenPanel is available in the packaged macOS app.  The Tk fallback keeps
-    development environments usable; Finder's Command-Shift-. remains the
-    fallback way to reveal hidden files there.
+    Do not call ``NSOpenPanel.runModal`` through PyObjC from a Tk application.
+    On Mojave/Catalina, opening the panel's context menu or view options can
+    abort the native process while Tk owns another modal window.  A native
+    abort happens below Python, so ``try/except`` cannot recover from it.
+
+    Operators can press Command-Shift-. in this dialog to reveal hidden
+    folders.  A known hidden path may also be pasted directly into the setting
+    field before opening the chooser.
     """
-    if AppKit is not None:
-        try:
-            panel = AppKit.NSOpenPanel.openPanel()
-            panel.setCanChooseFiles_(False)
-            panel.setCanChooseDirectories_(True)
-            panel.setAllowsMultipleSelection_(False)
-            panel.setShowsHiddenFiles_(True)
-            path = Path(initial).expanduser()
-            if path.is_dir():
-                panel.setDirectoryURL_(AppKit.NSURL.fileURLWithPath_(str(path)))
-            if int(panel.runModal()) == int(AppKit.NSModalResponseOK):
-                url = panel.URL()
-                return str(url.path()) if url is not None else ""
-        except Exception:
-            # A native panel is an enhancement, never a reason to make the
-            # path settings unusable on a constrained/old macOS installation.
-            pass
-    return filedialog.askdirectory(parent=parent, initialdir=initial or str(Path.home()))
+    initial_path = Path(initial).expanduser() if initial else Path.home()
+    initial_directory = initial_path if initial_path.is_dir() else Path.home()
+    return filedialog.askdirectory(
+        parent=parent,
+        initialdir=str(initial_directory),
+        mustexist=True,
+        title="選擇資料夾（Command + Shift + . 可顯示隱藏項目）",
+    )
 
 
 @dataclass
