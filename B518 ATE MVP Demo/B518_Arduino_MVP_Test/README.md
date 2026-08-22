@@ -15,7 +15,7 @@ UNO R4 Minima／WiFi 韌體 MVP：USB CDC 指令控制鍵盤／滑鼠，並以 W
 
 ## 韌體版本與交付前檢核
 
-唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.4**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
+唯一版本來源是 `firmware_version.h`；目前版本為 **1.0.5**，協定版本為 **1**。每次修改可執行的韌體原始碼後，必須在提交前升版：
 
 ```bash
 cd "B518 ATE MVP Demo/B518_Arduino_MVP_Test"
@@ -64,6 +64,12 @@ DFU Agent 使用 `K_WRITE:<SN>` 加上 `K_KEY:TAB` 逐欄填入最多四個 SN�
 ### 板載異常 LED
 
 UNO R4 的 `LED_BUILTIN` 在韌體啟動時熄滅。出現訊框過長、控制指令無法識別、參數格式錯誤或非 ASCII 鍵盤資料時，LED 會常亮並保留異常，即使後續指令成功也不會自動熄滅。發送 `GET_INFO` 可查看 `FAULT=1;LAST=...`；處理完原因後發送 `DIAG_CLEAR` 或重新上電才會熄滅。單純尚未建立 TCP client 不視為韌體故障，不會因 `ERR:TCP_NOT_CONNECTED` 單獨點亮 LED。
+
+### macOS 10.14 BT 相容性候選（韌體 1.0.5）
+
+UNO R4 的 Renesas HID 函式庫在部分舊版 macOS 主機上可能無限等待 HID report-complete callback；表面現象是 USB CDC 已回 `ACK:`，但後續沒有 `OK:`，並且滑鼠／鍵盤無作用。1.0.5 保留原本 USB descriptor（CDC + 標準 Keyboard + 標準 Mouse），但控制指令改為直接使用 TinyUSB 的有界 report 傳送：若主機在 180 ms 內未讓 HID endpoint 就緒，回覆 `ERR:HID_NOT_READY` 並點亮板載 LED，而不阻塞 CDC。
+
+BT 實機驗證請依序進行：燒錄後拔插 Arduino USB、確認 macOS 已完成鍵盤辨識助理（若系統顯示）、開啟 Atlas HID Calibration B518 並重新連線；依序測試 `M_RESET`、`M_DELTA:5,0`、`SCREENSHOT`、`K_WRITE:BT-HID-TEST`。只有每一筆均收到對應 `OK:` 且實際作用，才可將此候選韌體納入 BT Agent 流程。若回覆 `ERR:HID_NOT_READY`，請保留 Calibration 通訊紀錄與 `GET_INFO` 的 `FAULT/LAST` 資訊，不要自動重送滑鼠或鍵盤指令。
 
 ## 多 Arduino 的 USB 配置流程
 

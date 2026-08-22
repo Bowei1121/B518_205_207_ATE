@@ -12,6 +12,7 @@
 #include <Keyboard.h>
 #include <Mouse.h>
 #include <HID.h>
+#include "tusb.h"
 #include "firmware_version.h"
 
 // -------- Network configuration: change these values for the installation.
@@ -34,6 +35,14 @@ const uint8_t MOUSE_STEP = 120;  // HID Mouse.move uses a signed 8-bit delta.
 // macOS releases. A neutral report wakes the endpoint before a relative move.
 const uint8_t MOUSE_WAKE_DELAY_MS = 10;
 const uint8_t MOUSE_REPORT_DELAY_MS = 8;
+// The Renesas HID library waits forever for tud_hid_report_complete_cb().
+// Older macOS hosts can leave that callback pending, which previously froze
+// the whole firmware after it had already printed ACK.  Send reports directly
+// through TinyUSB and bound the ready wait so USB CDC remains responsive.
+const uint16_t HID_READY_TIMEOUT_MS = 180;
+const uint8_t HID_MOUSE_REPORT_ID = 1;
+const uint8_t HID_KEYBOARD_REPORT_ID = 2;
+const uint8_t HID_ABSOLUTE_REPORT_ID = 3;
 const int32_t HID_VALUE_MAX = 10000;
 const uint16_t ABSOLUTE_HID_MAX = 32767;
 
@@ -79,6 +88,41 @@ struct __attribute__((packed)) AbsolutePointerReport {
   uint16_t y;
 };
 
+void reportFirmwareError(const char *errorText, const char *faultCode);
+
+bool waitForHidReady() {
+  const uint32_t startedAt = millis();
+  while (!tud_hid_ready()) {
+    if ((uint32_t)(millis() - startedAt) >= HID_READY_TIMEOUT_MS) {
+      reportFirmwareError("HID_NOT_READY", "HID_NOT_READY");
+      return false;
+    }
+    delay(1);
+  }
+  return true;
+}
+
+bool sendHidReport(uint8_t reportId, const void *data, uint16_t length) {
+  if (!waitForHidReady()) return false;
+  if (!tud_hid_report(reportId, data, length)) {
+    reportFirmwareError("HID_SEND_FAILED", "HID_SEND_FAILED");
+    return false;
+  }
+  return true;
+}
+
+bool sendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel = 0) {
+  // Keep the report layout used by the Arduino Mouse library: buttons, X, Y,
+  // wheel and pan. The final pan byte is deliberately neutral.
+  const uint8_t report[] = {buttons, (uint8_t)x, (uint8_t)y, (uint8_t)wheel, 0};
+  return sendHidReport(HID_MOUSE_REPORT_ID, report, sizeof(report));
+}
+
+bool sendKeyboardReport(uint8_t modifiers, uint8_t keycode) {
+  const uint8_t report[] = {modifiers, 0, keycode, 0, 0, 0, 0, 0};
+  return sendHidReport(HID_KEYBOARD_REPORT_ID, report, sizeof(report));
+}
+
 class AbsolutePointer {
 public:
   AbsolutePointer() : x(0), y(0), buttons(0) {
@@ -86,22 +130,25 @@ public:
     HID().AppendDescriptor(&node);
   }
 
-  void move(uint16_t newX, uint16_t newY) {
-    x = newX; y = newY; send();
+  bool move(uint16_t newX, uint16_t newY) {
+    x = newX; y = newY; return send();
   }
 
-  void click(uint8_t button) {
-    buttons = button; send(); delay(15);
-    buttons = 0; send();
+  bool click(uint8_t button) {
+    buttons = button;
+    if (!send()) return false;
+    delay(15);
+    buttons = 0;
+    return send();
   }
 
 private:
   uint16_t x, y;
   uint8_t buttons;
 
-  void send() {
+  bool send() {
     AbsolutePointerReport report = {buttons, x, y};
-    HID().SendReport(3, &report, sizeof(report));
+    return sendHidReport(HID_ABSOLUTE_REPORT_ID, &report, sizeof(report));
   }
 };
 
@@ -132,6 +179,11 @@ bool firmwareFault = false;
 const char *lastFirmwareFault = "NONE";
 
 bool looksLikeControlCommand(size_t commandLength);
+bool typeAsciiCharacter(char value);
+bool mouseReset();
+bool moveMouseBy(int32_t x, int32_t y);
+bool mouseClick(uint8_t button);
+bool takeScreenshot();
 
 void clearFirmwareFault() {
   firmwareFault = false;
@@ -160,9 +212,11 @@ void setup() {
 
   Keyboard.begin();
   Mouse.begin();
-  Keyboard.releaseAll();
-  Mouse.release(MOUSE_LEFT);
-  Mouse.release(MOUSE_RIGHT);
+  // Register the standard Arduino descriptors, but never use the library
+  // send methods below: they can block indefinitely on older macOS HID hosts.
+  // Do not send a neutral report during setup: on a cold USB enumeration the
+  // host is not ready yet, and treating that as a HID fault would light the
+  // diagnostic LED before the station has even opened the CDC port.
 }
 
 void loop() {
@@ -253,8 +307,7 @@ void processUsbFrame() {
     resetNetworkSettings();
   } else if (equalsCommand("M_RESET", commandLength)) {
     Serial.println("ACK:M_RESET");
-    mouseReset();
-    Serial.println("OK:M_RESET");
+    if (mouseReset()) Serial.println("OK:M_RESET");
   } else if (startsWith("M_MOVE:", commandLength)) {
     Serial.println("ACK:M_MOVE");
     handleMouseMove(commandLength);
@@ -264,14 +317,11 @@ void processUsbFrame() {
   } else if (startsWith("M_ABS:", commandLength)) {
     handleAbsoluteMove(commandLength);
   } else if (equalsCommand("M_ABS_CLICK:L", commandLength)) {
-    absolutePointer.click(MOUSE_LEFT);
-    Serial.println("OK:M_ABS_CLICK:L");
+    if (absolutePointer.click(MOUSE_LEFT)) Serial.println("OK:M_ABS_CLICK:L");
   } else if (equalsCommand("M_CLICK:L", commandLength)) {
-    mouseClick(MOUSE_LEFT);
-    Serial.println("OK:M_CLICK:L");
+    if (mouseClick(MOUSE_LEFT)) Serial.println("OK:M_CLICK:L");
   } else if (equalsCommand("M_CLICK:R", commandLength)) {
-    mouseClick(MOUSE_RIGHT);
-    Serial.println("OK:M_CLICK:R");
+    if (mouseClick(MOUSE_RIGHT)) Serial.println("OK:M_CLICK:R");
   } else if (startsWith("M_SCROLL:", commandLength)) {
     handleScroll(commandLength);
   } else if (startsWith("K_TYPE:", commandLength)) {
@@ -279,17 +329,14 @@ void processUsbFrame() {
   } else if (startsWith("K_WRITE:", commandLength)) {
     handleWrite(commandLength);
   } else if (equalsCommand("K_KEY:TAB", commandLength)) {
-    Keyboard.write(KEY_TAB);
-    Keyboard.releaseAll();
-    Serial.println("OK:K_KEY:TAB");
+    if (typeAsciiCharacter('\t')) Serial.println("OK:K_KEY:TAB");
   } else if (equalsCommand("SCREENSHOT", commandLength) ||
              equalsCommand("K_SHORTCUT:SCREENSHOT", commandLength)) {
     // Emit a diagnostic before touching the HID endpoint.  The closed Mac
     // station can use the existing Agent log to distinguish a command/frame
     // problem from a HID action that never returns to this firmware.
     Serial.println("ACK:SCREENSHOT");
-    takeScreenshot();
-    Serial.println("OK:SCREENSHOT");
+    if (takeScreenshot()) Serial.println("OK:SCREENSHOT");
   } else if (looksLikeControlCommand(commandLength)) {
     reportFirmwareError("UNKNOWN_CONTROL_COMMAND", "UNKNOWN_CONTROL_COMMAND");
   } else {
@@ -491,9 +538,7 @@ void handleMouseMove(size_t commandLength) {
     return;
   }
 
-  mouseReset();
-  moveMouseBy(x, y);
-  Serial.println("OK:M_MOVE");
+  if (mouseReset() && moveMouseBy(x, y)) Serial.println("OK:M_MOVE");
 }
 
 void handleMouseDelta(size_t commandLength) {
@@ -511,8 +556,7 @@ void handleMouseDelta(size_t commandLength) {
 
   // Unlike M_MOVE, calibration deliberately does not reset to the origin.
   // This makes an arrow press a visible, repeatable relative HID movement.
-  moveMouseBy(x, y);
-  Serial.println("OK:M_DELTA");
+  if (moveMouseBy(x, y)) Serial.println("OK:M_DELTA");
 }
 
 void handleAbsoluteMove(size_t commandLength) {
@@ -529,8 +573,7 @@ void handleAbsoluteMove(size_t commandLength) {
     return;
   }
 
-  absolutePointer.move((uint16_t)x, (uint16_t)y);
-  Serial.println("OK:M_ABS");
+  if (absolutePointer.move((uint16_t)x, (uint16_t)y)) Serial.println("OK:M_ABS");
 }
 
 void handleScroll(size_t commandLength) {
@@ -540,12 +583,60 @@ void handleScroll(size_t commandLength) {
     reportFirmwareError("M_SCROLL_FORMAT", "M_SCROLL_FORMAT");
     return;
   }
-  while (amount != 0) {
+  bool sent = true;
+  while (amount != 0 && sent) {
     int8_t step = amount > 127 ? 127 : (amount < -127 ? -127 : (int8_t)amount);
-    Mouse.move(0, 0, step);
+    sent = sendMouseReport(0, 0, 0, step);
     amount -= step;
   }
-  Serial.println("OK:M_SCROLL");
+  if (sent) Serial.println("OK:M_SCROLL");
+}
+
+bool typeAsciiCharacter(char value) {
+  uint8_t modifiers = 0;
+  uint8_t keycode = 0;
+  if (value >= 'a' && value <= 'z') {
+    keycode = 0x04 + (value - 'a');
+  } else if (value >= 'A' && value <= 'Z') {
+    modifiers = 0x02;  // left shift
+    keycode = 0x04 + (value - 'A');
+  } else if (value >= '1' && value <= '9') {
+    keycode = 0x1E + (value - '1');
+  } else if (value == '0') {
+    keycode = 0x27;
+  } else {
+    switch (value) {
+      case '\n': case '\r': keycode = 0x28; break; // Enter
+      case '\t': keycode = 0x2B; break;             // Tab
+      case ' ': keycode = 0x2C; break;
+      case '-': keycode = 0x2D; break;
+      case '_': modifiers = 0x02; keycode = 0x2D; break;
+      case '=': keycode = 0x2E; break;
+      case '+': modifiers = 0x02; keycode = 0x2E; break;
+      case '[': keycode = 0x2F; break;
+      case ']': keycode = 0x30; break;
+      case '\\': keycode = 0x31; break;
+      case ';': keycode = 0x33; break;
+      case ':': modifiers = 0x02; keycode = 0x33; break;
+      case '\'': keycode = 0x34; break;
+      case '"': modifiers = 0x02; keycode = 0x34; break;
+      case ',': keycode = 0x36; break;
+      case '<': modifiers = 0x02; keycode = 0x36; break;
+      case '.': keycode = 0x37; break;
+      case '>': modifiers = 0x02; keycode = 0x37; break;
+      case '/': keycode = 0x38; break;
+      case '?': modifiers = 0x02; keycode = 0x38; break;
+      case '!': modifiers = 0x02; keycode = 0x1E; break;
+      default:
+        reportFirmwareError("K_TYPE_ASCII_MAP", "K_TYPE_ASCII_MAP");
+        return false;
+    }
+  }
+  if (!sendKeyboardReport(modifiers, keycode)) return false;
+  delay(4);
+  if (!sendKeyboardReport(0, 0)) return false;
+  delay(4);
+  return true;
 }
 
 void handleType(size_t commandLength) {
@@ -557,9 +648,10 @@ void handleType(size_t commandLength) {
       return;
     }
   }
-  for (size_t i = prefixLength; i < commandLength; ++i) Keyboard.write(usbFrame[i]);
-  Keyboard.write(KEY_RETURN);  // MVP barcode input always completes with Enter.
-  Keyboard.releaseAll();
+  for (size_t i = prefixLength; i < commandLength; ++i) {
+    if (!typeAsciiCharacter(usbFrame[i])) return;
+  }
+  if (!typeAsciiCharacter('\n')) return;  // barcode input always completes with Enter.
   Serial.println("OK:K_TYPE");
 }
 
@@ -571,45 +663,46 @@ void handleWrite(size_t commandLength) {
       return;
     }
   }
-  for (size_t i = prefixLength; i < commandLength; ++i) Keyboard.write(usbFrame[i]);
-  Keyboard.releaseAll();
+  for (size_t i = prefixLength; i < commandLength; ++i) {
+    if (!typeAsciiCharacter(usbFrame[i])) return;
+  }
   Serial.println("OK:K_WRITE");
 }
 
-void mouseReset() {
-  moveMouseBy(-MOUSE_RESET_DISTANCE, -MOUSE_RESET_DISTANCE);
+bool mouseReset() {
+  return moveMouseBy(-MOUSE_RESET_DISTANCE, -MOUSE_RESET_DISTANCE);
 }
 
-void moveMouseBy(int32_t x, int32_t y) {
+bool moveMouseBy(int32_t x, int32_t y) {
   // Do not rely on the first non-zero relative report being accepted by an
   // older Intel macOS HID stack. This report is intentionally neutral.
-  Mouse.move(0, 0, 0);
+  if (!sendMouseReport(0, 0, 0)) return false;
   delay(MOUSE_WAKE_DELAY_MS);
   while (x != 0 || y != 0) {
     int8_t stepX = x > MOUSE_STEP ? MOUSE_STEP : (x < -MOUSE_STEP ? -MOUSE_STEP : (int8_t)x);
     int8_t stepY = y > MOUSE_STEP ? MOUSE_STEP : (y < -MOUSE_STEP ? -MOUSE_STEP : (int8_t)y);
-    Mouse.move(stepX, stepY, 0);
+    if (!sendMouseReport(0, stepX, stepY)) return false;
     x -= stepX;
     y -= stepY;
     delay(MOUSE_REPORT_DELAY_MS);  // lets older HID endpoints deliver each report
   }
+  return true;
 }
 
-void mouseClick(uint8_t button) {
-  Mouse.press(button);
+bool mouseClick(uint8_t button) {
+  if (!sendMouseReport(button, 0, 0)) return false;
   delay(15);
-  Mouse.release(button);
+  return sendMouseReport(0, 0, 0);
 }
 
-void takeScreenshot() {
-  // Always release at the beginning and end so a prior interrupted command
-  // cannot leave a modifier held down (key-stuck protection).
-  Keyboard.releaseAll();
-  Keyboard.press(KEY_LEFT_GUI);    // Command on macOS
-  Keyboard.press(KEY_LEFT_SHIFT);
-  Keyboard.press('3');
+bool takeScreenshot() {
+  // Command+Shift+3 as one boot-keyboard report; sending modifiers in
+  // separate reports is less reliable on Mojave's older HID stack.
+  const uint8_t modifier = 0x0A; // left GUI + left shift
+  const uint8_t key3 = 0x20;
+  if (!sendKeyboardReport(modifier, key3)) return false;
   delay(25);
-  Keyboard.releaseAll();
+  return sendKeyboardReport(0, 0);
 }
 
 void forwardUsbFrameToTcp() {

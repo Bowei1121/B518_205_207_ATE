@@ -229,3 +229,10 @@ git remote -v
 - 現場影片顯示 unit-archive 的 PASS／FAIL 曾短暫顯示後又被 active 的 `COMPLETING` 覆寫；原因是 active 目錄清理與 Tk 事件佇列可能在最終結果後仍送出舊進度事件。
 - FCT 監聽器現在會把已解析 archive 結果的實體 slot 標記為終態；該 slot 後續不再發出 `TESTING`／`COMPLETING`。
 - 主 HMI 也保留終態 slot 清單，忽略任何較晚到達的 FCT active 進度事件。沒有可信 SN 的 slot 仍獨立在 active 消失後顯示「SN 讀取失敗／FAIL」，不會影響其他 slot 已取得的 PASS／FAIL。
+
+## 2026-08-14 BT-Codex worktree：Mojave HID 相容性候選
+
+- 為不影響已可運作的 `main` Demo，BT HID 相容性工作放在獨立 worktree `Mac mini-BT-Codex` 的 `BT-Codex` branch；此分支專門驗證 macOS 10.14 BT、10.15 DFU／FCT 都可共用的 Arduino 韌體與 HID Calibration 工具。
+- 現場現象為 BT 的 USB CDC／`GET_INFO` 可通，但 HID 指令常只出現 `ACK:` 而無 `OK:`、滑鼠與鍵盤沒有作用；這表示命令已到 Arduino，問題位於舊 macOS 的 HID report 傳送／完成路徑，而非 TCP bridge 的 `ERR:TCP_NOT_CONNECTED`。
+- 韌體候選升至 **1.0.5**：保留 CDC + 標準 Keyboard + 標準 Mouse descriptor，改避開 UNO R4 Renesas `HID().SendReport()` 的無限等待，直接以 TinyUSB 有界傳送 report。HID endpoint 180 ms 內未就緒會回覆 `ERR:HID_NOT_READY`、點亮板載 LED 並維持 CDC 可用；不盲目重送會造成重複動作的滑鼠／鍵盤命令。
+- BT 實機驗收必須在拔插 Arduino USB 後，依序以 Calibration 測 `M_RESET`、`M_DELTA:5,0`、`SCREENSHOT`、`K_WRITE:BT-HID-TEST`；每一項皆須收到對應 `OK:` 且實際作用，才可視為可併回共用版的候選方案。
