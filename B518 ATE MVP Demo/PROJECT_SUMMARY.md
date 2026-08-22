@@ -236,3 +236,11 @@ git remote -v
 - 現場現象為 BT 的 USB CDC／`GET_INFO` 可通，但 HID 指令常只出現 `ACK:` 而無 `OK:`、滑鼠與鍵盤沒有作用；這表示命令已到 Arduino，問題位於舊 macOS 的 HID report 傳送／完成路徑，而非 TCP bridge 的 `ERR:TCP_NOT_CONNECTED`。
 - 韌體候選升至 **1.0.5**：保留 CDC + 標準 Keyboard + 標準 Mouse descriptor，改避開 UNO R4 Renesas `HID().SendReport()` 的無限等待，直接以 TinyUSB 有界傳送 report。HID endpoint 180 ms 內未就緒會回覆 `ERR:HID_NOT_READY`、點亮板載 LED 並維持 CDC 可用；不盲目重送會造成重複動作的滑鼠／鍵盤命令。
 - BT 實機驗收必須在拔插 Arduino USB 後，依序以 Calibration 測 `M_RESET`、`M_DELTA:5,0`、`SCREENSHOT`、`K_WRITE:BT-HID-TEST`；每一項皆須收到對應 `OK:` 且實際作用，才可視為可併回共用版的候選方案。
+
+## 2026-08-22 BT CaseInfo 即時進度監控
+
+- `BT-Codex` 的「無 SN Log Demo」維持純 Log 模式：不操作 BT HMI、不要求 Arduino／USB CDC，最終結果仍只信任 TestData `PASSED／FAILED` CSV。
+- 新增選填的 `BT CaseInfo 根路徑`，監聽 `thread1CaseInfo_YYYY-MM-DD.txt` 至 `thread4CaseInfo_YYYY-MM-DD.txt`；對應 `slot1～4` 與最終 CSV `Thread0～3`。
+- CaseInfo 用於即時顯示 `TESTING`、SN、當前測項及 `COMPLETING`。最終 CSV 一旦把 slot 定案為 `PASS／FAIL／NOTEST`，CaseInfo 後續記錄不得覆蓋結果。
+- 實機 CaseInfo 是當日累積檔，可能無換行連接多筆資料；程式改以內嵌時間戳分割，接受 Demo 開始前 30 秒內的近期尾端記錄。CaseInfo 缺少或解析失敗只通知並記 Log，不阻斷 CSV 監聽。
+- 現場提供的 `2026-08-21` thread1～4 CaseInfo 已用於驗證時間格式、`SNRead`、`CloseFixture` 與 thread／slot 對應。

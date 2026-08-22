@@ -4,13 +4,33 @@
 
 ## 使用方式
 
-1. 在 Atlas Agent 選擇 `BT`，並把「CSV／BT TestData 根路徑」設為 BT 的 `TestData` 根目錄。
+1. 在 Atlas Agent 選擇 `BT`，並設定：
+   - `BT TestData 根路徑`：BT 的 `TestData` 根目錄，作為最終 PASS／FAIL／NOTEST 來源。
+   - `BT CaseInfo 根路徑（選填）`：`thread1CaseInfo_YYYY-MM-DD.txt` 至 `thread4CaseInfo_YYYY-MM-DD.txt` 所在目錄，作為即時進度來源。若留空，會改在 TestData 根路徑及其當日子目錄尋找。
 2. 按 `Demo` 開啟視窗。
 3. 依展示需求按下：
    - `BT Log Start All`：監聽 Thread0～3（slot1～4）。
    - `BT Log Start 1`～`BT Log Start 4`：只監聽對應一個 Thread。
 4. Agent 顯示 `TESTING` 後，由 TE 在 BT 儀器 HMI 手動開始測試。
 5. Agent 收到穩定、有效的 CSV 後立即顯示結果；本模式只顯示於 Agent，**不送出 TCP ACK／RESULT／NACK**。
+
+## CaseInfo 即時進度
+
+CaseInfo 只補充「正在測什麼」，不參與最終良率判定。對應關係為：
+
+| CaseInfo | 結果 CSV | Agent |
+| --- | --- | --- |
+| thread1 | Thread0 | slot1 |
+| thread2 | Thread1 | slot2 |
+| thread3 | Thread2 | slot3 |
+| thread4 | Thread3 | slot4 |
+
+- `OpenFixture` 及中間測項：顯示 `TESTING`，並在 Log 顯示當前測項。
+- `SNRead`：鎖定並顯示該 thread 的實際 SN，狀態仍為 `TESTING`。
+- `CloseFixture`：顯示 `COMPLETING`，繼續等待最終 CSV。
+- 最終 CSV 到達後，覆蓋同一 slot 的進度，定案為 `PASS`、`FAIL` 或 `NOTEST`；後續 CaseInfo 不得覆蓋已定案結果。
+
+CaseInfo 為當日累積檔，而且實機可能把兩筆記錄連在同一行。Agent 會以每筆記錄內的時間戳切分，只接受監聽啟動前 30 秒以後的記錄。CaseInfo 不存在、正在寫入或格式異常時，Agent 只記錄警告，不會停止 TestData CSV 監聽。
 
 ## Thread、slot 與結果
 

@@ -58,6 +58,9 @@ BT_RESULT_FILENAME = re.compile(
     r"^\[Thread(?P<thread>[0-3])\]\[[^\]]+\]\[(?P<sn>[^\]]*)\]"
     r"\[(?P<status>PASSED|FAILED)\]\[(?P<started>\d{14})\]\.csv$"
 )
+BT_CASEINFO_TIMESTAMP = re.compile(
+    r"(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}:\d{3})"
+)
 BT_THREAD_TO_SLOT = {0: 1, 1: 2, 2: 3, 3: 4}
 BT_START_TOLERANCE_SECONDS = 30
 BT_CSV_STABILITY_SECONDS = 5.0
@@ -1922,6 +1925,59 @@ class BtCsvResult:
     path: Path
 
 
+@dataclass(frozen=True)
+class BtCaseInfoProgress:
+    """One supplemental, non-final BT CaseInfo progress event."""
+    slot: int
+    sn: str
+    status: str
+    step: str
+    occurred_at: datetime
+    path: Path
+
+
+def parse_bt_caseinfo_events(path: Path, slot: int) -> list[BtCaseInfoProgress]:
+    """Parse a cumulative CaseInfo file, including records without newlines.
+
+    CaseInfo is intentionally supplemental: it can expose the current item and
+    SN earlier than the final exporter CSV, but it never decides PASS/FAIL.
+    """
+    if slot not in BT_THREAD_TO_SLOT.values():
+        raise AgentError("BT CaseInfo slot 必須介於 1～4")
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError as exc:
+        raise AgentError(f"CaseInfo 無法讀取：{exc}") from exc
+    matches = list(BT_CASEINFO_TIMESTAMP.finditer(text))
+    if text.strip() and not matches:
+        raise AgentError("CaseInfo 找不到有效時間戳")
+    events: list[BtCaseInfoProgress] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        payload = text[match.end():end].lstrip(" \t,\r\n").strip()
+        try:
+            fields = next(csv.reader([payload]))
+            occurred_at = datetime.strptime(match.group("stamp"), "%Y-%m-%d %H:%M:%S:%f")
+        except (csv.Error, ValueError, StopIteration):
+            continue
+        fields = [item.strip() for item in fields]
+        if len(fields) < 5:
+            continue
+        if fields[0].casefold() == "no" and fields[2].casefold() == "testitem":
+            continue
+        step = fields[2] or fields[4]
+        if not step:
+            continue
+        sn = ""
+        if step.casefold() == "snread" and len(fields) > 5:
+            candidate = fields[5].strip()
+            if candidate.upper() not in ("", "NA", "N/A", "--"):
+                sn = candidate
+        status = "COMPLETING" if step.casefold() == "closefixture" else "TESTING"
+        events.append(BtCaseInfoProgress(slot, sn, status, step, occurred_at, path))
+    return events
+
+
 def parse_bt_result_filename(path: Path, *, allow_blank_sn: bool = False) -> tuple[int, str, str, datetime]:
     """Parse the BT exporter filename without trusting it as the sole source."""
     match = BT_RESULT_FILENAME.fullmatch(path.name)
@@ -2058,7 +2114,9 @@ class BtAutoLogMonitor(threading.Thread):
                  on_complete: Optional[Callable[[], None]] = None,
                  on_review: Optional[Callable[[BtAutoLogReview], Optional[str]]] = None,
                  on_batch_switch: Optional[Callable[[], None]] = None,
-                 on_issue: Optional[Callable[[str], None]] = None) -> None:
+                 on_issue: Optional[Callable[[str], None]] = None,
+                 caseinfo_root: Optional[Path] = None,
+                 on_progress: Optional[Callable[[BtCaseInfoProgress], None]] = None) -> None:
         super().__init__(daemon=True)
         self.csv_root, self.started_at = csv_root, started_at
         self.on_log, self.on_result, self.stop = on_log, on_result, stop
@@ -2068,12 +2126,18 @@ class BtAutoLogMonitor(threading.Thread):
             raise AgentError("BT 無 SN Demo slot 必須介於 1～4")
         self.stability_seconds, self.on_complete = max(0.0, stability_seconds), on_complete
         self.on_review, self.on_batch_switch, self.on_issue = on_review, on_batch_switch, on_issue
+        self.caseinfo_root = caseinfo_root or csv_root
+        self.on_progress = on_progress
         self.baseline = self._snapshot()
         self.accepted: dict[int, BtCsvResult] = {}
         self.locked_started_at: Optional[datetime] = None
         self.stable_since: dict[Path, tuple[tuple[int, int], float]] = {}
         self.reported_warnings: set[tuple[Path, str]] = set()
         self.reviewed_conflicts: set[tuple[Path, str]] = set()
+        self.caseinfo_signatures: dict[Path, tuple[int, int]] = {}
+        self.caseinfo_seen: set[tuple[Path, int, datetime, str, str]] = set()
+        self.caseinfo_last_display: dict[int, tuple[str, str, str]] = {}
+        self.caseinfo_latched_sn: dict[int, str] = {}
 
     def _snapshot(self) -> dict[Path, Optional[tuple[int, int]]]:
         paths: dict[Path, Optional[tuple[int, int]]] = {}
@@ -2087,10 +2151,70 @@ class BtAutoLogMonitor(threading.Thread):
         if key in self.reported_warnings:
             return
         self.reported_warnings.add(key)
-        message = f"BT CSV 尚未有效：{path.name} — {reason}"
+        category = "BT CaseInfo 異常" if reason.startswith("CaseInfo：") else "BT CSV 尚未有效"
+        message = f"{category}：{path.name} — {reason}"
         self.on_log(message)
         if self.on_issue:
             self.on_issue(message)
+
+    def _caseinfo_paths(self, now: Optional[datetime] = None) -> list[tuple[int, Path]]:
+        """Return possible daily CaseInfo paths for selected BT slots."""
+        current = now or datetime.now()
+        days = tuple(dict.fromkeys((self.started_at.date(), current.date())))
+        candidates: list[tuple[int, Path]] = []
+        seen: set[Path] = set()
+        for slot in self.slots:
+            for day in days:
+                name = f"thread{slot}CaseInfo_{day.isoformat()}.txt"
+                for path in (self.caseinfo_root / name, self.caseinfo_root / day.isoformat() / name):
+                    if path not in seen:
+                        seen.add(path)
+                        candidates.append((slot, path))
+        return candidates
+
+    def _poll_caseinfo(self, threshold: datetime) -> None:
+        """Emit supplemental progress without ever deciding a final result."""
+        if not self.on_progress:
+            return
+        for slot, path in self._caseinfo_paths():
+            signature = file_signature(path)
+            if signature is None or self.caseinfo_signatures.get(path) == signature:
+                continue
+            self.caseinfo_signatures[path] = signature
+            try:
+                events = parse_bt_caseinfo_events(path, slot)
+            except AgentError as exc:
+                self._notify_issue_once(path, f"CaseInfo：{exc}")
+                continue
+            for event in events:
+                if event.occurred_at < threshold or slot in self.accepted:
+                    continue
+                key = (path, slot, event.occurred_at, event.step, event.sn)
+                if key in self.caseinfo_seen:
+                    continue
+                self.caseinfo_seen.add(key)
+                if event.sn:
+                    previous_sn = self.caseinfo_latched_sn.get(slot)
+                    if previous_sn and previous_sn != event.sn:
+                        self._notify_issue_once(
+                            path,
+                            f"CaseInfo Thread{slot - 1} SN 衝突：保留 {previous_sn}，忽略 {event.sn}",
+                        )
+                    else:
+                        self.caseinfo_latched_sn[slot] = event.sn
+                display_sn = self.caseinfo_latched_sn.get(slot, "")
+                progress = BtCaseInfoProgress(
+                    slot, display_sn, event.status, event.step, event.occurred_at, event.path
+                )
+                display = (progress.sn, progress.status, progress.step)
+                if self.caseinfo_last_display.get(slot) == display:
+                    continue
+                self.caseinfo_last_display[slot] = display
+                self.on_log(
+                    f"BT CaseInfo：slot{slot} Thread{slot - 1} "
+                    f"{display_sn or 'SN 尚未取得'}，{progress.status}，步驟={progress.step}"
+                )
+                self.on_progress(progress)
 
     def _is_stable(self, path: Path, signature: tuple[int, int]) -> bool:
         now = time.monotonic()
@@ -2131,6 +2255,7 @@ class BtAutoLogMonitor(threading.Thread):
         threshold = self.started_at - timedelta(seconds=BT_START_TOLERANCE_SECONDS)
         deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
+            self._poll_caseinfo(threshold)
             for directory in bt_result_directories(self.csv_root, self.started_at):
                 for path in sorted(directory.glob("*.csv")):
                     signature = file_signature(path)
@@ -2631,6 +2756,7 @@ class AtlasAgentApp:
         self.reported_batch_number: Optional[int] = None
         self.auto_log_demo = False
         self.auto_bt_expected_slots: tuple[int, ...] = ()
+        self.auto_bt_final_slots: set[int] = set()
         self.auto_discovery_labels: dict[str, str] = {}
         self.auto_fct_active_slots: dict[int, str] = {}
         self.auto_fct_sn_slots: dict[str, int] = {}
@@ -2831,8 +2957,11 @@ class AtlasAgentApp:
         if self.station.get() == "FCT":
             path_fields = (("FCT 最終結果根路徑（unit-archive）：", csv_path),
                            ("FCT 即時 Log 根路徑（active）：", log_path))
+        elif self.station.get() == "BT":
+            path_fields = (("BT TestData 根路徑：", csv_path),
+                           ("BT CaseInfo 根路徑（選填）：", log_path))
         else:
-            path_fields = (("CSV／BT TestData 根路徑：", csv_path),
+            path_fields = (("CSV 根路徑：", csv_path),
                            ("Log 根路徑（選填）：", log_path))
         for row, (label, variable) in enumerate((*path_fields,
                                                    ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
@@ -3306,6 +3435,7 @@ class AtlasAgentApp:
         self.auto_fct_sn_slots = {}
         self.auto_fct_final_slots = set()
         self.auto_bt_expected_slots = ()
+        self.auto_bt_final_slots = set()
         if station == "BT":
             requested_slots = tuple(sorted(set(bt_slots or (1, 2, 3, 4))))
             if not requested_slots or any(slot not in (1, 2, 3, 4) for slot in requested_slots):
@@ -3338,6 +3468,14 @@ class AtlasAgentApp:
                                               lambda: self.events.put(("auto_fct_complete", batch_number)))
         else:
             started_at = datetime.now()
+            caseinfo_text = self.log_path.get().strip()
+            caseinfo_root = Path(caseinfo_text).expanduser() if caseinfo_text else root
+            if caseinfo_text and not caseinfo_root.is_dir():
+                self.append(
+                    f"WARN: BT CaseInfo 根路徑不存在：{caseinfo_root}；"
+                    "本輪仍會監聽最終 CSV，改在 BT TestData 根路徑尋找 CaseInfo。"
+                )
+                caseinfo_root = root
             self.monitor = BtAutoLogMonitor(root, started_at,
                                              lambda item: self.events.put(("log", item)),
                                              lambda result: self.events.put(("auto_bt_result", (batch_number, result))),
@@ -3347,12 +3485,16 @@ class AtlasAgentApp:
                                              on_complete=lambda: self.events.put(("auto_bt_complete", batch_number)),
                                              on_review=lambda review: self.events.put(("auto_bt_review", (batch_number, review))),
                                              on_batch_switch=lambda: self.events.put(("auto_bt_batch_switch", batch_number)),
-                                             on_issue=lambda message: self.events.put(("auto_bt_issue", (batch_number, message))))
+                                             on_issue=lambda message: self.events.put(("auto_bt_issue", (batch_number, message))),
+                                             caseinfo_root=caseinfo_root,
+                                             on_progress=lambda progress: self.events.put(
+                                                 ("auto_bt_progress", (batch_number, progress))))
         self.monitor.start()
         if station == "BT":
             self.append("BT 無 SN Log Demo 已啟動：只監聽 " +
                         "、".join(f"Thread{slot - 1}" for slot in self.auto_bt_expected_slots) +
-                        f"；請由 TE 在 BT HMI 手動開始測試；JOB={self.current_job_id}")
+                        f"；請由 TE 在 BT HMI 手動開始測試；CaseInfo={caseinfo_root}；"
+                        f"JOB={self.current_job_id}")
         else:
             self.append(f"無 SN Log Demo 已啟動：{station}；請由 TE／治具開始測試；JOB={self.current_job_id}")
         return True
@@ -4023,6 +4165,7 @@ class AtlasAgentApp:
                         if status == "TESTING":
                             self.set_result_row(key, label, sn, "STOPPED")
                 self.auto_bt_expected_slots = ()
+                self.auto_bt_final_slots = set()
             self.result_summary.set(f"無 SN Log Demo：{self.current_station} 已由人員停止")
             self.append("無 SN Log Demo 已停止；不會回傳 TCP RESULT。")
         for batch_number in tuple(self.visual_hidden_windows):
@@ -4238,16 +4381,32 @@ class AtlasAgentApp:
                     self.monitor = None
                     self.result_summary.set("無 SN Log Demo：FCT 本輪完成")
                     self.append("FCT 本輪完成；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
+                elif kind == "auto_bt_progress":
+                    batch_number, progress = item; assert isinstance(progress, BtCaseInfoProgress)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    if progress.slot in self.auto_bt_final_slots:
+                        continue
+                    key = f"bt:{progress.slot}"
+                    current_sn = self.result_rows.get(key, ("", "", ""))[1]
+                    display_sn = progress.sn or (current_sn if current_sn not in ("", "—") else "SN 讀取中")
+                    self.set_result_row(key, f"slot{progress.slot}", display_sn, progress.status)
+                    self.append(
+                        f"BT CaseInfo slot{progress.slot}：{display_sn} "
+                        f"{progress.status} — {progress.step}"
+                    )
                 elif kind == "auto_bt_result":
                     batch_number, result = item; assert isinstance(result, BtCsvResult)
                     if batch_number != self.batch_number or not self.auto_log_demo:
                         continue
+                    self.auto_bt_final_slots.add(result.slot)
                     display_sn = result.sn or "（空治具）"
                     self.append(f"slot{result.slot}：{display_sn} {result.status} — BT TestData")
                     self.set_result_row(f"bt:{result.slot}", f"slot{result.slot}", display_sn, result.status)
                 elif kind == "auto_bt_batch_switch":
                     if int(item) != self.batch_number or not self.auto_log_demo:
                         continue
+                    self.auto_bt_final_slots = set()
                     for slot in self.auto_bt_expected_slots:
                         self.set_result_row(f"bt:{slot}", f"slot{slot}", "—", "TESTING")
                     self.result_summary.set("無 SN Log Demo：BT TESTING，已改採人工覆核選擇的新批次")

@@ -22,6 +22,7 @@ class B482DemoServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             simulator = Simulator(root, duration_seconds=0)
+            monitor_started = datetime.now().replace(microsecond=0)
             state = simulator.start({
                 "station": "BT",
                 "assignments": [{"slot": 1, "sn": "BTDEMO001"}, {"slot": 3, "sn": "BTDEMO003"},
@@ -31,7 +32,7 @@ class B482DemoServerTests(unittest.TestCase):
             self.wait_for_completion(simulator, state["batch"])
             paths = sorted(root.glob("*/*/*.csv"))
             self.assertEqual([path.parent.name for path in paths], ["FAILED", "PASSED", "PASSED"])
-            results, errors = discover_bt_csv_results(root, [1, 3, 4], datetime.now())
+            results, errors = discover_bt_csv_results(root, [1, 3, 4], monitor_started)
             self.assertEqual(errors, [])
             self.assertEqual({slot: (item.sn, item.status) for slot, item in results.items()}, {
                 1: ("BTDEMO001", "PASS"), 3: ("BTDEMO003", "PASS"), 4: ("BTDEMO004", "FAIL"),
