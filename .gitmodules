@@ -1,3 +1,0 @@
-[submodule "JET_KVM"]
-	path = JET_KVM
-	url = https://github.com/jetkvm/kvm.git

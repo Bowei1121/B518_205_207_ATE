@@ -1,6 +1,13 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-12（Asia/Taipei）
+最後更新：2026-08-31（Asia/Taipei）
+
+## 2026-08-31 Repo 拆分
+
+- 本 repo 繼續承載 Arduino + Log 方案與既有 B518 ATE MVP Demo。
+- JetKVM + Log 已拆至獨立的 `B518_JetKVM_Log` repo；JetKVM 原始碼位於其 private mirror submodule，不再放在本 repo。
+- AppleAgent／ATA／Atlas 可行性研究已拆至獨立的 `B518_AppleAgent_Research` repo。
+- 兩方案的程式、Git 歷史與依賴不再共用工作樹；執行時的 TCP port、USB 裝置與 Log 目錄仍須由部署設定避免衝突。
 
 ## 專案目的
 
