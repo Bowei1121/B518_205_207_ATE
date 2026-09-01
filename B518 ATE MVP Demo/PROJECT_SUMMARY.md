@@ -266,3 +266,11 @@ git remote -v
 - CaseInfo 用於即時顯示 `TESTING`、SN、當前測項及 `COMPLETING`。最終 CSV 一旦把 slot 定案為 `PASS／FAIL／NOTEST`，CaseInfo 後續記錄不得覆蓋結果。
 - 實機 CaseInfo 是當日累積檔，可能無換行連接多筆資料；程式改以內嵌時間戳分割，接受 Demo 開始前 30 秒內的近期尾端記錄。CaseInfo 缺少或解析失敗只通知並記 Log，不阻斷 CSV 監聽。
 - 現場提供的 `2026-08-21` thread1～4 CaseInfo 已用於驗證時間格式、`SNRead`、`CloseFixture` 與 thread／slot 對應。
+
+## 2026-09-01 B518 Log Solution 獨立監控工作目錄
+
+- `main` 已整合 BT-Codex 的純 Log 監控與 CaseInfo 功能；保留 Atlas Agent 原有 Arduino、TCP 與影像流程，不併入 HID 韌體實驗。
+- 從整合後的 main 建立 `B518-Log-Solution` branch 與 `0. PC/B518 Log Solution` worktree。其內的 `B518 Log Solution` 是完全獨立的本機檔案監控 App：不引用 Arduino、USB CDC、TCP、OpenCV、截圖或鍵盤滑鼠控制。
+- 新 App 以每輪手動開始建立時間基準與啟動快照，監控 DFU（active → unitest）、FCT（active → unit-archive）與 BT（TestData／CaseInfo）。結果與來源檔案保存於 `~/Library/Application Support/B518LogSolution/sessions/`。
+- DFU／FCT 只從 `MLB_SN`、`PrimaryIdentity`、`SerialNumber` 信任 SN；FCT active 消失後，已鎖定 SN 轉 `COMPLETING` 查 archive，從未取得可信 SN 則定案「SN 讀取失敗／FAIL」。BT 以 Thread0～3 對應 slot1～4、鎖定首筆合格批次並於 CSV 穩定 5 秒後解析；批次衝突或重複 Thread 要求人工作出決定。
+- 獨立版共用 macOS 10.14／10.15 Intel 打包腳本只在實際 build 時遞增版本、產生 ad-hoc 簽章 ZIP 與 SHA-256；本次沒有執行 build。
