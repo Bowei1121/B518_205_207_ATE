@@ -1,6 +1,13 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-08-31（Asia/Taipei）
+最後更新：2026-09-01（Asia/Taipei）
+
+## 2026-09-01 Log Solution 整合規劃
+
+- `BT-Codex` worktree 的純 BT Log 監控與 CaseInfo 進度功能，將以語意移植整合回 `main`；不納入 Arduino／HID 韌體實驗，亦不重複已在 main 的資料夾選擇器修正。
+- 整合後從 main 建立 `B518-Log-Solution` branch 與 `B518 Log Solution` worktree。該專案是獨立、唯讀本機檔案的 DFU／FCT／BT Log 監控 App，不含 Arduino、USB CDC、TCP、OpenCV、螢幕截圖、鍵盤滑鼠或 KVM 控制。
+- 新 App 的每輪監控均由人員手動開始，以時間基準與啟動前快照排除舊資料；DFU／FCT 分別讀取 active 與 final archive，BT 使用 TestData CSV、CaseInfo 進度與 Thread0～3 對應 slot1～4。
+- 每輪結果與來源檔案將保存至 `~/Library/Application Support/B518LogSolution/sessions/`；實際 build 才遞增版本號。本輪僅修改原始碼、測試與建置腳本。
 
 ## 2026-08-31 Repo 拆分
 
