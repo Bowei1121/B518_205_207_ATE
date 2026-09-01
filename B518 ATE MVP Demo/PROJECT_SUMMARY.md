@@ -244,8 +244,25 @@ git remote -v
 - FCT 監聽器現在會把已解析 archive 結果的實體 slot 標記為終態；該 slot 後續不再發出 `TESTING`／`COMPLETING`。
 - 主 HMI 也保留終態 slot 清單，忽略任何較晚到達的 FCT active 進度事件。沒有可信 SN 的 slot 仍獨立在 active 消失後顯示「SN 讀取失敗／FAIL」，不會影響其他 slot 已取得的 PASS／FAIL。
 
+## 2026-08-14 BT-Codex worktree：Mojave HID 相容性候選
+
+- 為不影響已可運作的 `main` Demo，BT HID 相容性工作放在獨立 worktree `Mac mini-BT-Codex` 的 `BT-Codex` branch；此分支專門驗證 macOS 10.14 BT、10.15 DFU／FCT 都可共用的 Arduino 韌體與 HID Calibration 工具。
+- 現場現象為 BT 的 USB CDC／`GET_INFO` 可通，但 HID 指令常只出現 `ACK:` 而無 `OK:`、滑鼠與鍵盤沒有作用；這表示命令已到 Arduino，問題位於舊 macOS 的 HID report 傳送／完成路徑，而非 TCP bridge 的 `ERR:TCP_NOT_CONNECTED`。
+- 韌體候選升至 **1.0.5**：保留 CDC + 標準 Keyboard + 標準 Mouse descriptor，改避開 UNO R4 Renesas `HID().SendReport()` 的無限等待，直接以 TinyUSB 有界傳送 report。HID endpoint 180 ms 內未就緒會回覆 `ERR:HID_NOT_READY`、點亮板載 LED 並維持 CDC 可用；不盲目重送會造成重複動作的滑鼠／鍵盤命令。
+- BT 實機驗收必須在拔插 Arduino USB 後，依序以 Calibration 測 `M_RESET`、`M_DELTA:5,0`、`SCREENSHOT`、`K_WRITE:BT-HID-TEST`；每一項皆須收到對應 `OK:` 且實際作用，才可視為可併回共用版的候選方案。
+
+
+
 ### 2026-08-21 BT HID 相容性與全域技能規劃
 
 - BT（macOS 10.14）與 DFU／FCT（macOS 10.15）的 Arduino HID 相容性問題採獨立 `BT-Codex` worktree 處理，避免影響既有可用的 `main` Demo 流程。
 - 現場資料顯示 Arduino 可被 macOS 列舉為 HID；待驗證重點是 Uno R4 複合 CDC／HID 裝置在舊版 macOS 的 HID report 傳送與完成回覆，而非單純 USB CDC 連線。
 - 已規劃將外部 `mattpocock/skills` 的工程技能以 `~/.codex/skills/` 全域安裝方式使用；建議採選擇性安裝，避免所有專案都被不相關的流程規則影響。
+
+## 2026-08-22 BT CaseInfo 即時進度監控
+
+- `BT-Codex` 的「無 SN Log Demo」維持純 Log 模式：不操作 BT HMI、不要求 Arduino／USB CDC，最終結果仍只信任 TestData `PASSED／FAILED` CSV。
+- 新增選填的 `BT CaseInfo 根路徑`，監聽 `thread1CaseInfo_YYYY-MM-DD.txt` 至 `thread4CaseInfo_YYYY-MM-DD.txt`；對應 `slot1～4` 與最終 CSV `Thread0～3`。
+- CaseInfo 用於即時顯示 `TESTING`、SN、當前測項及 `COMPLETING`。最終 CSV 一旦把 slot 定案為 `PASS／FAIL／NOTEST`，CaseInfo 後續記錄不得覆蓋結果。
+- 實機 CaseInfo 是當日累積檔，可能無換行連接多筆資料；程式改以內嵌時間戳分割，接受 Demo 開始前 30 秒內的近期尾端記錄。CaseInfo 缺少或解析失敗只通知並記 Log，不阻斷 CSV 監聽。
+- 現場提供的 `2026-08-21` thread1～4 CaseInfo 已用於驗證時間格式、`SNRead`、`CloseFixture` 與 thread／slot 對應。

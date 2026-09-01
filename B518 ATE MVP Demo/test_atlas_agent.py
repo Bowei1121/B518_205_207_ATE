@@ -12,7 +12,7 @@ import atlas_agent as atlas_agent_module
 from bump_build_version import bump_version
 from bump_hid_calibration_version import bump_version as bump_hid_calibration_version
 from b482_demo_server import Simulator
-from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_record_candidates, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, next_dfu_demo_slot_index, opencv_image_to_tk_png, parse_barcodes, parse_bt_result_csv, parse_records, parse_test_command, parse_timestamp_folder, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
+from atlas_agent import AgentError, AtlasAgentApp, BtAutoLogMonitor, DfuHmiNotReadyError, FctAutoLogMonitor, FolderMonitor, MatchTraceRecorder, Preferences, ScreenshotPreviewGuard, SerialLineFramer, SerialLink, TestCommand, VISUAL_PROFILES, absolute_click_commands, absolute_hid_report_coordinate, activate_atlas_window, active_log_progress, arduino_info_reply, arduino_ip_reply, arduino_protocol_warning, batch_result_report, bounded_template_preview_size, bt_result_directories, checkbox_state_evidence_in_region, click_commands, cv2, delete_screenshots, demo_slot_assignments, dfu_enter_each_ok_once_commands, dfu7_checkbox_search_regions, dfu7_slot_anchor_order, dfu_ok_each_commands, dfu_tab_slot_commands, discover_bt_csv_results, fct_record_candidates, fct_result_row_sort_key, focused_template_capture_message, hid_coordinate, hid_success_reply, hide_visible_atlas_windows, incoming_barcode_payload, latest_screenshot, locate_records, nearest_timestamp_folder, new_screenshots, next_dfu_demo_slot_index, opencv_image_to_tk_png, parse_barcodes, parse_bt_caseinfo_events, parse_bt_result_csv, parse_records, parse_test_command, parse_timestamp_folder, png_retina_scale, preview_geometry, resolve_fct_monitor_roots, resolve_template_path, restore_atlas_windows, screenshot_scale_for_displays, should_send_start_failed_nack, slot_checkbox_states, template_center, template_match, template_matches, visual_control_search_region, wait_for_new_stable_screenshots, window_focus_commands, write_local_demo_results, write_match_overlay
 from hid_calibration import (SCREENSHOT_COMMAND, delta_command, direction_delta,
                              expected_success_reply, keyboard_write_command,
                              is_hid_progress_reply, is_nonfatal_cdc_diagnostic, normalize_cdc_line,
@@ -805,11 +805,146 @@ class AtlasAgentTests(unittest.TestCase):
             root = Path(directory)
             self.write_bt_result(root, 0, "OLD", "PASSED", started)
             results, stop = [], threading.Event()
-            monitor = BtAutoLogMonitor(root, started, lambda _: None, results.append, stop, timeout_seconds=1)
+            monitor = BtAutoLogMonitor(root, started, lambda _: None, results.append, stop,
+                                       timeout_seconds=1, stability_seconds=0)
             monitor.start()
             self.write_bt_result(root, 2, "NEW003", "FAILED", started)
             monitor.join(.8); stop.set(); monitor.join(1)
             self.assertEqual([(item.slot, item.sn, item.status) for item in results], [(3, "NEW003", "FAIL")])
+
+    def test_bt_auto_log_demo_accepts_strict_blank_failed_sn_as_notest(self):
+        """A BT exporter empty-SN FAILED CSV denotes an empty fixture, not FAIL."""
+        started = datetime(2025, 8, 20, 1, 18, 18)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self.write_bt_result(root, 3, "", "FAILED", started)
+            result = parse_bt_result_csv(path, allow_blank_sn=True)
+            self.assertEqual((result.slot, result.sn, result.status), (4, "", "NOTEST"))
+
+    def test_bt_caseinfo_parser_recovers_concatenated_records_and_sn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "thread1CaseInfo_2026-08-21.txt"
+            path.write_text(
+                "2026-08-21 14:48:06:999, no,testSuite,testItem,testParam,subTestItem,testValue,testResult\n"
+                "2026-08-21 14:48:07:031, 1,InitResource,OpenFixture,--,OpenFixture,,NA,NA,NA,,\n"
+                "2026-08-21 14:48:24:844, 4,InitResource,SNRead,--,SNRead,SN001,NA,NA,NA,Passed,11.93"
+                "2026-08-21 14:50:42:601, 175,UnInitResource,CloseFixture,--,CloseFixture,,NA,NA,NA,Passed\n",
+                encoding="utf-8",
+            )
+            events = parse_bt_caseinfo_events(path, 1)
+            self.assertEqual([(item.slot, item.step, item.sn, item.status) for item in events], [
+                (1, "OpenFixture", "", "TESTING"),
+                (1, "SNRead", "SN001", "TESTING"),
+                (1, "CloseFixture", "", "COMPLETING"),
+            ])
+
+    def test_bt_auto_log_demo_emits_caseinfo_progress_but_csv_is_final(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            progress, results, completed, stop = [], [], threading.Event(), threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[1], timeout_seconds=2, stability_seconds=0,
+                caseinfo_root=root, on_progress=progress.append,
+                on_complete=completed.set,
+            )
+            monitor.start()
+            caseinfo = root / f"thread1CaseInfo_{started:%Y-%m-%d}.txt"
+            caseinfo.write_text(
+                f"{started:%Y-%m-%d %H:%M:%S}:001, 1,InitResource,OpenFixture,--,OpenFixture,,NA,NA,NA,,\n"
+                f"{started:%Y-%m-%d %H:%M:%S}:100, 4,InitResource,SNRead,--,SNRead,BT001,NA,NA,NA,Passed\n"
+                f"{started:%Y-%m-%d %H:%M:%S}:200, 175,UnInitResource,CloseFixture,--,CloseFixture,,NA,NA,NA,Passed\n",
+                encoding="utf-8",
+            )
+            time.sleep(.25)
+            self.assertIn((1, "BT001", "TESTING"),
+                          [(item.slot, item.sn, item.status) for item in progress])
+            self.assertIn("COMPLETING", [item.status for item in progress])
+            self.assertEqual(results, [])
+            self.write_bt_result(root, 0, "BT001", "PASSED", started)
+            monitor.join(1.5); stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results],
+                             [(1, "BT001", "PASS")])
+
+    def test_bt_auto_log_demo_uses_recent_preexisting_caseinfo_tail(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event_time = started - timedelta(seconds=10)
+            (root / f"thread3CaseInfo_{event_time:%Y-%m-%d}.txt").write_text(
+                f"{event_time:%Y-%m-%d %H:%M:%S}:123, 4,InitResource,SNRead,--,SNRead,BT003,NA,NA,NA,Passed\n",
+                encoding="utf-8",
+            )
+            progress, stop = [], threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, lambda _: None, stop,
+                slots=[3], timeout_seconds=.35, stability_seconds=0,
+                caseinfo_root=root, on_progress=progress.append,
+            )
+            monitor.start(); monitor.join(1); stop.set(); monitor.join(1)
+            self.assertIn((3, "BT003", "TESTING"),
+                          [(item.slot, item.sn, item.status) for item in progress])
+
+    def test_bt_auto_log_demo_waits_for_stable_file_and_completes_single_thread(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, completed, stop = [], threading.Event(), threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[3], timeout_seconds=2, stability_seconds=.02,
+                on_complete=completed.set,
+            )
+            monitor.start()
+            self.write_bt_result(root, 2, "BT003", "PASSED", started)
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertTrue(completed.is_set())
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results], [(3, "BT003", "PASS")])
+
+    def test_bt_auto_log_demo_locks_first_batch_timestamp_and_ignores_other_batch(self):
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, stop = [], threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[1, 2], timeout_seconds=2, stability_seconds=.02,
+                on_review=lambda review: "continue",
+            )
+            monitor.start()
+            self.write_bt_result(root, 0, "BT001", "PASSED", started)
+            self.write_bt_result(root, 1, "OTHER002", "FAILED", started + timedelta(seconds=1))
+            time.sleep(.2)
+            self.write_bt_result(root, 1, "BT002", "FAILED", started)
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertEqual([(item.slot, item.sn, item.status) for item in results],
+                             [(1, "BT001", "PASS"), (2, "BT002", "FAIL")])
+
+    def test_bt_auto_log_demo_can_switch_batch_only_after_manual_review(self):
+        """A different timestamp is never mixed in unless the operator chooses it."""
+        started = datetime.now().replace(microsecond=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, switched, stop = [], threading.Event(), threading.Event()
+            monitor = BtAutoLogMonitor(
+                root, started, lambda _: None, results.append, stop,
+                slots=[1, 2], timeout_seconds=2, stability_seconds=.02,
+                on_review=lambda review: "switch" if review.reason == "batch_conflict" else "keep",
+                on_batch_switch=switched.set,
+            )
+            monitor.start()
+            self.write_bt_result(root, 0, "OLD001", "PASSED", started)
+            self.write_bt_result(root, 0, "NEW001", "PASSED", started + timedelta(seconds=1))
+            self.write_bt_result(root, 1, "NEW002", "FAILED", started + timedelta(seconds=1))
+            monitor.join(1.5)
+            stop.set(); monitor.join(1)
+            self.assertTrue(switched.is_set())
+            self.assertEqual(sorted((item.slot, item.sn, item.status) for item in results[-2:]),
+                             [(1, "NEW001", "PASS"), (2, "NEW002", "FAIL")])
 
     def test_local_demo_writes_atlas_files_for_four_sns(self):
         with tempfile.TemporaryDirectory() as directory:

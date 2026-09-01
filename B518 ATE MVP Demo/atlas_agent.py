@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Optional
@@ -55,11 +55,15 @@ TIME_FOLDER = re.compile(
     r"(?P<suffix>(?:\.[^/]*)?)$"
 )
 BT_RESULT_FILENAME = re.compile(
-    r"^\[Thread(?P<thread>[0-3])\]\[[^\]]+\]\[(?P<sn>[^\]]+)\]"
+    r"^\[Thread(?P<thread>[0-3])\]\[[^\]]+\]\[(?P<sn>[^\]]*)\]"
     r"\[(?P<status>PASSED|FAILED)\]\[(?P<started>\d{14})\]\.csv$"
 )
+BT_CASEINFO_TIMESTAMP = re.compile(
+    r"(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}:\d{3})"
+)
 BT_THREAD_TO_SLOT = {0: 1, 1: 2, 2: 3, 3: 4}
-BT_START_TOLERANCE_SECONDS = 2
+BT_START_TOLERANCE_SECONDS = 30
+BT_CSV_STABILITY_SECONDS = 5.0
 FCT_FIRST_ACTIVITY_TIMEOUT_SECONDS = 60
 FCT_INACTIVITY_TIMEOUT_SECONDS = 120
 FCT_AUTO_TOTAL_TIMEOUT_DEFAULT_SECONDS = 900
@@ -98,6 +102,7 @@ RESULT_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00",
     "NOTEST": "#f04bf1", "WAITING": "#d9d9d9", "TIMEOUT": "#f5a623",
     "START_FAILED": "#ff0000", "STALLED": "#f5a623", "COMPLETING": "#d9d9d9",
+    "STOPPED": "#d9d9d9",
 }
 
 
@@ -1915,14 +1920,67 @@ class BtCsvResult:
     path: Path
 
 
-def parse_bt_result_filename(path: Path) -> tuple[int, str, str, datetime]:
+@dataclass(frozen=True)
+class BtCaseInfoProgress:
+    """One supplemental, non-final BT CaseInfo progress event."""
+    slot: int
+    sn: str
+    status: str
+    step: str
+    occurred_at: datetime
+    path: Path
+
+
+def parse_bt_caseinfo_events(path: Path, slot: int) -> list[BtCaseInfoProgress]:
+    """Parse a cumulative CaseInfo file, including records without newlines.
+
+    CaseInfo is intentionally supplemental: it can expose the current item and
+    SN earlier than the final exporter CSV, but it never decides PASS/FAIL.
+    """
+    if slot not in BT_THREAD_TO_SLOT.values():
+        raise AgentError("BT CaseInfo slot 必須介於 1～4")
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError as exc:
+        raise AgentError(f"CaseInfo 無法讀取：{exc}") from exc
+    matches = list(BT_CASEINFO_TIMESTAMP.finditer(text))
+    if text.strip() and not matches:
+        raise AgentError("CaseInfo 找不到有效時間戳")
+    events: list[BtCaseInfoProgress] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        payload = text[match.end():end].lstrip(" \t,\r\n").strip()
+        try:
+            fields = next(csv.reader([payload]))
+            occurred_at = datetime.strptime(match.group("stamp"), "%Y-%m-%d %H:%M:%S:%f")
+        except (csv.Error, ValueError, StopIteration):
+            continue
+        fields = [item.strip() for item in fields]
+        if len(fields) < 5:
+            continue
+        if fields[0].casefold() == "no" and fields[2].casefold() == "testitem":
+            continue
+        step = fields[2] or fields[4]
+        if not step:
+            continue
+        sn = ""
+        if step.casefold() == "snread" and len(fields) > 5:
+            candidate = fields[5].strip()
+            if candidate.upper() not in ("", "NA", "N/A", "--"):
+                sn = candidate
+        status = "COMPLETING" if step.casefold() == "closefixture" else "TESTING"
+        events.append(BtCaseInfoProgress(slot, sn, status, step, occurred_at, path))
+    return events
+
+
+def parse_bt_result_filename(path: Path, *, allow_blank_sn: bool = False) -> tuple[int, str, str, datetime]:
     """Parse the BT exporter filename without trusting it as the sole source."""
     match = BT_RESULT_FILENAME.fullmatch(path.name)
     if not match:
         raise AgentError("檔名不符合 BT 結果格式")
     thread = int(match.group("thread"))
     sn = match.group("sn").strip()
-    if not sn:
+    if not sn and not allow_blank_sn:
         raise AgentError("BT 檔名 SN 為空白")
     try:
         started_at = datetime.strptime(match.group("started"), "%Y%m%d%H%M%S")
@@ -1931,9 +1989,10 @@ def parse_bt_result_filename(path: Path) -> tuple[int, str, str, datetime]:
     return BT_THREAD_TO_SLOT[thread], sn, {"PASSED": "PASS", "FAILED": "FAIL"}[match.group("status")], started_at
 
 
-def parse_bt_result_csv(path: Path) -> BtCsvResult:
+def parse_bt_result_csv(path: Path, *, allow_blank_sn: bool = False) -> BtCsvResult:
     """Accept a BT CSV only when its path, filename and row agree completely."""
-    slot, filename_sn, filename_status, filename_started = parse_bt_result_filename(path)
+    slot, filename_sn, filename_status, filename_started = parse_bt_result_filename(
+        path, allow_blank_sn=allow_blank_sn)
     folder_status = {"PASSED": "PASS", "FAILED": "FAIL"}.get(path.parent.name.upper())
     if folder_status != filename_status:
         raise AgentError("資料夾、檔名測試結果不一致")
@@ -1977,6 +2036,13 @@ def parse_bt_result_csv(path: Path) -> BtCsvResult:
         raise AgentError("檔名時間與 CSV StartTime 不一致")
     if ended_at < csv_started:
         raise AgentError("CSV EndTime 早於 StartTime")
+    # A blank SerialNumber is emitted by the BT station for an empty fixture.
+    # It is not a product FAIL, so only the strict blank-SN FAILED form maps
+    # to NOTEST in the no-SN demo.  Formal jobs keep the default strict mode.
+    if not filename_sn:
+        if filename_status != "FAIL" or not allow_blank_sn:
+            raise AgentError("BT 空白 SN 僅接受 FAILED／NOTEST 格式")
+        return BtCsvResult(slot, "", "NOTEST", csv_started, ended_at, path)
     return BtCsvResult(slot, filename_sn, filename_status, csv_started, ended_at, path)
 
 
@@ -1996,7 +2062,11 @@ def discover_bt_csv_results(root: Path, slots: Iterable[int], started_at: dateti
                             now: Optional[datetime] = None) -> tuple[dict[int, BtCsvResult], list[tuple[Path, str]]]:
     """Find valid post-start results; invalid or still-writing files are reported, never accepted."""
     wanted = set(slots)
-    threshold = started_at - timedelta(seconds=BT_START_TOLERANCE_SECONDS)
+    # This is the formal known-SN monitor.  It must remain strict so a
+    # previous production result cannot be reported for the current JOB.
+    # The 30-second grace period is intentionally limited to BtAutoLogMonitor
+    # (the operator-started, no-SN Demo mode).
+    threshold = started_at
     results: dict[int, BtCsvResult] = {}
     errors: list[tuple[Path, str]] = []
     for directory in bt_result_directories(root, started_at, now):
@@ -2017,19 +2087,52 @@ def discover_bt_csv_results(root: Path, slots: Iterable[int], started_at: dateti
     return results, errors
 
 
+@dataclass
+class BtAutoLogReview:
+    """A human decision needed for a conflicting BT no-SN CSV."""
+    reason: str
+    current: Optional[BtCsvResult]
+    candidate: BtCsvResult
+    locked_started_at: Optional[datetime]
+    decision: Optional[str] = None
+    resolved: threading.Event = field(default_factory=threading.Event, repr=False)
+
+
 class BtAutoLogMonitor(threading.Thread):
-    """Discover post-button BT TestData results without expected SN values."""
+    """Discover one stable BT TestData batch without controlling BT HMI."""
     def __init__(self, csv_root: Path, started_at: datetime,
                  on_log: Callable[[str], None], on_result: Callable[[BtCsvResult], None],
                  stop: threading.Event, timeout_seconds: float = 0.0,
-                 on_timeout: Optional[Callable[[], None]] = None) -> None:
+                 on_timeout: Optional[Callable[..., None]] = None, *,
+                 slots: Optional[Iterable[int]] = None,
+                 stability_seconds: float = BT_CSV_STABILITY_SECONDS,
+                 on_complete: Optional[Callable[[], None]] = None,
+                 on_review: Optional[Callable[[BtAutoLogReview], Optional[str]]] = None,
+                 on_batch_switch: Optional[Callable[[], None]] = None,
+                 on_issue: Optional[Callable[[str], None]] = None,
+                 caseinfo_root: Optional[Path] = None,
+                 on_progress: Optional[Callable[[BtCaseInfoProgress], None]] = None) -> None:
         super().__init__(daemon=True)
         self.csv_root, self.started_at = csv_root, started_at
         self.on_log, self.on_result, self.stop = on_log, on_result, stop
         self.timeout_seconds, self.on_timeout = timeout_seconds, on_timeout
+        self.slots = tuple(sorted(set(slots or BT_THREAD_TO_SLOT.values())))
+        if not self.slots or any(slot not in BT_THREAD_TO_SLOT.values() for slot in self.slots):
+            raise AgentError("BT 無 SN Demo slot 必須介於 1～4")
+        self.stability_seconds, self.on_complete = max(0.0, stability_seconds), on_complete
+        self.on_review, self.on_batch_switch, self.on_issue = on_review, on_batch_switch, on_issue
+        self.caseinfo_root = caseinfo_root or csv_root
+        self.on_progress = on_progress
         self.baseline = self._snapshot()
         self.accepted: dict[int, BtCsvResult] = {}
+        self.locked_started_at: Optional[datetime] = None
+        self.stable_since: dict[Path, tuple[tuple[int, int], float]] = {}
         self.reported_warnings: set[tuple[Path, str]] = set()
+        self.reviewed_conflicts: set[tuple[Path, str]] = set()
+        self.caseinfo_signatures: dict[Path, tuple[int, int]] = {}
+        self.caseinfo_seen: set[tuple[Path, int, datetime, str, str]] = set()
+        self.caseinfo_last_display: dict[int, tuple[str, str, str]] = {}
+        self.caseinfo_latched_sn: dict[int, str] = {}
 
     def _snapshot(self) -> dict[Path, Optional[tuple[int, int]]]:
         paths: dict[Path, Optional[tuple[int, int]]] = {}
@@ -2038,12 +2141,116 @@ class BtAutoLogMonitor(threading.Thread):
                 paths[path] = file_signature(path)
         return paths
 
+    def _notify_issue_once(self, path: Path, reason: str) -> None:
+        key = (path, reason)
+        if key in self.reported_warnings:
+            return
+        self.reported_warnings.add(key)
+        category = "BT CaseInfo 異常" if reason.startswith("CaseInfo：") else "BT CSV 尚未有效"
+        message = f"{category}：{path.name} — {reason}"
+        self.on_log(message)
+        if self.on_issue:
+            self.on_issue(message)
+
+    def _caseinfo_paths(self, now: Optional[datetime] = None) -> list[tuple[int, Path]]:
+        """Return possible daily CaseInfo paths for selected BT slots."""
+        current = now or datetime.now()
+        days = tuple(dict.fromkeys((self.started_at.date(), current.date())))
+        candidates: list[tuple[int, Path]] = []
+        seen: set[Path] = set()
+        for slot in self.slots:
+            for day in days:
+                name = f"thread{slot}CaseInfo_{day.isoformat()}.txt"
+                for path in (self.caseinfo_root / name, self.caseinfo_root / day.isoformat() / name):
+                    if path not in seen:
+                        seen.add(path)
+                        candidates.append((slot, path))
+        return candidates
+
+    def _poll_caseinfo(self, threshold: datetime) -> None:
+        """Emit supplemental progress without ever deciding a final result."""
+        if not self.on_progress:
+            return
+        for slot, path in self._caseinfo_paths():
+            signature = file_signature(path)
+            if signature is None or self.caseinfo_signatures.get(path) == signature:
+                continue
+            self.caseinfo_signatures[path] = signature
+            try:
+                events = parse_bt_caseinfo_events(path, slot)
+            except AgentError as exc:
+                self._notify_issue_once(path, f"CaseInfo：{exc}")
+                continue
+            for event in events:
+                if event.occurred_at < threshold or slot in self.accepted:
+                    continue
+                key = (path, slot, event.occurred_at, event.step, event.sn)
+                if key in self.caseinfo_seen:
+                    continue
+                self.caseinfo_seen.add(key)
+                if event.sn:
+                    previous_sn = self.caseinfo_latched_sn.get(slot)
+                    if previous_sn and previous_sn != event.sn:
+                        self._notify_issue_once(
+                            path,
+                            f"CaseInfo Thread{slot - 1} SN 衝突：保留 {previous_sn}，忽略 {event.sn}",
+                        )
+                    else:
+                        self.caseinfo_latched_sn[slot] = event.sn
+                display_sn = self.caseinfo_latched_sn.get(slot, "")
+                progress = BtCaseInfoProgress(
+                    slot, display_sn, event.status, event.step, event.occurred_at, event.path
+                )
+                display = (progress.sn, progress.status, progress.step)
+                if self.caseinfo_last_display.get(slot) == display:
+                    continue
+                self.caseinfo_last_display[slot] = display
+                self.on_log(
+                    f"BT CaseInfo：slot{slot} Thread{slot - 1} "
+                    f"{display_sn or 'SN 尚未取得'}，{progress.status}，步驟={progress.step}"
+                )
+                self.on_progress(progress)
+
+    def _is_stable(self, path: Path, signature: tuple[int, int]) -> bool:
+        now = time.monotonic()
+        known = self.stable_since.get(path)
+        if known is None or known[0] != signature:
+            self.stable_since[path] = (signature, now)
+            return self.stability_seconds <= 0
+        return now - known[1] >= self.stability_seconds
+
+    def _review(self, reason: str, current: Optional[BtCsvResult], candidate: BtCsvResult) -> str:
+        key = (candidate.path, reason)
+        if key in self.reviewed_conflicts:
+            return "keep"
+        self.reviewed_conflicts.add(key)
+        review = BtAutoLogReview(reason, current, candidate, self.locked_started_at)
+        if not self.on_review:
+            return "keep"
+        decision = self.on_review(review)
+        if decision is None:
+            while not self.stop.is_set() and not review.resolved.wait(.1):
+                pass
+        return (decision or review.decision or "keep").lower()
+
+    def _notify_timeout(self) -> None:
+        if not self.on_timeout:
+            return
+        missing = [slot for slot in self.slots if slot not in self.accepted]
+        try:
+            self.on_timeout(missing)
+        except TypeError:
+            self.on_timeout()
+
     def run(self) -> None:
-        self.on_log(f"BT 無 SN Log Demo 已啟動；根路徑：{self.csv_root}；僅接受啟動後的新資料" +
+        self.on_log("BT 無 SN Log Demo 已啟動；只監聽 TestData，不操作 BT HMI；等待 " +
+                    "、".join(f"Thread{slot - 1}" for slot in self.slots) +
+                    f"；檔案穩定 {self.stability_seconds:g} 秒；根路徑：{self.csv_root}" +
                     (f"；逾時 {self.timeout_seconds:g} 秒" if self.timeout_seconds else "；不設定逾時"))
         threshold = self.started_at - timedelta(seconds=BT_START_TOLERANCE_SECONDS)
         deadline = time.monotonic() + self.timeout_seconds if self.timeout_seconds else None
         while not self.stop.is_set():
+            self._poll_caseinfo(threshold)
             for directory in bt_result_directories(self.csv_root, self.started_at):
                 for path in sorted(directory.glob("*.csv")):
                     signature = file_signature(path)
@@ -2051,28 +2258,65 @@ class BtAutoLogMonitor(threading.Thread):
                         continue
                     if path in self.baseline and self.baseline[path] == signature:
                         continue
+                    if not self._is_stable(path, signature):
+                        continue
                     try:
-                        result = parse_bt_result_csv(path)
+                        result = parse_bt_result_csv(path, allow_blank_sn=True)
                         if result.started_at < threshold:
                             continue
                     except AgentError as exc:
-                        warning = (path, str(exc))
-                        if warning not in self.reported_warnings:
-                            self.reported_warnings.add(warning)
-                            self.on_log(f"BT CSV 尚未有效：{path.name} — {exc}")
+                        self._notify_issue_once(path, str(exc))
                         continue
+                    if result.slot not in self.slots:
+                        continue
+                    if self.locked_started_at is None:
+                        self.locked_started_at = result.started_at
+                        self.on_log(f"BT 無 SN Demo 已鎖定批次時間戳：{result.started_at:%Y%m%d%H%M%S}")
+                    elif result.started_at != self.locked_started_at:
+                        decision = self._review("batch_conflict", None, result)
+                        if decision == "switch":
+                            self.locked_started_at = result.started_at
+                            self.accepted.clear()
+                            self.on_log(f"BT 人工覆核改採批次：{result.started_at:%Y%m%d%H%M%S}")
+                            if self.on_batch_switch:
+                                self.on_batch_switch()
+                        elif decision == "cancel":
+                            self.on_log("BT 人工覆核取消本輪監聽")
+                            self.stop.set()
+                            return
+                        else:
+                            self.on_log(f"BT 忽略不同批次 CSV：{path.name}")
+                            continue
                     previous = self.accepted.get(result.slot)
-                    if previous is not None and result.ended_at <= previous.ended_at:
+                    if previous is not None and previous.path == result.path:
+                        # The polling loop sees the same stable file more than
+                        # once. It is already the selected Thread result.
                         continue
+                    if previous is not None and previous.path != result.path:
+                        decision = self._review("duplicate_thread", previous, result)
+                        if decision in ("candidate", "replace"):
+                            pass
+                        elif decision == "cancel":
+                            self.on_log("BT 人工覆核取消本輪監聽")
+                            self.stop.set()
+                            return
+                        else:
+                            self.on_log(f"BT 保留既有 Thread{result.slot - 1} CSV，忽略：{path.name}")
+                            continue
                     self.accepted[result.slot] = result
-                    self.on_log(f"BT CSV：slot{result.slot} SN={result.sn}，{result.status}，EndTime={result.ended_at:%Y-%m-%d %H:%M:%S}")
+                    display_sn = result.sn or "（空治具）"
+                    self.on_log(f"BT CSV：slot{result.slot} SN={display_sn}，{result.status}，EndTime={result.ended_at:%Y-%m-%d %H:%M:%S}")
                     self.on_result(result)
+                    if all(slot in self.accepted for slot in self.slots):
+                        self.on_log("BT 無 SN Log Demo：指定 Thread 結果已收齊")
+                        if self.on_complete:
+                            self.on_complete()
+                        return
             if deadline is not None and time.monotonic() >= deadline:
                 self.on_log("BT 無 SN Log Demo 已逾時結束")
-                if self.on_timeout:
-                    self.on_timeout()
+                self._notify_timeout()
                 return
-            self.stop.wait(.5)
+            self.stop.wait(.1)
 
 
 class BtCsvLogMonitor(threading.Thread):
@@ -2506,6 +2750,8 @@ class AtlasAgentApp:
         self.batch_results: dict[str, str] = {}
         self.reported_batch_number: Optional[int] = None
         self.auto_log_demo = False
+        self.auto_bt_expected_slots: tuple[int, ...] = ()
+        self.auto_bt_final_slots: set[int] = set()
         self.auto_discovery_labels: dict[str, str] = {}
         self.auto_fct_active_slots: dict[int, str] = {}
         self.auto_fct_sn_slots: dict[str, int] = {}
@@ -2706,8 +2952,11 @@ class AtlasAgentApp:
         if self.station.get() == "FCT":
             path_fields = (("FCT 最終結果根路徑（unit-archive）：", csv_path),
                            ("FCT 即時 Log 根路徑（active）：", log_path))
+        elif self.station.get() == "BT":
+            path_fields = (("BT TestData 根路徑：", csv_path),
+                           ("BT CaseInfo 根路徑（選填）：", log_path))
         else:
-            path_fields = (("CSV／BT TestData 根路徑：", csv_path),
+            path_fields = (("CSV 根路徑：", csv_path),
                            ("Log 根路徑（選填）：", log_path))
         for row, (label, variable) in enumerate((*path_fields,
                                                    ("OpenCV 模板路徑：", template_path), ("螢幕截圖路徑：", screenshot_path))):
@@ -3151,7 +3400,7 @@ class AtlasAgentApp:
             return
         self.start_batch(self.sn_text.get(), bt_slot=slot)
 
-    def start_auto_log_demo(self, station: str) -> bool:
+    def start_auto_log_demo(self, station: str, bt_slots: Optional[Iterable[int]] = None) -> bool:
         """Start a no-SN demo session before TE begins the instrument test."""
         if station not in ("FCT", "BT"):
             messagebox.showinfo(TITLE, "無 SN Log Demo 僅支援 FCT 與 BT。", parent=self.root)
@@ -3180,7 +3429,21 @@ class AtlasAgentApp:
         self.auto_fct_active_slots = {}
         self.auto_fct_sn_slots = {}
         self.auto_fct_final_slots = set()
-        self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
+        self.auto_bt_expected_slots = ()
+        self.auto_bt_final_slots = set()
+        if station == "BT":
+            requested_slots = tuple(sorted(set(bt_slots or (1, 2, 3, 4))))
+            if not requested_slots or any(slot not in (1, 2, 3, 4) for slot in requested_slots):
+                messagebox.showerror(TITLE, "BT 無 SN Log Demo slot 必須介於 1～4", parent=self.root)
+                self.auto_log_demo = False
+                return False
+            self.auto_bt_expected_slots = requested_slots
+            self.reset_result_panel(
+                "無 SN Log Demo：BT TESTING，等待新 TestData CSV",
+                [(f"bt:{slot}", f"slot{slot}", "—", "TESTING") for slot in requested_slots],
+            )
+        else:
+            self.reset_result_panel(f"無 SN Log Demo：{station} 等待新測試 Log")
         self.monitor_stop = threading.Event()
         if station == "FCT":
             log_text = self.log_path.get().strip()
@@ -3200,13 +3463,35 @@ class AtlasAgentApp:
                                               lambda: self.events.put(("auto_fct_complete", batch_number)))
         else:
             started_at = datetime.now()
+            caseinfo_text = self.log_path.get().strip()
+            caseinfo_root = Path(caseinfo_text).expanduser() if caseinfo_text else root
+            if caseinfo_text and not caseinfo_root.is_dir():
+                self.append(
+                    f"WARN: BT CaseInfo 根路徑不存在：{caseinfo_root}；"
+                    "本輪仍會監聽最終 CSV，改在 BT TestData 根路徑尋找 CaseInfo。"
+                )
+                caseinfo_root = root
             self.monitor = BtAutoLogMonitor(root, started_at,
                                              lambda item: self.events.put(("log", item)),
                                              lambda result: self.events.put(("auto_bt_result", (batch_number, result))),
                                              self.monitor_stop, timeout,
-                                             lambda: self.events.put(("auto_timeout", batch_number)))
+                                             lambda missing: self.events.put(("auto_bt_timeout", (batch_number, missing))),
+                                             slots=self.auto_bt_expected_slots,
+                                             on_complete=lambda: self.events.put(("auto_bt_complete", batch_number)),
+                                             on_review=lambda review: self.events.put(("auto_bt_review", (batch_number, review))),
+                                             on_batch_switch=lambda: self.events.put(("auto_bt_batch_switch", batch_number)),
+                                             on_issue=lambda message: self.events.put(("auto_bt_issue", (batch_number, message))),
+                                             caseinfo_root=caseinfo_root,
+                                             on_progress=lambda progress: self.events.put(
+                                                 ("auto_bt_progress", (batch_number, progress))))
         self.monitor.start()
-        self.append(f"無 SN Log Demo 已啟動：{station}；請由 TE／治具開始測試；JOB={self.current_job_id}")
+        if station == "BT":
+            self.append("BT 無 SN Log Demo 已啟動：只監聽 " +
+                        "、".join(f"Thread{slot - 1}" for slot in self.auto_bt_expected_slots) +
+                        f"；請由 TE 在 BT HMI 手動開始測試；CaseInfo={caseinfo_root}；"
+                        f"JOB={self.current_job_id}")
+        else:
+            self.append(f"無 SN Log Demo 已啟動：{station}；請由 TE／治具開始測試；JOB={self.current_job_id}")
         return True
 
     def open_demo_dialog(self) -> None:
@@ -3270,13 +3555,28 @@ class AtlasAgentApp:
         buttons = ttk.Frame(frame); buttons.grid(row=first_row + slot_count, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side="right")
         ttk.Button(buttons, text="開始流程", command=start).pack(side="right", padx=(0, 6))
-        if station in ("FCT", "BT"):
+        if station == "FCT":
             def start_auto() -> None:
                 if self.start_auto_log_demo(station):
                     dialog.destroy()
             ttk.Button(buttons, text="開始無 SN Log Demo", command=start_auto).pack(side="left")
             ttk.Label(frame, text="無 SN Log Demo：先按此按鈕建立時間基準，再由 TE／治具開始測試；Agent 會自動從新 Log 顯示 SN 與結果。",
                       foreground="#555", wraplength=560).grid(row=first_row + slot_count + 1, column=0, columnspan=2,
+                                                               sticky="w", pady=(8, 0))
+        elif station == "BT":
+            def start_bt_auto(slots: Iterable[int]) -> None:
+                if self.start_auto_log_demo("BT", slots):
+                    dialog.destroy()
+            log_buttons = ttk.Frame(frame)
+            log_buttons.grid(row=first_row + slot_count + 1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            ttk.Button(log_buttons, text="BT Log Start All",
+                       command=lambda: start_bt_auto((1, 2, 3, 4))).pack(side="left")
+            for slot in range(1, 5):
+                ttk.Button(log_buttons, text=f"BT Log Start {slot}",
+                           command=lambda slot=slot: start_bt_auto((slot,))).pack(side="left", padx=(6, 0))
+            ttk.Label(frame,
+                      text="BT 無 SN Log Demo：按鈕只建立對應 Thread 的 TestData CSV 監聽，不會點擊或控制 BT HMI；請由 TE 手動開始測試。",
+                      foreground="#555", wraplength=560).grid(row=first_row + slot_count + 2, column=0, columnspan=2,
                                                                sticky="w", pady=(8, 0))
         # FCT/BT preserve the historical keyboard submit shortcut.  DFU uses
         # scan-to-next navigation above so a scanner CR cannot start a test.
@@ -3852,10 +4152,50 @@ class AtlasAgentApp:
         self.monitor_stop.set(); self.monitor = None
         self.auto_log_demo = False
         if was_auto:
+            if self.current_station == "BT":
+                for slot in self.auto_bt_expected_slots:
+                    key = f"bt:{slot}"
+                    if key in self.result_rows:
+                        label, sn, status = self.result_rows[key]
+                        if status == "TESTING":
+                            self.set_result_row(key, label, sn, "STOPPED")
+                self.auto_bt_expected_slots = ()
+                self.auto_bt_final_slots = set()
             self.result_summary.set(f"無 SN Log Demo：{self.current_station} 已由人員停止")
             self.append("無 SN Log Demo 已停止；不會回傳 TCP RESULT。")
         for batch_number in tuple(self.visual_hidden_windows):
             self.restore_visual_windows(batch_number)
+
+    def review_bt_auto_log_conflict(self, review: BtAutoLogReview) -> None:
+        """Ask the operator to choose a conflicting no-SN BT CSV once."""
+        stale = review.current
+        dialog = tk.Toplevel(self.root)
+        dialog.title("BT Log 批次／Thread 衝突覆核")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        frame = ttk.Frame(dialog, padding=14); frame.pack(fill="both", expand=True)
+        if review.reason == "batch_conflict":
+            ttk.Label(frame, text="偵測到不同測試批次 CSV", font=("TkDefaultFont", 13, "bold")).pack(anchor="w")
+            body = (f"目前批次：{review.locked_started_at:%Y%m%d%H%M%S}" if review.locked_started_at else "目前批次尚未鎖定")
+            body += f"\n新 CSV：Thread{review.candidate.slot - 1}，時間 {review.candidate.started_at:%Y%m%d%H%M%S}，{review.candidate.path.name}"
+            choices = (("保留目前批次", "keep"), ("改用新批次", "switch"), ("停止監聽", "cancel"))
+        else:
+            ttk.Label(frame, text="同一 Thread 出現多份結果 CSV", font=("TkDefaultFont", 13, "bold")).pack(anchor="w")
+            body = (f"目前：{stale.path.name}\n" if stale else "目前：無\n")
+            body += f"候選：{review.candidate.path.name}"
+            choices = (("保留目前 CSV", "keep"), ("採用候選 CSV", "candidate"), ("停止監聽", "cancel"))
+        ttk.Label(frame, text=body, justify="left", wraplength=560).pack(anchor="w", pady=(8, 12))
+        buttons = ttk.Frame(frame); buttons.pack(anchor="e")
+
+        def decide(value: str) -> None:
+            review.decision = value
+            review.resolved.set()
+            dialog.destroy()
+
+        for label, value in choices:
+            ttk.Button(buttons, text=label, command=lambda value=value: decide(value)).pack(side="left", padx=(6, 0))
+        dialog.protocol("WM_DELETE_WINDOW", lambda: decide("cancel"))
 
     def change_ip(self) -> None:
         value = simpledialog.askstring(TITLE, "新 Arduino IPv4 位址：", parent=self.root)
@@ -4036,12 +4376,62 @@ class AtlasAgentApp:
                     self.monitor = None
                     self.result_summary.set("無 SN Log Demo：FCT 本輪完成")
                     self.append("FCT 本輪完成；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
+                elif kind == "auto_bt_progress":
+                    batch_number, progress = item; assert isinstance(progress, BtCaseInfoProgress)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    if progress.slot in self.auto_bt_final_slots:
+                        continue
+                    key = f"bt:{progress.slot}"
+                    current_sn = self.result_rows.get(key, ("", "", ""))[1]
+                    display_sn = progress.sn or (current_sn if current_sn not in ("", "—") else "SN 讀取中")
+                    self.set_result_row(key, f"slot{progress.slot}", display_sn, progress.status)
+                    self.append(
+                        f"BT CaseInfo slot{progress.slot}：{display_sn} "
+                        f"{progress.status} — {progress.step}"
+                    )
                 elif kind == "auto_bt_result":
                     batch_number, result = item; assert isinstance(result, BtCsvResult)
                     if batch_number != self.batch_number or not self.auto_log_demo:
                         continue
-                    self.append(f"slot{result.slot}：{result.sn} {result.status} — BT TestData")
-                    self.set_result_row(f"bt:{result.slot}", f"slot{result.slot}", result.sn, result.status)
+                    self.auto_bt_final_slots.add(result.slot)
+                    display_sn = result.sn or "（空治具）"
+                    self.append(f"slot{result.slot}：{display_sn} {result.status} — BT TestData")
+                    self.set_result_row(f"bt:{result.slot}", f"slot{result.slot}", display_sn, result.status)
+                elif kind == "auto_bt_batch_switch":
+                    if int(item) != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.auto_bt_final_slots = set()
+                    for slot in self.auto_bt_expected_slots:
+                        self.set_result_row(f"bt:{slot}", f"slot{slot}", "—", "TESTING")
+                    self.result_summary.set("無 SN Log Demo：BT TESTING，已改採人工覆核選擇的新批次")
+                elif kind == "auto_bt_review":
+                    batch_number, review = item; assert isinstance(review, BtAutoLogReview)
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        review.decision = "keep"; review.resolved.set()
+                        continue
+                    self.review_bt_auto_log_conflict(review)
+                elif kind == "auto_bt_issue":
+                    batch_number, message = item
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.append("BT CSV 通知：" + str(message))
+                    messagebox.showwarning(TITLE, str(message), parent=self.root)
+                elif kind == "auto_bt_complete":
+                    if int(item) != self.batch_number or not self.auto_log_demo:
+                        continue
+                    self.monitor = None
+                    self.result_summary.set("無 SN Log Demo：BT 指定 Thread 結果已完成")
+                    self.append("BT 無 SN Log Demo 已完成；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
+                elif kind == "auto_bt_timeout":
+                    batch_number, missing_slots = item
+                    if batch_number != self.batch_number or not self.auto_log_demo:
+                        continue
+                    for slot in missing_slots:
+                        self.set_result_row(f"bt:{slot}", f"slot{slot}", "—", "TIMEOUT")
+                    self.monitor = None
+                    self.result_summary.set("無 SN Log Demo：BT 已達保護逾時")
+                    self.append("BT 無 SN Log Demo 已達保護逾時；結果僅顯示於 Agent，不會回傳 TCP RESULT。")
                 elif kind == "auto_timeout":
                     if int(item) != self.batch_number or not self.auto_log_demo:
                         continue
