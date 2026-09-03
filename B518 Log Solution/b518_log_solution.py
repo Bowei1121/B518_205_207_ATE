@@ -108,6 +108,7 @@ class B518LogSolutionApp:
             row = tk.Frame(self.rows_box, background="#111111", height=64)
             row.grid(row=slot - 1, column=0, sticky="ew", pady=(0, 1))
             row.grid_propagate(False)
+            row.grid_rowconfigure(0, weight=1)
             row.grid_columnconfigure(0, minsize=70)
             row.grid_columnconfigure(1, minsize=130)
             row.grid_columnconfigure(2, minsize=256)
