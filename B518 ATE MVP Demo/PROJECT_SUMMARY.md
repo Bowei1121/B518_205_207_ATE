@@ -7,7 +7,7 @@
 - `B518 Log Solution` 主畫面改為獨立的 KVM 辨識看板，不含、也不呼叫 Atlas Agent 的 Arduino、USB CDC、TCP、OpenCV、HID、截圖或模板功能；兩者是不同 App／程序。
 - 看板固定寬度 480 px、啟動時自動靠螢幕右上，不設置頂。DFU／FCT／BT 分別顯示 7／6／4 個大型 Slot、狀態色與 SN，目標最低解析度為 1280×1024。
 - 路徑、工站、事件 Log、Session 紀錄與快捷鍵狀態均移至「設定」視窗；BT 每輪固定監控 Thread0～3。
-- `Control + Shift + M` 透過 macOS Carbon 註冊為單一全域快捷鍵，背景的 Atlas／BT HMI 有焦點時仍可開始監控；它不使用全鍵盤事件監聽，因此不要求 Accessibility、Input Monitoring 或 Screen Recording 權限。若註冊衝突，保留本機有焦點快捷鍵與主畫面按鈕。
+- `Command + Shift + M` 透過 macOS Carbon 註冊為單一全域快捷鍵，背景的 Atlas／BT HMI 有焦點時仍可開始監控；它不使用全鍵盤事件監聽，因此不要求 Accessibility、Input Monitoring 或 Screen Recording 權限。若註冊衝突，保留本機有焦點快捷鍵與主畫面按鈕。
 
 ## 2026-09-01 Log Solution 整合規劃
 

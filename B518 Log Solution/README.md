@@ -15,7 +15,7 @@ python3 b518_log_solution.py
 
 主視窗是供 KVM 擷取的固定高對比看板：只顯示目前工站、Slot、狀態、產品 SN 與開始／停止按鈕。它固定寬度 480 px，啟動時會自動放在螢幕右上方；DFU、FCT、BT 分別顯示 7、6、4 個通道。設定、路徑、即時事件與 Session 紀錄都位於左上角的「設定」視窗。
 
-- `Control + Shift + M` 等同「開始監控」。在 macOS 上會註冊為全域快捷鍵，因此 Atlas／BT HMI 有鍵盤焦點時也可觸發；程式正在監控時不會重啟本輪。
+- `Command + Shift + M` 等同「開始監控」。在 macOS 上會註冊為全域快捷鍵，因此 Atlas／BT HMI 有鍵盤焦點時也可觸發；程式正在監控時不會重啟本輪。
 - 快捷鍵只向 macOS 註冊這一組按鍵，並不監聽其他鍵盤輸入，所以不需要 Accessibility、Input Monitoring 或 Screen Recording 權限。
 - 如果這組快捷鍵已被其他程式占用，App 會顯示警告；仍可按主畫面按鈕，或在 Log Solution 有焦點時使用相同按鍵。
 - 目標最小螢幕解析度為 `1280 x 1024`。App 不會強制置頂，部署時應讓 Atlas／BT HMI 不覆蓋右上角看板。

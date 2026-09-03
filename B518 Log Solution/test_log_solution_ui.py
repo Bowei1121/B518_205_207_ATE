@@ -2,7 +2,7 @@ import unittest
 import tkinter as tk
 
 from b518_log_solution import B518LogSolutionApp, STATUS_COLOURS, slot_count, sn_font_size, window_height
-from global_hotkey import GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
+from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 
 
 class FakeHotkey:
@@ -44,6 +44,10 @@ class LogSolutionUiTests(unittest.TestCase):
         registration.close()
         self.assertTrue(registration.closed)
 
+    def test_global_hotkey_uses_command_shift_m(self):
+        self.assertEqual(COMMAND_SHIFT_M_KEYCODE, 46)
+        self.assertEqual(COMMAND_SHIFT_MODIFIERS, 0x0100 | 0x0200)
+
     def test_global_hotkey_conflict_is_a_safe_fallback(self):
         def conflict(_callback):
             raise GlobalHotkeyError("shortcut already used")
@@ -58,13 +62,16 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertIsInstance(registration, UnavailableHotkey)
         self.assertFalse(registration.available)
 
-    def test_dashboard_row_cells_fill_the_full_row_height(self):
+    def test_dashboard_row_cells_fill_the_full_row_geometry(self):
         root = tk.Tk()
         root.withdraw()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         root.update_idletasks()
         try:
             for row in app.status_rows.values():
+                self.assertGreaterEqual(row["slot"].winfo_width(), 60)
+                self.assertGreaterEqual(row["status"].winfo_width(), 120)
+                self.assertGreaterEqual(row["sn"].winfo_width(), 240)
                 for cell in row.values():
                     self.assertGreaterEqual(cell.winfo_height(), 64)
         finally:

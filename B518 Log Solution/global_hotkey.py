@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
 
 
-CONTROL_SHIFT_M_KEYCODE = 46  # kVK_ANSI_M
-CONTROL_SHIFT_MODIFIERS = 0x1000 | 0x0200  # controlKey | shiftKey
+COMMAND_SHIFT_M_KEYCODE = 46  # kVK_ANSI_M
+COMMAND_SHIFT_MODIFIERS = 0x0100 | 0x0200  # cmdKey | shiftKey
 
 
 class HotkeyRegistration(Protocol):
@@ -47,10 +47,10 @@ class _EventTypeSpec(ctypes.Structure):
 
 
 class CarbonGlobalHotkey:
-    """Register Control+Shift+M through the Carbon Event Manager."""
+    """Register Command+Shift+M through the Carbon Event Manager."""
 
     available = True
-    message = "可用：Control+Shift+M（全域）"
+    message = "可用：Command+Shift+M（全域）"
 
     _KEYBOARD_EVENT_CLASS = 0x6B657962  # 'keyb'
     _HOTKEY_PRESSED = 6  # kEventHotKeyPressed
@@ -100,12 +100,12 @@ class CarbonGlobalHotkey:
             raise GlobalHotkeyError("無法安裝快捷鍵處理器（Carbon {}）".format(status))
         hotkey_id = _EventHotKeyID(self._SIGNATURE, 1)
         status = self._carbon.RegisterEventHotKey(
-            CONTROL_SHIFT_M_KEYCODE, CONTROL_SHIFT_MODIFIERS, hotkey_id, target, 0,
+            COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, hotkey_id, target, 0,
             ctypes.byref(self._hotkey_ref),
         )
         if status != 0:
             self.close()
-            raise GlobalHotkeyError("Control+Shift+M 無法註冊（可能已被其他程式使用，Carbon {}）".format(status))
+            raise GlobalHotkeyError("Command+Shift+M 無法註冊（可能已被其他程式使用，Carbon {}）".format(status))
 
     def close(self) -> None:
         if self._hotkey_ref and self._hotkey_ref.value:

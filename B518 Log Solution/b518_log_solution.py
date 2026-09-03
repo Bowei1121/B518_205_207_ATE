@@ -46,6 +46,7 @@ class B518LogSolutionApp:
         self.root.title("B518 Log Solution-V0.1.0")
         self.root.resizable(False, False)
         self.events: queue.Queue[MonitorEvent] = queue.Queue()
+        self.hotkey_events: queue.Queue[bool] = queue.Queue()
         self.monitor = None
         self.prefs = self._load_preferences()
         self.station = tk.StringVar(value=self.prefs.get("station", "FCT"))
@@ -58,7 +59,7 @@ class B518LogSolutionApp:
         self.settings_log: Optional[tk.Text] = None
         self._build()
         self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
-        self.root.bind_all("<Control-Shift-M>", self._on_local_hotkey)
+        self.root.bind_all("<Command-Shift-M>", self._on_local_hotkey)
         self._position_window()
         self.root.after(150, self._drain_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -85,11 +86,13 @@ class B518LogSolutionApp:
             tk.Label(headings, text=text, background="#f3f4f6", font=("Helvetica", 14, "bold"), anchor="center").grid(
                 row=0, column=column, sticky="nsew")
 
-        self.rows_box = tk.Frame(body, background="#111111", highlightthickness=1, highlightbackground="#111111")
+        self.rows_box = tk.Frame(body, background="#111111", highlightthickness=1, highlightbackground="#111111",
+                                 width=456, height=1)
         self.rows_box.pack(fill="x")
+        self.rows_box.pack_propagate(False)
         controls = tk.Frame(body, background="#f3f4f6", pady=9)
         controls.pack(fill="x", side="bottom")
-        self.start_button = tk.Button(controls, text="開始監控  (Ctrl+Shift+M)", command=self.start_monitor,
+        self.start_button = tk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                       font=("Helvetica", 16, "bold"), height=2)
         self.start_button.pack(side="left", fill="x", expand=True, padx=(0, 4))
         self.stop_button = tk.Button(controls, text="停止監控", command=self.stop_monitor,
@@ -102,25 +105,23 @@ class B518LogSolutionApp:
             child.destroy()
         self.status_rows = {}
         station = self.station.get().upper()
+        row_count = slot_count(station)
+        self.rows_box.configure(height=row_count * 65 - 1)
         self.station_title.configure(text="{} Log 監控".format(station))
         self.monitor_state.configure(text="監控中" if self.monitor else "待命")
-        for slot in range(1, slot_count(station) + 1):
-            row = tk.Frame(self.rows_box, background="#111111", height=64)
-            row.grid(row=slot - 1, column=0, sticky="ew", pady=(0, 1))
-            row.grid_propagate(False)
-            row.grid_rowconfigure(0, minsize=64, weight=1)
-            row.grid_columnconfigure(0, minsize=70)
-            row.grid_columnconfigure(1, minsize=130)
-            row.grid_columnconfigure(2, minsize=256)
+        for slot in range(1, row_count + 1):
+            row = tk.Frame(self.rows_box, background="#111111", width=456, height=64)
+            row.place(x=0, y=(slot - 1) * 65, width=456, height=64)
+            row.pack_propagate(False)
             slot_label = tk.Label(row, text="Slot {}".format(slot), background="#ffffff", foreground="#000000",
                                   font=("Helvetica", 18, "bold"), anchor="center")
             status_label = tk.Label(row, text="WAITING", background=STATUS_COLOURS["WAITING"], foreground="#000000",
                                     font=("Helvetica", 22, "bold"), anchor="center")
             sn_label = tk.Label(row, text="", background="#ffffff", foreground="#000000",
                                 font=("Menlo", 20, "bold"), anchor="w", padx=8)
-            slot_label.grid(row=0, column=0, sticky="nsew", padx=(0, 1))
-            status_label.grid(row=0, column=1, sticky="nsew", padx=(0, 1))
-            sn_label.grid(row=0, column=2, sticky="nsew")
+            slot_label.place(x=0, y=0, width=69, height=64)
+            status_label.place(x=70, y=0, width=129, height=64)
+            sn_label.place(x=200, y=0, width=256, height=64)
             self.status_rows[slot] = {"slot": slot_label, "status": status_label, "sn": sn_label}
         self._position_window()
 
@@ -147,7 +148,9 @@ class B518LogSolutionApp:
         return "break"
 
     def _on_global_hotkey(self) -> None:
-        self.root.after_idle(self._start_from_hotkey)
+        # Carbon may invoke this callback outside Tk's event dispatch.  Queue
+        # the request and let _drain_events call Tk only on its own loop.
+        self.hotkey_events.put(True)
 
     def _start_from_hotkey(self) -> None:
         if self.monitor is None:
@@ -217,6 +220,12 @@ class B518LogSolutionApp:
                 self._handle_event(self.events.get_nowait())
         except queue.Empty:
             pass
+        try:
+            while True:
+                self.hotkey_events.get_nowait()
+                self._start_from_hotkey()
+        except queue.Empty:
+            pass
         self.root.after(150, self._drain_events)
 
     def _handle_event(self, event: MonitorEvent) -> None:
@@ -267,7 +276,7 @@ class B518LogSolutionApp:
         self._render_setting_paths()
         ttk.Separator(parent).grid(row=2, column=0, columnspan=3, sticky="ew", pady=14)
         ttk.Label(parent, text="全域快捷鍵").grid(row=3, column=0, sticky="nw")
-        shortcut = "Control+Shift+M\n{}".format(self.hotkey.message)
+        shortcut = "Command+Shift+M\n{}".format(self.hotkey.message)
         ttk.Label(parent, text=shortcut, foreground="#157347" if self.hotkey.available else "#b02a37").grid(row=3, column=1, columnspan=2, sticky="w")
         buttons = ttk.Frame(parent)
         buttons.grid(row=4, column=0, columnspan=3, sticky="e", pady=(22, 0))
