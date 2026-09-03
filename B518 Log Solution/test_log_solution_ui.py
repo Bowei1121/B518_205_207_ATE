@@ -1,6 +1,7 @@
 import unittest
+import tkinter as tk
 
-from b518_log_solution import STATUS_COLOURS, slot_count, sn_font_size, window_height
+from b518_log_solution import B518LogSolutionApp, STATUS_COLOURS, slot_count, sn_font_size, window_height
 from global_hotkey import GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 
 
@@ -56,6 +57,19 @@ class LogSolutionUiTests(unittest.TestCase):
         registration = create_global_hotkey(lambda: None, platform_name="linux", implementation=FakeHotkey)
         self.assertIsInstance(registration, UnavailableHotkey)
         self.assertFalse(registration.available)
+
+    def test_dashboard_row_cells_fill_the_full_row_height(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        root.update_idletasks()
+        try:
+            for row in app.status_rows.values():
+                for cell in row.values():
+                    self.assertGreaterEqual(cell.winfo_height(), 64)
+        finally:
+            app.hotkey.close()
+            root.destroy()
 
 
 if __name__ == "__main__":
