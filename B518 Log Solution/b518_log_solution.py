@@ -28,6 +28,7 @@ ROW_HEIGHT = 46
 ROW_GAP = 1
 ROW_WIDTH = 342
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
+COMPLETED_STATUSES = {"PASS", "FAIL", "NOTEST"}
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
     "WAITING": "#d9d9d9", "COMPLETING": "#82c7ff", "STALLED": "#ff9900", "STOPPED": "#bfbfbf",
@@ -330,12 +331,20 @@ class B518LogSolutionApp:
         if event.slot and self.monitor:
             result = self.monitor.results[event.slot]
             self._set_row(event.slot, result.sn, result.status)
+        if event.kind == "result" and event.status in COMPLETED_STATUSES:
+            self._bring_dashboard_to_front()
         if event.kind == "review" and self.monitor:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
             self.monitor.resolve_review("accept" if choice else "reject")
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
             self._set_monitor_controls(False)
+
+    def _bring_dashboard_to_front(self) -> None:
+        """Show the result board when a slot reaches its final outcome."""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
     def open_settings(self) -> None:
         if self.settings_window and self.settings_window.winfo_exists():

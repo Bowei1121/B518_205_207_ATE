@@ -4,13 +4,15 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from tkinter import ttk
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
     B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
     STATUS_TEMPLATE_STATES, WINDOW_WIDTH, slot_count, sn_font_size, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
+from log_monitoring import MonitorEvent
 
 
 class FakeHotkey:
@@ -212,6 +214,35 @@ class LogSolutionUiTests(unittest.TestCase):
         app.settings_log = None
         app._close_settings()
         self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
+
+    def test_terminal_result_brings_dashboard_to_front(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="PASS")})
+        app.event_lines = []
+        app.settings_log = None
+        app._set_row = MagicMock()
+        app._set_monitor_controls = MagicMock()
+
+        app._handle_event(MonitorEvent("result", "slot1 PASS", 1, "SN123", "PASS"))
+
+        app._set_row.assert_called_once_with(1, "SN123", "PASS")
+        app.root.deiconify.assert_called_once()
+        app.root.lift.assert_called_once()
+        app.root.focus_force.assert_called_once()
+
+    def test_non_terminal_result_does_not_bring_dashboard_to_front(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="TESTING")})
+        app.event_lines = []
+        app.settings_log = None
+        app._set_row = MagicMock()
+        app._set_monitor_controls = MagicMock()
+
+        app._handle_event(MonitorEvent("result", "slot1 TESTING", 1, "SN123", "TESTING"))
+
+        app.root.lift.assert_not_called()
 
 
 if __name__ == "__main__":
