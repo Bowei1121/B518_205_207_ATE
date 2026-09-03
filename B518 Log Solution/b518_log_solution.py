@@ -43,6 +43,18 @@ def sn_font_size(_sn: str, _column_width: int = 188) -> int:
     return MAIN_FONT_SIZE
 
 
+def configured_directory(value: str) -> Optional[Path]:
+    """Return an existing configured directory; never treat blank as cwd."""
+    text = value.strip()
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    try:
+        return path if path.is_dir() else None
+    except OSError:
+        return None
+
+
 class B518LogSolutionApp:
     def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey):
         self.root = root
@@ -201,22 +213,42 @@ class B518LogSolutionApp:
         station = self.station.get().upper()
         values = self.paths[station]
         if station == "BT":
-            final = Path(values["final"].get()).expanduser()
-            if not final.is_dir():
+            final = configured_directory(values["final"].get())
+            if final is None:
                 messagebox.showerror("路徑錯誤", "請選擇可讀取的 BT TestData 根路徑。", parent=self.root)
                 return
-            self.monitor = BtLogMonitor(final, (1, 2, 3, 4),
-                                        caseinfo_root=Path(values["caseinfo"].get()).expanduser() if values["caseinfo"].get() else None,
-                                        callback=self.events.put)
+            caseinfo_text = values["caseinfo"].get().strip()
+            caseinfo = configured_directory(caseinfo_text) if caseinfo_text else None
+            if caseinfo_text and caseinfo is None:
+                messagebox.showerror("路徑錯誤", "BT CaseInfo 路徑不存在或無法讀取。", parent=self.root)
+                return
         else:
-            active, final = Path(values["active"].get()).expanduser(), Path(values["final"].get()).expanduser()
-            if not active.is_dir() or not final.is_dir():
+            active = configured_directory(values["active"].get())
+            final = configured_directory(values["final"].get())
+            if active is None or final is None:
                 messagebox.showerror("路徑錯誤", "請同時選擇 active 與最終結果根路徑。", parent=self.root)
                 return
-            self.monitor = AtlasActiveArchiveMonitor(station, active, final, tuple(range(1, slot_count(station) + 1)), callback=self.events.put)
-        self._save_preferences()
-        self._reset_rows()
-        self.monitor.start()
+        self.start_button.configure(state="disabled")
+        self.monitor_state.configure(text="啟動中")
+        self.root.update_idletasks()
+        try:
+            if station == "BT":
+                monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put)
+            else:
+                monitor = AtlasActiveArchiveMonitor(
+                    station, active, final, tuple(range(1, slot_count(station) + 1)), callback=self.events.put,
+                )
+            self._save_preferences()
+            self._reset_rows()
+            monitor.start()
+            self.monitor = monitor
+        except Exception as error:
+            self.monitor = None
+            self._set_monitor_controls(False)
+            message = "無法開始監控：{}".format(error)
+            self._log(message)
+            messagebox.showerror("監控啟動失敗", message, parent=self.root)
+            return
         self._set_monitor_controls(True)
         self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
 

@@ -11,7 +11,7 @@ VENV=.venv-macos10.14-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements-macos10.14-common.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py
+"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
 parts = [int(v) for v in Path('VERSION').read_text().strip().split('.')]

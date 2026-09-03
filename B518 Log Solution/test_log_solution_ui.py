@@ -1,8 +1,10 @@
 import unittest
 import tkinter as tk
+from pathlib import Path
+from unittest.mock import patch
 
 from b518_log_solution import (
-    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
     STATUS_TEMPLATE_STATES, WINDOW_WIDTH, slot_count, sn_font_size, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
@@ -83,6 +85,48 @@ class LogSolutionUiTests(unittest.TestCase):
             for status, label in app.template_labels.items():
                 self.assertEqual(label.cget("text"), status)
                 self.assertEqual(label.cget("background"), STATUS_COLOURS[status])
+        finally:
+            app.hotkey.close()
+            root.destroy()
+
+    def test_empty_paths_are_rejected_before_monitor_creation(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        app.station.set("DFU")
+        app.paths["DFU"]["active"].set("")
+        app.paths["DFU"]["final"].set("")
+        try:
+            with patch("b518_log_solution.AtlasActiveArchiveMonitor") as monitor_type, \
+                    patch("b518_log_solution.messagebox.showerror") as show_error:
+                app.start_monitor()
+            monitor_type.assert_not_called()
+            show_error.assert_called_once()
+            self.assertIsNone(app.monitor)
+        finally:
+            app.hotkey.close()
+            root.destroy()
+
+    def test_configured_directory_never_treats_blank_as_current_directory(self):
+        self.assertIsNone(configured_directory(""))
+        self.assertIsNone(configured_directory("   "))
+        self.assertEqual(configured_directory("."), Path("."))
+
+    def test_monitor_creation_error_is_visible_and_returns_to_standby(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        app.station.set("DFU")
+        app.paths["DFU"]["active"].set(".")
+        app.paths["DFU"]["final"].set(".")
+        try:
+            with patch("b518_log_solution.AtlasActiveArchiveMonitor", side_effect=PermissionError("denied")), \
+                    patch("b518_log_solution.messagebox.showerror") as show_error:
+                app.start_monitor()
+            self.assertIsNone(app.monitor)
+            self.assertEqual(app.monitor_state.cget("text"), "待命")
+            self.assertIn("denied", app.event_lines[-1])
+            show_error.assert_called_once()
         finally:
             app.hotkey.close()
             root.destroy()

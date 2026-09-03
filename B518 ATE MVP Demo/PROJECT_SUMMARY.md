@@ -8,6 +8,7 @@
 - 看板採瘦長的 360 px 固定寬度、所有主畫面文字固定 14 pt，啟動時自動靠螢幕右上且不設置頂。DFU／FCT／BT 分別顯示 7／6／4 個 Slot、狀態色與 SN；上方常駐與實際狀態完全同字色的 PASS／FAIL／TESTING／NOTEST 色塊，讓 KVM 第一次使用前即可製作模板。目標最低解析度為 1280×1024。
 - 路徑、工站、事件 Log、Session 紀錄與快捷鍵狀態均移至「設定」視窗；BT 每輪固定監控 Thread0～3。
 - `Command + Shift + M` 透過 macOS Carbon 註冊為單一全域快捷鍵，背景的 Atlas／BT HMI 有焦點時仍可開始監控；它不使用全鍵盤事件監聽，因此不要求 Accessibility、Input Monitoring 或 Screen Recording 權限。若註冊衝突，保留本機有焦點快捷鍵與主畫面按鈕。
+- 修正新機尚未設定路徑時，空字串被 `Path("")` 當成目前目錄並在 UI 執行緒大量掃描、看似無法開始的問題。必要路徑空白／不存在會直接顯示錯誤；建立監控器或存取目錄發生例外也會顯示原因並回到待命。Catalina 建置腳本會同時執行監控核心與 UI 啟動回歸測試。
 
 ## 2026-09-01 Log Solution 整合規劃
 
