@@ -296,7 +296,6 @@ class B518LogSolutionApp:
             messagebox.showerror("監控啟動失敗", message, parent=self.root)
             return
         self._set_monitor_controls(True)
-        self._set_dashboard_topmost(True)
         self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
 
     def stop_monitor(self) -> None:
@@ -335,13 +334,8 @@ class B518LogSolutionApp:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
             self.monitor.resolve_review("accept" if choice else "reject")
         if event.kind in {"finished", "stopped"}:
-            self._set_dashboard_topmost(False)
             self.monitor = None
             self._set_monitor_controls(False)
-
-    def _set_dashboard_topmost(self, enabled: bool) -> None:
-        """Keep the KVM board visible only for the active monitoring round."""
-        self.root.attributes("-topmost", enabled)
 
     def open_settings(self) -> None:
         if self.settings_window and self.settings_window.winfo_exists():
@@ -452,7 +446,6 @@ class B518LogSolutionApp:
         self.hotkey.close()
         if self.monitor:
             self.monitor.stop()
-        self._set_dashboard_topmost(False)
         self._save_preferences()
         self.root.destroy()
 

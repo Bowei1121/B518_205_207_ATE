@@ -216,7 +216,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app._close_settings()
         self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
 
-    def test_successful_monitor_start_keeps_dashboard_topmost(self):
+    def test_monitor_lifecycle_never_changes_window_topmost_attribute(self):
         monitor = MagicMock()
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
@@ -238,9 +238,13 @@ class LogSolutionUiTests(unittest.TestCase):
             app.start_monitor()
 
         monitor.start.assert_called_once()
-        app.root.attributes.assert_called_once_with("-topmost", True)
+        app.root.attributes.assert_not_called()
 
-    def test_result_does_not_change_topmost_or_keyboard_focus(self):
+        app._handle_event(MonitorEvent("finished", "monitor ended"))
+        app.root.attributes.assert_not_called()
+        self.assertIsNone(app.monitor)
+
+    def test_result_does_not_change_window_layer_or_keyboard_focus(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="PASS")})
@@ -255,23 +259,21 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root.attributes.assert_not_called()
         app.root.focus_force.assert_not_called()
 
-    def test_finished_and_stopped_events_release_dashboard_topmost(self):
-        for kind in ("finished", "stopped"):
-            with self.subTest(kind=kind):
-                app = object.__new__(B518LogSolutionApp)
-                app.root = MagicMock()
-                app.monitor = MagicMock()
-                app.event_lines = []
-                app.settings_log = None
-                app._set_monitor_controls = MagicMock()
+    def test_stopped_event_does_not_change_window_topmost_attribute(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.monitor = MagicMock()
+        app.event_lines = []
+        app.settings_log = None
+        app._set_monitor_controls = MagicMock()
 
-                app._handle_event(MonitorEvent(kind, "monitor ended"))
+        app._handle_event(MonitorEvent("stopped", "monitor ended"))
 
-                app.root.attributes.assert_called_once_with("-topmost", False)
-                self.assertIsNone(app.monitor)
-                app._set_monitor_controls.assert_called_once_with(False)
+        app.root.attributes.assert_not_called()
+        self.assertIsNone(app.monitor)
+        app._set_monitor_controls.assert_called_once_with(False)
 
-    def test_close_releases_dashboard_topmost(self):
+    def test_close_does_not_change_window_topmost_attribute(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.hotkey = MagicMock()
@@ -280,7 +282,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
         app.close()
 
-        app.root.attributes.assert_called_once_with("-topmost", False)
+        app.root.attributes.assert_not_called()
         app.root.destroy.assert_called_once()
 
 
