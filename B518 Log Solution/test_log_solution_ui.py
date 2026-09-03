@@ -1,6 +1,7 @@
 import unittest
 import tkinter as tk
 from pathlib import Path
+from tkinter import ttk
 from unittest.mock import patch
 
 from b518_log_solution import (
@@ -128,6 +129,36 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("denied", app.event_lines[-1])
             show_error.assert_called_once()
         finally:
+            app.hotkey.close()
+            root.destroy()
+
+    def test_explicit_light_theme_keeps_dark_mode_controls_readable(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        app.open_settings()
+        root.update_idletasks()
+        try:
+            style = ttk.Style(root)
+            self.assertEqual(style.theme_use(), "clam")
+            self.assertEqual(style.lookup("TLabel", "foreground"), "#111827")
+            self.assertEqual(style.lookup("TEntry", "fieldbackground"), "#ffffff")
+            self.assertEqual(style.lookup("TButton", "foreground"), "#111827")
+            self.assertEqual(app.settings_window.cget("background"), "#f3f4f6")
+            self.assertEqual(app.settings_log.cget("background"), "#ffffff")
+            self.assertEqual(app.settings_log.cget("foreground"), "#111827")
+
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+
+            main_labels = [widget for widget in descendants(root) if isinstance(widget, tk.Label)]
+            self.assertTrue(main_labels)
+            for label in main_labels:
+                self.assertTrue(label.cget("foreground"))
+        finally:
+            app._close_settings()
             app.hotkey.close()
             root.destroy()
 

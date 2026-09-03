@@ -16,6 +16,10 @@ from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
 PREFS_PATH = APP_ROOT / "preferences.json"
+LIGHT_BACKGROUND = "#f3f4f6"
+FIELD_BACKGROUND = "#ffffff"
+TEXT_COLOUR = "#111827"
+MUTED_TEXT_COLOUR = "#555555"
 STATION_SLOTS = {"DFU": 7, "FCT": 6, "BT": 4}
 WINDOW_HEIGHTS = {"DFU": 560, "FCT": 513, "BT": 419}
 WINDOW_WIDTH = 360
@@ -73,6 +77,7 @@ class B518LogSolutionApp:
         self.event_lines: list[str] = []
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
+        self._configure_appearance()
         self._build()
         self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
         self.root.bind_all("<Command-Shift-M>", self._on_local_hotkey)
@@ -82,26 +87,67 @@ class B518LogSolutionApp:
         if not self.hotkey.available:
             self.root.after(300, self._show_hotkey_warning)
 
+    def _configure_appearance(self) -> None:
+        """Force a readable light palette even when macOS uses Dark Mode."""
+        self.style = ttk.Style(self.root)
+        if "clam" in self.style.theme_names():
+            self.style.theme_use("clam")
+        self.root.configure(background=LIGHT_BACKGROUND)
+        self.root.option_add("*TCombobox*Listbox.background", FIELD_BACKGROUND)
+        self.root.option_add("*TCombobox*Listbox.foreground", TEXT_COLOUR)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#dbeafe")
+        self.root.option_add("*TCombobox*Listbox.selectForeground", TEXT_COLOUR)
+        self.style.configure(".", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                             fieldbackground=FIELD_BACKGROUND)
+        self.style.configure("TFrame", background=LIGHT_BACKGROUND)
+        self.style.configure("TLabel", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
+        self.style.configure("TLabelFrame", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
+        self.style.configure("TLabelFrame.Label", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
+        self.style.configure("TNotebook", background=LIGHT_BACKGROUND, borderwidth=0)
+        self.style.configure("TNotebook.Tab", background="#e5e7eb", foreground=TEXT_COLOUR, padding=(12, 7))
+        self.style.map("TNotebook.Tab", background=[("selected", FIELD_BACKGROUND), ("active", "#dbeafe")],
+                       foreground=[("selected", TEXT_COLOUR), ("active", TEXT_COLOUR)])
+        self.style.configure("TButton", background="#e5e7eb", foreground=TEXT_COLOUR,
+                             padding=(10, 6), borderwidth=1)
+        self.style.map("TButton", background=[("active", "#d1d5db"), ("pressed", "#cbd5e1"),
+                                               ("disabled", "#eeeeee")],
+                       foreground=[("disabled", "#777777")])
+        self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                             font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
+        self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
+                                                    ("disabled", "#eeeeee")],
+                       foreground=[("disabled", "#777777")])
+        self.style.configure("TEntry", fieldbackground=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                             insertcolor=TEXT_COLOUR)
+        self.style.map("TEntry", fieldbackground=[("disabled", "#e5e7eb")],
+                       foreground=[("disabled", "#777777")])
+        self.style.configure("TCombobox", fieldbackground=FIELD_BACKGROUND, background="#e5e7eb",
+                             foreground=TEXT_COLOUR, arrowcolor=TEXT_COLOUR)
+        self.style.map("TCombobox", fieldbackground=[("readonly", FIELD_BACKGROUND),
+                                                      ("disabled", "#e5e7eb")],
+                       foreground=[("readonly", TEXT_COLOUR), ("disabled", "#777777")],
+                       selectbackground=[("readonly", FIELD_BACKGROUND)],
+                       selectforeground=[("readonly", TEXT_COLOUR)])
+        self.style.configure("TSeparator", background="#9ca3af")
+
     def _build(self) -> None:
-        self.root.configure(background="#f3f4f6")
-        body = tk.Frame(self.root, background="#f3f4f6", padx=8, pady=8)
+        body = tk.Frame(self.root, background=LIGHT_BACKGROUND, padx=8, pady=8)
         body.pack(fill="both", expand=True)
-        header = tk.Frame(body, background="#f3f4f6", height=34)
+        header = tk.Frame(body, background=LIGHT_BACKGROUND, height=34)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Button(header, text="設定", command=self.open_settings,
-                  font=("Helvetica", MAIN_FONT_SIZE, "bold"), width=4).pack(side="left")
-        self.station_title = tk.Label(header, background="#f3f4f6",
+        ttk.Button(header, text="設定", command=self.open_settings, style="Main.TButton", width=4).pack(side="left")
+        self.station_title = tk.Label(header, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.station_title.pack(side="left", expand=True)
-        self.monitor_state = tk.Label(header, background="#f3f4f6", foreground="#555555",
+        self.monitor_state = tk.Label(header, background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.monitor_state.pack(side="right")
 
-        legend = tk.Frame(body, background="#f3f4f6", height=58)
+        legend = tk.Frame(body, background=LIGHT_BACKGROUND, height=58)
         legend.pack(fill="x")
         legend.pack_propagate(False)
-        tk.Label(legend, text="KVM 狀態模板", background="#f3f4f6",
+        tk.Label(legend, text="KVM 狀態模板", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                  font=("Helvetica", MAIN_FONT_SIZE, "bold")).place(x=0, y=0, width=342, height=24)
         for index, status in enumerate(STATUS_TEMPLATE_STATES):
             label = tk.Label(legend, text=status, background=STATUS_COLOURS[status], foreground="#000000",
@@ -109,11 +155,11 @@ class B518LogSolutionApp:
             label.place(x=index * 85, y=26, width=84, height=30)
             self.template_labels[status] = label
 
-        headings = tk.Frame(body, background="#f3f4f6", height=30)
+        headings = tk.Frame(body, background=LIGHT_BACKGROUND, height=30)
         headings.pack(fill="x")
         headings.pack_propagate(False)
         for text, x, width in (("通道", 0, 60), ("狀態", 60, 94), ("產品 SN", 154, 188)):
-            tk.Label(headings, text=text, background="#f3f4f6",
+            tk.Label(headings, text=text, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                      font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center").place(
                 x=x, y=0, width=width, height=30)
 
@@ -121,13 +167,13 @@ class B518LogSolutionApp:
                                  width=ROW_WIDTH + 2, height=1)
         self.rows_box.pack(fill="x")
         self.rows_box.pack_propagate(False)
-        controls = tk.Frame(body, background="#f3f4f6", pady=9)
+        controls = tk.Frame(body, background=LIGHT_BACKGROUND, pady=9)
         controls.pack(fill="x", side="bottom")
-        self.start_button = tk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
-                                      font=("Helvetica", MAIN_FONT_SIZE, "bold"), height=1)
+        self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
+                                       style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 4))
-        self.stop_button = tk.Button(controls, text="停止監控", command=self.stop_monitor,
-                                     font=("Helvetica", MAIN_FONT_SIZE, "bold"), height=1, state="disabled")
+        self.stop_button = ttk.Button(controls, text="停止監控", command=self.stop_monitor,
+                                      style="Main.TButton", state="disabled")
         self.stop_button.pack(fill="x")
         self._render_rows()
 
@@ -297,6 +343,7 @@ class B518LogSolutionApp:
             return
         dialog = tk.Toplevel(self.root)
         self.settings_window = dialog
+        dialog.configure(background=LIGHT_BACKGROUND)
         dialog.title("B518 Log Solution 設定")
         dialog.geometry("720x620")
         dialog.minsize(680, 560)
@@ -363,7 +410,10 @@ class B518LogSolutionApp:
         controls = ttk.Frame(parent)
         controls.pack(fill="x", pady=(0, 8))
         ttk.Button(controls, text="開啟 Session 紀錄", command=self.open_session).pack(side="left")
-        self.settings_log = tk.Text(parent, wrap="word", state="disabled", height=26)
+        self.settings_log = tk.Text(parent, wrap="word", state="disabled", height=26,
+                                    background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                                    insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
+                                    selectforeground=TEXT_COLOUR)
         self.settings_log.pack(fill="both", expand=True)
         self.settings_log.configure(state="normal")
         self.settings_log.insert("1.0", "\n".join(self.event_lines))
