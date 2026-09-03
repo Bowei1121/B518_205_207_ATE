@@ -423,7 +423,7 @@ class B518LogSolutionApp:
         self.station.set(self.settings_station.get())
         for station, fields in self.settings_paths.items():
             for field, variable in fields.items():
-                variable.set(self.settings_paths[station][field].get())
+                self.paths[station][field].set(variable.get())
         self._save_preferences()
         self._render_rows()
         self._close_settings()

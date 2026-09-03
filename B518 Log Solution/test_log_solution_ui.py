@@ -1,6 +1,8 @@
-import unittest
+import json
 import tkinter as tk
+import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from tkinter import ttk
 from unittest.mock import patch
 
@@ -161,6 +163,55 @@ class LogSolutionUiTests(unittest.TestCase):
             app._close_settings()
             app.hotkey.close()
             root.destroy()
+
+    def test_save_settings_persists_all_station_paths_and_restores_station(self):
+        saved_paths = {
+            "DFU": {"active": "/logs/dfu/active", "final": "/logs/dfu/final", "caseinfo": ""},
+            "FCT": {"active": "/logs/fct/active", "final": "/logs/fct/final", "caseinfo": ""},
+            "BT": {"active": "", "final": "/logs/bt/testdata", "caseinfo": "/logs/bt/caseinfo"},
+        }
+        with TemporaryDirectory() as temporary_directory:
+            app_root = Path(temporary_directory) / "B518LogSolution"
+            prefs_path = app_root / "preferences.json"
+            with patch("b518_log_solution.APP_ROOT", app_root), patch("b518_log_solution.PREFS_PATH", prefs_path):
+                interpreter = tk.Tcl()
+                app = object.__new__(B518LogSolutionApp)
+                app.station = tk.StringVar(master=interpreter, value="DFU")
+                app.paths = {station: {field: tk.StringVar(master=interpreter, value="")
+                                       for field in ("active", "final", "caseinfo")}
+                             for station in ("DFU", "FCT", "BT")}
+                app.settings_station = tk.StringVar(master=interpreter, value="BT")
+                app.settings_paths = {
+                    station: {field: tk.StringVar(master=interpreter, value=value)
+                              for field, value in fields.items()}
+                    for station, fields in saved_paths.items()
+                }
+                app._render_rows = lambda: None
+                app._close_settings = lambda: None
+
+                app._save_settings()
+                self.assertEqual(app.station.get(), "BT")
+                for station, fields in saved_paths.items():
+                    for field, value in fields.items():
+                        self.assertEqual(app.paths[station][field].get(), value)
+                self.assertEqual(json.loads(prefs_path.read_text(encoding="utf-8")), {
+                    "station": "BT", "paths": saved_paths,
+                })
+
+                restored_app = object.__new__(B518LogSolutionApp)
+                restored_app.prefs = restored_app._load_preferences()
+                self.assertEqual(restored_app.prefs["station"], "BT")
+                self.assertEqual(restored_app.prefs["paths"], saved_paths)
+
+    def test_cancel_settings_does_not_change_saved_path_values(self):
+        interpreter = tk.Tcl()
+        app = object.__new__(B518LogSolutionApp)
+        app.paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/before")}}
+        app.settings_paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/after")}}
+        app.settings_window = None
+        app.settings_log = None
+        app._close_settings()
+        self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
 
 
 if __name__ == "__main__":

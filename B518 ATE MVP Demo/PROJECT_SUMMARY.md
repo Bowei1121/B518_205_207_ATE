@@ -10,6 +10,7 @@
 - `Command + Shift + M` 透過 macOS Carbon 註冊為單一全域快捷鍵，背景的 Atlas／BT HMI 有焦點時仍可開始監控；它不使用全鍵盤事件監聽，因此不要求 Accessibility、Input Monitoring 或 Screen Recording 權限。若註冊衝突，保留本機有焦點快捷鍵與主畫面按鈕。
 - 修正新機尚未設定路徑時，空字串被 `Path("")` 當成目前目錄並在 UI 執行緒大量掃描、看似無法開始的問題。必要路徑空白／不存在會直接顯示錯誤；建立監控器或存取目錄發生例外也會顯示原因並回到待命。Catalina 建置腳本會同時執行監控核心與 UI 啟動回歸測試。
 - 修正 macOS 深色模式下 Tk `aqua` theme 與固定淺色容器混用，造成主標題／欄名變白、設定頁輸入框變黑、按鈕及分頁文字消失的問題。Log Solution 現在固定使用 `clam` 淺色 theme，並為 Label、Entry、Combobox、Notebook、Button 與事件文字框指定高對比色票。
+- 修正設定頁「儲存」只更新暫存 `StringVar`、卻未寫回偏好設定來源的問題。現在 DFU／FCT／BT 的所有路徑會一次保存，重開 App 可恢復上次工站及其 7／6／4 Slot 畫面；取消設定仍不會保存變更。
 
 ## 2026-09-01 Log Solution 整合規劃
 
