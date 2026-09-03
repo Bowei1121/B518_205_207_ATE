@@ -266,3 +266,9 @@ git remote -v
 - CaseInfo 用於即時顯示 `TESTING`、SN、當前測項及 `COMPLETING`。最終 CSV 一旦把 slot 定案為 `PASS／FAIL／NOTEST`，CaseInfo 後續記錄不得覆蓋結果。
 - 實機 CaseInfo 是當日累積檔，可能無換行連接多筆資料；程式改以內嵌時間戳分割，接受 Demo 開始前 30 秒內的近期尾端記錄。CaseInfo 缺少或解析失敗只通知並記 Log，不阻斷 CSV 監聽。
 - 現場提供的 `2026-08-21` thread1～4 CaseInfo 已用於驗證時間格式、`SNRead`、`CloseFixture` 與 thread／slot 對應。
+## 2026-09-03：B518 Log Solution Worktree 操作
+
+- 純 Log 監控方案位於獨立 Git worktree `0. PC/B518 Log Solution`，分支為 `B518-Log-Solution`；原本 `0. PC/Mac mini` 仍是完整 Atlas Agent 的 `main` 工作目錄。
+- 要修改 Log Solution 時，請以 worktree 根目錄開啟 IDE／終端機；可用 `git branch --show-current` 確認目前分支為 `B518-Log-Solution`。實際獨立程式原始碼在其內的 `B518 Log Solution/` 子目錄。
+- 不要在兩個 worktree 間直接複製 `.git` 或整個專案資料夾。若日後需同步 main 的變更，應在 Log Solution worktree 透過 Git 明確 merge、rebase 或 cherry-pick。
+- Log Solution 執行入口為 `python3 b518_log_solution.py`，測試為 `python3 -m unittest -v test_log_monitoring.py`（均在內層 `B518 Log Solution/` 目錄執行）。
