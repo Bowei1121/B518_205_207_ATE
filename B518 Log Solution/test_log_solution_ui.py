@@ -1,4 +1,5 @@
 import json
+import queue
 import tkinter as tk
 import unittest
 from pathlib import Path
@@ -215,7 +216,31 @@ class LogSolutionUiTests(unittest.TestCase):
         app._close_settings()
         self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
 
-    def test_terminal_result_brings_dashboard_to_front(self):
+    def test_successful_monitor_start_keeps_dashboard_topmost(self):
+        monitor = MagicMock()
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.events = queue.Queue()
+        app.monitor = None
+        app.station = SimpleNamespace(get=lambda: "DFU")
+        app.paths = {"DFU": {
+            "active": SimpleNamespace(get=lambda: "."),
+            "final": SimpleNamespace(get=lambda: "."),
+        }}
+        app.start_button = MagicMock()
+        app.monitor_state = MagicMock()
+        app.event_lines = []
+        app.settings_log = None
+        app._save_preferences = MagicMock()
+        app._reset_rows = MagicMock()
+        app._set_monitor_controls = MagicMock()
+        with patch("b518_log_solution.AtlasActiveArchiveMonitor", return_value=monitor):
+            app.start_monitor()
+
+        monitor.start.assert_called_once()
+        app.root.attributes.assert_called_once_with("-topmost", True)
+
+    def test_result_does_not_change_topmost_or_keyboard_focus(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="PASS")})
@@ -227,22 +252,36 @@ class LogSolutionUiTests(unittest.TestCase):
         app._handle_event(MonitorEvent("result", "slot1 PASS", 1, "SN123", "PASS"))
 
         app._set_row.assert_called_once_with(1, "SN123", "PASS")
-        app.root.deiconify.assert_called_once()
-        app.root.lift.assert_called_once()
-        app.root.focus_force.assert_called_once()
+        app.root.attributes.assert_not_called()
+        app.root.focus_force.assert_not_called()
 
-    def test_non_terminal_result_does_not_bring_dashboard_to_front(self):
+    def test_finished_and_stopped_events_release_dashboard_topmost(self):
+        for kind in ("finished", "stopped"):
+            with self.subTest(kind=kind):
+                app = object.__new__(B518LogSolutionApp)
+                app.root = MagicMock()
+                app.monitor = MagicMock()
+                app.event_lines = []
+                app.settings_log = None
+                app._set_monitor_controls = MagicMock()
+
+                app._handle_event(MonitorEvent(kind, "monitor ended"))
+
+                app.root.attributes.assert_called_once_with("-topmost", False)
+                self.assertIsNone(app.monitor)
+                app._set_monitor_controls.assert_called_once_with(False)
+
+    def test_close_releases_dashboard_topmost(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
-        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="TESTING")})
-        app.event_lines = []
-        app.settings_log = None
-        app._set_row = MagicMock()
-        app._set_monitor_controls = MagicMock()
+        app.hotkey = MagicMock()
+        app.monitor = None
+        app._save_preferences = MagicMock()
 
-        app._handle_event(MonitorEvent("result", "slot1 TESTING", 1, "SN123", "TESTING"))
+        app.close()
 
-        app.root.lift.assert_not_called()
+        app.root.attributes.assert_called_once_with("-topmost", False)
+        app.root.destroy.assert_called_once()
 
 
 if __name__ == "__main__":

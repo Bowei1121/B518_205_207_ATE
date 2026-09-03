@@ -24,7 +24,7 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 看板上方固定顯示 `PASS`、`FAIL`、`TESTING`、`NOTEST` 四個色塊，其文字、字級與背景色和 Slot 實際狀態完全相同，讓 KVM 在第一次測試前即可製作全部狀態模板。這些色塊只供取樣，不是操作按鈕。
 
 - `Command + Shift + M` 等同「開始監控」。在 macOS 上會註冊為全域快捷鍵，因此 Atlas／BT HMI 有鍵盤焦點時也可觸發；程式正在監控時不會重啟本輪。
-- 任一 Slot 收到最終 `PASS`、`FAIL` 或 `NOTEST` 結果時，Log Solution 會自動回到最前方並取得焦點，方便 KVM 立即辨識；不會維持永遠置頂。
+- 成功開始監控後，Log Solution 主看板會持續置頂，直到所有 Slot 都完成且監控器結束本輪，或人員手動停止監控。單一 Slot 結果不會搶走 Atlas／BT HMI 的鍵盤焦點。
 - 快捷鍵只向 macOS 註冊這一組按鍵，並不監聽其他鍵盤輸入，所以不需要 Accessibility、Input Monitoring 或 Screen Recording 權限。
 - 如果這組快捷鍵已被其他程式占用，App 會顯示警告；仍可按主畫面按鈕，或在 Log Solution 有焦點時使用相同按鍵。
 - 目標最小螢幕解析度為 `1280 x 1024`。App 不會強制置頂，部署時應讓 Atlas／BT HMI 不覆蓋右上角看板。

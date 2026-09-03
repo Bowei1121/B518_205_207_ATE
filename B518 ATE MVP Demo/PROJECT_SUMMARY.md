@@ -11,7 +11,7 @@
 - 修正新機尚未設定路徑時，空字串被 `Path("")` 當成目前目錄並在 UI 執行緒大量掃描、看似無法開始的問題。必要路徑空白／不存在會直接顯示錯誤；建立監控器或存取目錄發生例外也會顯示原因並回到待命。Catalina 建置腳本會同時執行監控核心與 UI 啟動回歸測試。
 - 修正 macOS 深色模式下 Tk `aqua` theme 與固定淺色容器混用，造成主標題／欄名變白、設定頁輸入框變黑、按鈕及分頁文字消失的問題。Log Solution 現在固定使用 `clam` 淺色 theme，並為 Label、Entry、Combobox、Notebook、Button 與事件文字框指定高對比色票。
 - 修正設定頁「儲存」只更新暫存 `StringVar`、卻未寫回偏好設定來源的問題。現在 DFU／FCT／BT 的所有路徑會一次保存，重開 App 可恢復上次工站及其 7／6／4 Slot 畫面；取消設定仍不會保存變更。
-- Log Solution 在任一 Slot 收到最終 PASS／FAIL／NOTEST 時，會自動 `deiconify`、`lift` 並取得焦點，讓 KVM 立即取得結果看板；App 不會維持永遠置頂，也不會在 TESTING／COMPLETING 或人工停止時搶走焦點。
+- Log Solution 成功開始監控後會持續設為置頂，直到所有 Slot 完成後監控器發出 `finished`，或人員手動停止。單一 Slot PASS／FAIL／NOTEST 不再強制搶走 Atlas／BT HMI 的鍵盤焦點；App 關閉時也會主動解除置頂。
 
 ## 2026-09-01 Log Solution 整合規劃
 
