@@ -1,7 +1,10 @@
 import unittest
 import tkinter as tk
 
-from b518_log_solution import B518LogSolutionApp, STATUS_COLOURS, slot_count, sn_font_size, window_height
+from b518_log_solution import (
+    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    STATUS_TEMPLATE_STATES, WINDOW_WIDTH, slot_count, sn_font_size, window_height,
+)
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 
 
@@ -22,18 +25,19 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
         self.assertEqual(slot_count("BT"), 4)
-        self.assertEqual(window_height("DFU"), 620)
-        self.assertEqual(window_height("FCT"), 556)
-        self.assertEqual(window_height("BT"), 428)
+        self.assertEqual(window_height("DFU"), 560)
+        self.assertEqual(window_height("FCT"), 513)
+        self.assertEqual(window_height("BT"), 419)
+        self.assertEqual(WINDOW_WIDTH, 360)
 
     def test_all_display_statuses_have_explicit_colours(self):
         for status in ("PASS", "FAIL", "TESTING", "NOTEST", "WAITING", "COMPLETING", "STALLED", "STOPPED"):
             self.assertRegex(STATUS_COLOURS[status], r"^#[0-9a-fA-F]{6}$")
 
-    def test_serial_number_font_stays_readable_without_truncation_policy(self):
-        self.assertEqual(sn_font_size("HK5HUX6STQ800003YV"), 20)
-        self.assertGreaterEqual(sn_font_size("X" * 128), 12)
-        self.assertEqual(sn_font_size("X" * 1000), 12)
+    def test_all_serial_numbers_use_fixed_fourteen_point_font(self):
+        self.assertEqual(MAIN_FONT_SIZE, 14)
+        self.assertEqual(sn_font_size("HK5HUX6STQ800003YV"), 14)
+        self.assertEqual(sn_font_size("X" * 128), 14)
 
     def test_global_hotkey_success_delivers_callback_and_can_close(self):
         fired = []
@@ -69,11 +73,16 @@ class LogSolutionUiTests(unittest.TestCase):
         root.update_idletasks()
         try:
             for row in app.status_rows.values():
-                self.assertGreaterEqual(row["slot"].winfo_width(), 60)
-                self.assertGreaterEqual(row["status"].winfo_width(), 120)
-                self.assertGreaterEqual(row["sn"].winfo_width(), 240)
+                self.assertGreaterEqual(row["slot"].winfo_width(), 59)
+                self.assertGreaterEqual(row["status"].winfo_width(), 93)
+                self.assertGreaterEqual(row["sn"].winfo_width(), 188)
                 for cell in row.values():
-                    self.assertGreaterEqual(cell.winfo_height(), 64)
+                    self.assertGreaterEqual(cell.winfo_height(), ROW_HEIGHT)
+                    self.assertEqual(int(cell.cget("font").split()[1]), MAIN_FONT_SIZE)
+            self.assertEqual(tuple(app.template_labels), STATUS_TEMPLATE_STATES)
+            for status, label in app.template_labels.items():
+                self.assertEqual(label.cget("text"), status)
+                self.assertEqual(label.cget("background"), STATUS_COLOURS[status])
         finally:
             app.hotkey.close()
             root.destroy()
