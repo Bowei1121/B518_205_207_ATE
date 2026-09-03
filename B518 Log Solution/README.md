@@ -1,6 +1,6 @@
 # B518 Log Solution
 
-獨立的 macOS 本機 Log 監控程式，供 DFU、FCT、BT 顯示測試結果。它不含 Arduino、USB CDC、TCP、OpenCV、螢幕截圖、鍵盤／滑鼠或 KVM 控制。
+獨立的 macOS 本機 Log 監控程式，供 DFU、FCT、BT 顯示測試結果。它不含 Arduino、USB CDC、TCP、OpenCV、螢幕截圖、鍵盤／滑鼠或 KVM 控制；與 Atlas Agent 是不同的 App 與程序。
 
 ## 使用方式
 
@@ -11,8 +11,17 @@ python3 b518_log_solution.py
 
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 
+## KVM 顯示與快捷鍵
+
+主視窗是供 KVM 擷取的固定高對比看板：只顯示目前工站、Slot、狀態、產品 SN 與開始／停止按鈕。它固定寬度 480 px，啟動時會自動放在螢幕右上方；DFU、FCT、BT 分別顯示 7、6、4 個通道。設定、路徑、即時事件與 Session 紀錄都位於左上角的「設定」視窗。
+
+- `Control + Shift + M` 等同「開始監控」。在 macOS 上會註冊為全域快捷鍵，因此 Atlas／BT HMI 有鍵盤焦點時也可觸發；程式正在監控時不會重啟本輪。
+- 快捷鍵只向 macOS 註冊這一組按鍵，並不監聽其他鍵盤輸入，所以不需要 Accessibility、Input Monitoring 或 Screen Recording 權限。
+- 如果這組快捷鍵已被其他程式占用，App 會顯示警告；仍可按主畫面按鈕，或在 Log Solution 有焦點時使用相同按鍵。
+- 目標最小螢幕解析度為 `1280 x 1024`。App 不會強制置頂，部署時應讓 Atlas／BT HMI 不覆蓋右上角看板。
+
 - DFU：選擇 `active` 及 `unitest`；監看 slot1～7。
 - FCT：選擇 `active` 及 `unit-archive`；監看 slot1～6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。
-- BT：選擇 `TestData`，CaseInfo 根路徑可選。使用 `BT Log Start All` 或單一 Thread 按鈕。檔案穩定五秒後才解析；空 SN 的 FAILED CSV 顯示 `NOTEST`。
+- BT：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；檔案穩定五秒後才解析；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
 每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含事件、結果、設定、時間與來源檔案。

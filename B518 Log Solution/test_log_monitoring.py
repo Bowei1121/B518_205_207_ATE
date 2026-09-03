@@ -121,7 +121,9 @@ class LogMonitoringTests(unittest.TestCase):
 
     def test_log_solution_never_imports_control_dependencies(self):
         base = Path(__file__).parent
-        content = (base / "log_monitoring.py").read_text() + (base / "b518_log_solution.py").read_text()
+        content = "".join((base / name).read_text() for name in (
+            "log_monitoring.py", "b518_log_solution.py", "global_hotkey.py",
+        ))
         for forbidden in ("import serial", "import cv2", "import socket", "Arduino", "SCREENSHOT"):
             self.assertNotIn(forbidden, content)
 
