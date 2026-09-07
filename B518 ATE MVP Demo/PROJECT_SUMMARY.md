@@ -272,3 +272,11 @@ git remote -v
 - 要修改 Log Solution 時，請以 worktree 根目錄開啟 IDE／終端機；可用 `git branch --show-current` 確認目前分支為 `B518-Log-Solution`。實際獨立程式原始碼在其內的 `B518 Log Solution/` 子目錄。
 - 不要在兩個 worktree 間直接複製 `.git` 或整個專案資料夾。若日後需同步 main 的變更，應在 Log Solution worktree 透過 Git 明確 merge、rebase 或 cherry-pick。
 - Log Solution 執行入口為 `python3 b518_log_solution.py`，測試為 `python3 -m unittest -v test_log_monitoring.py`（均在內層 `B518 Log Solution/` 目錄執行）。
+
+## 2026-09-07：Log Solution 三站監控能力盤點
+
+- `B518-Log-Solution` worktree 的獨立 App 已實作 DFU、FCT、BT 三站的本機 Log 監控與固定 slot 結果看板；此 App 不需要 Arduino、USB CDC、TCP、影像辨識或 HID。
+- DFU：監看 `active/group0-slot1～7`，由可信欄位 `MLB_SN`／`PrimaryIdentity`／`SerialNumber` 鎖定 SN；active 結束後讀取 `unitest/<SN>/<timestamp>/system/records.csv`（亦相容 `record.csv`）定案 PASS／FAIL。
+- FCT：流程相同但監看 slot1～6，最終根路徑為 `unit-archive`；active 消失後為 `COMPLETING`，從未讀到可信 SN 才顯示「SN 讀取失敗／FAIL」。最終結果不會被晚到的 active 事件覆寫。
+- BT：監看 `TestData/YYYY-MM-DD/PASSED|FAILED/*.csv`，Thread0～3 對應 slot1～4；CSV 穩定五秒才解析，空 SN 的 FAILED 檔顯示 NOTEST。選填 CaseInfo 僅提供 TESTING／COMPLETING／SN 進度，無法覆蓋最終 CSV 結果；批次或同 Thread 衝突要求人工覆核。
+- 本日核心監控測試 8 項通過（FCT archive／SN 鎖定、BT CSV 批次、NOTEST、CaseInfo、時間快照與純 Log 相依性）。完整 Tk UI 測試在目前無圖形桌面的自動環境觸發原生 Tk 程序中止，並非 assertion 失敗；需在目標 macOS GUI 上執行實機 UI 驗收。DFU 與 FCT 共用同一監控器，DFU 尚需以實機 unitest 樣本完成最終驗收。
