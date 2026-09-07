@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
     B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
-    STATUS_TEMPLATE_STATES, WINDOW_WIDTH, slot_count, sn_font_size, window_height,
+    STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour, slot_count, sn_font_size, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -33,14 +33,24 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
         self.assertEqual(slot_count("BT"), 4)
-        self.assertEqual(window_height("DFU"), 560)
-        self.assertEqual(window_height("FCT"), 513)
-        self.assertEqual(window_height("BT"), 419)
+        self.assertEqual(window_height("DFU"), 612)
+        self.assertEqual(window_height("FCT"), 565)
+        self.assertEqual(window_height("BT"), 471)
         self.assertEqual(WINDOW_WIDTH, 360)
 
     def test_all_display_statuses_have_explicit_colours(self):
         for status in ("PASS", "FAIL", "TESTING", "NOTEST", "WAITING", "COMPLETING", "STALLED", "STOPPED"):
             self.assertRegex(STATUS_COLOURS[status], r"^#[0-9a-fA-F]{6}$")
+        self.assertRegex(UNAVAILABLE_COLOUR, r"^#[0-9a-fA-F]{6}$")
+        self.assertEqual(KVM_BLOCK_COUNT, 7)
+
+    def test_kvm_result_band_keeps_seven_fixed_slot_positions(self):
+        self.assertEqual(kvm_block_colour("DFU", 7, "WAITING"), STATUS_COLOURS["WAITING"])
+        self.assertEqual(kvm_block_colour("FCT", 6, "NOTEST"), STATUS_COLOURS["NOTEST"])
+        self.assertEqual(kvm_block_colour("FCT", 7, "PASS"), UNAVAILABLE_COLOUR)
+        self.assertEqual(kvm_block_colour("BT", 4, "FAIL"), STATUS_COLOURS["FAIL"])
+        self.assertEqual(kvm_block_colour("BT", 5, "TESTING"), UNAVAILABLE_COLOUR)
+        self.assertEqual(kvm_block_colour("BT", 7, "NOTEST"), UNAVAILABLE_COLOUR)
 
     def test_all_serial_numbers_use_fixed_fourteen_point_font(self):
         self.assertEqual(MAIN_FONT_SIZE, 14)

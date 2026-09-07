@@ -16,12 +16,14 @@ from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
 PREFS_PATH = APP_ROOT / "preferences.json"
+ASSETS_ROOT = Path(__file__).with_name("assets")
+COMPANY_LOGO_PATH = ASSETS_ROOT / "foxlink_logo.png"
 LIGHT_BACKGROUND = "#f3f4f6"
 FIELD_BACKGROUND = "#ffffff"
 TEXT_COLOUR = "#111827"
 MUTED_TEXT_COLOUR = "#555555"
 STATION_SLOTS = {"DFU": 7, "FCT": 6, "BT": 4}
-WINDOW_HEIGHTS = {"DFU": 560, "FCT": 513, "BT": 419}
+WINDOW_HEIGHTS = {"DFU": 612, "FCT": 565, "BT": 471}
 WINDOW_WIDTH = 360
 MAIN_FONT_SIZE = 14
 ROW_HEIGHT = 46
@@ -32,6 +34,8 @@ STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
     "WAITING": "#d9d9d9", "COMPLETING": "#82c7ff", "STALLED": "#ff9900", "STOPPED": "#bfbfbf",
 }
+UNAVAILABLE_COLOUR = "#000000"
+KVM_BLOCK_COUNT = 7
 
 
 def slot_count(station: str) -> int:
@@ -40,6 +44,13 @@ def slot_count(station: str) -> int:
 
 def window_height(station: str) -> int:
     return WINDOW_HEIGHTS.get(station.upper(), WINDOW_HEIGHTS["FCT"])
+
+
+def kvm_block_colour(station: str, slot: int, status: str) -> str:
+    """Return the no-text KVM result colour for one fixed slot position."""
+    if slot > slot_count(station):
+        return UNAVAILABLE_COLOUR
+    return STATUS_COLOURS.get(status, STATUS_COLOURS["WAITING"])
 
 
 def sn_font_size(_sn: str, _column_width: int = 188) -> int:
@@ -74,6 +85,8 @@ class B518LogSolutionApp:
                       for name in STATION_SLOTS}
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
         self.template_labels: Dict[str, tk.Label] = {}
+        self.kvm_result_blocks: Dict[int, tk.Label] = {}
+        self.company_logo: Optional[tk.PhotoImage] = None
         self.event_lines: list[str] = []
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
@@ -137,12 +150,25 @@ class B518LogSolutionApp:
         header.pack(fill="x")
         header.pack_propagate(False)
         ttk.Button(header, text="設定", command=self.open_settings, style="Main.TButton", width=4).pack(side="left")
+        self._build_company_identity(header)
         self.station_title = tk.Label(header, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.station_title.pack(side="left", expand=True)
         self.monitor_state = tk.Label(header, background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.monitor_state.pack(side="right")
+
+        kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=48)
+        kvm_results.pack(fill="x", pady=(2, 4))
+        kvm_results.pack_propagate(False)
+        tk.Label(kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                 font=("Helvetica", 10, "bold"), anchor="w").place(x=0, y=0, width=80, height=16)
+        self._build_kvm_locator(kvm_results, 82, 2, mirrored=False)
+        self._build_kvm_locator(kvm_results, 320, 2, mirrored=True)
+        for slot in range(1, KVM_BLOCK_COUNT + 1):
+            block = tk.Label(kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
+            block.place(x=(slot - 1) * 49, y=20, width=47, height=26)
+            self.kvm_result_blocks[slot] = block
 
         legend = tk.Frame(body, background=LIGHT_BACKGROUND, height=58)
         legend.pack(fill="x")
@@ -177,6 +203,34 @@ class B518LogSolutionApp:
         self.stop_button.pack(fill="x")
         self._render_rows()
 
+    def _build_company_identity(self, parent: tk.Widget) -> None:
+        """Show the supplied company asset when deployed, with a readable fallback."""
+        if COMPANY_LOGO_PATH.is_file():
+            try:
+                self.company_logo = tk.PhotoImage(file=str(COMPANY_LOGO_PATH))
+            except tk.TclError:
+                self.company_logo = None
+        if self.company_logo:
+            tk.Label(parent, image=self.company_logo, background=LIGHT_BACKGROUND).pack(side="left", padx=(8, 4))
+        else:
+            tk.Label(parent, text="B518 LOG", background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
+                     font=("Helvetica", 10, "bold")).pack(side="left", padx=(8, 4))
+
+    @staticmethod
+    def _build_kvm_locator(parent: tk.Widget, x: int, y: int, mirrored: bool) -> None:
+        """Two asymmetric black/white marks let image analysis lock orientation and scale."""
+        marker = tk.Frame(parent, background="#000000", width=14, height=14)
+        marker.place(x=x, y=y, width=14, height=14)
+        inset_x = 2 if not mirrored else 6
+        inset_y = 2 if not mirrored else 6
+        tk.Frame(marker, background="#ffffff", width=6, height=6).place(x=inset_x, y=inset_y, width=6, height=6)
+
+    def _set_kvm_result_block(self, slot: int, status: str) -> None:
+        block = self.kvm_result_blocks.get(slot)
+        if not block:
+            return
+        block.configure(background=kvm_block_colour(self.station.get(), slot, status))
+
     def _render_rows(self) -> None:
         for child in self.rows_box.winfo_children():
             child.destroy()
@@ -200,6 +254,8 @@ class B518LogSolutionApp:
             status_label.place(x=60, y=0, width=93, height=ROW_HEIGHT)
             sn_label.place(x=154, y=0, width=188, height=ROW_HEIGHT)
             self.status_rows[slot] = {"slot": slot_label, "status": status_label, "sn": sn_label}
+        for slot in range(1, KVM_BLOCK_COUNT + 1):
+            self._set_kvm_result_block(slot, "WAITING")
         self._position_window()
 
     def _position_window(self) -> None:
@@ -248,6 +304,7 @@ class B518LogSolutionApp:
         status = status if status in STATUS_COLOURS else "WAITING"
         widgets["status"].configure(text=status, background=STATUS_COLOURS[status])
         widgets["sn"].configure(text=sn, font=("Menlo", sn_font_size(sn), "bold"))
+        self._set_kvm_result_block(slot, status)
 
     def _reset_rows(self) -> None:
         for slot in self.status_rows:

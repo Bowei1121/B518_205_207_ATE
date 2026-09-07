@@ -66,6 +66,18 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[1].sn, "SN 讀取失敗")
         self.assertEqual(monitor.results[1].status, "FAIL")
 
+    def test_active_batch_marks_unseen_slots_notest_only_after_active_is_gone(self):
+        active, final = self.temp / "active", self.temp / "unitest"
+        monitor = AtlasActiveArchiveMonitor("DFU", active, final, (1, 2), now=lambda: self.now, session_root=self.temp / "sessions")
+        write_records(active / "group0-slot1" / "system" / "records.csv", "HK5HUX6STQ800003YV", "PASS")
+        monitor.poll_once()
+        self.assertEqual(monitor.results[2].status, "WAITING")
+        (active / "group0-slot1").rename(active / "completed-slot1")
+        monitor.poll_once()
+        self.now += timedelta(seconds=3)
+        monitor.poll_once()
+        self.assertEqual(monitor.results[2].status, "NOTEST")
+
     def test_active_csv_from_before_monitor_start_is_ignored_until_changed(self):
         active, final = self.temp / "active", self.temp / "unit-archive"
         old = active / "group0-slot1" / "system" / "records.csv"

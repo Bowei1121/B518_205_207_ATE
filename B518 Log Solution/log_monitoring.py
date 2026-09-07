@@ -301,6 +301,7 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
         self.locked_sn: Dict[int, str] = {}
         self.last_active_at: Dict[int, datetime] = {}
         self._warned_stalled = False
+        self._inactive_since: Optional[datetime] = None
 
     def _active_records(self, slot: int) -> Optional[Path]:
         root = self.active_root / "group0-slot{}".format(slot)
@@ -341,7 +342,10 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
 
     def poll_once(self) -> None:
         active_now: Set[int] = set()
+        active_directories: Set[int] = set()
         for slot in self.slots:
+            if (self.active_root / "group0-slot{}".format(slot)).is_dir():
+                active_directories.add(slot)
             record = self._active_records(slot)
             if record and self._active_is_new_or_changed(record):
                 active_now.add(slot)
@@ -370,6 +374,15 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                 if state in {"PASS", "FAIL"}:
                     self.set_result(slot, state, sn, str(candidate))
                     self.emit(MonitorEvent("final", "slot{} 最終 {}".format(slot, state), slot, sn, state, str(candidate)))
+        if self.seen_slots and not active_directories:
+            if self._inactive_since is None:
+                self._inactive_since = self.now()
+            elif self.now() - self._inactive_since >= timedelta(seconds=3):
+                for slot in set(self.slots) - self.seen_slots:
+                    if self.results[slot].status == "WAITING":
+                        self.set_result(slot, "NOTEST")
+        else:
+            self._inactive_since = None
         if self.seen_slots and active_now:
             # An active test is never killed by an arbitrary total timeout.
             elapsed = self.now() - min(self.last_active_at.values())

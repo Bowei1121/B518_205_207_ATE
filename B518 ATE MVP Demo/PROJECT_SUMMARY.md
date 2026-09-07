@@ -1,6 +1,13 @@
 # B518 ATE MVP Demo — 專案摘要
 
-最後更新：2026-09-01（Asia/Taipei）
+最後更新：2026-09-07（Asia/Shanghai）
+
+## 2026-09-07 Log Solution KVM 七槽純色結果帶
+
+- 主看板新增固定七格、無文字的 `KVM RESULT` 色帶；由左至右固定對應 slot1～7，兩端以方向相反的黑白標記協助上位機定位、判別方向與讀取各格中央顏色，因此結果判讀不需要 OCR。
+- 有效通道開始時顯示灰色 WAITING，測試活動後為黃色 TESTING，最終 PASS／FAIL 分別為綠／紅；只有 active 測試資料已消失滿三秒、且本輪確定進入收尾時，未參與的有效通道才定案為粉紅色 NOTEST。人工停止或異常停止不會把 WAITING 改為 NOTEST。
+- DFU 的 slot1～7 都是有效通道；FCT 的 slot7 固定黑色；BT 的 slot5～7 固定黑色。固定位置讓後續所有四通道設備都可共用相同的 KVM 影像分析座標。
+- Logo 僅接受原始核准圖檔：放在 `B518 Log Solution/assets/foxlink_logo.png` 即會原樣載入。尚未提供檔案時顯示中性的 `B518 LOG` 文字，不重繪、改造或仿製公司商標。
 
 ## 2026-09-03 Log Solution KVM 看板與全域開始快捷鍵
 
