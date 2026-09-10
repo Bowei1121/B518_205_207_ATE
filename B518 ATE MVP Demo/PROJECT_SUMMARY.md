@@ -314,3 +314,8 @@ git remote -v
 
 - BT CaseInfo 的第一個 `SNRead` 是狀態機狀態；只有固定紀錄結構 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的欄位才是物料條碼。
 - 解析器改為嚴格驗證分隔欄與第二個動作欄，避免狀態仍為 `SNRead`、但後續已切換到其他量測動作時誤覆寫產品條碼。
+
+## 2026-09-10 macOS 15 Apple Silicon 安裝包
+
+- 新增 `build_macos15_arm64_log_solution.sh`，供新的 M 系列 macOS 15 測試機原生建置 arm64 Log Solution App；舊 Intel Catalina／Mojave 打包流程維持不變。
+- 新腳本只允許 arm64 與 macOS 15，使用原生 Python 3.12、獨立虛擬環境與 PyInstaller arm64 目標，產生 ad-hoc 簽章 ZIP 與 SHA-256 至 `dist-macos15-arm64/`。
