@@ -41,6 +41,6 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 
 - DFU：選擇 `active` 及 `unitest`；監看 slot1～7。
 - FCT：選擇 `active` 及 `unit-archive`；監看 slot1～6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。
-- BT：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；CaseInfo 支援實機的 CSV 記錄格式（例如 `2026-08-21 15:19:24:160, ...,SNRead,...,條碼,...`），會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
+- BT：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；CaseInfo 支援實機的 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
 每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含事件、結果、設定、時間與來源檔案。

@@ -160,6 +160,23 @@ class LogMonitoringTests(unittest.TestCase):
             self.assertEqual(monitor.results[slot].status, "TESTING")
             self.assertEqual(monitor.results[slot].sn, sn)
 
+    def test_bt_caseinfo_uses_second_snread_action_to_identify_barcode(self):
+        root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,
+                               now=lambda: datetime(2026, 9, 10, 10, 0, 0),
+                               session_root=self.temp / "sessions")
+        path = caseinfo / "thread1CaseInfo_2026-09-10.txt"
+        path.parent.mkdir()
+        path.write_text(
+            "2026-09-10 10:00:00:000, 4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,NA,NA,NA,Passed,9.50\r"
+            "2026-09-10 10:00:01:000, 5,TestFlow,SNRead,--,CBRead,HK5HVH6ZWRONG003YV,NA,NA,NA,Passed,0.00\r"
+            "2026-09-10 10:00:02:000, 6,TestFlow,CBRead,--,CBRead,2,NA,NA,NA,Passed,0.00\r\n",
+            encoding="utf-8",
+        )
+        monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "TESTING")
+        self.assertEqual(monitor.results[1].sn, "HK5HVH6ZSB300003YV")
+
     def test_bt_caseinfo_buffers_partial_production_record(self):
         root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
         monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,

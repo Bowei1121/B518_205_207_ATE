@@ -547,8 +547,11 @@ class BtLogMonitor(BaseMonitor):
                 sn_match = re.search(r"(?:SNRead|SerialNumber|MLB_SN|PrimaryIdentity)\s*[:=]\s*([A-Za-z0-9_-]+)", message, re.I)
                 sn = normalise_sn(sn_match.group(1)) if sn_match and is_trusted_sn(sn_match.group(1)) else ""
                 fields = next(csv.reader([message.lstrip(" ,\r\n")]), [])
-                if (not sn and len(fields) > 5
-                        and any(field.strip().lower() == "snread" for field in (fields[2], fields[4]))
+                # CaseInfo CSV uses column 3 for the state-machine state and
+                # column 5 for the action.  Only ``...,--,SNRead,<barcode>``
+                # means that column 6 carries the physical material barcode.
+                if (not sn and len(fields) > 5 and fields[3].strip() == "--"
+                        and fields[4].strip().lower() == "snread"
                         and is_trusted_sn(fields[5])):
                     sn = normalise_sn(fields[5])
                 status = "COMPLETING" if re.search(r"CloseFixture|complete|finish", message, re.I) else "TESTING"
