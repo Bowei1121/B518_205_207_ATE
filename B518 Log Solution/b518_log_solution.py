@@ -417,11 +417,22 @@ class B518LogSolutionApp:
             pass
         self.root.after(150, self._drain_events)
 
+    def _bring_dashboard_to_front(self) -> None:
+        """Show the completed-result board without keeping it permanently on top."""
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+        except tk.TclError as error:
+            self._log("無法將結果看板帶到前景：{}".format(error))
+
     def _handle_event(self, event: MonitorEvent) -> None:
         self._log(event.message)
         if event.slot and self.monitor:
             result = self.monitor.results[event.slot]
             self._set_row(event.slot, result.sn, result.status)
+        if event.kind == "result" and event.status in {"PASS", "FAIL", "NOTEST"}:
+            self._bring_dashboard_to_front()
         if event.kind == "review" and self.monitor:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
             self.monitor.resolve_review("accept" if choice else "reject")

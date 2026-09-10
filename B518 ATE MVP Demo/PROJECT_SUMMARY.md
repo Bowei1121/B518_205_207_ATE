@@ -304,3 +304,8 @@ git remote -v
 - 獨立 Log Solution 新增每站可保存的等待開始與測試時間上限：DFU `30／480` 秒、FCT `30／480` 秒、BT `30／240` 秒。
 - 整輪未觀察到測試活動或最終結果時，以等待開始門檻停止並將有效 Slot 設為橘色 `TIMEOUT`；任一 Slot 已開始後，從首次活動起算固定時鐘，包含等待最終 CSV 的 `COMPLETING`。
 - 測試時間超限時，超時 Slot 顯示 `TIMEOUT`，其他未完成 Slot 顯示 `STOPPED`，已完成結果保留；Session 記錄逾時類型、觸發 Slot、經過時間與設定門檻，停止後不再接受新結果。
+
+## 2026-09-10 Log Solution 最終結果前景顯示
+
+- 當 Log Solution 成功解析 PASS、FAIL 或 NOTEST 最終結果時，主看板會解除最小化、帶回前景並取得焦點，讓 KVM 可立即讀取結果。
+- 不使用 macOS Tk 的持續 `-topmost` 屬性，完成顯示後仍可正常切回測試程式與設定視窗。

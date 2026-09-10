@@ -282,7 +282,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root.attributes.assert_not_called()
         self.assertIsNone(app.monitor)
 
-    def test_result_does_not_change_window_layer_or_keyboard_focus(self):
+    def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="PASS")})
@@ -295,7 +295,9 @@ class LogSolutionUiTests(unittest.TestCase):
 
         app._set_row.assert_called_once_with(1, "SN123", "PASS")
         app.root.attributes.assert_not_called()
-        app.root.focus_force.assert_not_called()
+        app.root.deiconify.assert_called_once()
+        app.root.lift.assert_called_once()
+        app.root.focus_force.assert_called_once()
 
     def test_timeout_event_returns_dashboard_to_timeout_stopped_state(self):
         app = object.__new__(B518LogSolutionApp)
