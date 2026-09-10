@@ -319,3 +319,8 @@ git remote -v
 
 - 新增 `build_macos15_arm64_log_solution.sh`，供新的 M 系列 macOS 15 測試機原生建置 arm64 Log Solution App；舊 Intel Catalina／Mojave 打包流程維持不變。
 - 新腳本只允許 arm64 與 macOS 15，使用原生 Python 3.12、獨立虛擬環境與 PyInstaller arm64 目標，產生 ad-hoc 簽章 ZIP 與 SHA-256 至 `dist-macos15-arm64/`。
+
+## 2026-09-10 macOS 26 Apple Silicon 測試包
+
+- 新增 `build_macos26_arm64_log_solution.sh`，供 M 系列 macOS 26.5 新測試機以現行作業系統建立原生 arm64 測試包。
+- 安裝包最低系統版本設為 macOS 26.0，輸出至 `dist-macos26-arm64/`；macOS 15 目標的腳本仍保留，避免混淆不同測試機版本。

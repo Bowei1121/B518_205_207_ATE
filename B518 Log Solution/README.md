@@ -11,7 +11,7 @@ python3 b518_log_solution.py
 
 ## 建置安裝包
 
-舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。新的 Apple Silicon macOS 15 測試機，請在 M 系列 macOS 15 電腦執行 `./build_macos15_arm64_log_solution.sh`；它會產生 `dist-macos15-arm64/B518-Log-Solution-V版本號-macOS15-arm64.zip`。兩支腳本都會先執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包 App 並輸出 SHA-256。
+舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。Apple Silicon macOS 15 測試機請執行 `./build_macos15_arm64_log_solution.sh`，產物為 `dist-macos15-arm64/B518-Log-Solution-V版本號-macOS15-arm64.zip`。新的 macOS 26.5 測試機請在 M 系列 macOS 26 電腦執行 `./build_macos26_arm64_log_solution.sh`，產物為 `dist-macos26-arm64/B518-Log-Solution-V版本號-macOS26-arm64.zip`，最低系統版本為 macOS 26.0。每支腳本都會先執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包 App 並輸出 SHA-256。
 
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 
