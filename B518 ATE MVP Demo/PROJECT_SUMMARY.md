@@ -298,3 +298,9 @@ git remote -v
 - 現場 CaseInfo 使用 `YYYY-MM-DD HH:MM:SS:ms,` 的 CSV 記錄，與先前僅支援的斜線日期及 `SNRead: <SN>` 文字格式不同，導致獨立 Log Solution 無法顯示 BT 的 `TESTING` 與條碼。
 - 獨立版改以事件內時間戳切分 CR、LF 或黏接紀錄，支援實機 `SNRead` 的 `testValue` 欄位；分次寫入的最後一筆資料會保留至完整後再解析，縮檔時重設讀取位置。
 - CaseInfo 仍只提供即時進度：`CloseFixture` 顯示 `COMPLETING`，TestData CSV 仍是 PASS／FAIL／NOTEST 的唯一最終判定來源，終態結果不會被後到的 CaseInfo 覆寫。
+
+## 2026-09-10 Log Solution 逾時監控
+
+- 獨立 Log Solution 新增每站可保存的等待開始與測試時間上限：DFU `30／480` 秒、FCT `30／480` 秒、BT `30／240` 秒。
+- 整輪未觀察到測試活動或最終結果時，以等待開始門檻停止並將有效 Slot 設為橘色 `TIMEOUT`；任一 Slot 已開始後，從首次活動起算固定時鐘，包含等待最終 CSV 的 `COMPLETING`。
+- 測試時間超限時，超時 Slot 顯示 `TIMEOUT`，其他未完成 Slot 顯示 `STOPPED`，已完成結果保留；Session 記錄逾時類型、觸發 Slot、經過時間與設定門檻，停止後不再接受新結果。

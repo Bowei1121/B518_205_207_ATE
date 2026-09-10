@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
-from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
+from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
 
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
@@ -33,6 +33,7 @@ STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
     "WAITING": "#d9d9d9", "COMPLETING": "#82c7ff", "STALLED": "#ff9900", "STOPPED": "#bfbfbf",
+    "TIMEOUT": "#ff9900",
 }
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 7
@@ -83,6 +84,9 @@ class B518LogSolutionApp:
         self.paths = {name: {field: tk.StringVar(value=self.prefs.get("paths", {}).get(name, {}).get(field, ""))
                              for field in ("active", "final", "caseinfo")}
                       for name in STATION_SLOTS}
+        self.timeouts = {name: {field: tk.StringVar(value=str(self._stored_timeout(name, field)))
+                                for field in ("start", "test")}
+                         for name in STATION_SLOTS}
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
         self.template_labels: Dict[str, tk.Label] = {}
         self.kvm_result_blocks: Dict[int, tk.Label] = {}
@@ -270,10 +274,34 @@ class B518LogSolutionApp:
         except (OSError, json.JSONDecodeError):
             return {}
 
+    def _stored_timeout(self, station: str, field: str) -> int:
+        default = DEFAULT_TIMEOUTS[station][field]
+        value = self.prefs.get("timeouts", {}).get(station, {}).get(field, default)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
+
+    def _timeout_seconds(self, station: str, values: Optional[Dict[str, Dict[str, tk.StringVar]]] = None) -> Dict[str, int]:
+        variables = (values or self.timeouts)[station]
+        result = {}
+        for field, label in (("start", "等待開始測試逾時"), ("test", "測試時間上限")):
+            try:
+                value = int(variables[field].get().strip())
+            except (KeyError, ValueError):
+                value = 0
+            if value <= 0:
+                raise ValueError("{}必須是正整數秒數。".format(label))
+            result[field] = value
+        return result
+
     def _save_preferences(self) -> None:
         APP_ROOT.mkdir(parents=True, exist_ok=True)
         payload = {"station": self.station.get(), "paths": {station: {field: value.get() for field, value in values.items()}
-                  for station, values in self.paths.items()}}
+                  for station, values in self.paths.items()},
+                  "timeouts": {station: {field: value.get() for field, value in values.items()}
+                               for station, values in self.timeouts.items()}}
         PREFS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _on_local_hotkey(self, _event: object) -> str:
@@ -292,10 +320,10 @@ class B518LogSolutionApp:
     def _show_hotkey_warning(self) -> None:
         messagebox.showwarning("全域快捷鍵不可用", self.hotkey.message, parent=self.root)
 
-    def _set_monitor_controls(self, monitoring: bool) -> None:
+    def _set_monitor_controls(self, monitoring: bool, state_text: Optional[str] = None) -> None:
         self.start_button.configure(state="disabled" if monitoring else "normal")
         self.stop_button.configure(state="normal" if monitoring else "disabled")
-        self.monitor_state.configure(text="監控中" if monitoring else "待命")
+        self.monitor_state.configure(text=state_text or ("監控中" if monitoring else "待命"))
 
     def _set_row(self, slot: int, sn: str, status: str) -> None:
         widgets = self.status_rows.get(slot)
@@ -315,6 +343,11 @@ class B518LogSolutionApp:
             return
         station = self.station.get().upper()
         values = self.paths[station]
+        try:
+            timeouts = self._timeout_seconds(station)
+        except ValueError as error:
+            messagebox.showerror("逾時設定錯誤", str(error), parent=self.root)
+            return
         if station == "BT":
             final = configured_directory(values["final"].get())
             if final is None:
@@ -336,10 +369,12 @@ class B518LogSolutionApp:
         self.root.update_idletasks()
         try:
             if station == "BT":
-                monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put)
+                monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put,
+                                       start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
             else:
                 monitor = AtlasActiveArchiveMonitor(
                     station, active, final, tuple(range(1, slot_count(station) + 1)), callback=self.events.put,
+                    start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                 )
             self._save_preferences()
             self._reset_rows()
@@ -390,6 +425,9 @@ class B518LogSolutionApp:
         if event.kind == "review" and self.monitor:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
             self.monitor.resolve_review("accept" if choice else "reject")
+        if event.kind == "timeout":
+            self.monitor = None
+            self._set_monitor_controls(False, "逾時停止")
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
             self._set_monitor_controls(False)
@@ -419,6 +457,8 @@ class B518LogSolutionApp:
         self.settings_station = tk.StringVar(value=self.station.get())
         self.settings_paths = {station: {field: tk.StringVar(value=value.get()) for field, value in fields.items()}
                                for station, fields in self.paths.items()}
+        self.settings_timeouts = {station: {field: tk.StringVar(value=value.get()) for field, value in fields.items()}
+                                  for station, fields in self.timeouts.items()}
         ttk.Label(parent, text="工站").grid(row=0, column=0, sticky="w")
         state = "disabled" if self.monitor else "readonly"
         station_choice = ttk.Combobox(parent, values=tuple(STATION_SLOTS), textvariable=self.settings_station, state=state, width=14)
@@ -455,6 +495,11 @@ class B518LogSolutionApp:
             entry.grid(row=row, column=1, sticky="ew", padx=8, pady=5)
             ttk.Button(self.settings_paths_box, text="選擇", state="disabled" if disabled else "normal",
                        command=lambda current=field: self._choose_setting_path(current)).grid(row=row, column=2, pady=5)
+        timeout_row = len(schema)
+        for offset, (field, label) in enumerate((("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"))):
+            ttk.Label(self.settings_paths_box, text=label).grid(row=timeout_row + offset, column=0, sticky="w", pady=5)
+            ttk.Entry(self.settings_paths_box, textvariable=self.settings_timeouts[station][field], width=16,
+                      state="disabled" if disabled else "normal").grid(row=timeout_row + offset, column=1, sticky="w", padx=8, pady=5)
         self.settings_paths_box.columnconfigure(1, weight=1)
 
     def _choose_setting_path(self, field: str) -> None:
@@ -477,10 +522,19 @@ class B518LogSolutionApp:
         self.settings_log.configure(state="disabled")
 
     def _save_settings(self) -> None:
+        try:
+            for station in STATION_SLOTS:
+                self._timeout_seconds(station, self.settings_timeouts)
+        except ValueError as error:
+            messagebox.showerror("逾時設定錯誤", str(error), parent=self.settings_window)
+            return
         self.station.set(self.settings_station.get())
         for station, fields in self.settings_paths.items():
             for field, variable in fields.items():
                 self.paths[station][field].set(variable.get())
+        for station, fields in self.settings_timeouts.items():
+            for field, variable in fields.items():
+                self.timeouts[station][field].set(variable.get())
         self._save_preferences()
         self._render_rows()
         self._close_settings()

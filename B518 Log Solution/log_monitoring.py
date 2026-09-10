@@ -33,7 +33,12 @@ CASEINFO_TIMESTAMP = re.compile(
 )
 TRUSTED_SN_FIELDS = {"mlb_sn", "primaryidentity", "serialnumber"}
 INVALID_SN_VALUES = {"", "N/A", "NA", "NONE", "UNKNOWN", "NUMBER_SOF0"}
-TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED"}
+TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}
+DEFAULT_TIMEOUTS = {
+    "DFU": {"start": 30, "test": 480},
+    "FCT": {"start": 30, "test": 480},
+    "BT": {"start": 30, "test": 240},
+}
 
 
 @dataclass
@@ -218,10 +223,23 @@ class BaseMonitor:
     """Polling monitor with explicit ``poll_once`` for deterministic tests."""
     def __init__(self, station: str, settings: Dict[str, str], slots: Sequence[int],
                  callback: Optional[Callable[[MonitorEvent], None]] = None,
-                 session_root: Optional[Path] = None, now: Callable[[], datetime] = datetime.now):
+                 session_root: Optional[Path] = None, now: Callable[[], datetime] = datetime.now,
+                 monotonic: Callable[[], float] = time.monotonic,
+                 start_timeout_seconds: Optional[int] = None,
+                 test_timeout_seconds: Optional[int] = None):
         self.station, self.settings, self.slots = station, settings, tuple(sorted(slots))
-        self.callback, self.now = callback, now
+        defaults = DEFAULT_TIMEOUTS.get(station.upper(), DEFAULT_TIMEOUTS["FCT"])
+        self.start_timeout_seconds = int(start_timeout_seconds or defaults["start"])
+        self.test_timeout_seconds = int(test_timeout_seconds or defaults["test"])
+        if self.start_timeout_seconds <= 0 or self.test_timeout_seconds <= 0:
+            raise ValueError("逾時秒數必須為正整數")
+        self.settings.update({"start_timeout_seconds": str(self.start_timeout_seconds),
+                              "test_timeout_seconds": str(self.test_timeout_seconds)})
+        self.callback, self.now, self.monotonic = callback, now, monotonic
         self.started = now()
+        self._started_monotonic = monotonic()
+        self._activity_seen = False
+        self._test_started_monotonic: Dict[int, float] = {}
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
         self.session = SessionStore(session_id, settings, session_root)
@@ -238,9 +256,16 @@ class BaseMonitor:
             self.callback(event)
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "") -> None:
+        if self.finished:
+            return
         result = self.results[slot]
         if result.status in TERMINAL and status not in TERMINAL:
             return
+        if status in {"TESTING", "COMPLETING"}:
+            self._activity_seen = True
+            self._test_started_monotonic.setdefault(slot, self.monotonic())
+        elif status in {"PASS", "FAIL", "NOTEST"}:
+            self._activity_seen = True
         if sn:
             result.sn = sn
         result.status, result.source = status, source or result.source
@@ -261,6 +286,50 @@ class BaseMonitor:
             self.finished = True
             self.session.finish()
             self.emit(MonitorEvent("finished", "{} 本輪完成".format(self.station)))
+
+    def begin_timeout_clock(self) -> None:
+        """Start timeout measurement only after a monitor has made its snapshots."""
+        self.started = self.now()
+        self._started_monotonic = self.monotonic()
+
+    def check_timeouts(self) -> None:
+        """Stop the session when it never starts or one active slot runs too long."""
+        if self.finished:
+            return
+        elapsed = self.monotonic() - self._started_monotonic
+        if not self._activity_seen and elapsed >= self.start_timeout_seconds:
+            self._finish_timeout("start", None, elapsed)
+            return
+        for slot in sorted(self._test_started_monotonic):
+            if self.results[slot].status in TERMINAL:
+                continue
+            test_elapsed = self.monotonic() - self._test_started_monotonic[slot]
+            if test_elapsed >= self.test_timeout_seconds:
+                self._finish_timeout("test", slot, test_elapsed)
+                return
+
+    def _finish_timeout(self, kind: str, timed_out_slot: Optional[int], elapsed: float) -> None:
+        if kind == "start":
+            for slot, result in self.results.items():
+                if result.status not in TERMINAL:
+                    self.set_result(slot, "TIMEOUT")
+            message = "{} 未進入測試逾時：{} 秒（經過 {} 秒）".format(
+                self.station, self.start_timeout_seconds, int(elapsed),
+            )
+        else:
+            assert timed_out_slot is not None
+            self.set_result(timed_out_slot, "TIMEOUT")
+            for slot, result in self.results.items():
+                if slot != timed_out_slot and result.status not in TERMINAL:
+                    self.set_result(slot, "STOPPED")
+            message = "{} slot{} 測試逾時：{} 秒（上限 {} 秒）".format(
+                self.station, timed_out_slot, int(elapsed), self.test_timeout_seconds,
+            )
+        self._stop.set()
+        self.finished = True
+        self.session.finish()
+        self.emit(MonitorEvent("timeout", message, timed_out_slot, status="TIMEOUT",
+                               detail={"kind": kind, "elapsed_seconds": str(int(elapsed))}))
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -295,10 +364,10 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
         self.active_root, self.final_root = active_root, final_root
         self.baseline_active = snapshot_files(active_root, ".csv")
         self.baseline_final = snapshot_files(final_root, ".csv")
+        self.begin_timeout_clock()
         self.seen_slots: Set[int] = set()
         self.locked_sn: Dict[int, str] = {}
         self.last_active_at: Dict[int, datetime] = {}
-        self._warned_stalled = False
         self._inactive_since: Optional[datetime] = None
 
     def _active_records(self, slot: int) -> Optional[Path]:
@@ -381,22 +450,19 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                         self.set_result(slot, "NOTEST")
         else:
             self._inactive_since = None
-        if self.seen_slots and active_now:
-            # An active test is never killed by an arbitrary total timeout.
-            elapsed = self.now() - min(self.last_active_at.values())
-            if elapsed > timedelta(minutes=5) and not self._warned_stalled:
-                self._warned_stalled = True
-                self.emit(MonitorEvent("stalled", "{} active 長時間未更新，仍持續監控".format(self.station)))
+        self.check_timeouts()
         self.complete_if_stable()
 
 
 class BtLogMonitor(BaseMonitor):
     """BT TestData monitor with timestamp batch locking and optional CaseInfo."""
     def __init__(self, testdata_root: Path, slots: Sequence[int], caseinfo_root: Optional[Path] = None, **kwargs):
-        self.monotonic = kwargs.pop("monotonic", time.monotonic)
-        super().__init__("BT", {"testdata_root": str(testdata_root), "caseinfo_root": str(caseinfo_root or "")}, slots, **kwargs)
+        monotonic = kwargs.pop("monotonic", time.monotonic)
+        super().__init__("BT", {"testdata_root": str(testdata_root), "caseinfo_root": str(caseinfo_root or "")}, slots,
+                         monotonic=monotonic, **kwargs)
         self.testdata_root, self.caseinfo_root = testdata_root, caseinfo_root
         self.baseline = snapshot_files(testdata_root, ".csv")
+        self.begin_timeout_clock()
         self.batch_stamp = ""
         self.seen_signature: Dict[str, Tuple[int, int, float]] = {}
         self.review_pending: Optional[Dict[str, object]] = None
@@ -536,4 +602,5 @@ class BtLogMonitor(BaseMonitor):
                                                source=str(path), detail=self.review_pending))
                     continue
             self.set_result(slot, parsed["status"], parsed["sn"], parsed["source"])
+        self.check_timeouts()
         self.complete_if_stable()

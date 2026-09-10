@@ -39,7 +39,7 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(WINDOW_WIDTH, 360)
 
     def test_all_display_statuses_have_explicit_colours(self):
-        for status in ("PASS", "FAIL", "TESTING", "NOTEST", "WAITING", "COMPLETING", "STALLED", "STOPPED"):
+        for status in ("PASS", "FAIL", "TESTING", "NOTEST", "WAITING", "COMPLETING", "STALLED", "STOPPED", "TIMEOUT"):
             self.assertRegex(STATUS_COLOURS[status], r"^#[0-9a-fA-F]{6}$")
         self.assertRegex(UNAVAILABLE_COLOUR, r"^#[0-9a-fA-F]{6}$")
         self.assertEqual(KVM_BLOCK_COUNT, 7)
@@ -183,6 +183,11 @@ class LogSolutionUiTests(unittest.TestCase):
             "FCT": {"active": "/logs/fct/active", "final": "/logs/fct/final", "caseinfo": ""},
             "BT": {"active": "", "final": "/logs/bt/testdata", "caseinfo": "/logs/bt/caseinfo"},
         }
+        saved_timeouts = {
+            "DFU": {"start": "30", "test": "480"},
+            "FCT": {"start": "30", "test": "480"},
+            "BT": {"start": "30", "test": "240"},
+        }
         with TemporaryDirectory() as temporary_directory:
             app_root = Path(temporary_directory) / "B518LogSolution"
             prefs_path = app_root / "preferences.json"
@@ -193,11 +198,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.paths = {station: {field: tk.StringVar(master=interpreter, value="")
                                        for field in ("active", "final", "caseinfo")}
                              for station in ("DFU", "FCT", "BT")}
+                app.timeouts = {station: {field: tk.StringVar(master=interpreter, value="")
+                                          for field in ("start", "test")}
+                                for station in ("DFU", "FCT", "BT")}
                 app.settings_station = tk.StringVar(master=interpreter, value="BT")
                 app.settings_paths = {
                     station: {field: tk.StringVar(master=interpreter, value=value)
                               for field, value in fields.items()}
                     for station, fields in saved_paths.items()
+                }
+                app.settings_timeouts = {
+                    station: {field: tk.StringVar(master=interpreter, value=value)
+                              for field, value in fields.items()}
+                    for station, fields in saved_timeouts.items()
                 }
                 app._render_rows = lambda: None
                 app._close_settings = lambda: None
@@ -208,13 +221,24 @@ class LogSolutionUiTests(unittest.TestCase):
                     for field, value in fields.items():
                         self.assertEqual(app.paths[station][field].get(), value)
                 self.assertEqual(json.loads(prefs_path.read_text(encoding="utf-8")), {
-                    "station": "BT", "paths": saved_paths,
+                    "station": "BT", "paths": saved_paths, "timeouts": saved_timeouts,
                 })
 
                 restored_app = object.__new__(B518LogSolutionApp)
                 restored_app.prefs = restored_app._load_preferences()
                 self.assertEqual(restored_app.prefs["station"], "BT")
                 self.assertEqual(restored_app.prefs["paths"], saved_paths)
+                self.assertEqual(restored_app.prefs["timeouts"], saved_timeouts)
+
+    def test_timeout_values_require_positive_integers(self):
+        interpreter = tk.Tcl()
+        app = object.__new__(B518LogSolutionApp)
+        app.timeouts = {"BT": {
+            "start": tk.StringVar(master=interpreter, value="30"),
+            "test": tk.StringVar(master=interpreter, value="0"),
+        }}
+        with self.assertRaisesRegex(ValueError, "正整數"):
+            app._timeout_seconds("BT")
 
     def test_cancel_settings_does_not_change_saved_path_values(self):
         interpreter = tk.Tcl()
@@ -236,6 +260,10 @@ class LogSolutionUiTests(unittest.TestCase):
         app.paths = {"DFU": {
             "active": SimpleNamespace(get=lambda: "."),
             "final": SimpleNamespace(get=lambda: "."),
+        }}
+        app.timeouts = {"DFU": {
+            "start": SimpleNamespace(get=lambda: "30"),
+            "test": SimpleNamespace(get=lambda: "480"),
         }}
         app.start_button = MagicMock()
         app.monitor_state = MagicMock()
@@ -268,6 +296,21 @@ class LogSolutionUiTests(unittest.TestCase):
         app._set_row.assert_called_once_with(1, "SN123", "PASS")
         app.root.attributes.assert_not_called()
         app.root.focus_force.assert_not_called()
+
+    def test_timeout_event_returns_dashboard_to_timeout_stopped_state(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="TIMEOUT")})
+        app.event_lines = []
+        app.settings_log = None
+        app._set_row = MagicMock()
+        app._set_monitor_controls = MagicMock()
+
+        app._handle_event(MonitorEvent("timeout", "FCT slot1 測試逾時", 1, status="TIMEOUT"))
+
+        app._set_row.assert_called_once_with(1, "SN123", "TIMEOUT")
+        self.assertIsNone(app.monitor)
+        app._set_monitor_controls.assert_called_once_with(False, "逾時停止")
 
     def test_stopped_event_does_not_change_window_topmost_attribute(self):
         app = object.__new__(B518LogSolutionApp)
