@@ -308,11 +308,29 @@ class LogSolutionUiTests(unittest.TestCase):
         app._set_row = MagicMock()
         app._set_monitor_controls = MagicMock()
 
-        app._handle_event(MonitorEvent("timeout", "FCT slot1 測試逾時", 1, status="TIMEOUT"))
+        app._handle_event(MonitorEvent("timeout", "FCT 尚未開始測試逾時", status="TIMEOUT",
+                                       detail={"kind": "start"}))
 
-        app._set_row.assert_called_once_with(1, "SN123", "TIMEOUT")
+        app._set_row.assert_not_called()
         self.assertIsNone(app.monitor)
         app._set_monitor_controls.assert_called_once_with(False, "逾時停止")
+
+    def test_test_timeout_keeps_monitoring_other_slots(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        monitor = SimpleNamespace(results={2: SimpleNamespace(sn="SN123", status="TIMEOUT")})
+        app.monitor = monitor
+        app.event_lines = []
+        app.settings_log = None
+        app._set_row = MagicMock()
+        app._set_monitor_controls = MagicMock()
+
+        app._handle_event(MonitorEvent("timeout", "FCT slot2 測試逾時", 2, status="TIMEOUT",
+                                       detail={"kind": "test"}))
+
+        app._set_row.assert_called_once_with(2, "SN123", "TIMEOUT")
+        self.assertIs(app.monitor, monitor)
+        app._set_monitor_controls.assert_not_called()
 
     def test_stopped_event_does_not_change_window_topmost_attribute(self):
         app = object.__new__(B518LogSolutionApp)

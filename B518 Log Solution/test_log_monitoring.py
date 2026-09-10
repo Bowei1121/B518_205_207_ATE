@@ -249,7 +249,7 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(events[-1].kind, "timeout")
         self.assertIn("未進入測試", events[-1].message)
 
-    def test_test_timeout_preserves_completed_slots_and_stops_remaining_slots(self):
+    def test_test_timeout_marks_only_the_slots_that_exceeded_their_limit(self):
         clock, events = [0.0], []
         monitor = TimeoutMonitor("DFU", {}, (1, 2, 3), now=lambda: self.now,
                                  monotonic=lambda: clock[0], start_timeout_seconds=30,
@@ -257,13 +257,14 @@ class LogMonitoringTests(unittest.TestCase):
                                  session_root=self.temp / "sessions")
         monitor.set_result(1, "PASS", "DONE")
         monitor.set_result(2, "TESTING", "RUNNING")
+        monitor.set_result(3, "TESTING", "ALSO_RUNNING")
         clock[0] = 10.0
         monitor.poll_once()
         self.assertEqual(monitor.results[1].status, "PASS")
         self.assertEqual(monitor.results[2].status, "TIMEOUT")
-        self.assertEqual(monitor.results[3].status, "STOPPED")
-        self.assertTrue(monitor.finished)
-        self.assertEqual(events[-1].slot, 2)
+        self.assertEqual(monitor.results[3].status, "TIMEOUT")
+        self.assertFalse(monitor.finished)
+        self.assertEqual([event.slot for event in events if event.kind == "timeout"], [2, 3])
 
     def test_test_updates_and_completing_do_not_reset_the_timeout_clock(self):
         clock = [0.0]

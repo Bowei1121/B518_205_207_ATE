@@ -300,13 +300,15 @@ class BaseMonitor:
         if not self._activity_seen and elapsed >= self.start_timeout_seconds:
             self._finish_timeout("start", None, elapsed)
             return
+        timed_out_slots = []
         for slot in sorted(self._test_started_monotonic):
             if self.results[slot].status in TERMINAL:
                 continue
             test_elapsed = self.monotonic() - self._test_started_monotonic[slot]
             if test_elapsed >= self.test_timeout_seconds:
-                self._finish_timeout("test", slot, test_elapsed)
-                return
+                timed_out_slots.append((slot, test_elapsed))
+        for slot, test_elapsed in timed_out_slots:
+            self._finish_timeout("test", slot, test_elapsed)
 
     def _finish_timeout(self, kind: str, timed_out_slot: Optional[int], elapsed: float) -> None:
         if kind == "start":
@@ -319,17 +321,15 @@ class BaseMonitor:
         else:
             assert timed_out_slot is not None
             self.set_result(timed_out_slot, "TIMEOUT")
-            for slot, result in self.results.items():
-                if slot != timed_out_slot and result.status not in TERMINAL:
-                    self.set_result(slot, "STOPPED")
             message = "{} slot{} 測試逾時：{} 秒（上限 {} 秒）".format(
                 self.station, timed_out_slot, int(elapsed), self.test_timeout_seconds,
             )
-        self._stop.set()
-        self.finished = True
-        self.session.finish()
         self.emit(MonitorEvent("timeout", message, timed_out_slot, status="TIMEOUT",
                                detail={"kind": kind, "elapsed_seconds": str(int(elapsed))}))
+        if kind == "start":
+            self._stop.set()
+            self.finished = True
+            self.session.finish()
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
