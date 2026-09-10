@@ -292,3 +292,9 @@ git remote -v
 - 新 App 以每輪手動開始建立時間基準與啟動快照，監控 DFU（active → unitest）、FCT（active → unit-archive）與 BT（TestData／CaseInfo）。結果與來源檔案保存於 `~/Library/Application Support/B518LogSolution/sessions/`。
 - DFU／FCT 只從 `MLB_SN`、`PrimaryIdentity`、`SerialNumber` 信任 SN；FCT active 消失後，已鎖定 SN 轉 `COMPLETING` 查 archive，從未取得可信 SN 則定案「SN 讀取失敗／FAIL」。BT 以 Thread0～3 對應 slot1～4、鎖定首筆合格批次並於 CSV 穩定 5 秒後解析；批次衝突或重複 Thread 要求人工作出決定。
 - 獨立版共用 macOS 10.14／10.15 Intel 打包腳本只在實際 build 時遞增版本、產生 ad-hoc 簽章 ZIP 與 SHA-256；本次沒有執行 build。
+
+## 2026-09-10 BT CaseInfo 實機格式修正
+
+- 現場 CaseInfo 使用 `YYYY-MM-DD HH:MM:SS:ms,` 的 CSV 記錄，與先前僅支援的斜線日期及 `SNRead: <SN>` 文字格式不同，導致獨立 Log Solution 無法顯示 BT 的 `TESTING` 與條碼。
+- 獨立版改以事件內時間戳切分 CR、LF 或黏接紀錄，支援實機 `SNRead` 的 `testValue` 欄位；分次寫入的最後一筆資料會保留至完整後再解析，縮檔時重設讀取位置。
+- CaseInfo 仍只提供即時進度：`CloseFixture` 顯示 `COMPLETING`，TestData CSV 仍是 PASS／FAIL／NOTEST 的唯一最終判定來源，終態結果不會被後到的 CaseInfo 覆寫。

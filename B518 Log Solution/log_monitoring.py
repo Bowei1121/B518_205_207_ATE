@@ -28,10 +28,8 @@ BT_FILENAME = re.compile(
     re.IGNORECASE,
 )
 CASEINFO_FILE = re.compile(r"^thread(?P<thread>[1-4])CaseInfo_(?P<date>\d{4}-\d{2}-\d{2})\.txt$", re.I)
-CASEINFO_EVENT = re.compile(
-    r"(?P<time>\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2}(?:\.\d+)?)\s+"
-    r"(?P<message>.*?)(?=(?:\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2})|\Z)",
-    re.S,
+CASEINFO_TIMESTAMP = re.compile(
+    r"(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2}(?:(?:\.|:)\d+)?)"
 )
 TRUSTED_SN_FIELDS = {"mlb_sn", "primaryidentity", "serialnumber"}
 INVALID_SN_VALUES = {"", "N/A", "NA", "NONE", "UNKNOWN", "NUMBER_SOF0"}
@@ -404,6 +402,7 @@ class BtLogMonitor(BaseMonitor):
         self.review_pending: Optional[Dict[str, object]] = None
         self.review_decisions: Dict[str, str] = {}
         self._caseinfo_offsets: Dict[str, int] = {}
+        self._caseinfo_tails: Dict[str, str] = {}
 
     def resolve_review(self, choice: str) -> None:
         """Apply the one pending UI decision on the next polling pass.
@@ -449,23 +448,43 @@ class BtLogMonitor(BaseMonitor):
                 content = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            offset = self._caseinfo_offsets.get(str(path), 0)
+            key = str(path)
+            offset = self._caseinfo_offsets.get(key, 0)
+            if len(content) < offset:
+                offset = 0
+                self._caseinfo_tails.pop(key, None)
             if offset >= len(content):
                 continue
-            self._caseinfo_offsets[str(path)] = len(content)
+            chunk = self._caseinfo_tails.get(key, "") + content[offset:]
+            self._caseinfo_offsets[key] = len(content)
             slot = int(match.group("thread"))
             if slot not in self.results or self.results[slot].status in TERMINAL:
                 continue
-            for event in CASEINFO_EVENT.finditer(content[max(0, offset - 64):]):
+            events = list(CASEINFO_TIMESTAMP.finditer(chunk))
+            if not events:
+                self._caseinfo_tails[key] = chunk
+                continue
+            complete_last = bool(re.search(r"[\r\n]\s*$", chunk))
+            final_event = len(events) if complete_last else len(events) - 1
+            self._caseinfo_tails[key] = "" if complete_last else chunk[events[-1].start():]
+            for index, event in enumerate(events[:final_event]):
                 try:
-                    event_time = datetime.strptime(event.group("time").split(".")[0], "%Y/%m/%d %H:%M:%S")
+                    event_time = datetime.strptime(
+                        event.group("time")[:19].replace("/", "-"), "%Y-%m-%d %H:%M:%S",
+                    )
                 except ValueError:
                     continue
                 if event_time < threshold:
                     continue
-                message = event.group("message")
+                end = events[index + 1].start() if index + 1 < len(events) else len(chunk)
+                message = chunk[event.end():end]
                 sn_match = re.search(r"(?:SNRead|SerialNumber|MLB_SN|PrimaryIdentity)\s*[:=]\s*([A-Za-z0-9_-]+)", message, re.I)
                 sn = normalise_sn(sn_match.group(1)) if sn_match and is_trusted_sn(sn_match.group(1)) else ""
+                fields = next(csv.reader([message.lstrip(" ,\r\n")]), [])
+                if (not sn and len(fields) > 5
+                        and any(field.strip().lower() == "snread" for field in (fields[2], fields[4]))
+                        and is_trusted_sn(fields[5])):
+                    sn = normalise_sn(fields[5])
                 status = "COMPLETING" if re.search(r"CloseFixture|complete|finish", message, re.I) else "TESTING"
                 self.set_result(slot, status, sn, str(path))
 

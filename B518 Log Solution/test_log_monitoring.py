@@ -131,6 +131,77 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[1].sn, "HK5HUX6STQ800003YV")
         self.assertEqual(monitor.results[1].status, "TESTING")
 
+    def test_bt_caseinfo_parses_production_csv_records_for_all_threads(self):
+        root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        monitor = BtLogMonitor(root, (1, 2, 3, 4), caseinfo_root=caseinfo,
+                               now=lambda: datetime(2026, 8, 21, 15, 19, 0),
+                               session_root=self.temp / "sessions")
+        serials = {
+            1: "HK5HVH6ZF4U00003YV", 2: "HK5HVH6ZSAT00003YV",
+            3: "HK5HVH6YXFJ00003YV", 4: "HK5HVH6ZSB300003YV",
+        }
+        caseinfo.mkdir()
+        for slot, sn in serials.items():
+            (caseinfo / "thread{}CaseInfo_2026-08-22.txt".format(slot)).write_text(
+                "2026-08-21 15:19:01:049, 1,InitResource,OpenFixture,--,OpenFixture,,NA,NA,NA,,\r"
+                "2026-08-21 15:19:24:160, 4,InitResource,SNRead,--,SNRead,{},NA,NA,NA,Passed,11.94\r"
+                "2026-08-21 15:19:25:592, 8,InitResource,ConnectDUT,--,ConnectDUT,,NA,NA,NA,Passed,1.43\r\n".format(sn),
+                encoding="utf-8",
+            )
+        monitor.poll_once()
+        for slot, sn in serials.items():
+            self.assertEqual(monitor.results[slot].status, "TESTING")
+            self.assertEqual(monitor.results[slot].sn, sn)
+
+    def test_bt_caseinfo_buffers_partial_production_record(self):
+        root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,
+                               now=lambda: datetime(2026, 8, 21, 15, 19, 0),
+                               session_root=self.temp / "sessions")
+        path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
+        path.parent.mkdir()
+        path.write_text("2026-08-21 15:19:24:160, 4,InitResource,SNRead,--,SNRead,HK5HVH6ZF4U00003YV", encoding="utf-8")
+        monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "WAITING")
+        path.write_text(path.read_text(encoding="utf-8") + ",NA,NA,NA,Passed,11.94\r\n"
+                        "2026-08-21 15:19:25:592, 8,InitResource,ConnectDUT,--,ConnectDUT,,NA,NA,NA,Passed,1.43\r\n", encoding="utf-8")
+        monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "TESTING")
+        self.assertEqual(monitor.results[1].sn, "HK5HVH6ZF4U00003YV")
+
+    def test_bt_caseinfo_ignores_invalid_and_expired_production_sn(self):
+        root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,
+                               now=lambda: datetime(2026, 8, 21, 15, 19, 0),
+                               session_root=self.temp / "sessions")
+        path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
+        path.parent.mkdir()
+        path.write_text(
+            "2026-08-21 15:18:00:000, 4,InitResource,SNRead,--,SNRead,EXPIRED123,NA,NA,NA,Passed,1\r"
+            "2026-08-21 15:19:24:160, 4,InitResource,SNRead,--,SNRead,NUMBER_SOF0,NA,NA,NA,Passed,1\r"
+            "2026-08-21 15:19:25:160, 8,InitResource,ConnectDUT,--,ConnectDUT,,NA,NA,NA,Passed,1\r\n",
+            encoding="utf-8",
+        )
+        monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "TESTING")
+        self.assertEqual(monitor.results[1].sn, "")
+
+    def test_bt_caseinfo_production_closefixture_reports_completing(self):
+        root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,
+                               now=lambda: datetime(2026, 8, 21, 15, 19, 0),
+                               session_root=self.temp / "sessions")
+        path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
+        path.parent.mkdir()
+        path.write_text(
+            "2026-08-21 15:19:24:160, 4,InitResource,SNRead,--,SNRead,HK5HVH6ZF4U00003YV,NA,NA,NA,Passed,1\r"
+            "2026-08-21 15:19:25:160, 5,UnInitResource,CloseFixture,--,CloseFixture,,NA,NA,NA,Passed,1\r\n",
+            encoding="utf-8",
+        )
+        monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "COMPLETING")
+        self.assertEqual(monitor.results[1].sn, "HK5HVH6ZF4U00003YV")
+
     def test_log_solution_never_imports_control_dependencies(self):
         base = Path(__file__).parent
         content = "".join((base / name).read_text() for name in (
