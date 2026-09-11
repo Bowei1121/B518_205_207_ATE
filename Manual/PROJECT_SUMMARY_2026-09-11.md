@@ -23,3 +23,4 @@ B518 Log Solution 是 macOS 本機 Log 監控程式，為 DFU、FCT、BT 顯示�
 - DFU、FCT 的產線參考路徑為 `/Users/gdlocal/Library/Logs/Atlas/active` 與 `/Users/gdlocal/Library/Logs/Atlas/unit-archive`。DFU App 欄位目前仍標示 unitest，實機設定依 unit-archive 選取。
 - BT 的 TestData 與 CaseInfo 欄位均指向相同的 TestData 根資料夾；CaseInfo 保持選填，但建議設定以提早顯示 SN 與測試活動。
 - 新增 FCT、BT 實機畫面對照，說明測試機、CSV Thread 與 Log Solution Slot 的結果關係。
+- 手冊以 B482 專案製作；BT 參考路徑為 `/vault/B482_RFTEST/TestData`，其他專案需選擇自身正確的 Log 根路徑。
