@@ -25,7 +25,7 @@
       </section>
 
       <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。最終結果出現時，Log Solution 會自動回到前景，方便 KVM 讀取。</p>
-        <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="BT Log Solution 主畫面，含設定、KVM RESULT、狀態模板、Slot 表格及監控按鈕" data-caption="BT 主畫面功能導覽"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>圖 1：BT 主畫面。標記對應下方功能說明；DFU、FCT 使用相同畫面結構，只有有效 Slot 數不同。</figcaption></figure>
+        <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="BT Log Solution 主畫面，含設定、KVM RESULT、狀態模板、Slot 表格及監控按鈕" data-caption="BT 主畫面功能導覽"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>圖 1：BT 主畫面。標記對應下方功能說明；DFU、FCT 使用相同畫面結構，只有有效 Slot 數不同。</figcaption></figure>
         <div class="table-wrap"><table><thead><tr><th>標記</th><th>區域／部件</th><th>功能</th></tr></thead><tbody>
           <tr><td>1</td><td>設定</td><td>開啟「監控設定」與「事件與 Session」視窗，可選工站、設定路徑及逾時秒數、查看即時事件與開啟 Session 紀錄。</td></tr>
           <tr><td>2</td><td>版本與工站名稱</td><td>顯示 B518 Log Solution 版本及目前監控的 DFU、FCT 或 BT 工站。</td></tr>
@@ -63,7 +63,7 @@
         <p class="note"><strong>DFU 欄位名稱提醒：</strong>App 目前顯示「最終結果根路徑 (unitest)」，但此部署請依實機路徑選取 <code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code>。本手冊只更新操作說明，不修改程式。</p>
         <p class="note"><strong>BT CaseInfo：</strong>CaseInfo 欄位可以留空，但建議選與 TestData 相同的資料夾；程式才能在最終 CSV 到達前呈現測試活動與 SN。若只靠最終 CSV，測試尚未產生結果時可能達到等待開始逾時。</p>
         <p class="note"><strong>逾時預設值：</strong>DFU 和 FCT 為等待開始 30 秒／測試上限 480 秒；BT 為 30 秒／240 秒。可在各工站設定中改成正整數秒數。</p>
-        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="設定頁的工站下拉選單，提供 DFU、FCT 和 BT" data-caption="工站選擇"><figcaption>圖 2：切換工站後，程式會顯示該工站對應的路徑欄位與 Slot 數。</figcaption></figure>
+        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="設定頁的工站下拉選單，提供 DFU、FCT 和 BT" data-caption="工站選擇"><figcaption>圖 2：切換工站後，程式會顯示該工站對應的路徑欄位與 Slot 數。</figcaption></figure>
         <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.36.png" alt="BT 設定頁，含 TestData、CaseInfo 和兩個逾時欄位" data-caption="BT 設定"><figcaption>圖 3：BT 設定範例。兩個路徑欄位都選取 TestData；CaseInfo 可選填，建議填寫。</figcaption></figure>
       </section>
 
