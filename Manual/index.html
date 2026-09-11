@@ -65,6 +65,7 @@
         <p class="note"><strong>逾時預設值：</strong>DFU 和 FCT 為等待開始 30 秒／測試上限 480 秒；BT 為 30 秒／240 秒。可在各工站設定中改成正整數秒數。</p>
         <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="設定頁的工站下拉選單，提供 DFU、FCT 和 BT" data-caption="工站選擇"><figcaption>圖 2：切換工站後，程式會顯示該工站對應的路徑欄位與 Slot 數。</figcaption></figure>
         <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.36.png" alt="BT 設定頁，含 TestData、CaseInfo 和兩個逾時欄位" data-caption="BT 設定"><figcaption>圖 3：BT 設定範例。兩個路徑欄位都選取 TestData；CaseInfo 可選填，建議填寫。</figcaption></figure>
+        <h3>依圖 3 設定 BT 路徑並儲存</h3><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」，確認目前在「監控設定」分頁。</li><li><strong>選擇 BT 工站。</strong>在「工站」下拉選單選取 <code>BT</code>，畫面會顯示 BT TestData、BT CaseInfo 與兩個逾時欄位。</li><li><strong>設定 TestData。</strong>在「BT TestData 根路徑」右側按「選擇」，選取 <code>/vault/B482_RFTEST/TestData</code>，再確認完整路徑已出現在欄位中。</li><li><strong>設定 CaseInfo。</strong>在「BT CaseInfo 根路徑」右側按「選擇」，同樣選取 <code>/vault/B482_RFTEST/TestData</code>。此欄位可留空，但建議設定，讓測試進行時能提早顯示 SN 與 TESTING。</li><li><strong>確認逾時秒數。</strong>BT 預設為等待開始測試逾時 30 秒、測試時間上限 240 秒；依產線需要調整時，兩個值都必須是正整數。</li><li><strong>儲存設定。</strong>按右下角「儲存」，回到主畫面後才可按「開始監控」。按「取消」或直接關閉設定視窗都不會保存本次修改。</li></ol>
       </section>
 
       <section id="results"><h2>判讀結果</h2><div class="table-wrap"><table><thead><tr><th>畫面狀態</th><th>代表意義</th><th>TE 下一步</th></tr></thead><tbody>
