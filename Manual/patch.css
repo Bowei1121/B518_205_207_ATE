@@ -1,7 +1,7 @@
 /* Extensions for the HMI annotated guide and result-comparison tables. */
 h2 { margin: 0 0 .8rem; }
-.image-stage { position: relative; max-width: 720px; margin: auto; }
-.annotated-figure .manual-image { width: 100%; }
+.image-stage { position: relative; width: min(100%, 720px); margin: auto; }
+.annotated-figure .manual-image { width: 100%; height: auto; max-height: none; }
 .callout { position: absolute; display: grid; place-items: center; width: 2rem; height: 2rem; border: 2px solid #fff; border-radius: 50%; background: #0e7490; color: #fff; font-weight: 800; box-shadow: 0 1px 5px #0008; }
 .c1 { top: 10%; left: 7%; }.c2 { top: 11%; left: 47%; }.c3 { top: 11%; right: 8%; }.c4 { top: 21%; left: 49%; }.c5 { top: 33%; left: 49%; }.c6 { top: 53%; left: 47%; }.c7 { bottom: 7%; left: 48%; }
 .result-image { max-height: 680px; }
