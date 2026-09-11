@@ -1,2 +1,10 @@
-/* Keep heading spacing explicit; loaded after the compact base stylesheet. */
+/* Extensions for the HMI annotated guide and result-comparison tables. */
 h2 { margin: 0 0 .8rem; }
+.image-stage { position: relative; max-width: 720px; margin: auto; }
+.annotated-figure .manual-image { width: 100%; }
+.callout { position: absolute; display: grid; place-items: center; width: 2rem; height: 2rem; border: 2px solid #fff; border-radius: 50%; background: #0e7490; color: #fff; font-weight: 800; box-shadow: 0 1px 5px #0008; }
+.c1 { top: 10%; left: 7%; }.c2 { top: 11%; left: 47%; }.c3 { top: 11%; right: 8%; }.c4 { top: 21%; left: 49%; }.c5 { top: 33%; left: 49%; }.c6 { top: 53%; left: 47%; }.c7 { bottom: 7%; left: 48%; }
+.result-image { max-height: 680px; }
+code { overflow-wrap: anywhere; }
+@media print { .callout { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+@media (max-width: 760px) { .callout { width: 1.55rem; height: 1.55rem; font-size: .8rem; } }
