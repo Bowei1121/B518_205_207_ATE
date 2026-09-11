@@ -1,0 +1,2 @@
+/* Keep heading spacing explicit; loaded after the compact base stylesheet. */
+h2 { margin: 0 0 .8rem; }
