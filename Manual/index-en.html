@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="B518 Log Solution offline user manual">
+  <title>B518 Log Solution | User Manual</title>
+  <link rel="stylesheet" href="manual.css">
+  <link rel="stylesheet" href="patch.css">
+</head>
+<body>
+  <div class="language-switch" role="navigation" aria-label="Language / 語言">
+    <a href="index.html?lang=zh-Hant" lang="zh-Hant" hreflang="zh-Hant" data-language="zh-Hant">繁體中文</a>
+    <a href="index-en.html?lang=en" lang="en" hreflang="en" data-language="en" aria-current="page">English</a>
+  </div>
+  <a class="skip-link" href="#content">Skip to main content</a>
+  <header class="hero">
+    <div><p class="eyebrow">B518 Log Solution · v0.1.0</p><h1>User Manual</h1><p class="lead">For production test engineers (TEs) operating the app and developers learning its log-monitoring workflow. Open <code>index-en.html</code> in this folder to read offline.</p></div>
+    <div class="meta"><span>Last updated</span><strong>2026-09-18</strong><span>App version</span><strong>0.1.0</strong></div>
+  </header>
+  <div class="layout">
+    <aside class="sidebar" aria-label="Manual navigation"><button class="nav-toggle" type="button" aria-expanded="false">Contents</button><nav>
+      <a href="#hmi">Dashboard overview</a><a href="#te">TE operating guide</a><a href="#quick-start">Quick start</a><a href="#paths">Configure log paths</a><a href="#results">Interpret results</a><a href="#comparison">Compare tester results</a><a href="#troubleshooting">Troubleshooting</a><a href="#feedback">Production trial &amp; feedback</a><a href="#developer">How the app works</a><a href="#maintenance">Manual maintenance</a>
+    </nav></aside>
+    <main id="content">
+      <section class="intro cards" aria-label="Reader guides">
+        <a class="card" href="#te"><span class="tag">Production TEs</span><h2>Operate, interpret &amp; report</h2><p>Configure paths, start a monitoring round, check slot states, and collect information that developers can use to investigate problems.</p></a>
+        <a class="card" href="#developer"><span class="tag">Developers</span><h2>How logs become results</h2><p>Understand the UI, background monitoring, events, log formats, and session records.</p></a>
+      </section>
+
+      <section id="hmi"><p class="section-label">Get to know the screen</p><h2>Dashboard overview</h2><p>The dashboard lets TEs read results and provides a fixed display for KVM image recognition. Configure the paths before starting monitoring. Monitoring does not start the test in Atlas or the BT HMI. PASS, FAIL, and NOTEST bring Log Solution to the foreground for KVM reading; TIMEOUT and STOPPED do not.</p>
+        <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="BT dashboard showing Settings, KVM RESULT, reference colors, slot results, and monitoring buttons" data-caption="BT dashboard overview"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>Figure 1. BT dashboard. The numbers match the descriptions below. DFU and FCT use the same layout with different numbers of available slots. Screenshots retain the actual Chinese app labels; English instructions include the corresponding labels.</figcaption></figure>
+        <div class="table-wrap"><table><thead><tr><th>No.</th><th>Area / control</th><th>Function</th></tr></thead><tbody>
+          <tr><td>1</td><td>Settings（設定）</td><td>Opens Monitoring Settings（監控設定）and Events &amp; Session（事件與 Session）. Select the station, set paths and timeouts, view events, and open session records.</td></tr>
+          <tr><td>2</td><td>Version and station</td><td>Shows the B518 Log Solution version and the selected DFU, FCT, or BT station.</td></tr>
+          <tr><td>3</td><td>Monitoring status</td><td>Shows Standby（待命）, Starting（啟動中）, Monitoring（監控中）, or Stopped after timeout（逾時停止）. Standby means monitoring is inactive; results from the previous round may remain visible.</td></tr>
+          <tr><td>4</td><td>KVM RESULT strip</td><td>Seven fixed blocks represent Slot 1–7 from left to right. Black-and-white markers at both ends identify position and orientation. DFU uses 1–7, FCT uses 1–6, and BT uses 1–4. Unavailable slots remain black.</td></tr>
+          <tr><td>5</td><td>KVM reference colors</td><td>Fixed PASS, FAIL, TESTING, and NOTEST samples let the KVM system prepare its recognition templates. These blocks are not buttons.</td></tr>
+          <tr><td>6</td><td>Result table</td><td>Shows each available slot, its state, and the product serial number (SN). BT Slot 1–4 correspond to tester Thread 1–4.</td></tr>
+          <tr><td>7</td><td>Start / stop monitoring</td><td>Start Monitoring（開始監控）records the round's start time and the logs already in the folder so old results are not mistaken for new ones. The shortcut is <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>. It does not start the tester. Stop Monitoring（停止監控）ends the round: unfinished slots become STOPPED and completed results are retained.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="te"><p class="section-label">TE operating guide</p><h2>Before you begin</h2><ul><li>Open B518 Log Solution and make sure this Mac can read the folder where the tester writes logs.</li><li>Keep the dashboard in the top-right corner visible, without Atlas or the BT HMI covering it, so the KVM can read the results.</li><li>Click Start Monitoring（開始監控）before each new round. The app records the start time and existing logs; unchanged CSV files that were already present are not treated as results for the new round.</li></ul></section>
+
+      <section id="quick-start"><h2>Quick start</h2><ol class="steps">
+        <li><strong>Open settings.</strong> Click Settings（設定）on the dashboard.</li>
+        <li><strong>Select the station and paths.</strong> Choose DFU, FCT, or BT, then use Select（選擇）to choose the root folders described below.</li>
+        <li><strong>Save.</strong> Save（儲存）stores the station, paths, and timeouts together. Cancel（取消）discards changes.</li>
+        <li><strong>Start monitoring.</strong> Click Start Monitoring（開始監控）or press <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>. Starting（啟動中）means the app is recording which logs already exist so it can distinguish old results. It then shows Monitoring（監控中）.</li>
+        <li><strong>Start the tester next.</strong> Wait for Monitoring（監控中）before starting the test. Check the slot and SN during testing.</li>
+        <li><strong>Read the results.</strong> When PASS, FAIL, NOTEST, or TIMEOUT appears, follow the result guide. Start monitoring again for the next round.</li>
+      </ol></section>
+
+      <section id="paths"><h2>Configure log paths</h2><p class="note warning"><strong>Project-specific paths:</strong> This manual is based on the B482 project. Select the correct paths for your own project.</p><p>Folders must exist and be readable. Blank, missing, or inaccessible paths prevent monitoring from starting. The structures below are <strong>examples</strong>; select the root folders used by your tester.</p>
+        <div class="station-grid">
+          <article><h3>DFU · Slot 1–7</h3><dl><dt>Live log root（即時 Log 根路徑）</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/active</code></dd><dt>Final result root（最終結果根路徑）</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></dd></dl><pre>/Users/gdlocal/Library/Logs/Atlas/
+├── <mark>active</mark>/
+│   └── group0-slot1/…/records.csv
+└── <mark>unit-archive</mark>/
+    └── &lt;product SN&gt;/&lt;timestamp&gt;/system/records.csv</pre></article>
+          <article><h3>FCT · Slot 1–6</h3><dl><dt>Live log root（即時 Log 根路徑）</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/active</code></dd><dt>Final result root（最終結果根路徑）</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></dd></dl><pre>/Users/gdlocal/Library/Logs/Atlas/
+├── <mark>active</mark>/
+│   └── group0-slot1/…/records.csv
+└── <mark>unit-archive</mark>/
+    └── &lt;product SN&gt;/&lt;timestamp&gt;/system/records.csv</pre></article>
+          <article><h3>BT · Thread 0–3</h3><dl><dt>BT TestData root（BT TestData 根路徑）</dt><dd><code>/vault/B482_RFTEST/TestData</code></dd><dt>BT CaseInfo root（BT CaseInfo 根路徑）</dt><dd>Select the same <code>/vault/B482_RFTEST/TestData</code> folder (optional, recommended).</dd></dl><pre>/vault/B482_RFTEST/<mark>TestData</mark>/
+├── thread1CaseInfo_YYYY-MM-DD.txt
+├── thread2CaseInfo_YYYY-MM-DD.txt
+└── YYYY-MM-DD/PASSED or FAILED/
+    └── [Thread0][…][SN][PASSED][timestamp].csv</pre></article>
+        </div>
+        <p class="note"><strong>DFU field label:</strong> The app currently labels the field Final Result Root（最終結果根路徑 (unitest)）. For this deployment, select <code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code>. This manual describes the configuration; it does not change the app.</p>
+        <p class="note"><strong>BT CaseInfo:</strong> This field may be left blank, but selecting <code>/vault/B482_RFTEST/TestData</code> is recommended so activity and SN can appear before the final CSV arrives. With only the final CSV, the waiting-to-start timeout may expire before results are produced.</p>
+        <p class="note"><strong>Default timeouts:</strong> DFU and FCT: 30 seconds waiting to start / 480 seconds per test. BT: 30 / 240 seconds. Each station accepts positive whole numbers in seconds.</p>
+        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="Station dropdown in Settings with DFU, FCT, and BT options" data-caption="Station selection"><figcaption>Figure 2. Selecting a station determines its path fields and number of slots.</figcaption></figure>
+        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.36.png" alt="BT Settings showing TestData, CaseInfo, two timeout fields, Save, and Cancel" data-caption="BT settings"><figcaption>Figure 3. BT configuration example. Select TestData for both paths; CaseInfo is optional but recommended.</figcaption></figure>
+        <h3>Set and save BT paths using Figure 3</h3><ol class="steps">
+          <li><strong>Open settings.</strong> Click Settings（設定）and select the Monitoring Settings（監控設定）tab.</li>
+          <li><strong>Select BT.</strong> Choose <code>BT</code> in the Station（工站）dropdown. The TestData, CaseInfo, and two timeout fields appear.</li>
+          <li><strong>Set TestData.</strong> Click Select（選擇）beside BT TestData Root（BT TestData 根路徑）and choose <code>/vault/B482_RFTEST/TestData</code>. Confirm that the full path appears in the field.</li>
+          <li><strong>Set CaseInfo.</strong> Click Select（選擇）beside BT CaseInfo Root（BT CaseInfo 根路徑）and choose the same <code>/vault/B482_RFTEST/TestData</code> folder. This optional field is recommended to show SN and TESTING earlier.</li>
+          <li><strong>Check the timeouts.</strong> BT defaults are 30 seconds for Waiting-to-Start Timeout（等待開始測試逾時）and 240 seconds for Test Time Limit（測試時間上限）. If adjusted for your line, both must remain positive whole numbers.</li>
+          <li><strong>Save the settings.</strong> Click Save（儲存）at the bottom right. Return to the dashboard before clicking Start Monitoring（開始監控）. Cancel（取消）or closing the settings window discards unsaved changes.</li>
+        </ol>
+      </section>
+
+      <section id="results"><h2>Interpret results</h2><p>These eight states and colors have been checked against the current v0.1.0 source code. COMPLETING is light blue. The installed app package has not been verified against this source.</p><div class="table-wrap"><table><thead><tr><th>State</th><th>Meaning</th><th>What to do</th></tr></thead><tbody>
+        <tr><td><span class="state waiting">WAITING</span></td><td>No test activity has been observed for this slot in this round.</td><td>Confirm monitoring started first, then check that the tester writes to the selected folder.</td></tr>
+        <tr><td><span class="state testing">TESTING</span></td><td>Live log or BT CaseInfo activity was detected. The SN may already be visible.</td><td>Wait for the final result and check the slot and product SN.</td></tr>
+        <tr><td><span class="state completing">COMPLETING</span></td><td>Waiting for the final test result; this does not mean the test passed. The state may appear briefly, or the display may go directly from TESTING to PASS/FAIL.</td><td>Wait for the archive or TestData result. If the time limit is exceeded, follow TIMEOUT guidance.</td></tr>
+        <tr><td><span class="state pass">PASS</span></td><td>The final log indicates a pass.</td><td>Release the product according to your production procedure; let KVM read the strip or screen as needed.</td></tr>
+        <tr><td><span class="state fail">FAIL</span></td><td>The final log indicates a failure, or DFU/FCT activity ended without a trusted SN being read.</td><td>Follow the production exception procedure and retain the original logs.</td></tr>
+        <tr><td><span class="state notest">NOTEST</span></td><td>DFU/FCT: after activity has occurred and all available slots' active folders have been absent for at least 3 seconds, unused slots change from WAITING to NOTEST. BT: a final FAILED CSV with an empty SN produces NOTEST. This does not mean the entire round is complete.</td><td>Check whether the slot was intentionally unused. Report unexpected cases.</td></tr>
+        <tr><td><span class="state timeout">TIMEOUT</span></td><td>Waiting-to-start timeout: if no slot activity or final result arrives before the deadline, all available slots show TIMEOUT and monitoring stops. Individual test timeout: after a slot's first activity exceeds its test limit, only that slot is marked; other unfinished slots keep monitoring.</td><td>TIMEOUT does not mean a product FAIL. Check the tester, paths, and logs. Allow other slots to continue after an individual timeout; start a new round after this round finishes or you stop it manually.</td></tr>
+        <tr><td><span class="state stopped">STOPPED</span></td><td>An operator stopped monitoring. Unfinished slots become STOPPED; existing PASS/FAIL/NOTEST and TIMEOUT results remain.</td><td>This does not mean a product FAIL. Start a new monitoring round to resume testing.</td></tr>
+      </tbody></table></div>
+        <h3>KVM strip and channels</h3><p>The top <code>KVM RESULT</code> strip always represents Slot 1–7 from left to right. DFU uses 1–7, FCT 1–6, and BT 1–4; unavailable slots stay black. The black-and-white end markers identify orientation for image recognition. The fixed PASS, FAIL, TESTING, and NOTEST samples are KVM references, not buttons.</p>
+      </section>
+
+      <section id="comparison"><h2>Compare tester results</h2><p>These photos show the tester HMI beside B518 Log Solution. Compare the channel, product SN, result, and KVM strip. The photos show visible results only; they do not establish the cause of a FAIL.</p>
+        <h3>FCT: tester row numbers and Log Solution slots</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165716_16_52.jpg" alt="FCT tester beside Log Solution showing six channels with FAIL, PASS, NOTEST, and SN read failures" data-caption="FCT tester result comparison"><figcaption>Figure 4. FCT production results. Tester row numbers 0–5 on the left correspond to Log Solution Slot 1–6.</figcaption></figure>
+        <div class="table-wrap"><table><thead><tr><th>Tester row</th><th>Log Solution</th><th>Visible result</th><th>Product SN display</th></tr></thead><tbody>
+          <tr><td>0</td><td>Slot 1</td><td><span class="state fail">FAIL</span></td><td>HK5HVH6ZH7300003YV</td></tr>
+          <tr><td>1</td><td>Slot 2</td><td><span class="state fail">FAIL</span></td><td>SN read failed（SN 讀取失敗）</td></tr>
+          <tr><td>2</td><td>Slot 3</td><td><span class="state pass">PASS</span></td><td>HK5HVH6YXFQ00003YV</td></tr>
+          <tr><td>3</td><td>Slot 4</td><td><span class="state notest">NOTEST</span></td><td>Blank</td></tr>
+          <tr><td>4</td><td>Slot 5</td><td><span class="state fail">FAIL</span></td><td>HK5HVH6ZBB700003YV</td></tr>
+          <tr><td>5</td><td>Slot 6</td><td><span class="state fail">FAIL</span></td><td>SN read failed（SN 讀取失敗）</td></tr>
+        </tbody></table></div><p class="note">The tester uses <code>NOTSET</code> for row 3 in this photo, while Log Solution shows <code>NOTEST</code>. In this comparison, both indicate no test result for that channel.</p>
+        <h3>BT: tester threads, CSV names, and slots</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165718_18_52.jpg" alt="Four BT tester threads showing PASSED beside four Log Solution slots showing PASS" data-caption="BT tester result comparison"><figcaption>Figure 5. BT production results. TestThread 1–4 show PASSED and Log Solution Slot 1–4 show PASS.</figcaption></figure>
+        <div class="table-wrap"><table><thead><tr><th>Tester</th><th>TestData CSV</th><th>Log Solution</th><th>Visible result</th></tr></thead><tbody>
+          <tr><td>TestThread 1</td><td>Thread0</td><td>Slot 1</td><td><span class="state pass">PASSED / PASS</span></td></tr>
+          <tr><td>TestThread 2</td><td>Thread1</td><td>Slot 2</td><td><span class="state pass">PASSED / PASS</span></td></tr>
+          <tr><td>TestThread 3</td><td>Thread2</td><td>Slot 3</td><td><span class="state pass">PASSED / PASS</span></td></tr>
+          <tr><td>TestThread 4</td><td>Thread3</td><td>Slot 4</td><td><span class="state pass">PASSED / PASS</span></td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="troubleshooting"><h2>Troubleshooting</h2><div class="accordions">
+        <details><summary>Monitoring will not start / path error</summary><p>In Settings（設定）, check that all required root folders are selected, still exist, and are readable by your account. DFU/FCT require both active and final-result paths. BT requires TestData; CaseInfo may be blank.</p></details>
+        <details><summary>Stuck at WAITING or waiting-to-start timeout</summary><p>Start monitoring before starting the test, and confirm the tester writes to the selected folder. Unchanged files that existed before monitoring are ignored to avoid reusing old results. If no slot activity or final result arrives before the waiting-to-start deadline, all available slots become TIMEOUT and monitoring stops. Resolve the cause, then start monitoring again.</p></details>
+        <details><summary>SN read failed（SN 讀取失敗）/ FAIL</summary><p>DFU/FCT read a trusted SN from records.csv under active. If active disappears before a trusted SN is read, the slot becomes FAIL. Give the developers that slot's active records.csv and final-result records.csv.</p></details>
+        <details><summary>An individual slot shows TIMEOUT</summary><p>The test timer starts at the first TESTING/COMPLETING activity and includes time spent waiting for the final result. Only the timed-out slot is marked; other unfinished slots continue, and completed results remain. Check whether the final CSV arrived late, was written to another folder, or the tester stopped progressing.</p></details>
+        <details><summary>BT requests manual review（人工覆核）</summary><p>BT locks onto the first timestamp batch in the round. A different batch or another final result for the same thread prompts you to accept the new file. Choose Yes（是）only after confirming it belongs to the intended round and tester. If unsure, choose No（否）and report the session and original logs.</p></details>
+        <details><summary>Why does BT show TESTING before PASS/FAIL?</summary><p>With CaseInfo configured, activity from thread1–4 CaseInfo files maps to Slot 1–4. This can display activity and the barcode before the final CSV arrives. Final results still come from PASSED/FAILED CSV files under TestData.</p></details>
+      </div></section>
+
+      <section id="feedback"><h2>Production trial &amp; feedback</h2><h3>Suggested trial checklist</h3><div class="checklist">
+        <label><input type="checkbox"> All three stations save the correct paths and enter Monitoring.</label>
+        <label><input type="checkbox"> Each available slot's SN, TESTING state, and final result agree with the tester.</label>
+        <label><input type="checkbox"> PASS, FAIL, NOTEST, TIMEOUT, and stopping monitoring behave as expected.</label>
+        <label><input type="checkbox"> With BT CaseInfo configured, thread activity appears before the final CSV.</label>
+        <label><input type="checkbox"> KVM recognizes the top-right dashboard and result strip.</label>
+      </div>
+        <h3>Report through WeChat</h3><p>Open Settings（設定）→ Events &amp; Session（事件與 Session）→ Open Session Records（開啟 Session 紀錄）to find the round's folder. A session contains <code>session.json</code> (settings, times, source paths), <code>events.log</code> (events), and <code>results.csv</code> (slot results). <strong>Original logs are not copied or backed up</strong>; attach them separately when reporting an issue.</p>
+        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.31.07.png" alt="Events and Session tab with the Open Session Records button" data-caption="Events and session records"><figcaption>Figure 6. Open Session Records（開啟 Session 紀錄）opens the current session folder or the folder containing all sessions.</figcaption></figure>
+        <div class="report-box"><textarea id="report-template" rows="11" readonly>[B518 Log Solution report]
+App version:
+Station (DFU / FCT / BT):
+Time of occurrence:
+Slot / Thread and product SN:
+Configured paths:
+Steps taken:
+Expected result:
+Actual result:
+Attachments: dashboard screenshot / session folder / original logs
+Other observations:</textarea><button id="copy-report" type="button">Copy report template</button><span id="copy-status" aria-live="polite"></span></div>
+      </section>
+
+      <section id="developer"><p class="section-label">Developer guide</p><h2>How data flows</h2><div class="flow" role="img" aria-label="Settings and dashboard start background polling, which reads station logs and sends events for UI updates and session records"><div>Settings &amp; dashboard<br><small>b518_log_solution.py</small></div><b>Start</b><div>Background polling<br><small>Every 0.5 seconds</small></div><b>Read</b><div>DFU / FCT / BT logs<br><small>log_monitoring.py</small></div><b>Events</b><div>UI &amp; session records<br><small>JSON, CSV, LOG</small></div></div>
+        <p>The desktop UI creates a monitor and queues events returned by its background thread. The UI periodically processes events to update slots and the event view. PASS/FAIL/NOTEST result events bring the dashboard to the foreground. The monitoring core does not control the tester and has no Arduino, USB, TCP, KVM, or screen-capture dependencies.</p>
+        <div class="table-wrap"><table><thead><tr><th>Aspect</th><th>DFU / FCT</th><th>BT</th></tr></thead><tbody>
+          <tr><th>Monitor class</th><td><code>AtlasActiveArchiveMonitor</code></td><td><code>BtLogMonitor</code></td></tr>
+          <tr><th>Live source</th><td><code>active/group0-slotN/.../records.csv</code></td><td>Optional <code>threadNCaseInfo_YYYY-MM-DD.txt</code></td></tr>
+          <tr><th>Final source</th><td>records.csv located by SN and timestamp under <code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></td><td>For B482, CSV files in the date's PASSED or FAILED folders under <code>/vault/B482_RFTEST/TestData</code></td></tr>
+          <tr><th>SN</th><td>Reads trusted fields such as <code>MLB_SN</code>, <code>PrimaryIdentity</code>, or <code>SerialNumber</code>. The first trusted value is locked.</td><td>Reads the filename or CSV SerialNumber. CaseInfo SNRead records in the same TestData root can display the barcode earlier.</td></tr>
+          <tr><th>Result</th><td>Any final records.csv status starting with FAIL means FAIL; all statuses must start with PASS to produce PASS.</td><td>PASSED/FAILED values in the folder, filename, and CSV must agree. FAILED with an empty SN means NOTEST.</td></tr>
+          <tr><th>Avoiding old results</th><td colspan="2">At startup, the app records existing CSV file sizes and modification times to identify new or changed files and exclude unchanged old results. This does not capture the screen or back up logs. DFU/FCT archives and BT final CSV files also undergo timestamp checks. BT CaseInfo is filtered by timestamps inside its records, rather than the CSV file-comparison method.</td></tr>
+        </tbody></table></div>
+        <h3>Source code map</h3><dl class="mapping"><dt><code>b518_log_solution.py</code></dt><dd>UI, station settings, preferences, shortcut, event queue, and opening session records.</dd><dt><code>log_monitoring.py</code></dt><dd>Recording existing file sizes and modification times, CSV parsing, station monitors, timeouts, and SessionStore.</dd><dt><code>test_log_monitoring.py</code></dt><dd>Automated tests for log formats, SN handling, batches, CaseInfo, timeouts, and state decisions.</dd><dt><code>test_log_solution_ui.py</code></dt><dd>Automated tests for slot counts, colors, saved settings, path validation, and UI behavior.</dd></dl>
+      </section>
+
+      <section id="maintenance"><h2>Manual maintenance</h2><p>This manual is based on B518 Log Solution v0.1.0 source code and the current production paths. When stations, log paths or formats, states, timeouts, session contents, or comparison photos change, update both language editions and <code>Manual/MAINTENANCE.md</code>. Check images, navigation, and print layout offline in a browser.</p></section>
+    </main>
+  </div>
+  <dialog id="image-dialog"><button class="close-dialog" type="button" aria-label="Close enlarged image">×</button><img id="dialog-image" alt=""><p id="dialog-caption"></p></dialog>
+  <script src="manual.js"></script>
+</body>
+</html>
