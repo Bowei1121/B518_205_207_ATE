@@ -12,7 +12,7 @@
   <a class="skip-link" href="#content">跳至主要內容</a>
   <header class="hero">
     <div><p class="eyebrow">B518 Log Solution · v0.1.0</p><h1>使用手冊</h1><p class="lead">供產線 TE 操作與跨部門開發者理解 Log 監控流程。可直接雙擊本資料夾的 <code>index.html</code> 離線閱讀。</p></div>
-    <div class="meta"><span>文件更新</span><strong>2026-09-11</strong><span>適用程式版本</span><strong>0.1.0</strong></div>
+    <div class="meta"><span>文件更新</span><strong>2026-09-18</strong><span>適用程式版本</span><strong>0.1.0</strong></div>
   </header>
   <div class="layout">
     <aside class="sidebar" aria-label="文件導覽"><button class="nav-toggle" type="button" aria-expanded="false">章節導覽</button><nav>
@@ -24,7 +24,7 @@
         <a class="card" href="#developer"><span class="tag">開發者</span><h2>程式如何判讀 Log</h2><p>認識 UI、背景監控、事件、Log 格式與 Session 紀錄的資料流。</p></a>
       </section>
 
-      <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。最終結果出現時，Log Solution 會自動回到前景，方便 KVM 讀取。</p>
+      <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。出現 PASS、FAIL 或 NOTEST 時，Log Solution 會自動回到前景，方便 KVM 讀取；TIMEOUT 與 STOPPED 不會觸發此動作。</p>
         <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="BT Log Solution 主畫面，含設定、KVM RESULT、狀態模板、Slot 表格及監控按鈕" data-caption="BT 主畫面功能導覽"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>圖 1：BT 主畫面。標記對應下方功能說明；DFU、FCT 使用相同畫面結構，只有有效 Slot 數不同。</figcaption></figure>
         <div class="table-wrap"><table><thead><tr><th>標記</th><th>區域／部件</th><th>功能</th></tr></thead><tbody>
           <tr><td>1</td><td>設定</td><td>開啟「監控設定」與「事件與 Session」視窗，可選工站、設定路徑及逾時秒數、查看即時事件與開啟 Session 紀錄。</td></tr>
@@ -33,13 +33,13 @@
           <tr><td>4</td><td>KVM RESULT 色帶</td><td>固定七格，左至右代表 Slot 1～7；兩端黑白標記用於定位及確認方向。DFU 使用 1～7、FCT 使用 1～6、BT 使用 1～4，其餘格固定黑色。</td></tr>
           <tr><td>5</td><td>KVM 狀態模板</td><td>PASS、FAIL、TESTING、NOTEST 的固定顏色範本，供 KVM 先建立取樣模板；這四格不是操作按鈕。</td></tr>
           <tr><td>6</td><td>結果表格</td><td>每個有效 Slot 顯示通道、目前狀態與產品 SN。BT 的 Slot 1～4 分別對應測試機 Thread 1～4。</td></tr>
-          <tr><td>7</td><td>開始／停止監控</td><td>「開始監控」建立本輪時間基準與舊檔快照，可用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。開始不會啟動測試機；「停止監控」由人員結束本輪，並非產品測試失敗。</td></tr>
+          <tr><td>7</td><td>開始／停止監控</td><td>「開始監控」會記錄本輪開始時間，並先記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果，可用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。開始不會啟動測試機；「停止監控」由人員結束本輪，尚未結束的通道改為 STOPPED，已完成的結果保留。</td></tr>
         </tbody></table></div>
       </section>
 
-      <section id="te"><p class="section-label">TE 操作指南</p><h2>開始前確認</h2><ul><li>已開啟 B518 Log Solution，且測試機將產生的 Log 資料夾可由此 Mac 讀取。</li><li>畫面右上角的主看板不被 Atlas 或 BT HMI 覆蓋，供 KVM 擷取結果。</li><li>每次新一輪測試前都要按「開始監控」；程式會建立該輪的時間基準並排除啟動前已存在的舊檔案。</li></ul></section>
+      <section id="te"><p class="section-label">TE 操作指南</p><h2>開始前確認</h2><ul><li>已開啟 B518 Log Solution，且測試機將產生的 Log 資料夾可由此 Mac 讀取。</li><li>畫面右上角的主看板不被 Atlas 或 BT HMI 覆蓋，供 KVM 擷取結果。</li><li>每次新一輪測試前都要按「開始監控」；程式會記錄本輪開始時間及原有 Log；原本就存在且沒有更新的 CSV 不會當成本輪結果。</li></ul></section>
 
-      <section id="quick-start"><h2>快速上手</h2><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」。</li><li><strong>選工站並設定路徑。</strong>選擇 DFU、FCT 或 BT，依下方說明按「選擇」挑選正確根目錄。</li><li><strong>按儲存。</strong>工站、路徑和逾時值會一起保存；取消不會保存修改。</li><li><strong>開始監控。</strong>按主畫面「開始監控」，或使用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。看到「啟動中」表示程式正在建立快照；完成後會顯示「監控中」。</li><li><strong>再開始操作測試機。</strong>等待監控進入「監控中」後才啟動測試。測試過程中確認 Slot 與 SN 是否正確。</li><li><strong>讀取最終結果。</strong>待 PASS、FAIL、NOTEST 或 TIMEOUT 出現後，依「判讀結果」處置。下一輪請再次按開始監控。</li></ol>
+      <section id="quick-start"><h2>快速上手</h2><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」。</li><li><strong>選工站並設定路徑。</strong>選擇 DFU、FCT 或 BT，依下方說明按「選擇」挑選正確根目錄。</li><li><strong>按儲存。</strong>工站、路徑和逾時值會一起保存；取消不會保存修改。</li><li><strong>開始監控。</strong>按主畫面「開始監控」，或使用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。看到「啟動中」表示程式正在記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果；完成後會顯示「監控中」。</li><li><strong>再開始操作測試機。</strong>等待監控進入「監控中」後才啟動測試。測試過程中確認 Slot 與 SN 是否正確。</li><li><strong>讀取最終結果。</strong>待 PASS、FAIL、NOTEST 或 TIMEOUT 出現後，依「判讀結果」處置。下一輪請再次按開始監控。</li></ol>
       </section>
 
       <section id="paths"><h2>設定讀取路徑</h2><p class="note warning"><strong>專案適用警語：</strong>本說明書是以 B482 專案製作而成，需根據自身專案選擇正確路徑。</p><p>路徑必須存在且可讀取。空白、已移除或無權限的路徑會使程式拒絕開始監控。下列皆為<strong>目錄結構示意</strong>，請依實際測試機位置選取根目錄。</p>
@@ -68,15 +68,15 @@
         <h3>依圖 3 設定 BT 路徑並儲存</h3><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」，確認目前在「監控設定」分頁。</li><li><strong>選擇 BT 工站。</strong>在「工站」下拉選單選取 <code>BT</code>，畫面會顯示 BT TestData、BT CaseInfo 與兩個逾時欄位。</li><li><strong>設定 TestData。</strong>在「BT TestData 根路徑」右側按「選擇」，選取 <code>/vault/B482_RFTEST/TestData</code>，再確認完整路徑已出現在欄位中。</li><li><strong>設定 CaseInfo。</strong>在「BT CaseInfo 根路徑」右側按「選擇」，同樣選取 <code>/vault/B482_RFTEST/TestData</code>。此欄位可留空，但建議設定，讓測試進行時能提早顯示 SN 與 TESTING。</li><li><strong>確認逾時秒數。</strong>BT 預設為等待開始測試逾時 30 秒、測試時間上限 240 秒；依產線需要調整時，兩個值都必須是正整數。</li><li><strong>儲存設定。</strong>按右下角「儲存」，回到主畫面後才可按「開始監控」。按「取消」或直接關閉設定視窗都不會保存本次修改。</li></ol>
       </section>
 
-      <section id="results"><h2>判讀結果</h2><div class="table-wrap"><table><thead><tr><th>畫面狀態</th><th>代表意義</th><th>TE 下一步</th></tr></thead><tbody>
+      <section id="results"><h2>判讀結果</h2><p>以下八種狀態與顏色已依目前 v0.1.0 原始碼核對；COMPLETING 為淺藍色。實機安裝包是否與此原始碼相同尚未驗證。</p><div class="table-wrap"><table><thead><tr><th>畫面狀態</th><th>代表意義</th><th>TE 下一步</th></tr></thead><tbody>
         <tr><td><span class="state waiting">WAITING</span></td><td>本輪尚未看到此 Slot 的測試活動。</td><td>確認先按開始監控，再確認測試機是否開始寫入正確路徑。</td></tr>
         <tr><td><span class="state testing">TESTING</span></td><td>偵測到即時 Log 或 BT CaseInfo 活動；SN 可能已顯示。</td><td>繼續等待最終結果，核對 Slot 與產品 SN。</td></tr>
-        <tr><td><span class="state completing">COMPLETING</span></td><td>即時測試已離開，程式正在等待最終 CSV。</td><td>等待 archive／TestData 寫入；若超過上限，依 TIMEOUT 處理。</td></tr>
+        <tr><td><span class="state completing">COMPLETING</span></td><td>等待最終測試結果，尚不代表測試通過。此狀態可能只短暫出現，畫面也可能直接由 TESTING 跳到 PASS／FAIL。</td><td>等待 archive／TestData 寫入；若超過上限，依 TIMEOUT 處理。</td></tr>
         <tr><td><span class="state pass">PASS</span></td><td>最終 Log 判定通過。</td><td>依產線流程放行，必要時由 KVM 讀取色帶或畫面。</td></tr>
         <tr><td><span class="state fail">FAIL</span></td><td>最終 Log 判定失敗，或 DFU/FCT 測試活動結束前未讀到可信 SN。</td><td>依產線異常流程處理並保存原始 Log。</td></tr>
-        <tr><td><span class="state notest">NOTEST</span></td><td>本輪已完成但該有效通道未參與；BT 空 SN 的 FAILED 最終 CSV 也會顯示此狀態。</td><td>確認該 Slot 是否本來就未測；不是預期情況時回報。</td></tr>
-        <tr><td><span class="state timeout">TIMEOUT</span></td><td>監控等待開始或該 Slot 的測試時間超過設定上限。</td><td>這不是產品 FAIL。檢查測試機、路徑與 Log，再重新開始一輪監控。</td></tr>
-        <tr><td><span class="state stopped">STOPPED</span></td><td>人員按下停止監控。</td><td>這不是產品 FAIL。若要繼續測試，重新開始一輪監控。</td></tr>
+        <tr><td><span class="state notest">NOTEST</span></td><td>DFU／FCT：本輪已有通道活動，且所有有效通道的 active 資料夾消失至少 3 秒後，未參與的通道由 WAITING 改為 NOTEST。BT：FAILED 最終 CSV 的 SN 為空時顯示 NOTEST。此狀態不表示整輪已完成。</td><td>確認該 Slot 是否本來就未測；不是預期情況時回報。</td></tr>
+        <tr><td><span class="state timeout">TIMEOUT</span></td><td>整輪等待開始逾時：期限內沒有任何通道活動或最終結果，所有有效 Slot 顯示 TIMEOUT 並停止監控。個別通道測試逾時：從首次活動起超過測試上限，只標記該 Slot，其餘未結束通道繼續監控。</td><td>TIMEOUT 不代表產品 FAIL。檢查測試機、路徑與 Log；個別通道逾時時先保留其他通道的監控，整輪結束或手動停止後再開始新一輪。</td></tr>
+        <tr><td><span class="state stopped">STOPPED</span></td><td>人員停止監控，尚未結束的通道改為 STOPPED，已完成的 PASS／FAIL／NOTEST 與已逾時的 TIMEOUT 保留。</td><td>這不是產品 FAIL。若要繼續測試，重新開始一輪監控。</td></tr>
       </tbody></table></div>
         <h3>KVM 色帶與通道</h3><p>頂端 <code>KVM RESULT</code> 永遠由左至右代表 Slot 1–7。DFU 使用 1–7、FCT 使用 1–6、BT 使用 1–4；不存在的通道固定為黑色。兩端黑白定位標記協助影像辨識確認方向。主畫面上的 PASS、FAIL、TESTING、NOTEST 色塊是 KVM 取樣模板，不是按鈕。</p>
       </section>
@@ -102,9 +102,9 @@
 
       <section id="troubleshooting"><h2>異常處理</h2><div class="accordions">
         <details><summary>無法開始監控／出現路徑錯誤</summary><p>回到設定，確認必要欄位已選到根目錄、目錄仍存在且目前帳號有讀取權限。DFU/FCT 需要同時設定 active 與最終結果路徑；BT 必須設定 TestData，CaseInfo 可留空。</p></details>
-        <details><summary>一直是 WAITING 或等待開始逾時</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。全輪未出現活動達「等待開始測試逾時」時，所有有效 Slot 會變 TIMEOUT 並停止。</p></details>
+        <details><summary>一直是 WAITING 或等待開始逾時</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。全輪沒有任何通道活動或最終結果，且達「等待開始測試逾時」時，所有有效 Slot 會變 TIMEOUT 並停止監控；排除原因後須重新開始監控。</p></details>
         <details><summary>顯示「SN 讀取失敗 / FAIL」</summary><p>DFU/FCT 從 active 的 records.csv 讀可信 SN；若 active 消失前都未讀到可信 SN，會判 FAIL。請提供該 Slot 的 active records.csv 與最終結果 records.csv 給開發者。</p></details>
-        <details><summary>個別 Slot TIMEOUT</summary><p>從首次 TESTING／COMPLETING 起算，逾時只會標記該 Slot，其他 Slot 繼續監控。先確認最終 CSV 是否遲到、寫在別的根目錄，或測試機本身停住。</p></details>
+        <details><summary>個別 Slot TIMEOUT</summary><p>從首次 TESTING／COMPLETING 起算，包含等待最終結果的時間；逾時只會標記該 Slot，其他未結束 Slot 繼續監控，已完成結果保留。先確認最終 CSV 是否遲到、寫在別的根目錄，或測試機本身停住。</p></details>
         <details><summary>BT 出現「人工覆核」</summary><p>BT 會鎖定本輪第一個時間戳批次。若看到不同批次，或同一 Thread 出現另一個最終結果，程式會詢問是否接受新檔案。只有確認它屬於本輪、同一台機台要看的資料時才選「是」；不確定時選「否」並把 Session 和原始 Log 回報。</p></details>
         <details><summary>BT 為何先顯示 TESTING，再有 PASS／FAIL？</summary><p>設定 CaseInfo 後，程式會讀取 Thread1–4 的 CaseInfo 活動並對應主畫面 Slot 1–4，可在最終 CSV 到達前顯示測試中與條碼。最終結果仍以 TestData 下的 PASSED／FAILED CSV 判定。</p></details>
       </div></section>
@@ -126,16 +126,16 @@ Slot／Thread 與產品 SN：
       </section>
 
       <section id="developer"><p class="section-label">開發者原理說明</p><h2>資料如何流動</h2><div class="flow" role="img" aria-label="使用者介面、背景監控、Log 解析、事件與 Session 紀錄的資料流"><div>設定與主看板<br><small>b518_log_solution.py</small></div><b>啟動</b><div>背景輪詢<br><small>每 0.5 秒</small></div><b>讀取</b><div>DFU／FCT／BT Log<br><small>log_monitoring.py</small></div><b>事件</b><div>UI 更新與 Session<br><small>JSON、CSV、LOG</small></div></div>
-        <p>桌面 UI 建立監控器並把背景執行緒傳回的事件放進佇列；UI 定期取出事件，更新 Slot、事件頁與需要前景顯示的最終結果。核心監控邏輯不控制測試機，也沒有 Arduino、USB、TCP、KVM 或螢幕擷取依賴。</p>
+        <p>桌面 UI 建立監控器並把背景執行緒傳回的事件放進佇列；UI 定期取出事件，更新 Slot 與事件頁；收到 PASS／FAIL／NOTEST 結果事件時讓看板回到前景。核心監控邏輯不控制測試機，也沒有 Arduino、USB、TCP、KVM 或螢幕擷取依賴。</p>
         <div class="table-wrap"><table><thead><tr><th></th><th>DFU／FCT</th><th>BT</th></tr></thead><tbody>
           <tr><th>核心類別</th><td><code>AtlasActiveArchiveMonitor</code></td><td><code>BtLogMonitor</code></td></tr>
           <tr><th>即時來源</th><td><code>active/group0-slotN/.../records.csv</code></td><td>選填 <code>threadNCaseInfo_YYYY-MM-DD.txt</code></td></tr>
           <tr><th>最終來源</th><td><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code> 下，以 SN 與時間戳定位的 records.csv</td><td>B482 範例為 <code>/vault/B482_RFTEST/TestData</code> 下當日 PASSED 或 FAILED 目錄中的 CSV</td></tr>
           <tr><th>SN</th><td>讀取 <code>MLB_SN</code>、<code>PrimaryIdentity</code> 或 <code>SerialNumber</code> 等可信欄位，第一次可信值鎖定。</td><td>讀檔名或 CSV 的 SerialNumber；同一 TestData 根目錄中的 CaseInfo SNRead 可提早呈現條碼。</td></tr>
           <tr><th>判定</th><td>最終 records.csv 任一 status 以 FAIL 開頭即 FAIL；全部以 PASS 開頭才 PASS。</td><td>資料夾、檔名與 CSV 的 PASSED／FAILED 必須一致；FAILED 且空 SN 為 NOTEST。</td></tr>
-          <tr><th>避免誤讀舊檔</th><td colspan="2">開始時建立檔案大小與修改時間快照，僅處理開始後新增或變更的檔案；DFU／FCT 的 archive 另要求時間戳接近本輪開始時間。</td></tr>
+          <tr><th>避免誤讀舊檔</th><td colspan="2">開始時記錄既有 CSV 檔案的大小與修改時間，用來辨別新增或變更的 CSV，避免誤讀未更新的舊結果。這項記錄不會截圖或備份原始 Log。DFU／FCT 的 archive 與 BT 最終 CSV 另檢查時間戳；BT CaseInfo 則以記錄內的時間篩選，並非使用 CSV 的檔案比對方式。</td></tr>
         </tbody></table></div>
-        <h3>核心程式對照</h3><dl class="mapping"><dt><code>b518_log_solution.py</code></dt><dd>畫面、工站設定、偏好設定、快捷鍵、事件佇列與 Session 開啟入口。</dd><dt><code>log_monitoring.py</code></dt><dd>檔案快照、CSV 解析、各工站監控器、逾時計算與 SessionStore。</dd><dt><code>test_log_monitoring.py</code></dt><dd>Log 格式、SN、批次、CaseInfo、逾時與狀態判定的自動測試。</dd><dt><code>test_log_solution_ui.py</code></dt><dd>工站 Slot 數、顏色、設定保存、路徑防呆與 UI 行為的自動測試。</dd></dl>
+        <h3>核心程式對照</h3><dl class="mapping"><dt><code>b518_log_solution.py</code></dt><dd>畫面、工站設定、偏好設定、快捷鍵、事件佇列與 Session 開啟入口。</dd><dt><code>log_monitoring.py</code></dt><dd>記錄既有檔案的大小與修改時間、CSV 解析、各工站監控器、逾時計算與 SessionStore。</dd><dt><code>test_log_monitoring.py</code></dt><dd>Log 格式、SN、批次、CaseInfo、逾時與狀態判定的自動測試。</dd><dt><code>test_log_solution_ui.py</code></dt><dd>工站 Slot 數、顏色、設定保存、路徑防呆與 UI 行為的自動測試。</dd></dl>
       </section>
 
       <section id="maintenance"><h2>手冊維護</h2><p>本手冊對照 B518 Log Solution v0.1.0 原始碼及目前產線路徑製作。若新增工站、調整 Log 路徑／格式、狀態、逾時值、Session 內容或實機對照照片，請同時更新此頁及 <code>Manual/MAINTENANCE.md</code>，並在瀏覽器以離線方式確認圖片、導覽與列印版面。</p></section>
