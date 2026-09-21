@@ -1,5 +1,12 @@
 # B518 Log Solution 手冊維護
 
+## 轉發方式與檔案分工
+
+- `Manual/` 僅保留閱讀所需的 11 個檔案：`index.html`、`index-en.html`、`manual.css`、`patch.css`、`manual.js` 及 `Photo/` 內六張原始截圖。整個資料夾可以直接轉發，不能只傳 HTML，否則圖片、樣式與互動會遺失。
+- 收件者先解壓縮，再開啟 `Manual/index.html`；頁面頂端可以切換 English，也可以直接開啟 `index-en.html`。不需安裝套件或連線。
+- 維護文件與專案摘要保存在 `docs/manual/`，不放入轉發資料夾。歷史摘要中的舊路徑保留作為當時紀錄。
+- 本次提供專案根目錄的 `B518_Log_Solution_Manual_2026-09-21.zip`，ZIP 為本機交付產物，依既有 `.gitignore` 不提交。更新手冊後應重新打包，排除 `.DS_Store`、`__MACOSX`、Markdown 紀錄及其他非閱讀資源；壓縮檔內只需 `Manual/` 的上述 11 個檔案。
+
 手冊入口為 `Manual/index.html`，樣式及互動分別在 `manual.css`、`manual.js`。所有資源必須使用相對路徑，讓使用者可直接以 `file://` 離線開啟。
 
 ## 中英文同步維護
