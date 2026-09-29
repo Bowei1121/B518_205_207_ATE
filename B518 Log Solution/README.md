@@ -11,7 +11,11 @@ python3 b518_log_solution.py
 
 ## 建置安裝包
 
-舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。Apple Silicon macOS 15 測試機請執行 `./build_macos15_arm64_log_solution.sh`，產物為 `dist-macos15-arm64/B518-Log-Solution-V版本號-macOS15-arm64.zip`。新的 macOS 26.5 測試機請在 M 系列 macOS 26 電腦執行 `./build_macos26_arm64_log_solution.sh`，產物為 `dist-macos26-arm64/B518-Log-Solution-V版本號-macOS26-arm64.zip`，最低系統版本為 macOS 26.0。每支腳本都會先執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包 App 並輸出 SHA-256。
+舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。
+
+M4／macOS 26.5.2 建置給 M4／macOS 15.5 使用時，先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_5-arm64/B518-Log-Solution-V版本號-macOS15.5-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.5 實機啟動驗證，目標機不需另外安裝 Python。
+
+`./build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.5 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
 
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 

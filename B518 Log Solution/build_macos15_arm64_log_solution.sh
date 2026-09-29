@@ -5,18 +5,27 @@ ROOT="${0:A:h}"
 cd "$ROOT"
 
 [[ "$(uname -m)" == "arm64" ]] || { print -u2 'Requires an Apple Silicon arm64 builder.'; exit 1; }
-[[ "$(sw_vers -productVersion)" == 15.* ]] || { print -u2 'Requires macOS 15.x Sequoia.'; exit 1; }
+OS_VERSION="$(sw_vers -productVersion)"
+OS_MAJOR="${OS_VERSION%%.*}"
+OS_MINOR="${${OS_VERSION#*.}%%.*}"
+[[ "$OS_MAJOR" -gt 15 || ( "$OS_MAJOR" -eq 15 && "$OS_MINOR" -ge 5 ) ]] || {
+  print -u2 'Requires macOS 15.5 or newer.'; exit 1;
+}
 
-PYTHON_BIN="${PYTHON_BIN:-/opt/homebrew/bin/python3.12}"
-[[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN"; exit 1; }
+PYTHON_BIN="${PYTHON_BIN:-/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12}"
+[[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN (install Python.org 3.12.10 universal2 or set PYTHON_BIN)"; exit 1; }
+"$PYTHON_BIN" -c 'import platform, sys, tkinter, _tkinter; assert sys.version_info[:2] == (3, 12), "Python 3.12 required"; assert platform.machine() == "arm64", "native arm64 Python required"' || {
+  print -u2 'Python preflight failed: verify Python.org 3.12 arm64 and tkinter, or set PYTHON_BIN.'; exit 1;
+}
 
-export MACOSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_ARCHITECTURES=arm64
+export MACOSX_DEPLOYMENT_TARGET=15.5 CMAKE_OSX_DEPLOYMENT_TARGET=15.5 CMAKE_OSX_ARCHITECTURES=arm64
 
-VENV=.venv-macos15-arm64-log-solution
+VENV=.venv-macos15_5-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements-macos15-arm64.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py
+"$VENV/bin/python" -c 'import tkinter, _tkinter' || { print -u2 'Tk is missing from the build environment.'; exit 1; }
+"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_verify_macos_bundle.py
 
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
@@ -28,8 +37,8 @@ print(value)
 PY
 )"
 
-DIST=dist-macos15-arm64
-BUILD=build-macos15-arm64
+DIST=dist-macos15_5-arm64
+BUILD=build-macos15_5-arm64
 rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
@@ -37,22 +46,19 @@ rm -rf "$DIST" "$BUILD"
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"
-for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LSMinimumSystemVersion 15.0"; do
+for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LSMinimumSystemVersion 15.5"; do
   key=${pair%% *}
   value=${pair#* }
   /usr/libexec/PlistBuddy -c "Set :$key $value" "$PLIST" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Add :$key string $value" "$PLIST"
 done
 
-while IFS= read -r -d '' binary; do
-  file "$binary" | grep -q 'Mach-O' || continue
-  lipo -archs "$binary" | grep -qw arm64 || { print -u2 "Not arm64: $binary"; exit 1; }
-done < <(find "$APP" -type f -print0)
+"$VENV/bin/python" verify_macos_bundle.py "$APP" --target 15.5
 
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 
-ZIP="$DIST/B518-Log-Solution-V${VERSION}-macOS15-arm64.zip"
+ZIP="$DIST/B518-Log-Solution-V${VERSION}-macOS15.5-arm64.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 shasum -a 256 "$ZIP" > "$ZIP.sha256"
 print "Candidate built: $ZIP"
