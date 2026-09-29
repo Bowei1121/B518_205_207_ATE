@@ -2,6 +2,17 @@
 
 最後更新：2026-09-29（Asia/Taipei）
 
+## 2026-09-29 美國 B518 BT／RS-WMT 與 macOS 15.x
+
+- 最新目標為美國 BT 的 macOS 15.4.1，建置最低目標改為 15.0／arm64，涵蓋 15.x；專用 venv、輸出路徑及產物檢查同步調整。先前 15.5 目標紀錄保留於下節，現行設定以本節為準。
+- 在 Downloads 找到截圖同一批次 `2026-09-11_05-45-44` 的四組 CSV／Log。CSV 以 `tc=Slot...` 明確給出 1～4；與 Log `instance_active_1～4` 一致。原始檔只讀，不提交原始條碼／站點資料。
+- 新增獨立 `rswmt_monitoring.py`，將 B518 RS-WMT 格式正規化後送入共用監控／UI。CSV 跳過多行 metadata、以欄位確定 SN／Slot／結果，穩定五秒後定案；無 SN Fail 保留 FAIL。日期以檔名／Log 核對，支援樣本 CSV 的 YYYY/DD/MM，不能直接套 B482 格式。
+- 新增 BT 格式選單，舊偏好維持 B482 TestData；新格式監控固定 `output/SmtCal` 及其新子目錄。可選另外的 Live logs 路徑；只有正確格式的單 DUT／單輪 Log 可提供 Testing、SN、Completing，測項 PASS 不當作最終 PASS。
+- 已有快照的檔案忽略；以開始秒數鎖定本輪，不混入另一輪。重複結果、SN 衝突及逾時後到達的 CSV 不覆蓋原結果。提供 `replay_rswmt.py` 使用暫存目錄與對齊時鐘回放歷史檔，真實四組樣本均得到正確 Slot、SN、PASS。
+- 尚未證實 RS-WMT 的 output Log 是否在測試中持續更新。選擇新格式時將未自訂的開始等待 30 秒改為 240 秒，以供完成後匯出模式試用；即時來源確認後可改回 30 秒。缺少某 Slot 檔案不推定 NOTEST，需人工停止並收集資料。
+- README 與 `RSWMT_US_PILOT.md` 記錄中文／英文試用步驟、限制與現場驗收需求。M4 打包、15.4.1 現場啟動、真實 Fail／無 SN Fail 與即時 Log 時機仍待驗證，未宣稱可直接交付已驗收 App。
+- 驗證：完整核心、Tk UI、RS-WMT 及建置檢查 73 項測試通過；三支建置 shell 語法與 git diff whitespace 檢查通過。四組真實檔案以模擬時鐘回放，均在五秒穩定等待後得到相符的 Slot／SN／PASS。
+
 ## 2026-09-29 M4 新舊 macOS 跨版本建置
 
 - 建置機為 M4／macOS 26.5.2，目標機為 M4／macOS 15.5。macOS 15 arm64 腳本改為接受 15.5 以上建置機，使用獨立虛擬環境與 Python.org 3.12.10 universal2 作初始建置環境，產物最低版本為 15.5。

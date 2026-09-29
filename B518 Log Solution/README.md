@@ -13,33 +13,33 @@ python3 b518_log_solution.py
 
 舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。
 
-M4／macOS 26.5.2 建置給 M4／macOS 15.5 使用時，先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_5-arm64/B518-Log-Solution-V版本號-macOS15.5-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.5 實機啟動驗證，目標機不需另外安裝 Python。
+M4／macOS 26.5.2 建置給美國 M4／macOS 15.4.1 使用時（最低目標為 15.0，涵蓋 15.x），先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_0-arm64/B518-Log-Solution-V版本號-macOS15.0-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.4.1 實機驗證，並在支援 15.0 的硬體驗證最低版本，目標機不需另外安裝 Python。
 
-`./build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.5 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
+`./build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.0 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
 
-### M4／15.5 候選產物驗證
+### M4／15.0 候選產物驗證
 
-Python.org 3.12.10 universal2 是本流程的初始建置環境，並非最新 Python 3.12。腳本使用獨立的 `.venv-macos15_5-arm64-log-solution`，保留其他舊環境；每次都檢查指定 Python 及虛擬環境中的實際 Python 版本、原生 arm64 與 Tk。若既有目標環境檢查失敗，先將該環境重新命名保留，再重跑建置。PyInstaller 維持 `6.16.0`。
+Python.org 3.12.10 universal2 是本流程的初始建置環境，並非最新 Python 3.12。腳本使用獨立的 `.venv-macos15_0-arm64-log-solution`，保留其他舊環境；每次都檢查指定 Python 及虛擬環境中的實際 Python 版本、原生 arm64 與 Tk。若既有目標環境檢查失敗，先將該環境重新命名保留，再重跑建置。PyInstaller 維持 `6.16.0`。
 
 ```zsh
 cd "B518 Log Solution"
 ./build_macos15_arm64_log_solution.sh
-open "dist-macos15_5-arm64/B518 Log Solution.app"
+open "dist-macos15_0-arm64/B518 Log Solution.app"
 ```
 
 建置須在登入桌面的 M4 上執行，完整核心、UI 與建置檢查測試任一失敗都會中止。建置後先在 26.5.2 確認 App 視窗正常開啟，再將 ZIP 與 SHA-256 檔交給目標機測試人員。
 
 `verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、每個 Mach-O 的 arm64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
 
-目標 M4／macOS 15.5 不另外安裝 Python 或 Homebrew，解壓縮後逐項驗收並記錄版本號與結果：
+目標 M4／macOS 15.4.1 不另外安裝 Python 或 Homebrew，解壓縮後逐項驗收並記錄版本號與結果：
 
 - App 可啟動；設定儲存後重開仍保留。
 - 背景狀態按 `Command + Shift + M` 可開始監控。
-- BT 最終 CSV 產生前顯示 Testing 與正確條碼。
+- 若有可持續讀取的即時 BT Log，在最終 CSV 產生前顯示 Testing 與正確條碼；只有完成後匯出的檔案時，依結果檔驗收。
 - 最終結果解析後視窗回到前景，PASS／FAIL／NOTEST 正確。
 - 各 Slot 的測試逾時與等待開始逾時顯示正確。
 
-2026-09-29 開發端驗證使用 Intel／macOS 15.7.9，尚未在 M4／26.5.2 打包或 M4／15.5 實機驗收；上述兩階段仍須在對應電腦完成。
+2026-09-29 開發端驗證使用 Intel／macOS 15.7.9，尚未在 M4／26.5.2 打包或 M4／15.4.1 與最低系統版本的實機驗收；上述兩階段仍須在對應電腦完成。
 
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 
@@ -73,6 +73,30 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 
 - DFU：選擇 `active` 及 `unitest`；監看 slot1～7。
 - FCT：選擇 `active` 及 `unit-archive`；監看 slot1～6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。
-- BT：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；CaseInfo 支援實機的 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
+- BT／B482 TestData 格式：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；CaseInfo 支援實機的 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
 每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含事件、結果、設定、時間與來源檔案。
+
+## 美國 B518 BT／RS-WMT 試用流程
+
+設定頁選擇工站 `BT`、格式 `B518 RS-WMT`，結果路徑指向測試程式的 `output/SmtCal`，例如 `~/Documents/rswmt_conducted_1.0.0-b518+42/output/SmtCal`。請選固定根目錄，程式會遞迴監控新產生的時間戳子目錄。舊設定預設仍使用 `B482 TestData`。
+
+每輪先按「開始監控」，再到 RS-WMT 按 `Run All`。啟動快照排除原本已存在的檔案，不能把歷史資料夾直接指定為路徑就期待立即顯示結果。歷史驗證請用下方回放工具。
+
+- CSV 跳過 Overlay 與上下限／單位列，讀取 `Serial Number`、`Test Pass/Fail Status`、`Test Start Time`／`Test Stop Time`，以 `tc=Slot...` 的值 1～4 對應 Slot1～4。`Summary_*.csv` 不作為單機結果。
+- 每個結果檔穩定五秒後才定案。不同 Slot 的結束時間可以不同；本輪以解析後的開始時間（秒）鎖定。另一輪／重複 Slot／SN 衝突會記錄事件並保留原結果，不混入本輪。
+- 樣本 CSV 為 `YYYY/DD/MM`，檔名及 Log 為 `YYYY-MM-DD`。解析器以檔名結束時間核對日期，不以檔案複製時間代替測試時間。
+- 無 SN 的明確 Fail 保留 `FAIL`，與 B482「空 SN FAILED → NOTEST」規則分開。沒有觀察到資料的 Slot 保留 WAITING，不憑空推定 PASS／FAIL／NOTEST；現場若有缺檔請停止本輪並收集資料。
+- 即時 Log 支援樣本中的 `initialize`、`instance_active_1～4`、`MLB#..條碼` 與 `shutdown`。單項 `PASS:TestRunner Item complete.` 不代表整機 PASS。若提供另外的 Live logs 路徑，必須是相同格式、每個檔案包含單一 DUT／單輪的 Log；未指定時從結果根目錄讀取 `.log`。
+- 目前只有完成後的原始匯出檔能確定，尚未確認測試中是否就能讀到這些 Log。只有最終匯出時會先等待、接著 COMPLETING，再顯示結果，無法從尚未存在的資料判定 Testing 或測試已當機。
+- 在設定頁切換到 RS-WMT 時，原本 30 秒的等待時間會改為 240 秒供結果匯出模式試用；取消不保存，其他自訂數值保留。測試時間上限仍為 240 秒，從首次觀察到該 Slot 的有效活動起算。若確認即時 Log 可用，可將等待時間設回 30 秒。
+- 最終結果沿用主看板、七格 KVM 色帶與回到前景行為；逾時後的 Slot 不接受遲到結果。
+
+匿名化回歸測試保留實機欄位／Log 標記，不把原始條碼、站點或網路資訊提交到 repo。已用實際四組 CSV／Log 回放核對 Slot 與結果；失敗／缺件／分次寫入等情境另以測試資料驗證，尚待美國現場驗收。
+
+```zsh
+# 在程式目錄執行；只讀原始檔，使用暫存目錄與對齊的模擬時鐘
+python3 replay_rswmt.py /完整路徑/2026-09-11_05-45-44
+```
+
+美國同事可使用 [英文試用說明](RSWMT_US_PILOT.md)。建置候選 App 後需在 15.4.1 確認實際檔案更新時機、四個 DUT、Fail（含無 SN）、快捷鍵、前景顯示與逾時。

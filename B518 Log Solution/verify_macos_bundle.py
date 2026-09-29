@@ -45,7 +45,7 @@ def load_commands(text):
     return versions, rpaths, dependencies
 
 
-def inspect_bundle(app, target="15.5", run=subprocess.run):
+def inspect_bundle(app, target="15.0", run=subprocess.run):
     target_version = version_tuple(target)
     app = Path(app).resolve()
     errors, binaries = [], {}
@@ -148,7 +148,7 @@ def inspect_bundle(app, target="15.5", run=subprocess.run):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("app", type=Path)
-    parser.add_argument("--target", default="15.5")
+    parser.add_argument("--target", default="15.0")
     args = parser.parse_args()
     problems = inspect_bundle(args.app, args.target)
     if problems:

@@ -1,4 +1,4 @@
-"""Validate the interpreter actually used by the macOS 15.5 arm64 build."""
+"""Validate the interpreter actually used by the macOS 15.0 arm64 build."""
 
 import importlib
 import platform

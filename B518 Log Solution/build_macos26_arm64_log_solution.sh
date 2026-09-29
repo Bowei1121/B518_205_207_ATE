@@ -16,7 +16,7 @@ VENV=.venv-macos26-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements-macos15-arm64.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py
+"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_rswmt_monitoring.py
 
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path

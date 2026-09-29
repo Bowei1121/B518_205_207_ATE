@@ -195,6 +195,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 interpreter = tk.Tcl()
                 app = object.__new__(B518LogSolutionApp)
                 app.station = tk.StringVar(master=interpreter, value="DFU")
+                app.bt_format = tk.StringVar(master=interpreter, value="B482 TestData")
+                app.settings_bt_format = tk.StringVar(master=interpreter, value="B518 RS-WMT")
                 app.paths = {station: {field: tk.StringVar(master=interpreter, value="")
                                        for field in ("active", "final", "caseinfo")}
                              for station in ("DFU", "FCT", "BT")}
@@ -221,12 +223,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     for field, value in fields.items():
                         self.assertEqual(app.paths[station][field].get(), value)
                 self.assertEqual(json.loads(prefs_path.read_text(encoding="utf-8")), {
-                    "station": "BT", "paths": saved_paths, "timeouts": saved_timeouts,
+                    "station": "BT", "bt_format": "B518 RS-WMT", "paths": saved_paths, "timeouts": saved_timeouts,
                 })
 
                 restored_app = object.__new__(B518LogSolutionApp)
                 restored_app.prefs = restored_app._load_preferences()
                 self.assertEqual(restored_app.prefs["station"], "BT")
+                self.assertEqual(restored_app.prefs["bt_format"], "B518 RS-WMT")
                 self.assertEqual(restored_app.prefs["paths"], saved_paths)
                 self.assertEqual(restored_app.prefs["timeouts"], saved_timeouts)
 
@@ -245,10 +248,38 @@ class LogSolutionUiTests(unittest.TestCase):
         app = object.__new__(B518LogSolutionApp)
         app.paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/before")}}
         app.settings_paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/after")}}
+        app.bt_format = tk.StringVar(master=interpreter, value="B482 TestData")
+        app.settings_bt_format = tk.StringVar(master=interpreter, value="B518 RS-WMT")
         app.settings_window = None
         app.settings_log = None
         app._close_settings()
         self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
+        self.assertEqual(app.bt_format.get(), "B482 TestData")
+
+    def test_rswmt_selection_updates_draft_timeout_and_routes_monitor(self):
+        root = tk.Tk()
+        root.withdraw()
+        with TemporaryDirectory() as folder, patch("b518_log_solution.PREFS_PATH", Path(folder) / 'prefs.json'):
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                app.open_settings()
+                app.settings_station.set('BT')
+                app.settings_bt_format.set('B518 RS-WMT')
+                app._bt_format_changed()
+                self.assertEqual(app.settings_timeouts['BT']['start'].get(), '240')
+                self.assertEqual(app.bt_format.get(), 'B482 TestData')
+                app.settings_paths['BT']['final'].set(folder)
+                with patch.object(app, '_save_preferences'):
+                    app._save_settings()
+                    with patch('b518_log_solution.RsWmtLogMonitor') as factory:
+                        app.start_monitor()
+                        factory.assert_called_once()
+                        self.assertEqual(factory.call_args.kwargs['start_timeout_seconds'], 240)
+                        factory.return_value.start.assert_called_once()
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
 
     def test_monitor_lifecycle_never_changes_window_topmost_attribute(self):
         monitor = MagicMock()

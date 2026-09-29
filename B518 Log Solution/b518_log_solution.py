@@ -12,6 +12,7 @@ from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
+from rswmt_monitoring import RsWmtLogMonitor
 
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
@@ -81,6 +82,7 @@ class B518LogSolutionApp:
         self.monitor = None
         self.prefs = self._load_preferences()
         self.station = tk.StringVar(value=self.prefs.get("station", "FCT"))
+        self.bt_format = tk.StringVar(value=self.prefs.get("bt_format", "B482 TestData"))
         self.paths = {name: {field: tk.StringVar(value=self.prefs.get("paths", {}).get(name, {}).get(field, ""))
                              for field in ("active", "final", "caseinfo")}
                       for name in STATION_SLOTS}
@@ -298,7 +300,7 @@ class B518LogSolutionApp:
 
     def _save_preferences(self) -> None:
         APP_ROOT.mkdir(parents=True, exist_ok=True)
-        payload = {"station": self.station.get(), "paths": {station: {field: value.get() for field, value in values.items()}
+        payload = {"station": self.station.get(), "bt_format": self.bt_format.get(), "paths": {station: {field: value.get() for field, value in values.items()}
                   for station, values in self.paths.items()},
                   "timeouts": {station: {field: value.get() for field, value in values.items()}
                                for station, values in self.timeouts.items()}}
@@ -351,12 +353,12 @@ class B518LogSolutionApp:
         if station == "BT":
             final = configured_directory(values["final"].get())
             if final is None:
-                messagebox.showerror("路徑錯誤", "請選擇可讀取的 BT TestData 根路徑。", parent=self.root)
+                messagebox.showerror("路徑錯誤", "請選擇可讀取的 BT 結果根路徑。", parent=self.root)
                 return
             caseinfo_text = values["caseinfo"].get().strip()
             caseinfo = configured_directory(caseinfo_text) if caseinfo_text else None
             if caseinfo_text and caseinfo is None:
-                messagebox.showerror("路徑錯誤", "BT CaseInfo 路徑不存在或無法讀取。", parent=self.root)
+                messagebox.showerror("路徑錯誤", "BT 即時 Log 路徑不存在或無法讀取。", parent=self.root)
                 return
         else:
             active = configured_directory(values["active"].get())
@@ -369,8 +371,14 @@ class B518LogSolutionApp:
         self.root.update_idletasks()
         try:
             if station == "BT":
-                monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put,
-                                       start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
+                if self.bt_format.get() == "B518 RS-WMT":
+                    monitor = RsWmtLogMonitor(final, progress_root=caseinfo, callback=self.events.put,
+                                             start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
+                elif self.bt_format.get() == "B482 TestData":
+                    monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put,
+                                           start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
+                else:
+                    raise ValueError("請選擇支援的 BT 格式。")
             else:
                 monitor = AtlasActiveArchiveMonitor(
                     station, active, final, tuple(range(1, slot_count(station) + 1)), callback=self.events.put,
@@ -466,6 +474,7 @@ class B518LogSolutionApp:
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.settings_station = tk.StringVar(value=self.station.get())
+        self.settings_bt_format = tk.StringVar(value=self.bt_format.get())
         self.settings_paths = {station: {field: tk.StringVar(value=value.get()) for field, value in fields.items()}
                                for station, fields in self.paths.items()}
         self.settings_timeouts = {station: {field: tk.StringVar(value=value.get()) for field, value in fields.items()}
@@ -499,19 +508,36 @@ class B518LogSolutionApp:
             ("final", "最終結果根路徑 (unitest)" if station == "DFU" else "最終結果根路徑 (unit-archive)"),
         )
         disabled = self.monitor is not None
-        for row, (field, label) in enumerate(schema):
+        offset = 0
+        if station == "BT":
+            ttk.Label(self.settings_paths_box, text="BT 格式 / Format").grid(row=0, column=0, sticky="w")
+            choice = ttk.Combobox(self.settings_paths_box, textvariable=self.settings_bt_format,
+                                  values=("B482 TestData", "B518 RS-WMT"),
+                                  state="disabled" if disabled else "readonly", width=24)
+            choice.grid(row=0, column=1, sticky="w", padx=8, pady=5)
+            choice.bind("<<ComboboxSelected>>", self._bt_format_changed)
+            offset = 1
+            if self.settings_bt_format.get() == "B518 RS-WMT":
+                schema = (("final", "RS-WMT output/SmtCal"), ("caseinfo", "Live logs（選填 / optional）"))
+        for row, (field, label) in enumerate(schema, offset):
             ttk.Label(self.settings_paths_box, text=label).grid(row=row, column=0, sticky="w", pady=5)
             entry = ttk.Entry(self.settings_paths_box, textvariable=self.settings_paths[station][field], width=62,
                               state="disabled" if disabled else "normal")
             entry.grid(row=row, column=1, sticky="ew", padx=8, pady=5)
             ttk.Button(self.settings_paths_box, text="選擇", state="disabled" if disabled else "normal",
                        command=lambda current=field: self._choose_setting_path(current)).grid(row=row, column=2, pady=5)
-        timeout_row = len(schema)
+        timeout_row = len(schema) + offset
         for offset, (field, label) in enumerate((("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"))):
             ttk.Label(self.settings_paths_box, text=label).grid(row=timeout_row + offset, column=0, sticky="w", pady=5)
             ttk.Entry(self.settings_paths_box, textvariable=self.settings_timeouts[station][field], width=16,
                       state="disabled" if disabled else "normal").grid(row=timeout_row + offset, column=1, sticky="w", padx=8, pady=5)
         self.settings_paths_box.columnconfigure(1, weight=1)
+
+    def _bt_format_changed(self, _event=None) -> None:
+        if self.settings_bt_format.get() == "B518 RS-WMT" and self.settings_timeouts["BT"]["start"].get() == "30":
+            # Archived output may first appear only when the ~90 s test finishes.
+            self.settings_timeouts["BT"]["start"].set("240")
+        self._render_setting_paths()
 
     def _choose_setting_path(self, field: str) -> None:
         path = filedialog.askdirectory(parent=self.settings_window, mustexist=True,
@@ -540,6 +566,7 @@ class B518LogSolutionApp:
             messagebox.showerror("逾時設定錯誤", str(error), parent=self.settings_window)
             return
         self.station.set(self.settings_station.get())
+        self.bt_format.set(self.settings_bt_format.get())
         for station, fields in self.settings_paths.items():
             for field, variable in fields.items():
                 self.paths[station][field].set(variable.get())

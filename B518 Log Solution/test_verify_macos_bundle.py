@@ -9,7 +9,7 @@ from check_macos_build_python import check_python
 from verify_macos_bundle import inspect_bundle, load_commands, version_tuple
 
 
-def commands(version="15.5", dependencies=(), rpaths=()):
+def commands(version="15.0", dependencies=(), rpaths=()):
     blocks = ["cmd LC_BUILD_VERSION\n platform 1\n minos " + version]
     blocks += ["cmd LC_RPATH\n path {} (offset 12)".format(p) for p in rpaths]
     blocks += ["cmd LC_LOAD_DYLIB\n name {} (offset 24)\n current version 999.0.0".format(p)
@@ -23,7 +23,7 @@ class BundleCheckTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.app = Path(self.temp.name) / "Example.app"
         (self.app / "Contents/MacOS").mkdir(parents=True)
-        self.info = {"LSMinimumSystemVersion": "15.5", "CFBundleExecutable": "example"}
+        self.info = {"LSMinimumSystemVersion": "15.0", "CFBundleExecutable": "example"}
         self.write_info()
         self.outputs = {}
         self.add_binary("Contents/MacOS/example")
@@ -82,6 +82,10 @@ class BundleCheckTests(unittest.TestCase):
         errors = self.inspect()
         self.assertTrue(any("requires macOS 26.0" in e for e in errors))
         self.assertTrue(any("/opt/homebrew/" in e for e in errors))
+
+    def test_macos_15_5_library_cannot_ship_to_all_macos_15(self):
+        self.add_binary("Contents/Frameworks/newer.dylib", commands("15.5"))
+        self.assertTrue(any("requires macOS 15.5, target is 15.0" in e for e in self.inspect()))
 
     def test_wrong_architecture_and_missing_version(self):
         self.add_binary("Contents/Frameworks/wrong", arch="x86_64")
