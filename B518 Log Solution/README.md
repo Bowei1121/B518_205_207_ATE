@@ -17,6 +17,30 @@ M4／macOS 26.5.2 建置給 M4／macOS 15.5 使用時，先在建置機安裝 [P
 
 `./build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.5 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
 
+### M4／15.5 候選產物驗證
+
+Python.org 3.12.10 universal2 是本流程的初始建置環境，並非最新 Python 3.12。腳本使用獨立的 `.venv-macos15_5-arm64-log-solution`，保留其他舊環境；每次都檢查指定 Python 及虛擬環境中的實際 Python 版本、原生 arm64 與 Tk。若既有目標環境檢查失敗，先將該環境重新命名保留，再重跑建置。PyInstaller 維持 `6.16.0`。
+
+```zsh
+cd "B518 Log Solution"
+./build_macos15_arm64_log_solution.sh
+open "dist-macos15_5-arm64/B518 Log Solution.app"
+```
+
+建置須在登入桌面的 M4 上執行，完整核心、UI 與建置檢查測試任一失敗都會中止。建置後先在 26.5.2 確認 App 視窗正常開啟，再將 ZIP 與 SHA-256 檔交給目標機測試人員。
+
+`verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、每個 Mach-O 的 arm64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
+
+目標 M4／macOS 15.5 不另外安裝 Python 或 Homebrew，解壓縮後逐項驗收並記錄版本號與結果：
+
+- App 可啟動；設定儲存後重開仍保留。
+- 背景狀態按 `Command + Shift + M` 可開始監控。
+- BT 最終 CSV 產生前顯示 Testing 與正確條碼。
+- 最終結果解析後視窗回到前景，PASS／FAIL／NOTEST 正確。
+- 各 Slot 的測試逾時與等待開始逾時顯示正確。
+
+2026-09-29 開發端驗證使用 Intel／macOS 15.7.9，尚未在 M4／26.5.2 打包或 M4／15.5 實機驗收；上述兩階段仍須在對應電腦完成。
+
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 
 若必要路徑尚未設定、已不存在或無法讀取，程式會拒絕開始並顯示原因；空白路徑不會被誤當成 App 的目前目錄。建立啟動前檔案快照期間，主畫面會先顯示「啟動中」，完成後才進入「監控中」。

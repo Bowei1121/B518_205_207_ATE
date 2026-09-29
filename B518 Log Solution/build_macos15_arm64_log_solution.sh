@@ -14,17 +14,15 @@ OS_MINOR="${${OS_VERSION#*.}%%.*}"
 
 PYTHON_BIN="${PYTHON_BIN:-/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN (install Python.org 3.12.10 universal2 or set PYTHON_BIN)"; exit 1; }
-"$PYTHON_BIN" -c 'import platform, sys, tkinter, _tkinter; assert sys.version_info[:2] == (3, 12), "Python 3.12 required"; assert platform.machine() == "arm64", "native arm64 Python required"' || {
-  print -u2 'Python preflight failed: verify Python.org 3.12 arm64 and tkinter, or set PYTHON_BIN.'; exit 1;
-}
+"$PYTHON_BIN" check_macos_build_python.py
 
 export MACOSX_DEPLOYMENT_TARGET=15.5 CMAKE_OSX_DEPLOYMENT_TARGET=15.5 CMAKE_OSX_ARCHITECTURES=arm64
 
 VENV=.venv-macos15_5-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
+"$VENV/bin/python" check_macos_build_python.py
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements-macos15-arm64.txt
-"$VENV/bin/python" -c 'import tkinter, _tkinter' || { print -u2 'Tk is missing from the build environment.'; exit 1; }
 "$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_verify_macos_bundle.py
 
 VERSION="$($VENV/bin/python - <<'PY'

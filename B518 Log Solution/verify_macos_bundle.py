@@ -1,59 +1,148 @@
-"""Reject a frozen macOS app that cannot run on the requested older system."""
+"""Conservative, read-only checks for a frozen macOS arm64 application."""
 
 import argparse
+import plistlib
 import re
 import subprocess
 from pathlib import Path
 
 
 def version_tuple(value):
-    return tuple(int(part) for part in value.split("."))
+    if not re.fullmatch(r"\d+(?:\.\d+){0,2}", value):
+        raise ValueError("Invalid macOS version: {}".format(value))
+    parts = tuple(int(part) for part in value.split("."))
+    return parts + (0,) * (3 - len(parts))
+
+
+def load_commands(text):
+    """Read only OS version commands, never dylib current/compatibility versions."""
+    versions, rpaths, dependencies = [], [], []
+    for block in re.split(r"(?m)^\s*Load command \d+\s*$", text):
+        match = re.search(r"(?m)^\s*cmd (LC_\w+)\s*$", block)
+        if not match:
+            continue
+        name = match[1]
+        if name in ("LC_BUILD_VERSION", "LC_VERSION_MIN_MACOSX"):
+            if name == "LC_BUILD_VERSION":
+                platform = re.search(r"(?m)^\s*platform (\S+)", block)
+                if not platform or platform[1].lower() not in ("1", "macos", "macosx"):
+                    raise ValueError("non-macOS or unknown build platform")
+            field = "minos" if name == "LC_BUILD_VERSION" else "version"
+            value = re.search(r"(?m)^\s*" + field + r" (\S+)", block)
+            if not value:
+                raise ValueError("minimum macOS version unavailable")
+            version_tuple(value[1])
+            versions.append(value[1])
+        elif name == "LC_RPATH" or name in (
+            "LC_LOAD_DYLIB", "LC_LOAD_WEAK_DYLIB", "LC_REEXPORT_DYLIB",
+            "LC_LOAD_UPWARD_DYLIB", "LC_LAZY_LOAD_DYLIB",
+        ):
+            field = "path" if name == "LC_RPATH" else "name"
+            value = re.search(r"(?m)^\s*" + field + r" (.+?) \(offset \d+\)", block)
+            if not value:
+                raise ValueError("unreadable {}".format(name))
+            (rpaths if name == "LC_RPATH" else dependencies).append(value[1])
+    return versions, rpaths, dependencies
 
 
 def inspect_bundle(app, target="15.5", run=subprocess.run):
-    errors = []
-    app = Path(app)
-    binaries = []
+    target_version = version_tuple(target)
+    app = Path(app).resolve()
+    errors, binaries = [], {}
+
+    def command(*args):
+        return run(list(args), capture_output=True, text=True, check=True).stdout
+
+    def inside(path):
+        return app in path.resolve().parents
+
+    try:
+        with (app / "Contents/Info.plist").open("rb") as handle:
+            info = plistlib.load(handle)
+        if version_tuple(info["LSMinimumSystemVersion"]) != target_version:
+            errors.append("Info.plist: LSMinimumSystemVersion must equal {}".format(target))
+        executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
+        if not executable.is_file() or not inside(executable):
+            errors.append("Info.plist: bundled executable missing or external")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return ["Info.plist: {}".format(exc)]
+
     for path in app.rglob("*"):
-        if not path.is_file():
+        if path.is_symlink() and (not inside(path) or not path.exists()):
+            errors.append("{}: external or broken symlink".format(path.relative_to(app)))
             continue
-        kind = run(["file", "-b", str(path)], capture_output=True, text=True, check=True).stdout
-        if "Mach-O" in kind:
-            binaries.append(path)
-    if not binaries:
-        return ["No Mach-O binaries found in {}".format(app)]
-    names = {path.name for path in binaries}
-    for path in binaries:
+        if not path.is_file() or path.resolve() in binaries:
+            continue
         display = str(path.relative_to(app))
-        archs = run(["lipo", "-archs", str(path)], capture_output=True, text=True, check=True).stdout.split()
-        if "arm64" not in archs:
-            errors.append("{}: arm64 architecture missing".format(display))
-            continue
-        commands = run(["otool", "-l", str(path)], capture_output=True, text=True, check=True).stdout
-        versions = re.findall(r"\b(?:minos|version)\s+(\d+\.\d+(?:\.\d+)?)", commands)
-        if not versions:
-            errors.append("{}: minimum macOS version unavailable".format(display))
-        elif any(version_tuple(value) > version_tuple(target) for value in versions):
-            errors.append("{}: requires macOS {}, target is {}".format(display, max(versions, key=version_tuple), target))
-        libraries = run(["otool", "-L", str(path)], capture_output=True, text=True, check=True).stdout
-        for line in libraries.splitlines()[1:]:
-            dependency = line.strip().split(" (")[0]
+        try:
+            if "Mach-O" not in command("file", "-b", str(path)):
+                continue
+            if "arm64" not in command("lipo", "-archs", str(path)).split():
+                errors.append("{}: arm64 architecture missing".format(display))
+                continue
+            versions, rpaths, dependencies = load_commands(
+                command("otool", "-arch", "arm64", "-l", str(path)))
+            if not versions:
+                errors.append("{}: minimum macOS version unavailable".format(display))
+            elif max(map(version_tuple, versions)) > target_version:
+                errors.append("{}: requires macOS {}, target is {}".format(
+                    display, max(versions, key=version_tuple), target))
+            binaries[path.resolve()] = (rpaths, dependencies)
+        except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+            errors.append("{}: inspection failed: {}".format(display, exc))
+    if not binaries:
+        errors.append("No inspectable arm64 Mach-O binaries found in {}".format(app))
+    if executable.resolve() not in binaries:
+        errors.append("Main executable is not an inspectable arm64 Mach-O binary")
+
+    def expand(value, loader):
+        for prefix, base in (("@loader_path", loader.parent),
+                             ("@executable_path", executable.parent)):
+            if value == prefix or value.startswith(prefix + "/"):
+                return (base / value[len(prefix):].lstrip("/")).resolve()
+        return Path(value).resolve() if value.startswith("/") else None
+
+    visited = set()
+
+    def check_dependencies(path, inherited=(), stack=()):
+        if path in stack:
+            return
+        rpaths, dependencies = binaries[path]
+        search = tuple(dict.fromkeys(
+            [expand(value, path) for value in rpaths if expand(value, path) is not None]
+            + list(inherited)))
+        key = (path, search)
+        if key in visited:
+            return
+        visited.add(key)
+        for dependency in dependencies:
             if dependency.startswith(("/System/Library/", "/usr/lib/")):
                 continue
             if dependency.startswith("@rpath/"):
-                if Path(dependency).name not in names:
-                    errors.append("{}: unresolved bundled dependency {}".format(display, dependency))
-            elif dependency.startswith("@loader_path/"):
-                resolved = path.parent / dependency[len("@loader_path/"):]
-                if not resolved.is_file():
-                    errors.append("{}: unresolved loader dependency {}".format(display, dependency))
-            elif dependency.startswith("@executable_path/"):
-                resolved = app / "Contents" / "MacOS" / dependency[len("@executable_path/"):]
-                if not resolved.is_file():
-                    errors.append("{}: unresolved executable dependency {}".format(display, dependency))
-            elif dependency.startswith("/"):
-                errors.append("{}: external dependency {}".format(display, dependency))
-    return errors
+                candidates = [base / dependency[len("@rpath/"):] for base in search]
+            else:
+                expanded = expand(dependency, path)
+                candidates = [expanded] if expanded is not None else []
+            resolved = next((candidate.resolve() for candidate in candidates
+                             if candidate.is_file()), None)
+            if (dependency.startswith("/") or resolved is None or not inside(resolved)
+                    or resolved not in binaries):
+                errors.append("{}: unresolved or external dependency {}".format(
+                    path.relative_to(app), dependency))
+            else:
+                check_dependencies(resolved, search, stack + (path,))
+
+    main = executable.resolve()
+    if main in binaries:
+        check_dependencies(main)
+    # Python extensions are loaded dynamically, outside the static executable graph.
+    main_search = tuple(expand(value, main) for value in binaries.get(main, ([], []))[0]
+                        if expand(value, main) is not None)
+    checked = {path for path, _search in visited}
+    for path in binaries:
+        if path not in checked:
+            check_dependencies(path, main_search)
+    return list(dict.fromkeys(errors))
 
 
 if __name__ == "__main__":
