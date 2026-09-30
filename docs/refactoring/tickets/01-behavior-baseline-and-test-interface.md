@@ -8,7 +8,7 @@
 
 無；基準整理可立即開始。
 
-**Status：**in-progress（使用者已於 2026-09-30 確認測試接口；匿名化樣本與其餘驗收仍未完成）
+**Status：**in-progress（使用者已於 2026-09-30 確認測試接口；本日重跑外部樣本回放；匿名化樣本與目標環境驗收仍未完成）
 
 ## 驗收條件
 
@@ -131,3 +131,9 @@ python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE
 依 2026-09-30 使用者確認的任務清單建立。以 REFACTOR_SPEC、CONTEXT 與 ADR 0001～0005 為基準，沿用測試配置、平台資料來源、監控輪次、桌面介面四模組與 Python／Tk／既有 macOS 打包方式。只在前置完成且本票關鍵待決及外部條件已滿足時轉為 ready-for-agent；需要人類決策的任務不得逕自轉為可直接實作。
 
 執行時逐項記錄實際交付、驗證環境與結果、仍未決／待驗範圍及相關提交。未執行的驗收維持未勾選；本文件建立不代表 App 已完成重構。
+
+## 執行紀錄｜2026-09-30（Ticket 02 前置覆核）
+
+- 執行環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。
+- 重跑 `python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE Test doc"`：Atlas DFU 20/20 PASS 並完成、Atlas FCT 7/7 PASS 並完成；B482 TestData 7 組／28 個結果（12 PASS、16 NOTEST）並完成，指定日 CaseInfo 4 通道均觀察為 TESTING 且有可信序號；RS-WMT 4 個 Slot 均 PASS。工具複製輸入至暫存目錄，並驗證輸入檔回放前後 SHA-256、大小及修改時間一致。
+- 本次執行未建立匿名化樣本包，沒有把真實資料或原始序號加入 repo；第一項驗收仍未勾選。因此本票仍為 `in-progress`，Ticket 02 的三平台 App／目標環境綜合驗收也不能由此回放代替。

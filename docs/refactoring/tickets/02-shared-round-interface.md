@@ -8,15 +8,15 @@
 
 - [01：建立行為保護基準並確認測試接口](01-behavior-baseline-and-test-interface.md)
 
-**Status：**blocked（前置任務完成後；另依本票外部前置檢查）
+**Status：**in-progress（共同輪次接口及自動化案例已交付；Ticket 01 匿名化樣本及 App／目標環境驗收仍未完成）
 
 ## 驗收條件
 
 - [ ] 三平台均可經統一入口完成原有監控流程，保護基準通過。
-- [ ] 開始、停止、快捷鍵與重複開始的操作正常；監控中重複開始不重設本輪。
-- [ ] 舊監控實例的排隊事件不能更新新輪結果、畫面或可取用狀態。
-- [ ] 人工停止保留完成結果，未完成位置為 STOPPED，不誤判正常完成。
-- [ ] 每批搬移後測試與必要打包引用檢查通過，尚未遷移的呼叫端仍能運作。
+- [x] 開始、停止、快捷鍵與重複開始的操作正常；監控中重複開始不重設本輪。（共用入口、快捷鍵舊保護測試及重複開始自動化案例通過；App 實機操作待驗）
+- [x] 舊監控實例的排隊事件不能更新新輪結果、畫面或可取用狀態。（輪次 ID、協調器事件篩選及快照案例通過）
+- [x] 人工停止保留完成結果，未完成位置為 STOPPED，不誤判正常完成。（輪次快照／事件案例通過）
+- [x] 每批搬移後測試與必要打包引用檢查通過，尚未遷移的呼叫端仍能運作。（本次相關測試、語法編譯及打包腳本入口檢查通過）
 
 ## 驗證方式
 
@@ -35,3 +35,19 @@
 依 2026-09-30 使用者確認的任務清單建立。以 REFACTOR_SPEC、CONTEXT 與 ADR 0001～0005 為基準，沿用測試配置、平台資料來源、監控輪次、桌面介面四模組與 Python／Tk／既有 macOS 打包方式。只在前置完成且本票關鍵待決及外部條件已滿足時轉為 ready-for-agent；需要人類決策的任務不得逕自轉為可直接實作。
 
 執行時逐項記錄實際交付、驗證環境與結果、仍未決／待驗範圍及相關提交。未執行的驗收維持未勾選；本文件建立不代表 App 已完成重構。
+
+## 執行紀錄｜2026-09-30
+
+### 交付
+
+- 新增 `monitoring_round.py`：`RoundCoordinator` 管理單一當前輪次與啟停；`MonitoringRound` 管理輪次生命週期；`RoundSnapshot` 提供不可變的結果快照、輪次狀態及可取用狀態；`RoundEvent` 為每個事件加上輪次 ID 與遞增序號。平台監控器仍負責平台檔案解讀及結果證據。
+- App 的 Atlas DFU／FCT、B482 TestData、RS-WMT 監控建立及停止均經共同協調器；重複開始沿用執行中的輪次。事件含輪次 ID，舊輪事件於協調器及 UI 邊界丟棄。
+- 停止後快照保留終態結果，未完成位置為 `STOPPED`，輪次為 `STOPPED` 且 `result_available=False`；只有正常 `finished` 事件會成為 `COMPLETED` 並允許取用。
+- 新增共用輪次公開接口測試，覆蓋重複開始、舊輪排隊事件、停止保留結果／STOPPED，以及四種既有監控來源路徑。舊平台接口與未遷移呼叫端保留。
+
+### 驗證與限制
+
+- 環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。`python3 -m unittest -v test_monitoring_round.py test_log_monitoring.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，39 tests；`python3 -m unittest -v test_log_solution_ui.py` 在授權桌面環境通過，24 tests；`python3 -m compileall -q .` 通過。
+- 專案未配置 mypy／pyright 型別檢查。打包腳本使用 PyInstaller 並依賴靜態 import 掃描；相關腳本入口及新模組 import 已檢查。未執行 macOS 建置腳本，避免改動 build 產物與版本號；未在 Apple Silicon 目標機啟動 App，也未執行 KVM／上位機現場驗收。
+- Ticket 01 的外部原始樣本回放已重跑並記錄於該票，但可分享匿名化樣本包仍未建立；因此第一項驗收（含三平台 App 流程與保護基準）保持未勾選，本票維持 `in-progress`。Ticket 18 未知同輪來源人工採用政策維持未決。
+- 程式及文件提交與遠端同步紀錄待本次提交後補入。

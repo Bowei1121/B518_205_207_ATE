@@ -14,6 +14,7 @@ from b518_log_solution import (
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
+from monitoring_round import RoundCoordinator
 
 
 class FakeHotkey:
@@ -286,6 +287,8 @@ class LogSolutionUiTests(unittest.TestCase):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.events = queue.Queue()
+        app.rounds = RoundCoordinator(app.events.put)
+        app.active_round_id = None
         app.monitor = None
         app.station = SimpleNamespace(get=lambda: "DFU")
         app.paths = {"DFU": {
@@ -307,11 +310,55 @@ class LogSolutionUiTests(unittest.TestCase):
             app.start_monitor()
 
         monitor.start.assert_called_once()
+        self.assertIsNotNone(app.rounds.snapshot())
+        self.assertEqual(app.rounds.snapshot().station, "DFU")
         app.root.attributes.assert_not_called()
 
         app._handle_event(MonitorEvent("finished", "monitor ended"))
         app.root.attributes.assert_not_called()
         self.assertIsNone(app.monitor)
+
+    def test_existing_monitor_sources_start_through_the_shared_round_entry(self):
+        scenarios = (
+            ("DFU", "B482 TestData", "AtlasActiveArchiveMonitor"),
+            ("FCT", "B482 TestData", "AtlasActiveArchiveMonitor"),
+            ("BT", "B482 TestData", "BtLogMonitor"),
+            ("BT", "B518 RS-WMT", "RsWmtLogMonitor"),
+        )
+        for station, bt_format, factory_name in scenarios:
+            with self.subTest(station=station, bt_format=bt_format):
+                app = object.__new__(B518LogSolutionApp)
+                app.root = MagicMock()
+                app.events = queue.Queue()
+                app.rounds = RoundCoordinator(app.events.put)
+                app.active_round_id = None
+                app.monitor = None
+                app.station = SimpleNamespace(get=lambda: station)
+                app.bt_format = SimpleNamespace(get=lambda: bt_format)
+                app.paths = {name: {
+                    "active": SimpleNamespace(get=lambda: "."),
+                    "final": SimpleNamespace(get=lambda: "."),
+                    "caseinfo": SimpleNamespace(get=lambda: ""),
+                } for name in ("DFU", "FCT", "BT")}
+                app.timeouts = {name: {
+                    "start": SimpleNamespace(get=lambda: "30"),
+                    "test": SimpleNamespace(get=lambda: "480"),
+                } for name in ("DFU", "FCT", "BT")}
+                app.start_button = MagicMock()
+                app.monitor_state = MagicMock()
+                app.event_lines = []
+                app.settings_log = None
+                app._save_preferences = MagicMock()
+                app._reset_rows = MagicMock()
+                app._set_monitor_controls = MagicMock()
+                with patch("b518_log_solution." + factory_name) as factory:
+                    app.start_monitor()
+
+                snapshot = app.rounds.snapshot()
+                self.assertEqual(snapshot.station, station)
+                self.assertEqual(snapshot.state, "RUNNING")
+                factory.assert_called_once()
+                factory.return_value.start.assert_called_once()
 
     def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)

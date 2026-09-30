@@ -12,6 +12,7 @@ from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
+from monitoring_round import RoundCoordinator, RoundEvent
 from rswmt_monitoring import RsWmtLogMonitor
 
 
@@ -77,8 +78,10 @@ class B518LogSolutionApp:
         self.root = root
         self.root.title("B518 Log Solution-V0.1.0")
         self.root.resizable(False, False)
-        self.events: queue.Queue[MonitorEvent] = queue.Queue()
+        self.events: queue.Queue[RoundEvent] = queue.Queue()
         self.hotkey_events: queue.Queue[bool] = queue.Queue()
+        self.rounds = RoundCoordinator(self.events.put)
+        self.active_round_id: Optional[str] = None
         self.monitor = None
         self.prefs = self._load_preferences()
         self.station = tk.StringVar(value=self.prefs.get("station", "FCT"))
@@ -341,7 +344,8 @@ class B518LogSolutionApp:
             self._set_row(slot, "", "WAITING")
 
     def start_monitor(self) -> None:
-        if self.monitor is not None:
+        current = self.rounds.snapshot()
+        if current is not None and current.state == "RUNNING":
             return
         station = self.station.get().upper()
         values = self.paths[station]
@@ -370,24 +374,29 @@ class B518LogSolutionApp:
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
         try:
-            if station == "BT":
-                if self.bt_format.get() == "B518 RS-WMT":
-                    monitor = RsWmtLogMonitor(final, progress_root=caseinfo, callback=self.events.put,
-                                             start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
-                elif self.bt_format.get() == "B482 TestData":
-                    monitor = BtLogMonitor(final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=self.events.put,
-                                           start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"])
-                else:
+            def monitor_factory(on_event):
+                if station == "BT":
+                    if self.bt_format.get() == "B518 RS-WMT":
+                        return RsWmtLogMonitor(
+                            final, progress_root=caseinfo, callback=on_event,
+                            start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        )
+                    if self.bt_format.get() == "B482 TestData":
+                        return BtLogMonitor(
+                            final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=on_event,
+                            start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        )
                     raise ValueError("請選擇支援的 BT 格式。")
-            else:
-                monitor = AtlasActiveArchiveMonitor(
-                    station, active, final, tuple(range(1, slot_count(station) + 1)), callback=self.events.put,
+                return AtlasActiveArchiveMonitor(
+                    station, active, final, tuple(range(1, slot_count(station) + 1)), callback=on_event,
                     start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                 )
+
             self._save_preferences()
             self._reset_rows()
-            monitor.start()
-            self.monitor = monitor
+            snapshot = self.rounds.start(station, monitor_factory)
+            self.active_round_id = snapshot.round_id
+            self.monitor = self.rounds.monitor
         except Exception as error:
             self.monitor = None
             self._set_monitor_controls(False)
@@ -400,7 +409,7 @@ class B518LogSolutionApp:
 
     def stop_monitor(self) -> None:
         if self.monitor:
-            self.monitor.stop()
+            self.rounds.stop()
 
     def _log(self, text: str) -> None:
         self.event_lines.append(text)
@@ -435,8 +444,17 @@ class B518LogSolutionApp:
             self._log("無法將結果看板帶到前景：{}".format(error))
 
     def _handle_event(self, event: MonitorEvent) -> None:
+        if isinstance(event, RoundEvent):
+            if event.round_id != self.active_round_id:
+                return
+            event = event.event
         self._log(event.message)
-        if event.slot and self.monitor:
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        if event.slot and snapshot:
+            result = next((item for item in snapshot.results if item.slot == event.slot), None)
+            if result is not None:
+                self._set_row(event.slot, result.sn, result.status)
+        elif event.slot and self.monitor and event.slot in self.monitor.results:
             result = self.monitor.results[event.slot]
             self._set_row(event.slot, result.sn, result.status)
         if event.kind == "result" and event.status in {"PASS", "FAIL", "NOTEST"}:
@@ -594,7 +612,7 @@ class B518LogSolutionApp:
     def close(self) -> None:
         self.hotkey.close()
         if self.monitor:
-            self.monitor.stop()
+            self.rounds.stop()
         self._save_preferences()
         self.root.destroy()
 
