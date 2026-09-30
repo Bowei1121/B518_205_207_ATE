@@ -25,6 +25,7 @@ from log_monitoring import (
     records_status,
     trusted_sn_from_records,
 )
+from monitoring_round import RoundCoordinator, RoundState
 from replay_rswmt import replay as replay_rswmt
 
 
@@ -61,22 +62,20 @@ def replay_atlas_archive_sample(sample, source_root, station):
         active_record = active_root / "group0-slot1" / "system" / "records.csv"
         active_record.parent.mkdir(parents=True)
         clock = {"now": archive_time, "elapsed": 0.0}
-        monitor = AtlasActiveArchiveMonitor(
-            station,
-            active_root,
-            final_root,
-            (1,),
-            now=lambda: clock["now"],
-            monotonic=lambda: clock["elapsed"],
+        rounds = RoundCoordinator()
+        rounds.start(station, lambda callback: AtlasActiveArchiveMonitor(
+            station, active_root, final_root, (1,), callback=callback,
+            now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
             session_root=root / "sessions",
-        )
+        ), run_async=False)
+        monitor = rounds.monitor
 
         # These supplied directories contain archive records, not active trees.
         # Reuse the sample as an active observation, then feed the original
         # archive record to verify the real final-result parser and transition.
         shutil.copyfile(sample, active_record)
         monitor.poll_once()
-        if monitor.results[1].status != "TESTING":
+        if rounds.snapshot().results[0].status != "TESTING":
             raise ReplayError("Atlas active observation did not produce TESTING.")
 
         shutil.rmtree(active_root / "group0-slot1")
@@ -88,14 +87,14 @@ def replay_atlas_archive_sample(sample, source_root, station):
         monitor.poll_once()
 
         expected = records_status(sample)
-        observed = monitor.results[1].status
+        observed = rounds.snapshot().results[0].status
         if observed != expected:
             raise ReplayError("Atlas archive result did not match the source sample.")
         clock["now"] += timedelta(seconds=3)
         clock["elapsed"] = 4.0
         monitor.poll_once()
-        finished = monitor.finished
-        monitor.stop()
+        finished = rounds.snapshot().state == RoundState.COMPLETED
+        rounds.stop()
 
     require_unchanged(sample, before)
     return observed, finished
@@ -134,13 +133,13 @@ def replay_b482_run(samples):
     with tempfile.TemporaryDirectory(prefix="b518-b482-baseline-") as temporary:
         root = Path(temporary)
         testdata = root / "TestData"
-        monitor = BtLogMonitor(
-            testdata,
-            tuple(sorted(expected)),
-            now=lambda: clock["now"],
-            monotonic=lambda: clock["elapsed"],
+        rounds = RoundCoordinator()
+        rounds.start("BT", lambda callback: BtLogMonitor(
+            testdata, tuple(sorted(expected)), callback=callback,
+            now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
             session_root=root / "sessions",
-        )
+        ), run_async=False)
+        monitor = rounds.monitor
         copied = []
         for sample, parsed, filename in parsed_samples:
             before = source_signature(sample)
@@ -155,14 +154,14 @@ def replay_b482_run(samples):
         clock["elapsed"] = 5.1
         clock["now"] += timedelta(seconds=5)
         monitor.poll_once()
-        observed = {slot: result.status for slot, result in monitor.results.items()}
+        observed = {result.slot: result.status for result in rounds.snapshot().results}
         if observed != expected:
             raise ValueError("B482 TestData results did not match the source samples.")
         clock["elapsed"] += 3.0
         clock["now"] += timedelta(seconds=3)
         monitor.poll_once()
-        finished = monitor.finished
-        monitor.stop()
+        finished = rounds.snapshot().state == RoundState.COMPLETED
+        rounds.stop()
 
     for sample, before in copied:
         require_unchanged(sample, before)
@@ -240,22 +239,21 @@ def replay_b482_caseinfo(source_root, selected_date=None):
     with tempfile.TemporaryDirectory(prefix="b518-caseinfo-baseline-") as temporary:
         root = Path(temporary)
         caseinfo_root = root / "CaseInfo"
-        monitor = BtLogMonitor(
-            root / "TestData",
-            (1, 2, 3, 4),
-            caseinfo_root=caseinfo_root,
-            now=lambda: clock["now"],
-            monotonic=lambda: clock["elapsed"],
+        rounds = RoundCoordinator()
+        rounds.start("BT", lambda callback: BtLogMonitor(
+            root / "TestData", (1, 2, 3, 4), caseinfo_root=caseinfo_root,
+            callback=callback, now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
             session_root=root / "sessions",
-        )
+        ), run_async=False)
+        monitor = rounds.monitor
         caseinfo_root.mkdir(parents=True)
         for sample in samples.values():
             shutil.copyfile(sample, caseinfo_root / sample.name)
         monitor.poll_once()
-        observed = [result for result in monitor.results.values() if result.status != "WAITING"]
+        observed = [result for result in rounds.snapshot().results if result.status != "WAITING"]
         serials = sum(bool(result.sn) for result in observed)
         states = Counter(result.status for result in observed)
-        monitor.stop()
+        rounds.stop()
 
     for sample, signature in before.items():
         require_unchanged(sample, signature)

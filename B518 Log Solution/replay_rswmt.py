@@ -11,6 +11,7 @@ from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
 
+from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor, parse_rswmt_csv
 
 
@@ -28,9 +29,13 @@ def replay(source):
         root = Path(temporary)
         output = root / 'output/SmtCal'
         output.mkdir(parents=True)
-        monitor = RsWmtLogMonitor(output, now=lambda: start + timedelta(seconds=elapsed),
-                                 monotonic=lambda: elapsed, session_root=root / 'sessions',
-                                 start_timeout_seconds=240)
+        rounds = RoundCoordinator()
+        rounds.start('BT', lambda callback: RsWmtLogMonitor(
+            output, callback=callback, now=lambda: start + timedelta(seconds=elapsed),
+            monotonic=lambda: elapsed, session_root=root / 'sessions',
+            start_timeout_seconds=240,
+        ), run_async=False)
+        monitor = rounds.monitor
         elapsed = max((record.stopped - start).total_seconds() for record in records)
         for path in files:
             shutil.copyfile(path, output / path.name)
@@ -40,12 +45,13 @@ def replay(source):
         monitor.poll_once()
         elapsed += 5.0
         monitor.poll_once()
+        snapshot = rounds.snapshot()
         for record in records:
-            observed = monitor.results[record.slot]
+            observed = next(result for result in snapshot.results if result.slot == record.slot)
             if (observed.sn, observed.status) != (record.sn, record.status):
                 raise ValueError('Replay mismatch for slot {}'.format(record.slot))
-        results = [asdict(value) for value in monitor.results.values()]
-        monitor.stop()
+        results = [asdict(value) for value in rounds.snapshot().results]
+        rounds.stop()
         return results
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Dict, Optional, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult
@@ -15,6 +16,13 @@ class RoundEvent:
     round_id: str
     sequence: int
     event: MonitorEvent
+
+
+class RoundState(str, Enum):
+    READY = "READY"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    STOPPED = "STOPPED"
 
 
 @dataclass(frozen=True)
@@ -30,7 +38,7 @@ class RoundResult:
 class RoundSnapshot:
     round_id: str
     station: str
-    state: str
+    state: RoundState
     results: Tuple[RoundResult, ...]
     result_available: bool
     event_sequence: int
@@ -47,7 +55,7 @@ class MonitoringRound:
         self._monitor = monitor_factory(self._receive_monitor_event)
         self._on_event = on_event
         self._lock = threading.RLock()
-        self._state = "READY"
+        self._state = RoundState.READY
         self._events = []  # type: list[RoundEvent]
         self._started = False
 
@@ -56,21 +64,22 @@ class MonitoringRound:
         """Compatibility access for existing platform-specific review actions."""
         return self._monitor
 
-    def start(self) -> RoundSnapshot:
+    def start(self, run_async: bool = True) -> RoundSnapshot:
         with self._lock:
-            if self._started or self._state != "READY":
+            if self._started or self._state != RoundState.READY:
                 return self.snapshot()
             self._started = True
-            self._state = "RUNNING"
-            self._monitor.start()
+            self._state = RoundState.RUNNING
+            if run_async:
+                self._monitor.start()
             return self.snapshot()
 
     def stop(self) -> RoundSnapshot:
         with self._lock:
-            if self._state == "RUNNING":
+            if self._state == RoundState.RUNNING:
                 self._monitor.stop()
-                if self._state == "RUNNING":
-                    self._state = "STOPPED"
+                if self._state == RoundState.RUNNING:
+                    self._state = RoundState.STOPPED
             return self.snapshot()
 
     def snapshot(self) -> RoundSnapshot:
@@ -81,7 +90,7 @@ class MonitoringRound:
             )
             return RoundSnapshot(
                 self.round_id, self.station, self._state, results,
-                self._state == "COMPLETED", self._events[-1].sequence if self._events else 0,
+                self._state == RoundState.COMPLETED, self._events[-1].sequence if self._events else 0,
                 tuple(self._events),
             )
 
@@ -92,11 +101,11 @@ class MonitoringRound:
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
         with self._lock:
             if event.kind == "finished":
-                self._state = "COMPLETED"
+                self._state = RoundState.COMPLETED
             elif event.kind == "stopped" or (
                 event.kind == "timeout" and event.detail.get("kind") == "start"
             ):
-                self._state = "STOPPED"
+                self._state = RoundState.STOPPED
             round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
             self._events.append(round_event)
         self._on_event(round_event)
@@ -112,15 +121,16 @@ class RoundCoordinator:
         self._on_event = on_event
 
     def start(self, station: str,
-              monitor_factory: Callable[[Callable[[MonitorEvent], None]], object]) -> RoundSnapshot:
+              monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
+              run_async: bool = True) -> RoundSnapshot:
         with self._lock:
-            if self._current is not None and self._current.snapshot().state == "RUNNING":
+            if self._current is not None and self._current.snapshot().state == RoundState.RUNNING:
                 return self._current.snapshot()
             session = MonitoringRound(station, monitor_factory, self._record_current_event)
             self._current = session
             self._events = []
             try:
-                return session.start()
+                return session.start(run_async=run_async)
             except Exception:
                 self._current = None
                 raise

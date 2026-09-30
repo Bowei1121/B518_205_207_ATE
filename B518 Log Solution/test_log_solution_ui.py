@@ -14,7 +14,7 @@ from b518_log_solution import (
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
-from monitoring_round import RoundCoordinator
+from monitoring_round import RoundCoordinator, RoundEvent
 
 
 class FakeHotkey:
@@ -359,6 +359,85 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(snapshot.state, "RUNNING")
                 factory.assert_called_once()
                 factory.return_value.start.assert_called_once()
+
+    def test_repeated_app_start_keeps_the_round_and_does_not_reset_rows(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.events = queue.Queue()
+        app.rounds = RoundCoordinator(app.events.put)
+        app.active_round_id = None
+        app.monitor = None
+        app.station = SimpleNamespace(get=lambda: "DFU")
+        app.paths = {"DFU": {
+            "active": SimpleNamespace(get=lambda: "."),
+            "final": SimpleNamespace(get=lambda: "."),
+            "caseinfo": SimpleNamespace(get=lambda: ""),
+        }}
+        app.timeouts = {"DFU": {
+            "start": SimpleNamespace(get=lambda: "30"),
+            "test": SimpleNamespace(get=lambda: "480"),
+        }}
+        app.start_button = MagicMock()
+        app.monitor_state = MagicMock()
+        app.event_lines = []
+        app.settings_log = None
+        app._save_preferences = MagicMock()
+        app._reset_rows = MagicMock()
+        app._set_monitor_controls = MagicMock()
+        with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
+            app.start_monitor()
+            first_round_id = app.active_round_id
+            app.start_monitor()
+
+        self.assertEqual(app.active_round_id, first_round_id)
+        self.assertEqual(app.rounds.snapshot().state, "RUNNING")
+        factory.assert_called_once()
+        factory.return_value.start.assert_called_once()
+        app._reset_rows.assert_called_once()
+
+    def test_queued_prior_round_event_cannot_change_the_new_round_ui(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.events = queue.Queue()
+        app.rounds = RoundCoordinator(app.events.put)
+        app.active_round_id = None
+        app.monitor = None
+        app.station = SimpleNamespace(get=lambda: "DFU")
+        app.paths = {"DFU": {
+            "active": SimpleNamespace(get=lambda: "."),
+            "final": SimpleNamespace(get=lambda: "."),
+            "caseinfo": SimpleNamespace(get=lambda: ""),
+        }}
+        app.timeouts = {"DFU": {
+            "start": SimpleNamespace(get=lambda: "30"),
+            "test": SimpleNamespace(get=lambda: "480"),
+        }}
+        app.start_button = MagicMock()
+        app.monitor_state = MagicMock()
+        app.event_lines = []
+        app.settings_log = None
+        app._save_preferences = MagicMock()
+        app._reset_rows = MagicMock()
+        app._set_monitor_controls = MagicMock()
+        app._set_row = MagicMock()
+        with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
+            app.start_monitor()
+            old_round_id = app.active_round_id
+            app.rounds.stop()
+            app.start_monitor()
+            new_round_id = app.active_round_id
+            before = app.rounds.snapshot()
+            messages_before_stale_event = list(app.event_lines)
+            app._handle_event(RoundEvent(old_round_id, 99, MonitorEvent(
+                "result", "stale PASS", 1, "TESTSERIAL0001", "PASS")))
+
+        after = app.rounds.snapshot()
+        self.assertNotEqual(old_round_id, new_round_id)
+        self.assertEqual(after.results, before.results)
+        self.assertEqual(after.result_available, before.result_available)
+        self.assertEqual(app.event_lines, messages_before_stale_event)
+        app._set_row.assert_not_called()
+        self.assertEqual(factory.call_count, 2)
 
     def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)
