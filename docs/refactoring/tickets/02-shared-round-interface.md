@@ -8,13 +8,13 @@
 
 - [01：建立行為保護基準並確認測試接口](01-behavior-baseline-and-test-interface.md)
 
-**Status：**in-progress（共同輪次接口及自動化案例已交付；Ticket 01 匿名化樣本及 App／目標環境驗收仍未完成）
+**Status：**complete（Ticket 01 前置完成；共同輪次接口、UI 邊界及三平台樣本重播通過）
 
 ## 驗收條件
 
-- [ ] 三平台均可經統一入口完成原有監控流程，保護基準通過。
-- [x] 開始、停止、快捷鍵與重複開始的操作正常；監控中重複開始不重設本輪。（共用入口、快捷鍵舊保護測試及重複開始自動化案例通過；App 實機操作待驗）
-- [x] 舊監控實例的排隊事件不能更新新輪結果、畫面或可取用狀態。（輪次 ID、協調器事件篩選及快照案例通過）
+- [x] 三平台均可經統一入口完成原有監控流程，保護基準通過。（匿名化樣本重播經 RoundCoordinator；App 建立流程覆蓋 DFU、FCT、B482 TestData、RS-WMT）
+- [x] 開始、停止、快捷鍵與重複開始的操作正常；監控中重複開始不重設本輪。（共用入口、Tk 快捷鍵保護測試及 App 重複開始案例通過）
+- [x] 舊監控實例的排隊事件不能更新新輪結果、畫面或可取用狀態。（輪次 ID、協調器快照／事件及 App UI 排隊事件案例通過）
 - [x] 人工停止保留完成結果，未完成位置為 STOPPED，不誤判正常完成。（輪次快照／事件案例通過）
 - [x] 每批搬移後測試與必要打包引用檢查通過，尚未遷移的呼叫端仍能運作。（本次相關測試、語法編譯及打包腳本入口檢查通過）
 
@@ -48,6 +48,7 @@
 ### 驗證與限制
 
 - 環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。`python3 -m unittest -v test_monitoring_round.py test_log_monitoring.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，39 tests；`python3 -m unittest -v test_log_solution_ui.py` 在授權桌面環境通過，24 tests；`python3 -m compileall -q .` 通過。
+- 最終完整命令 `python3 -m unittest -v test_anonymize_baseline_samples.py test_log_monitoring.py test_monitoring_round.py test_log_solution_ui.py test_verify_macos_bundle.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，84 tests。另以匿名化樣本重播整合入口：Atlas DFU/FCT 各 1 個 PASS，B482 4 個 NOTEST 結果及 4 個 CaseInfo TESTING 通道，RS-WMT 4 個 PASS。`python3 -m compileall -q .` 與 `git diff --check` 通過。
 - 專案未配置 mypy／pyright 型別檢查。打包腳本使用 PyInstaller 並依賴靜態 import 掃描；相關腳本入口及新模組 import 已檢查。未執行 macOS 建置腳本，避免改動 build 產物與版本號；未在 Apple Silicon 目標機啟動 App，也未執行 KVM／上位機現場驗收。
-- Ticket 01 的外部原始樣本回放已重跑並記錄於該票，但可分享匿名化樣本包仍未建立；因此第一項驗收（含三平台 App 流程與保護基準）保持未勾選，本票維持 `in-progress`。Ticket 18 未知同輪來源人工採用政策維持未決。
-- 程式及文件提交與遠端同步紀錄待本次提交後補入。
+- Ticket 01 匿名化樣本及回放已完成；建立工具以唯讀方式處理來源資料，回放通過。此處以模擬時鐘與匿名化機台格式資料驗證 App 共同入口，不等於 Apple Silicon 目標機、KVM 或上位機共同驗收；這些留給後續發布／整合票。Ticket 18 未知同輪來源人工採用政策維持未決，不影響本票技術輪次隔離。
+- 提交：`984e6bf feat: route monitoring through shared rounds`、`0b06b50 test: verify shared rounds with anonymized samples`。兩筆均已推送至設定的 `origin`（內部 Gitea 與 GitHub）。最終雙軸審查及文件提交 SHA 將於其後補記。
