@@ -65,6 +65,25 @@ def _caseinfo_identifiers(path, next_id):
     return identifiers, next_id
 
 
+def _atlas_related_identifiers(path):
+    """Find fixture and instrument identifiers embedded in Atlas archive CSVs."""
+    identifiers = set()
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    identifiers.update(re.findall(r"(?:Xavier|DMM|PWR|Scope)-[A-Za-z0-9/-]+", text, re.I))
+    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as stream:
+        for row in csv.reader(stream):
+            if len(row) < 2:
+                continue
+            key, value = row[0].strip(), row[1].strip()
+            if key.casefold() in {"fixtureid", "fct_fixture_id"} and value:
+                identifiers.add(value)
+            elif re.fullmatch(r"(?:Xavier|DMM|PWR|Scope)-[A-Za-z0-9/-]+", key, re.I) and value:
+                # These rows pair a fixture instrument label with that device's serial.
+                identifiers.add(key)
+                identifiers.add(value)
+    return identifiers
+
+
 def build_samples(source_root, output_root):
     source_root, output_root = Path(source_root).resolve(), Path(output_root).resolve()
     if output_root == source_root or source_root in output_root.parents:
@@ -94,6 +113,9 @@ def build_samples(source_root, output_root):
         serial = trusted_sn_from_records(sample)
         token = "SAMPLESERIAL{:04d}".format(len(known_identifiers) + 1)
         known_identifiers[serial] = token
+        for related in sorted(_atlas_related_identifiers(sample)):
+            if related not in known_identifiers:
+                known_identifiers[related] = "ANONIDENTIFIER{:04d}".format(len(known_identifiers) + 1)
         signatures[sample] = _signature(sample)
         _copy_redacted_path(sample, source_root, output_root, known_identifiers)
         sample_count[source_name] += 1
