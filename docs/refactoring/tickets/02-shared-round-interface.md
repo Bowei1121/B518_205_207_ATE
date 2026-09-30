@@ -48,7 +48,9 @@
 ### 驗證與限制
 
 - 環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。`python3 -m unittest -v test_monitoring_round.py test_log_monitoring.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，39 tests；`python3 -m unittest -v test_log_solution_ui.py` 在授權桌面環境通過，24 tests；`python3 -m compileall -q .` 通過。
-- 最終完整命令 `python3 -m unittest -v test_anonymize_baseline_samples.py test_log_monitoring.py test_monitoring_round.py test_log_solution_ui.py test_verify_macos_bundle.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，84 tests。另以匿名化樣本重播整合入口：Atlas DFU/FCT 各 1 個 PASS，B482 4 個 NOTEST 結果及 4 個 CaseInfo TESTING 通道，RS-WMT 4 個 PASS。`python3 -m compileall -q .` 與 `git diff --check` 通過。
+- 最終完整命令 `python3 -m unittest -v test_anonymize_baseline_samples.py test_log_monitoring.py test_monitoring_round.py test_log_solution_ui.py test_verify_macos_bundle.py test_rswmt_monitoring.py test_replay_baseline_samples.py` 通過，85 tests（含匿名化識別抽取修正）。另以匿名化樣本重播整合入口：Atlas DFU/FCT 各 1 個 PASS，B482 4 個 NOTEST 結果及 4 個 CaseInfo TESTING 通道，RS-WMT 4 個 PASS。`python3 -m compileall -q .` 與 `git diff --check` 通過。
 - 專案未配置 mypy／pyright 型別檢查。打包腳本使用 PyInstaller 並依賴靜態 import 掃描；相關腳本入口及新模組 import 已檢查。未執行 macOS 建置腳本，避免改動 build 產物與版本號；未在 Apple Silicon 目標機啟動 App，也未執行 KVM／上位機現場驗收。
 - Ticket 01 匿名化樣本及回放已完成；建立工具以唯讀方式處理來源資料，回放通過。此處以模擬時鐘與匿名化機台格式資料驗證 App 共同入口，不等於 Apple Silicon 目標機、KVM 或上位機共同驗收；這些留給後續發布／整合票。Ticket 18 未知同輪來源人工採用政策維持未決，不影響本票技術輪次隔離。
-- 提交：`984e6bf feat: route monitoring through shared rounds`、`0b06b50 test: verify shared rounds with anonymized samples`。兩筆均已推送至設定的 `origin`（內部 Gitea 與 GitHub）。最終雙軸審查及文件提交 SHA 將於其後補記。
+- 完整差異（固定審查基準 `733522fd34a50fcc28baf5efb6c76a951a3c2c1b` 至實作提交 `06b8b11`）經 Standards 與 Spec 雙軸審查。Standards 無可採取發現；Spec 初次發現匿名化樣本殘留設備識別，已由 `06b8b11` 修正並重新產生樣本，複查無剩餘發現。兩軸均確認測試接口、UI 重複開始與舊輪事件案例、人工停止語意及目標環境限制有證據支持。
+- Ticket 01／02 及相關執行紀錄所列程式、測試與樣本提交 `984e6bf`、`0b06b50`、`fde3447`、`06b8b11` 均已推送至設定的 `origin`（內部 Gitea 與 GitHub）；本次票據審查紀錄隨文件提交一併推送。
+- 審查技能指出 `docs/agents/issue-tracker.md` 不存在，因此無法套用該 issue-tracker 文件流程；測試與 ticket 審查仍以使用者指定的本地票據及 repo 規格執行。
