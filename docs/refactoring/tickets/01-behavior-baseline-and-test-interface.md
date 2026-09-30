@@ -137,3 +137,9 @@ python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE
 - 執行環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。
 - 重跑 `python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE Test doc"`：Atlas DFU 20/20 PASS 並完成、Atlas FCT 7/7 PASS 並完成；B482 TestData 7 組／28 個結果（12 PASS、16 NOTEST）並完成，指定日 CaseInfo 4 通道均觀察為 TESTING 且有可信序號；RS-WMT 4 個 Slot 均 PASS。工具複製輸入至暫存目錄，並驗證輸入檔回放前後 SHA-256、大小及修改時間一致。
 - 本次執行未建立匿名化樣本包，沒有把真實資料或原始序號加入 repo；第一項驗收仍未勾選。因此本票仍為 `in-progress`，Ticket 02 的三平台 App／目標環境綜合驗收也不能由此回放代替。
+
+## 資料來源補充｜2026-09-30
+
+使用者再次指定外部 ATE Test doc 資料夾為實機樣本來源。統一的來源盤點、回放入口、唯讀與暫存副本要求、匿名化方式及衍生模擬情境規則，整理於「實機測試資料與回放使用指南」（開發文件）。可使用現有樣本保護三平台解析，再以副本安排延遲、半寫入、映射與期限等受控情境；合成情境不能當成真實機台活動時序、容量或現場驗收。
+
+本次僅補文件，未重跑回放、未新增測試證據、未產生匿名化樣本包，既有驗收勾選與狀態維持不變；來源是否同輪的人工採用政策仍留至 Ticket 18。
