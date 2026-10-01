@@ -2,18 +2,66 @@
 
 from __future__ import annotations
 
+import re
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from log_monitoring import (
-    file_signature,
-    parse_archive_timestamp,
-    records_status,
-    snapshot_files,
-    trusted_sn_from_records,
+from monitoring_files import file_signature, is_trusted_sn, normalise_sn, read_csv_rows, snapshot_files
+
+
+ARCHIVE_TIMESTAMP = re.compile(
+    r"^(?P<date>\d{8})_(?P<hour>\d{1,2})-(?P<minute>\d{2})-(?P<second>\d{2})"
+    r"(?:\.(?P<millisecond>\d{1,3}))?(?:-.+)?$"
 )
+TRUSTED_SN_FIELDS = {"mlb_sn", "primaryidentity", "serialnumber"}
+
+
+def parse_archive_timestamp(name: str) -> Optional[datetime]:
+    match = ARCHIVE_TIMESTAMP.match(name)
+    if not match:
+        return None
+    try:
+        milliseconds = (match.group("millisecond") or "0").ljust(3, "0")[:3]
+        return datetime.strptime(
+            "{} {:02d}:{}:{}.{}".format(
+                match.group("date"), int(match.group("hour")), match.group("minute"),
+                match.group("second"), milliseconds,
+            ),
+            "%Y%m%d %H:%M:%S.%f",
+        )
+    except ValueError:
+        return None
+
+
+def trusted_sn_from_records(path: Path) -> str:
+    for row in read_csv_rows(path):
+        for key, value in row.items():
+            if key.strip().lower().replace(" ", "_") in TRUSTED_SN_FIELDS and is_trusted_sn(value):
+                return normalise_sn(value)
+        values = list(row.values())
+        if len(values) >= 2 and values[0].strip().lower().replace(" ", "_") in TRUSTED_SN_FIELDS:
+            if is_trusted_sn(values[1]):
+                return normalise_sn(values[1])
+    return ""
+
+
+def records_status(path: Path) -> str:
+    statuses = [
+        value.strip().upper()
+        for row in read_csv_rows(path)
+        for key, value in row.items()
+        if key.strip().lower() == "status" and value.strip()
+    ]
+    if not statuses:
+        return "UNKNOWN"
+    if any(value.startswith("FAIL") for value in statuses):
+        return "FAIL"
+    if all(value.startswith("PASS") for value in statuses):
+        return "PASS"
+    return "UNKNOWN"
 
 
 @dataclass(frozen=True)

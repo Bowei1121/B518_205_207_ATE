@@ -16,11 +16,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-
-ARCHIVE_TIMESTAMP = re.compile(
-    r"^(?P<date>\d{8})_(?P<hour>\d{1,2})-(?P<minute>\d{2})-(?P<second>\d{2})"
-    r"(?:\.(?P<millisecond>\d{1,3}))?(?:-.+)?$"
+from atlas_source_adapter import (
+    AtlasSourceAdapter,
+    parse_archive_timestamp,
+    records_status,
+    trusted_sn_from_records,
 )
+from monitoring_files import (
+    file_signature,
+    is_trusted_sn,
+    normalise_sn,
+    read_csv_rows,
+    snapshot_files,
+)
+
 BT_FILENAME = re.compile(
     r"^\[Thread(?P<thread>[0-3])\]\[(?P<config>[^\]]*)\]\["
     r"(?P<sn>[^\]]*)\]\[(?P<status>PASSED|FAILED)\]\["
@@ -31,8 +40,6 @@ CASEINFO_FILE = re.compile(r"^thread(?P<thread>[1-4])CaseInfo_(?P<date>\d{4}-\d{
 CASEINFO_TIMESTAMP = re.compile(
     r"(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2}(?:(?:\.|:)\d+)?)"
 )
-TRUSTED_SN_FIELDS = {"mlb_sn", "primaryidentity", "serialnumber"}
-INVALID_SN_VALUES = {"", "N/A", "NA", "NONE", "UNKNOWN", "NUMBER_SOF0"}
 TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}
 DEFAULT_TIMEOUTS = {
     "DFU": {"start": 30, "test": 480},
@@ -59,91 +66,6 @@ class SlotResult:
     status: str = "WAITING"
     source: str = ""
     updated_at: str = ""
-
-
-def file_signature(path: Path) -> Tuple[int, int]:
-    stat = path.stat()
-    return stat.st_size, stat.st_mtime_ns
-
-
-def snapshot_files(root: Path, suffix: str = "") -> Dict[str, Tuple[int, int]]:
-    if not root.is_dir():
-        return {}
-    answer: Dict[str, Tuple[int, int]] = {}
-    for path in root.rglob("*"):
-        if not path.is_file() or (suffix and path.suffix.lower() != suffix.lower()):
-            continue
-        try:
-            answer[str(path.resolve())] = file_signature(path)
-        except OSError:
-            pass
-    return answer
-
-
-def parse_archive_timestamp(name: str) -> Optional[datetime]:
-    match = ARCHIVE_TIMESTAMP.match(name)
-    if not match:
-        return None
-    try:
-        milliseconds = (match.group("millisecond") or "0").ljust(3, "0")[:3]
-        return datetime.strptime(
-            "{} {:02d}:{}:{}.{}".format(
-                match.group("date"), int(match.group("hour")), match.group("minute"),
-                match.group("second"), milliseconds,
-            ),
-            "%Y%m%d %H:%M:%S.%f",
-        )
-    except ValueError:
-        return None
-
-
-def normalise_sn(value: object) -> str:
-    return re.sub(r"\s+", "", str(value or "").upper())
-
-
-def is_trusted_sn(value: object) -> bool:
-    sn = normalise_sn(value)
-    return len(sn) >= 6 and sn not in INVALID_SN_VALUES and not sn.startswith("NUMBER_")
-
-
-def read_csv_rows(path: Path) -> List[Dict[str, str]]:
-    for encoding in ("utf-8-sig", "utf-8", "big5", "latin-1"):
-        try:
-            with path.open("r", encoding=encoding, newline="") as handle:
-                return [{str(k or "").strip(): str(v or "").strip() for k, v in row.items()}
-                        for row in csv.DictReader(handle)]
-        except (UnicodeError, csv.Error, OSError):
-            continue
-    return []
-
-
-def trusted_sn_from_records(path: Path) -> str:
-    rows = read_csv_rows(path)
-    for row in rows:
-        for key, value in row.items():
-            if key.strip().lower().replace(" ", "_") in TRUSTED_SN_FIELDS and is_trusted_sn(value):
-                return normalise_sn(value)
-        values = list(row.values())
-        if len(values) >= 2 and values[0].strip().lower().replace(" ", "_") in TRUSTED_SN_FIELDS:
-            if is_trusted_sn(values[1]):
-                return normalise_sn(values[1])
-    return ""
-
-
-def records_status(path: Path) -> str:
-    rows = read_csv_rows(path)
-    statuses: List[str] = []
-    for row in rows:
-        for key, value in row.items():
-            if key.strip().lower() == "status" and value.strip():
-                statuses.append(value.strip().upper())
-    if not statuses:
-        return "UNKNOWN"
-    if any(value.startswith("FAIL") for value in statuses):
-        return "FAIL"
-    if all(value.startswith("PASS") for value in statuses):
-        return "PASS"
-    return "UNKNOWN"
 
 
 def parse_bt_filename(path: Path) -> Optional[Dict[str, str]]:
@@ -361,8 +283,6 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
     """DFU/FCT monitor: active/group0-slotN followed by final archive data."""
     def __init__(self, station: str, active_root: Path, final_root: Path, slots: Sequence[int], **kwargs):
         super().__init__(station, {"active_root": str(active_root), "final_root": str(final_root)}, slots, **kwargs)
-        from atlas_source_adapter import AtlasSourceAdapter
-
         self.source = AtlasSourceAdapter(active_root, final_root, slots, self.started, self.now)
         self.begin_timeout_clock()
 

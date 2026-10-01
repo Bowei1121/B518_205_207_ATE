@@ -18,6 +18,18 @@ def write_records(path, serial, status="PASS"):
 
 
 class AtlasSourceAdapterRoundTests(unittest.TestCase):
+    def start_round(self, root, active, final):
+        rounds = RoundCoordinator()
+        rounds.start(
+            "FCT",
+            lambda callback: AtlasActiveArchiveMonitor(
+                "FCT", active, final, (1,), callback=callback,
+                now=lambda: datetime(2026, 9, 10, 10, 0, 0), session_root=root / "sessions",
+            ),
+            run_async=False,
+        )
+        return rounds
+
     def test_startup_snapshot_ignores_old_active_data_and_reports_source_prepared(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -76,6 +88,49 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             self.assertEqual(
                 sum(event.event.kind == "final" for event in rounds.events_since()),
                 1,
+            )
+
+    def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            rounds = self.start_round(root, active, final)
+            rounds.monitor.poll_once()
+            record = active / "group0-slot1" / "system" / "records.csv"
+
+            write_records(record, "NUMBER_SOF0")
+            rounds.monitor.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].sn, "")
+            self.assertFalse(any(event.event.kind == "sn_locked" for event in rounds.events_since()))
+
+            write_records(record, "SAMPLE123456")
+            rounds.monitor.poll_once()
+            write_records(record, "LATER987654")
+            rounds.monitor.poll_once()
+
+            snapshot = rounds.snapshot()
+            self.assertEqual(snapshot.results[0].sn, "SAMPLE123456")
+            self.assertEqual(snapshot.results[0].status, "TESTING")
+            self.assertEqual(sum(event.event.kind == "sn_locked" for event in snapshot.events), 1)
+
+    def test_unreadable_identity_keeps_the_atlas_sn_failure_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            rounds = self.start_round(root, active, final)
+            rounds.monitor.poll_once()
+            write_records(active / "group0-slot1" / "system" / "records.csv", "NUMBER_SOF0")
+            rounds.monitor.poll_once()
+            shutil.rmtree(active / "group0-slot1")
+
+            snapshot = rounds.monitor.poll_once()
+            observed = rounds.snapshot()
+
+            self.assertEqual(observed.results[0].status, "FAIL")
+            self.assertEqual(observed.results[0].sn, "SN 讀取失敗")
+            self.assertEqual(
+                [event.event.kind for event in observed.events].count("result"),
+                2,
             )
 
 
