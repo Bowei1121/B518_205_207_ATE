@@ -8,7 +8,7 @@
 
 - [02：讓現有 App 經統一輪次接口操作](02-shared-round-interface.md)
 
-**Status：**in-progress（實作及本機驗收完成；固定基準雙軸 code-review 進行中）
+**Status：**in-progress（全部驗收、測試與雙軸審查完成；整合合併進行中）
 
 ## 驗收條件
 
@@ -61,5 +61,5 @@
 ### 審查與提交
 
 - 固定審查基準：`30739a0690ed534b5db2801a2eba2fadc08384ce`（`B518-Log-Solution`）。
-- Standards 初審：無文件標準違規或可採取的 Fowler smell 發現。Spec 初審指出 CaseInfo 啟動前內容缺少隔離；已新增啟動快照及公開輪次回歸案例修正，雙軸複審待完成。全部審查通過後才更新狀態並合併。
+- 固定審查基準 `30739a0690ed534b5db2801a2eba2fadc08384ce` 至 `be0340c` 完成 Standards／Spec 雙軸 code-review。初審找到 CaseInfo 啟動前內容隔離缺口及未使用的 Adapter 輸入，分別由 `3764f30`、`aaf788e` 修正；複審無未解決發現。Spec 確認 AC-05 配置映射由 Ticket 08 負責，本票保護既有 Thread 0–3 至位置 1–4 對應。Ticket 18 政策明確維持未決，沒有宣稱該分支驗收。
 - 本批程式與測試提交：`f9837ae`（`refactor: isolate B482 source adapter`），已推送至內部 Gitea 與 GitHub 的同名專用分支。
