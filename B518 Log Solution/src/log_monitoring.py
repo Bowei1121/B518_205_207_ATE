@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from atlas_source_adapter import (
+    AtlasObservationKind,
     AtlasSourceAdapter,
     parse_archive_timestamp,
     records_status,
@@ -288,21 +289,21 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
 
     def poll_once(self) -> None:
         for observation in self.source.poll():
-            if observation.kind == "source_prepared":
+            if observation.kind == AtlasObservationKind.SOURCE_PREPARED:
                 self.emit(MonitorEvent("source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。"))
-            elif observation.kind == "sn_locked":
+            elif observation.kind == AtlasObservationKind.SN_LOCKED:
                 self.set_result(observation.slot, observation.status, observation.sn, observation.source)
                 self.emit(MonitorEvent(
                     "sn_locked", "slot{} 已鎖定可信 SN".format(observation.slot),
                     observation.slot, observation.sn, observation.status, observation.source,
                 ))
-            elif observation.kind == "activity":
+            elif observation.kind == AtlasObservationKind.ACTIVITY:
                 self.set_result(observation.slot, observation.status, observation.sn, observation.source)
-            elif observation.kind == "sn_read_failed":
+            elif observation.kind == AtlasObservationKind.SN_READ_FAILED:
                 self.set_result(observation.slot, observation.status, observation.sn)
-            elif observation.kind in {"completing", "notest"}:
+            elif observation.kind in {AtlasObservationKind.COMPLETING, AtlasObservationKind.NOTEST}:
                 self.set_result(observation.slot, observation.status, observation.sn)
-            elif observation.kind == "final":
+            elif observation.kind == AtlasObservationKind.FINAL:
                 self.set_result(observation.slot, observation.status, observation.sn, observation.source)
                 self.emit(MonitorEvent(
                     "final", "slot{} 最終 {}".format(observation.slot, observation.status),

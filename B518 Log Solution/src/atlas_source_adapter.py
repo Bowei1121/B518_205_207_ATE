@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import re
 import csv
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -64,11 +65,21 @@ def records_status(path: Path) -> str:
     return "UNKNOWN"
 
 
+class AtlasObservationKind(str, Enum):
+    SOURCE_PREPARED = "source_prepared"
+    SN_LOCKED = "sn_locked"
+    ACTIVITY = "activity"
+    SN_READ_FAILED = "sn_read_failed"
+    COMPLETING = "completing"
+    FINAL = "final"
+    NOTEST = "notest"
+
+
 @dataclass(frozen=True)
 class AtlasObservation:
     """A source fact for the round monitor to apply to its shared state."""
 
-    kind: str
+    kind: AtlasObservationKind
     slot: Optional[int] = None
     sn: str = ""
     status: str = ""
@@ -98,7 +109,7 @@ class AtlasSourceAdapter:
         observations: List[AtlasObservation] = []
         if not self._prepared_reported:
             self._prepared_reported = True
-            observations.append(AtlasObservation("source_prepared"))
+            observations.append(AtlasObservation(AtlasObservationKind.SOURCE_PREPARED))
 
         active_now: Set[int] = set()
         active_directories: Set[int] = set()
@@ -112,27 +123,35 @@ class AtlasSourceAdapter:
                 sn = trusted_sn_from_records(record)
                 if sn and slot not in self._locked_sn:
                     self._locked_sn[slot] = sn
-                    observations.append(AtlasObservation("sn_locked", slot, sn, "TESTING", str(record)))
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.SN_LOCKED, slot, sn, "TESTING", str(record),
+                    ))
                 elif slot not in self._locked_sn:
-                    observations.append(AtlasObservation("activity", slot, status="TESTING", source=str(record)))
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.ACTIVITY, slot, status="TESTING", source=str(record),
+                    ))
                 else:
                     observations.append(AtlasObservation(
-                        "activity", slot, self._locked_sn[slot], "TESTING", str(record),
+                        AtlasObservationKind.ACTIVITY, slot, self._locked_sn[slot], "TESTING", str(record),
                     ))
 
         for slot in sorted(self._seen_slots - active_now):
             if slot in self._final_slots:
                 continue
             if slot not in self._locked_sn:
-                observations.append(AtlasObservation("sn_read_failed", slot, "SN 讀取失敗", "FAIL"))
+                observations.append(AtlasObservation(
+                    AtlasObservationKind.SN_READ_FAILED, slot, "SN 讀取失敗", "FAIL",
+                ))
                 continue
             sn = self._locked_sn[slot]
-            observations.append(AtlasObservation("completing", slot, sn, "COMPLETING"))
+            observations.append(AtlasObservation(AtlasObservationKind.COMPLETING, slot, sn, "COMPLETING"))
             candidate = self._final_csv(sn)
             if candidate:
                 state = records_status(candidate)
                 if state in {"PASS", "FAIL"}:
-                    observations.append(AtlasObservation("final", slot, sn, state, str(candidate)))
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.FINAL, slot, sn, state, str(candidate),
+                    ))
                     self._final_slots.add(slot)
 
         if self._seen_slots and not active_directories:
@@ -140,7 +159,9 @@ class AtlasSourceAdapter:
                 self._inactive_since = self.now()
             elif self.now() - self._inactive_since >= timedelta(seconds=3):
                 for slot in sorted(set(self.slots) - self._seen_slots):
-                    observations.append(AtlasObservation("notest", slot, status="NOTEST"))
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.NOTEST, slot, status="NOTEST",
+                    ))
         else:
             self._inactive_since = None
         return tuple(observations)
