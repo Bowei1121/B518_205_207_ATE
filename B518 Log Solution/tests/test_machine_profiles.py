@@ -100,6 +100,21 @@ class MachineProfileTests(unittest.TestCase):
             self.assertEqual((restarted[1], restarted[2]), ("B518", "BT"))
             self.assertEqual(restarted[0].get("B518", "BT").paths["final"], "/tmp/rswmt")
 
+    def test_malformed_legacy_profile_returns_error_and_preserves_original_file(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original = json.dumps({
+                "station": "DFU", "paths": {"DFU": {"active": None, "final": "/tmp/final"}},
+            })
+            path.write_text(original, encoding="utf-8")
+
+            catalog, project, machine, error = MachineProfileStore(path).load()
+
+            self.assertIn("遷移失敗", error)
+            self.assertEqual((project, machine), ("B518", "FCT"))
+            self.assertTrue(catalog.profiles)
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
     def test_store_rejects_unknown_schema_without_overwriting_preferences(self):
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "preferences.json"

@@ -320,7 +320,7 @@ class B518LogSolutionApp:
         for field, value in profile.paths.items():
             if field in self.paths[profile.machine]:
                 self.paths[profile.machine][field].set(value)
-        for field in ("start", "test"):
+        for field in ("start", "test", "round"):
             self.timeouts[profile.machine][field].set(str(profile.timeouts[field]))
         self.bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
 

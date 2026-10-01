@@ -5,6 +5,7 @@ import queue
 import tkinter as tk
 import time
 import unittest
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -218,7 +219,17 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.project.set("B482")
                     app._project_changed()
                     self.assertEqual(app.machine_choice.cget("values"), ("BT",))
-                    self.assertEqual(app.profiles.get(app.project.get(), app.station.get()).platform, "b482")
+                    profile = app.profiles.get(app.project.get(), app.station.get())
+                    self.assertEqual(profile.platform, "b482")
+                    profile_paths = dict(profile.paths)
+                    profile_paths["final"] = temporary
+                    profile_timeouts = dict(profile.timeouts)
+                    profile_timeouts["round"] = 6300
+                    app.profiles = app.profiles.with_profile(
+                        replace(profile, paths=profile_paths, timeouts=profile_timeouts),
+                    )
+                    app._load_selected_profile_values()
+                    self.assertEqual(app._timeout_seconds("BT")["round"], 6300)
                     app._save_preferences()
                 finally:
                     app.hotkey.close()
@@ -229,6 +240,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 restarted = B518LogSolutionApp(restarted_root, hotkey_factory=FakeHotkey)
                 try:
                     self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
+                    self.assertEqual(restarted._timeout_seconds("BT")["round"], 6300)
+                    with patch("b518_log_solution.BtLogMonitor") as monitor_factory:
+                        restarted.start_monitor()
+                    self.assertEqual(monitor_factory.call_args.kwargs["round_timeout_seconds"], 6300)
                 finally:
                     restarted.hotkey.close()
                     restarted_root.destroy()

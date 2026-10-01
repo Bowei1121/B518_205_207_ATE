@@ -134,7 +134,12 @@ class MachineProfileStore:
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "不支援的偏好版本：{}。".format(raw.get("schema_version"))
 
-        catalog, project, machine = migrate_legacy_preferences(raw)
+        try:
+            catalog, project, machine = migrate_legacy_preferences(raw)
+        except (ProfileError, TypeError, AttributeError) as error:
+            catalog, project, machine = migrate_legacy_preferences({})
+            self.migration_required = False
+            return catalog, project, machine, "舊偏好遷移失敗：{}".format(error)
         self.migration_required = True
         return catalog, project, machine, None
 
