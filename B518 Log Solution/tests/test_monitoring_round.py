@@ -1,7 +1,13 @@
+import csv
+import io
+import tempfile
 import unittest
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from log_monitoring import MonitorEvent, SlotResult
 from monitoring_round import RoundCoordinator
+from rswmt_monitoring import RsWmtLogMonitor
 
 
 class FakeMonitor:
@@ -23,6 +29,49 @@ class FakeMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_rswmt_final_only_source_delivers_final_evidence_through_round_interface(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        elapsed = [0.0]
+        headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
+                   'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
+                   'tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None:pwr=None;']
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1,), callback=callback,
+                now=lambda: start + timedelta(seconds=elapsed[0]), monotonic=lambda: elapsed[0],
+                session_root=root / 'sessions',
+            ), run_async=False)
+
+            result_dir = output / '2026-09-11_05-45-44'
+            result_dir.mkdir()
+            result = io.StringIO()
+            writer = csv.writer(result)
+            writer.writerow(['Overlay', 'SmtCal'] + [''] * 6)
+            writer.writerow(headers)
+            writer.writerow(['SERIAL000001', 'Pass', '[]', '', '2026/11/09 05:44:16',
+                             '2026/11/09 05:45:44', 'B518', '1'])
+            source = result_dir / 'SERIAL000001_2026-09-11_05-45-44.csv'
+            source.write_text(result.getvalue(), encoding='utf-8')
+
+            monitor = rounds.monitor
+            elapsed[0] = 88.0
+            monitor.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, 'COMPLETING')
+            self.assertFalse(any(event.event.status == 'TESTING' for event in rounds.events_since()))
+            elapsed[0] = 93.0
+            monitor.poll_once()
+
+            snapshot = rounds.snapshot()
+            self.assertEqual(snapshot.results[0].status, 'PASS')
+            final = [event.event for event in snapshot.events if event.event.status == 'PASS'][-1]
+            self.assertEqual(final.source, str(source))
+            self.assertEqual(final.detail.get('source_time'), '2026-09-11T05:45:44')
+            self.assertEqual(final.detail.get('batch_evidence'), '2026-09-11T05:44:16')
+
     def test_repeated_start_while_running_keeps_the_same_round(self):
         monitors = []
 

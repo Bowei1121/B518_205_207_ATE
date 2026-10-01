@@ -28,6 +28,15 @@ class RsWmtRecord:
     started: datetime
     stopped: datetime
     source: str
+    source_kind: str
+
+    def evidence(self):
+        """Expose only timestamps evidenced by this source record."""
+        return {
+            "source_time": self.stopped.isoformat(timespec="seconds"),
+            "batch_evidence": self.started.isoformat(timespec="seconds"),
+            "source_kind": self.source_kind,
+        }
 
 
 def csv_time(value, reference):
@@ -89,7 +98,7 @@ def parse_rswmt_csv(path):
     if end != stopped or start is None or start > end:
         return None
     # A genuine FAIL without a serial is still FAIL (initialization can fail).
-    return RsWmtRecord(int(raw_slot), sn, status, start, end, str(path))
+    return RsWmtRecord(int(raw_slot), sn, status, start, end, str(path), "final_csv")
 
 
 def parse_rswmt_log(text, source):
@@ -114,7 +123,7 @@ def parse_rswmt_log(text, source):
     closing = any(line == "STATE:TestRunner Add-in 'shutdown'..." for _, line in records)
     return RsWmtRecord(next(iter(slots)), next(iter(sns), ''),
                        'COMPLETING' if closing else 'TESTING', starts[0].replace(microsecond=0),
-                       records[-1][0], str(source))
+                       records[-1][0], str(source), "live_log")
 
 
 class RsWmtLogMonitor(BaseMonitor):
@@ -145,7 +154,8 @@ class RsWmtLogMonitor(BaseMonitor):
             return False
         if self.batch_start is None:
             self.batch_start = record.started
-            self.emit(MonitorEvent('batch', 'RS-WMT batch {}'.format(self.batch_start), source=record.source))
+            self.emit(MonitorEvent('batch', 'RS-WMT batch {}'.format(self.batch_start),
+                                   source=record.source, detail=record.evidence()))
         if record.started != self.batch_start:
             self.notice(record.source, 'RS-WMT: different test start time; start a new monitoring round.')
             return False
@@ -183,9 +193,9 @@ class RsWmtLogMonitor(BaseMonitor):
                     self.notice(path, 'RS-WMT: duplicate/late slot result ignored; previous result retained.')
                 continue
             if self.monotonic() - stable_since >= 5:
-                self.set_result(record.slot, record.status, record.sn, str(path))
+                self.set_result(record.slot, record.status, record.sn, str(path), record.evidence())
             elif current.status != 'COMPLETING' or current.sn != record.sn:
-                self.set_result(record.slot, 'COMPLETING', record.sn, str(path))
+                self.set_result(record.slot, 'COMPLETING', record.sn, str(path), record.evidence())
         for path in sorted(self.progress_root.rglob('*.log')):
             try:
                 signature = file_signature(path)
@@ -206,6 +216,6 @@ class RsWmtLogMonitor(BaseMonitor):
             # An already observed final CSV remains COMPLETING during stable-write wait.
             status = 'COMPLETING' if current.status == 'COMPLETING' else record.status
             if status != current.status or (record.sn and record.sn != current.sn):
-                self.set_result(record.slot, status, record.sn, str(path))
+                self.set_result(record.slot, status, record.sn, str(path), record.evidence())
         self.check_timeouts()
         self.complete_if_stable()
