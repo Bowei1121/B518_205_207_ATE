@@ -95,6 +95,10 @@ class SessionStore:
         self.sources.add(str(path))
         self._write_metadata()
 
+    def update_settings(self, settings: Dict[str, object]) -> None:
+        self.settings.update(settings)
+        self._write_metadata()
+
     def finish(self) -> None:
         self.finished_at = datetime.now().isoformat(timespec="seconds")
         self._write_metadata()

@@ -19,6 +19,7 @@ from b518_log_solution import (
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
+from machine_profiles import MachineProfileStore, migrate_legacy_preferences
 
 
 class FakeHotkey:
@@ -104,9 +105,9 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
         self.assertEqual(slot_count("BT"), 4)
-        self.assertEqual(window_height("DFU"), 612)
-        self.assertEqual(window_height("FCT"), 565)
-        self.assertEqual(window_height("BT"), 471)
+        self.assertEqual(window_height("DFU"), 642)
+        self.assertEqual(window_height("FCT"), 595)
+        self.assertEqual(window_height("BT"), 501)
         self.assertEqual(WINDOW_WIDTH, 360)
 
     def test_all_display_statuses_have_explicit_colours(self):
@@ -197,7 +198,40 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_configured_directory_never_treats_blank_as_current_directory(self):
         self.assertIsNone(configured_directory(""))
         self.assertIsNone(configured_directory("   "))
+        self.assertIsNone(configured_directory("/path/that/does/not/exist"))
         self.assertEqual(configured_directory("."), Path("."))
+
+    def test_configured_directory_rejects_a_directory_without_read_access(self):
+        with patch("b518_log_solution.os.access", return_value=False):
+            self.assertIsNone(configured_directory("."))
+
+    def test_operator_selects_project_and_machine_and_choice_survives_restart(self):
+        with TemporaryDirectory() as temporary:
+            app_root = Path(temporary) / "B518LogSolution"
+            prefs = app_root / "preferences.json"
+            with patch("b518_log_solution.APP_ROOT", app_root), patch("b518_log_solution.PREFS_PATH", prefs):
+                root = tk.Tk()
+                root.withdraw()
+                app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+                try:
+                    self.assertEqual(app.project_choice.cget("values"), ("B518", "B482"))
+                    app.project.set("B482")
+                    app._project_changed()
+                    self.assertEqual(app.machine_choice.cget("values"), ("BT",))
+                    self.assertEqual(app.profiles.get(app.project.get(), app.station.get()).platform, "b482")
+                    app._save_preferences()
+                finally:
+                    app.hotkey.close()
+                    root.destroy()
+
+                restarted_root = tk.Tk()
+                restarted_root.withdraw()
+                restarted = B518LogSolutionApp(restarted_root, hotkey_factory=FakeHotkey)
+                try:
+                    self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
+                finally:
+                    restarted.hotkey.close()
+                    restarted_root.destroy()
 
     def test_monitor_creation_error_is_visible_and_returns_to_standby(self):
         root = tk.Tk()
@@ -248,7 +282,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app.hotkey.close()
             root.destroy()
 
-    def test_save_settings_persists_all_station_paths_and_restores_station(self):
+    def test_save_settings_persists_selected_project_machine_profile(self):
         saved_paths = {
             "DFU": {"active": "/logs/dfu/active", "final": "/logs/dfu/final", "caseinfo": ""},
             "FCT": {"active": "/logs/fct/active", "final": "/logs/fct/final", "caseinfo": ""},
@@ -266,8 +300,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 interpreter = tk.Tcl()
                 app = object.__new__(B518LogSolutionApp)
                 app.station = tk.StringVar(master=interpreter, value="DFU")
+                app.project = tk.StringVar(master=interpreter, value="B518")
                 app.bt_format = tk.StringVar(master=interpreter, value="B482 TestData")
                 app.settings_bt_format = tk.StringVar(master=interpreter, value="B518 RS-WMT")
+                app.settings_project = tk.StringVar(master=interpreter, value="B518")
+                app.profiles, _project, _machine = migrate_legacy_preferences({})
+                app.profile_store = MachineProfileStore(prefs_path)
+                app.profile_error = None
                 app.paths = {station: {field: tk.StringVar(master=interpreter, value="")
                                        for field in ("active", "final", "caseinfo")}
                              for station in ("DFU", "FCT", "BT")}
@@ -287,22 +326,20 @@ class LogSolutionUiTests(unittest.TestCase):
                 }
                 app._render_rows = lambda: None
                 app._close_settings = lambda: None
+                app._refresh_machine_choices = lambda: None
 
                 app._save_settings()
                 self.assertEqual(app.station.get(), "BT")
-                for station, fields in saved_paths.items():
-                    for field, value in fields.items():
-                        self.assertEqual(app.paths[station][field].get(), value)
-                self.assertEqual(json.loads(prefs_path.read_text(encoding="utf-8")), {
-                    "station": "BT", "bt_format": "B518 RS-WMT", "paths": saved_paths, "timeouts": saved_timeouts,
-                })
-
-                restored_app = object.__new__(B518LogSolutionApp)
-                restored_app.prefs = restored_app._load_preferences()
-                self.assertEqual(restored_app.prefs["station"], "BT")
-                self.assertEqual(restored_app.prefs["bt_format"], "B518 RS-WMT")
-                self.assertEqual(restored_app.prefs["paths"], saved_paths)
-                self.assertEqual(restored_app.prefs["timeouts"], saved_timeouts)
+                self.assertEqual(app.project.get(), "B518")
+                for field, value in saved_paths["BT"].items():
+                    self.assertEqual(app.paths["BT"][field].get(), value)
+                saved = json.loads(prefs_path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["schema_version"], 1)
+                self.assertEqual((saved["project"], saved["machine"]), ("B518", "BT"))
+                restored = MachineProfileStore(prefs_path).load()
+                self.assertEqual((restored[1], restored[2]), ("B518", "BT"))
+                self.assertEqual(restored[0].get("B518", "BT").platform, "rswmt")
+                self.assertEqual(restored[0].get("B518", "BT").paths["final"], saved_paths["BT"]["final"])
 
     def test_timeout_values_require_positive_integers(self):
         interpreter = tk.Tcl()
