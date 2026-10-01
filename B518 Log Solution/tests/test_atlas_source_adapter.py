@@ -1,4 +1,5 @@
 import csv
+import shutil
 import tempfile
 import unittest
 from datetime import datetime
@@ -38,6 +39,44 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
 
             self.assertEqual(snapshot.results[0].status, "WAITING")
             self.assertIn("source_prepared", [event.event.kind for event in snapshot.events])
+
+    def test_archive_result_is_used_only_after_its_file_signature_is_stable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active = root / "active"
+            final = root / "unit-archive"
+            rounds = RoundCoordinator()
+            rounds.start(
+                "FCT",
+                lambda callback: AtlasActiveArchiveMonitor(
+                    "FCT", active, final, (1,), callback=callback,
+                    now=lambda: datetime(2026, 9, 10, 10, 0, 0), session_root=root / "sessions",
+                ),
+                run_async=False,
+            )
+            rounds.monitor.poll_once()
+            write_records(active / "group0-slot1" / "system" / "records.csv", "SAMPLE123456")
+            rounds.monitor.poll_once()
+            shutil.rmtree(active / "group0-slot1")
+            rounds.monitor.poll_once()
+            archive = final / "SAMPLE123456" / "20260910_10-00-01.000-run" / "system" / "records.csv"
+            write_records(archive, "SAMPLE123456", "PASS")
+
+            rounds.monitor.poll_once()
+            first_observation = rounds.snapshot()
+
+            self.assertEqual(first_observation.results[0].status, "COMPLETING")
+            self.assertFalse(any(event.event.kind == "final" for event in first_observation.events))
+
+            rounds.monitor.poll_once()
+            stable_observation = rounds.snapshot()
+            rounds.monitor.poll_once()
+
+            self.assertEqual(stable_observation.results[0].status, "PASS")
+            self.assertEqual(
+                sum(event.event.kind == "final" for event in rounds.events_since()),
+                1,
+            )
 
 
 if __name__ == "__main__":

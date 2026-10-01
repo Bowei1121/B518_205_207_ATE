@@ -43,6 +43,8 @@ class AtlasSourceAdapter:
         self._locked_sn: Dict[int, str] = {}
         self._inactive_since: Optional[datetime] = None
         self._prepared_reported = False
+        self._final_signatures: Dict[str, Tuple[int, int]] = {}
+        self._final_slots: Set[int] = set()
 
     def poll(self) -> Tuple[AtlasObservation, ...]:
         observations: List[AtlasObservation] = []
@@ -71,6 +73,8 @@ class AtlasSourceAdapter:
                     ))
 
         for slot in sorted(self._seen_slots - active_now):
+            if slot in self._final_slots:
+                continue
             if slot not in self._locked_sn:
                 observations.append(AtlasObservation("sn_read_failed", slot, "SN 讀取失敗", "FAIL"))
                 continue
@@ -81,6 +85,7 @@ class AtlasSourceAdapter:
                 state = records_status(candidate)
                 if state in {"PASS", "FAIL"}:
                     observations.append(AtlasObservation("final", slot, sn, state, str(candidate)))
+                    self._final_slots.add(slot)
 
         if self._seen_slots and not active_directories:
             if self._inactive_since is None:
@@ -111,7 +116,7 @@ class AtlasSourceAdapter:
         if not sn_root.is_dir():
             return None
         threshold = self.started - timedelta(seconds=30)
-        candidates: List[Tuple[datetime, Path]] = []
+        candidates: List[Tuple[datetime, Path, Tuple[int, int]]] = []
         for folder in sn_root.iterdir():
             if not folder.is_dir():
                 continue
@@ -121,5 +126,15 @@ class AtlasSourceAdapter:
             for name in ("records.csv", "record.csv"):
                 candidate = folder / "system" / name
                 if candidate.is_file() and self._is_new_or_changed(candidate, self._baseline_final):
-                    candidates.append((stamp, candidate))
-        return max(candidates, key=lambda item: item[0])[1] if candidates else None
+                    try:
+                        candidates.append((stamp, candidate, file_signature(candidate)))
+                    except OSError:
+                        continue
+        if not candidates:
+            return None
+        _stamp, candidate, signature = max(candidates, key=lambda item: item[0])
+        key = str(candidate.resolve())
+        if self._final_signatures.get(key) != signature:
+            self._final_signatures[key] = signature
+            return None
+        return candidate
