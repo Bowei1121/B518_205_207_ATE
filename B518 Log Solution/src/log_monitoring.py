@@ -281,7 +281,7 @@ class BtLogMonitor(BaseMonitor):
                          monotonic=monotonic, **kwargs)
         self.testdata_root, self.caseinfo_root = testdata_root, caseinfo_root
         self.source_adapter = B482SourceAdapter(
-            testdata_root, caseinfo_root, slots, self.started, self.now, self.monotonic,
+            testdata_root, caseinfo_root, self.started, self.now, self.monotonic,
         )
         self.begin_timeout_clock()
         self.batch_stamp = ""

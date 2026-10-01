@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from monitoring_files import (
     file_signature,
@@ -128,11 +128,10 @@ def _caseinfo_source_time(value: str) -> Optional[Tuple[datetime, str]]:
 class B482SourceAdapter:
     """Own startup isolation, incremental input handling, and B482 file evidence."""
 
-    def __init__(self, testdata_root: Path, caseinfo_root: Optional[Path], slots: Sequence[int],
-                 started: datetime, now: Callable[[], datetime], monotonic: Callable[[], float]):
+    def __init__(self, testdata_root: Path, caseinfo_root: Optional[Path], started: datetime,
+                 now: Callable[[], datetime], monotonic: Callable[[], float]):
         self.testdata_root = testdata_root
         self.caseinfo_root = caseinfo_root
-        self.slots = tuple(sorted(slots))
         self.started = started
         self.now = now
         self.monotonic = monotonic
