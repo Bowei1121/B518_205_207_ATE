@@ -61,7 +61,12 @@
 - 最終雙軸 code-review 以起始 commit `e98d2df91da75386b8bd83ffa6da5e087d53d518` 為基準審閱完整差異。Standards：無未解決發現；Spec：兩項 P2 均已修正並複審通過，無未解決發現。
 - 從應用程式資料夾執行 `python3 scripts/run_tests.py`，91 tests 全數通過（macOS 本機可操作桌面環境）。先前在受限執行環境的同一命令因 Tk UI 測試啟動而以 134 中止；改在桌面授權環境重跑後通過。
 - 最終程式檢查：`python3 -m compileall -q src tests tools scripts`、`git diff --check` 通過；`python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/anonymized-baseline` 通過；`python3 tools/smoke_atlas_app.py` 通過。專案沒有 mypy／pyright 型別檢查配置。
-- 外部條件仍待驗：提供的 Atlas 資料僅有 archive，沒有可信的真實 active tree；沒有在目標機執行 DFU／FCT，也未建置／啟動發布版 App。因此受控 active/archive 情境及本機 Tk App 整合不能替代目標設備和真實來源驗收，本票維持 in-progress，不合併、不刪除專用分支。需要補入已匿名化、保留時序關係的 Atlas active 樣本（或安排目標設備與現場資料），並在目標機完成 DFU／FCT 驗收後再評估完成。
+- 外部驗收範圍：提供的 Atlas 資料僅有 archive，沒有可信的真實 active tree；沒有在目標機執行 DFU／FCT，也未建置／啟動發布版 App。受控 active/archive 情境及本機 Tk App 整合不代表目標設備和真實來源驗收已通過，相關項目依使用者後續決策延期。
+
+### 使用者驗收決策｜2026-10-01
+
+- 使用者同意本次合併先略過第 4、5 項真實 active tree／目標機驗收，待實際運行時再驗證穩定性；此決策不代表上述驗收已執行或通過。兩項維持未勾選，Status 維持 in-progress，合併不等待這兩項實績驗收。
+- 合併目標確認為 `B518-Log-Solution`，不是 `main`。該分支包含 Ticket 02，且為本票分支直接基準；避免將其上游之外的整批歷史差異併入其他產品主線。
 
 ### 提交紀錄
 
