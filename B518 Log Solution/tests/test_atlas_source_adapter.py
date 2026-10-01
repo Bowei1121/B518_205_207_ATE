@@ -89,6 +89,16 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 sum(event.event.kind == "final" for event in rounds.events_since()),
                 1,
             )
+            write_records(active / "group0-slot1" / "system" / "records.csv", "LATER987654", "FAIL")
+            rounds.monitor.poll_once()
+            after_later_progress = rounds.snapshot()
+
+            self.assertEqual(after_later_progress.results[0].status, "PASS")
+            self.assertEqual(after_later_progress.results[0].sn, "SAMPLE123456")
+            self.assertEqual(
+                sum(event.event.kind == "final" for event in after_later_progress.events),
+                1,
+            )
 
     def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
         with tempfile.TemporaryDirectory() as temporary:
