@@ -37,11 +37,16 @@ class RsWmtRecord:
     def evidence(self):
         """Return only timestamps and source types present in the source."""
         precision = "milliseconds" if self.source_kind == "live_log" else "seconds"
-        return {
+        evidence: Dict[str, str] = {
             "source_time": self.stopped.isoformat(timespec=precision),
             "batch_evidence": (self.batch_time or self.started).isoformat(timespec=precision),
             "source_kind": self.source_kind,
+            "source_slot": str(self.slot),
+            "result_status": self.status,
         }
+        if self.sn:
+            evidence["source_sn"] = self.sn
+        return evidence
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,7 @@ class RsWmtObservation:
     record: Optional[RsWmtRecord] = None
     message: str = ""
     stable: bool = False
+    evidence: Optional[Dict[str, str]] = None
 
 
 def csv_time(value, reference):
@@ -115,8 +121,7 @@ def parse_rswmt_csv(path):
     return RsWmtRecord(int(raw_slot), sn, status, start, end, str(path), "final_csv")
 
 
-def parse_rswmt_log(text, source):
-    """Extract evidenced activity only; an individual item PASS is never final."""
+def _rswmt_log_parts(text):
     records = []
     for line in text.splitlines(keepends=True):
         if not line.endswith(('\n', '\r')):
@@ -132,6 +137,29 @@ def parse_rswmt_log(text, source):
              for m in [re.search(r'VARiable:DEFine "instance_active_([1-4])",', line)] if m}
     sns = {m[1] for _, line in records
            for m in [re.search(r'DEBUG:HciCommunication << .*MLB#\.\.([A-Z0-9]{6,64})(?:\s|$)', line)] if m}
+    return records, starts, slots, sns
+
+
+def rswmt_log_evidence(text) -> Dict[str, str]:
+    """Keep observable candidates when a log cannot identify one source round."""
+    records, starts, slots, sns = _rswmt_log_parts(text)
+    evidence: Dict[str, str] = {"source_kind": "live_log"}
+    if records:
+        evidence["source_time"] = records[-1][0].isoformat(timespec="milliseconds")
+    if starts:
+        evidence["batch_candidates"] = ",".join(
+            stamp.isoformat(timespec="milliseconds") for stamp in starts
+        )
+    if slots:
+        evidence["source_slots"] = ",".join(str(slot) for slot in sorted(slots))
+    if sns:
+        evidence["source_sns"] = ",".join(sorted(sns))
+    return evidence
+
+
+def parse_rswmt_log(text, source):
+    """Extract evidenced activity only; an individual item PASS is never final."""
+    records, starts, slots, sns = _rswmt_log_parts(text)
     if len(starts) != 1 or len(slots) != 1 or len(sns) > 1:
         return None
     closing = any(line == "STATE:TestRunner Add-in 'shutdown'..." for _, line in records)
@@ -182,6 +210,7 @@ class RsWmtSourceAdapter:
             return [RsWmtObservation(
                 "warning", record.source,
                 message="RS-WMT: different test start time; start a new monitoring round.",
+                record=record, evidence=record.evidence(),
             )]
         return []
 
@@ -230,6 +259,14 @@ class RsWmtSourceAdapter:
             self.log_signatures[key] = signature
             record = parse_rswmt_log(text, path)
             if record is None:
+                evidence = rswmt_log_evidence(text)
+                if any(len(evidence.get(field, "").split(",")) > 1
+                       for field in ("batch_candidates", "source_slots", "source_sns")):
+                    observations.append(RsWmtObservation(
+                        "warning", str(path),
+                        message="RS-WMT: source round is ambiguous; evidence retained for review.",
+                        evidence=evidence,
+                    ))
                 continue
             batch_events = self._round_evidence(record)
             if batch_events is None:

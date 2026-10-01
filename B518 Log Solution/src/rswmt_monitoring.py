@@ -26,8 +26,8 @@ class RsWmtLogMonitor(BaseMonitor):
         )
         self.begin_timeout_clock()
 
-    def _notice(self, source: str, message: str) -> None:
-        self.emit(MonitorEvent('warning', message, source=source))
+    def _notice(self, source: str, message: str, detail=None) -> None:
+        self.emit(MonitorEvent('warning', message, source=source, detail=detail or {}))
 
     def _accept_final(self, record: RsWmtRecord, stable: bool) -> None:
         current = self.results[record.slot]
@@ -59,7 +59,10 @@ class RsWmtLogMonitor(BaseMonitor):
             return
         for observation in self.source_adapter.poll():
             if observation.kind == 'warning':
-                self._notice(observation.source, observation.message)
+                evidence = observation.evidence
+                if evidence is None and observation.record is not None:
+                    evidence = observation.record.evidence()
+                self._notice(observation.source, observation.message, evidence)
             elif observation.kind == 'batch' and observation.record:
                 self.emit(MonitorEvent(
                     'batch', 'RS-WMT batch {}'.format(observation.record.started),

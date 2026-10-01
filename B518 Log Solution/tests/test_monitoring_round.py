@@ -29,6 +29,40 @@ class FakeMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_ambiguous_rswmt_log_retains_candidate_evidence_without_selecting_a_round(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1, 2, 3, 4), callback=callback,
+                now=lambda: start + timedelta(seconds=20), monotonic=lambda: 20.0,
+                session_root=root / 'sessions',
+            ), run_async=False)
+            (output / 'ambiguous.log').write_text(
+                "2026-09-11 05:44:16,688 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:16,793 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_1", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:20,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000001 05 5B\n'
+                '2026-09-11 05:44:21,000 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_2", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:22,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000002 05 5B\n',
+                encoding='utf-8',
+            )
+
+            rounds.monitor.poll_once()
+            snapshot = rounds.snapshot()
+            review = next(event.event for event in snapshot.events if event.event.kind == 'warning')
+
+            self.assertEqual(review.source, str(output / 'ambiguous.log'))
+            self.assertEqual(review.detail.get('source_slots'), '1,2')
+            self.assertEqual(review.detail.get('source_sns'), 'SERIAL000001,SERIAL000002')
+            self.assertEqual(review.detail.get('batch_candidates'), '2026-09-11T05:44:16.688')
+            self.assertEqual(review.detail.get('source_time'), '2026-09-11T05:44:22.000')
+            self.assertTrue(all(result.status == 'WAITING' for result in snapshot.results))
+
     def test_rswmt_live_log_preserves_source_timestamp_precision_in_round_evidence(self):
         start = datetime(2026, 9, 11, 5, 44, 16)
         with tempfile.TemporaryDirectory() as temporary:
