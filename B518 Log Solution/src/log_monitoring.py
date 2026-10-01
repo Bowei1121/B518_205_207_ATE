@@ -8,14 +8,21 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
 
+from b482_source_adapter import (
+    B482ObservationKind,
+    B482SourceAdapter,
+    CASEINFO_FILE,
+    CASEINFO_TIMESTAMP,
+    parse_bt_csv,
+    parse_bt_filename,
+)
 from atlas_source_adapter import (
     AtlasObservationKind,
     AtlasSourceAdapter,
@@ -27,20 +34,9 @@ from monitoring_files import (
     file_signature,
     is_trusted_sn,
     normalise_sn,
-    read_csv_rows,
     snapshot_files,
 )
 
-BT_FILENAME = re.compile(
-    r"^\[Thread(?P<thread>[0-3])\]\[(?P<config>[^\]]*)\]\["
-    r"(?P<sn>[^\]]*)\]\[(?P<status>PASSED|FAILED)\]\["
-    r"(?P<stamp>\d{14})\]\.csv$",
-    re.IGNORECASE,
-)
-CASEINFO_FILE = re.compile(r"^thread(?P<thread>[1-4])CaseInfo_(?P<date>\d{4}-\d{2}-\d{2})\.txt$", re.I)
-CASEINFO_TIMESTAMP = re.compile(
-    r"(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2}(?:(?:\.|:)\d+)?)"
-)
 TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}
 DEFAULT_TIMEOUTS = {
     "DFU": {"start": 30, "test": 480},
@@ -67,44 +63,6 @@ class SlotResult:
     status: str = "WAITING"
     source: str = ""
     updated_at: str = ""
-
-
-def parse_bt_filename(path: Path) -> Optional[Dict[str, str]]:
-    match = BT_FILENAME.match(path.name)
-    if not match:
-        return None
-    result = {key: value or "" for key, value in match.groupdict().items()}
-    result["thread"] = str(int(result["thread"]))
-    return result
-
-
-def parse_bt_csv(path: Path) -> Optional[Dict[str, str]]:
-    name = parse_bt_filename(path)
-    if not name:
-        return None
-    folder_status = path.parent.name.upper()
-    if folder_status not in {"PASSED", "FAILED"} or folder_status != name["status"].upper():
-        return None
-    rows = read_csv_rows(path)
-    values: Dict[str, str] = {}
-    for row in rows:
-        values.update({key.strip().lower(): value.strip() for key, value in row.items() if key})
-    csv_status = values.get("test pass/fail status", "").upper()
-    if csv_status and csv_status != name["status"].upper():
-        return None
-    csv_sn = normalise_sn(values.get("serialnumber", ""))
-    file_sn = normalise_sn(name["sn"])
-    if file_sn and csv_sn and file_sn != csv_sn:
-        return None
-    sn = file_sn or csv_sn
-    if not sn and name["status"].upper() == "FAILED":
-        state = "NOTEST"
-    elif sn:
-        state = "PASS" if name["status"].upper() == "PASSED" else "FAIL"
-    else:
-        return None
-    return {"slot": str(int(name["thread"]) + 1), "sn": sn, "status": state,
-            "stamp": name["stamp"], "source": str(path)}
 
 
 class SessionStore:
@@ -178,7 +136,8 @@ class BaseMonitor:
         if self.callback:
             self.callback(event)
 
-    def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "") -> None:
+    def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
+                   detail: Optional[Dict[str, str]] = None) -> None:
         if self.finished:
             return
         result = self.results[slot]
@@ -194,7 +153,8 @@ class BaseMonitor:
         result.status, result.source = status, source or result.source
         result.updated_at = self.now().isoformat(timespec="seconds")
         self.session.update_results(self.results.values())
-        self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status, source))
+        self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status,
+                               source, detail or {}))
 
     def _all_terminal(self) -> bool:
         return bool(self.results) and all(result.status in TERMINAL for result in self.results.values())
@@ -320,14 +280,13 @@ class BtLogMonitor(BaseMonitor):
         super().__init__("BT", {"testdata_root": str(testdata_root), "caseinfo_root": str(caseinfo_root or "")}, slots,
                          monotonic=monotonic, **kwargs)
         self.testdata_root, self.caseinfo_root = testdata_root, caseinfo_root
-        self.baseline = snapshot_files(testdata_root, ".csv")
+        self.source_adapter = B482SourceAdapter(
+            testdata_root, caseinfo_root, self.started, self.now, self.monotonic,
+        )
         self.begin_timeout_clock()
         self.batch_stamp = ""
-        self.seen_signature: Dict[str, Tuple[int, int, float]] = {}
         self.review_pending: Optional[Dict[str, object]] = None
         self.review_decisions: Dict[str, str] = {}
-        self._caseinfo_offsets: Dict[str, int] = {}
-        self._caseinfo_tails: Dict[str, str] = {}
 
     def resolve_review(self, choice: str) -> None:
         """Apply the one pending UI decision on the next polling pass.
@@ -343,126 +302,62 @@ class BtLogMonitor(BaseMonitor):
         self.emit(MonitorEvent("review_resolved", "BT 人工覆核：{}".format("接受" if choice.lower() == "accept" else "忽略"), source=path))
         self.review_pending = None
 
-    def _csv_candidates(self) -> Iterable[Path]:
-        if not self.testdata_root.is_dir():
-            return []
-        dates = {self.started.strftime("%Y-%m-%d"), self.now().strftime("%Y-%m-%d")}
-        return [path for date in dates for status in ("PASSED", "FAILED")
-                for path in (self.testdata_root / date / status).glob("*.csv") if path.is_file()]
-
-    def _stable(self, path: Path) -> bool:
-        try:
-            signature = file_signature(path)
-        except OSError:
-            return False
-        key = str(path.resolve())
-        previous = self.seen_signature.get(key)
-        now_seconds = self.monotonic()
-        self.seen_signature[key] = (signature[0], signature[1], previous[2] if previous and previous[:2] == signature else now_seconds)
-        return previous is not None and previous[:2] == signature and now_seconds - previous[2] >= 5.0
-
-    def _emit_caseinfo(self) -> None:
-        if not self.caseinfo_root or not self.caseinfo_root.is_dir():
-            return
-        threshold = self.started - timedelta(seconds=30)
-        for path in self.caseinfo_root.glob("thread*CaseInfo_*.txt"):
-            match = CASEINFO_FILE.match(path.name)
-            if not match:
-                continue
-            try:
-                content = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            key = str(path)
-            offset = self._caseinfo_offsets.get(key, 0)
-            if len(content) < offset:
-                offset = 0
-                self._caseinfo_tails.pop(key, None)
-            if offset >= len(content):
-                continue
-            chunk = self._caseinfo_tails.get(key, "") + content[offset:]
-            self._caseinfo_offsets[key] = len(content)
-            slot = int(match.group("thread"))
-            if slot not in self.results or self.results[slot].status in TERMINAL:
-                continue
-            events = list(CASEINFO_TIMESTAMP.finditer(chunk))
-            if not events:
-                self._caseinfo_tails[key] = chunk
-                continue
-            complete_last = bool(re.search(r"[\r\n]\s*$", chunk))
-            final_event = len(events) if complete_last else len(events) - 1
-            self._caseinfo_tails[key] = "" if complete_last else chunk[events[-1].start():]
-            for index, event in enumerate(events[:final_event]):
-                try:
-                    event_time = datetime.strptime(
-                        event.group("time")[:19].replace("/", "-"), "%Y-%m-%d %H:%M:%S",
-                    )
-                except ValueError:
-                    continue
-                if event_time < threshold:
-                    continue
-                end = events[index + 1].start() if index + 1 < len(events) else len(chunk)
-                message = chunk[event.end():end]
-                sn_match = re.search(r"(?:SNRead|SerialNumber|MLB_SN|PrimaryIdentity)\s*[:=]\s*([A-Za-z0-9_-]+)", message, re.I)
-                sn = normalise_sn(sn_match.group(1)) if sn_match and is_trusted_sn(sn_match.group(1)) else ""
-                fields = next(csv.reader([message.lstrip(" ,\r\n")]), [])
-                # CaseInfo CSV uses column 3 for the state-machine state and
-                # column 5 for the action.  Only ``...,--,SNRead,<barcode>``
-                # means that column 6 carries the physical material barcode.
-                if (not sn and len(fields) > 5 and fields[3].strip() == "--"
-                        and fields[4].strip().lower() == "snread"
-                        and is_trusted_sn(fields[5])):
-                    sn = normalise_sn(fields[5])
-                status = "COMPLETING" if re.search(r"CloseFixture|complete|finish", message, re.I) else "TESTING"
-                self.set_result(slot, status, sn, str(path))
-
     def poll_once(self) -> None:
-        self._emit_caseinfo()
-        threshold = self.started - timedelta(seconds=30)
-        for path in self._csv_candidates():
-            parsed = parse_bt_csv(path)
-            if not parsed:
-                continue
-            stamp_dt = datetime.strptime(parsed["stamp"], "%Y%m%d%H%M%S")
-            try:
-                changed = self.baseline.get(str(path.resolve())) != file_signature(path)
-            except OSError:
-                changed = False
-            if stamp_dt < threshold or not changed or not self._stable(path):
+        for observation in self.source_adapter.poll():
+            if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
+                if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
+                    continue
+                self.set_result(observation.slot, observation.status, observation.sn,
+                                observation.source, observation.evidence())
                 continue
             if not self.batch_stamp:
-                self.batch_stamp = parsed["stamp"]
-                self.emit(MonitorEvent("batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=str(path)))
-            if parsed["stamp"] != self.batch_stamp:
-                decision = self.review_decisions.get(str(path))
+                self.batch_stamp = observation.batch_id
+                self.emit(MonitorEvent(
+                    "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                    detail=observation.evidence(),
+                ))
+            if observation.batch_id != self.batch_stamp:
+                decision = self.review_decisions.get(observation.source)
                 if decision == "reject":
                     continue
                 if decision == "accept":
-                    self.batch_stamp = parsed["stamp"]
+                    self.batch_stamp = observation.batch_id
                     for result_slot, result in self.results.items():
                         if result.status not in TERMINAL:
                             self.set_result(result_slot, "WAITING", "")
-                    self.emit(MonitorEvent("batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=str(path)))
+                    self.emit(MonitorEvent(
+                        "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
+                        detail=observation.evidence(),
+                    ))
                 else:
                     if self.review_pending is None:
-                        self.review_pending = {"kind": "batch", "path": str(path), "stamp": parsed["stamp"], "locked": self.batch_stamp}
-                        self.emit(MonitorEvent("review", "BT 偵測批次衝突，等待人工覆核", source=str(path), detail=self.review_pending))
+                        self.review_pending = {
+                            "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
+                            "locked": self.batch_stamp,
+                        }
+                        self.emit(MonitorEvent(
+                            "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
+                            detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
+                                    "source_id": observation.source_id},
+                        ))
                     continue
-            slot = int(parsed["slot"])
+            slot = observation.slot
             if slot not in self.results:
                 continue
             current = self.results[slot]
-            if current.status in TERMINAL and current.source != parsed["source"]:
-                decision = self.review_decisions.get(str(path))
+            if current.status in TERMINAL and current.source != observation.source:
+                decision = self.review_decisions.get(observation.source)
                 if decision == "reject":
                     continue
                 if decision != "accept":
                     if self.review_pending is None:
-                        self.review_pending = {"kind": "duplicate", "path": str(path), "slot": slot,
-                                               "old": current.source, "new": str(path)}
-                        self.emit(MonitorEvent("review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
-                                               source=str(path), detail=self.review_pending))
+                        self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
+                                               "old": current.source, "new": observation.source}
+                        self.emit(MonitorEvent(
+                            "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
+                            source=observation.source, detail=observation.evidence(),
+                        ))
                     continue
-            self.set_result(slot, parsed["status"], parsed["sn"], parsed["source"])
+            self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())
         self.check_timeouts()
         self.complete_if_stable()
