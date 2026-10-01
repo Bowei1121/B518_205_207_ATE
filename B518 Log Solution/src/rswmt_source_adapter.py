@@ -32,12 +32,14 @@ class RsWmtRecord:
     stopped: datetime
     source: str
     source_kind: str
+    batch_time: Optional[datetime] = None
 
     def evidence(self):
         """Return only timestamps and source types present in the source."""
+        precision = "milliseconds" if self.source_kind == "live_log" else "seconds"
         return {
-            "source_time": self.stopped.isoformat(timespec="seconds"),
-            "batch_evidence": self.started.isoformat(timespec="seconds"),
+            "source_time": self.stopped.isoformat(timespec=precision),
+            "batch_evidence": (self.batch_time or self.started).isoformat(timespec=precision),
             "source_kind": self.source_kind,
         }
 
@@ -135,7 +137,7 @@ def parse_rswmt_log(text, source):
     closing = any(line == "STATE:TestRunner Add-in 'shutdown'..." for _, line in records)
     return RsWmtRecord(next(iter(slots)), next(iter(sns), ''),
                        'COMPLETING' if closing else 'TESTING', starts[0].replace(microsecond=0),
-                       records[-1][0], str(source), "live_log")
+                       records[-1][0], str(source), "live_log", starts[0])
 
 
 class RsWmtSourceAdapter:

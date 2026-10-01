@@ -29,6 +29,34 @@ class FakeMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_rswmt_live_log_preserves_source_timestamp_precision_in_round_evidence(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1,), callback=callback,
+                now=lambda: start + timedelta(seconds=20), monotonic=lambda: 20.0,
+                session_root=root / 'sessions',
+            ), run_async=False)
+            (output / 'live.log').write_text(
+                "2026-09-11 05:44:16,688 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:16,793 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_1", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:27,462 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000001 05 5B\n'
+                '2026-09-11 05:44:28,401 PASS:TestRunner Item complete.\n',
+                encoding='utf-8',
+            )
+
+            rounds.monitor.poll_once()
+            result_event = next(event.event for event in rounds.snapshot().events
+                                if event.event.status == 'TESTING')
+
+            self.assertEqual(result_event.detail.get('source_time'), '2026-09-11T05:44:28.401')
+            self.assertEqual(result_event.detail.get('batch_evidence'), '2026-09-11T05:44:16.688')
+
     def test_rswmt_final_only_source_delivers_final_evidence_through_round_interface(self):
         start = datetime(2026, 9, 11, 5, 44, 16)
         elapsed = [0.0]
