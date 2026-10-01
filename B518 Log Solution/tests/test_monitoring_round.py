@@ -1,7 +1,13 @@
+import csv
+import io
+import tempfile
 import unittest
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from log_monitoring import MonitorEvent, SlotResult
 from monitoring_round import RoundCoordinator
+from rswmt_monitoring import RsWmtLogMonitor
 
 
 class FakeMonitor:
@@ -23,6 +29,144 @@ class FakeMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_ambiguous_rswmt_log_retains_candidate_evidence_without_selecting_a_round(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1, 2, 3, 4), callback=callback,
+                now=lambda: start + timedelta(seconds=20), monotonic=lambda: 20.0,
+                session_root=root / 'sessions',
+            ), run_async=False)
+            (output / 'ambiguous.log').write_text(
+                "2026-09-11 05:44:16,688 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:16,793 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_1", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:20,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000001 05 5B\n'
+                '2026-09-11 05:44:21,000 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_2", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:22,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000002 05 5B\n',
+                encoding='utf-8',
+            )
+
+            rounds.monitor.poll_once()
+            snapshot = rounds.snapshot()
+            review = next(event.event for event in snapshot.events if event.event.kind == 'warning')
+
+            self.assertEqual(review.source, str(output / 'ambiguous.log'))
+            self.assertEqual(review.detail.get('source_slots'), '1,2')
+            self.assertEqual(review.detail.get('source_sns'), 'SERIAL000001,SERIAL000002')
+            self.assertEqual(review.detail.get('batch_candidates'), '2026-09-11T05:44:16.688')
+            self.assertEqual(review.detail.get('source_time'), '2026-09-11T05:44:22.000')
+            self.assertTrue(all(result.status == 'WAITING' for result in snapshot.results))
+
+            unbound = output / 'unbound.log'
+            unbound.write_text(
+                '2026-09-11 05:44:23,000 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_3", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:24,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000003 05 5B\n',
+                encoding='utf-8',
+            )
+            rounds.monitor.poll_once()
+            unbound_warning = next(event.event for event in rounds.snapshot().events
+                                   if event.event.kind == 'warning' and event.event.source == str(unbound))
+
+            self.assertEqual(unbound_warning.detail.get('source_slots'), '3')
+            self.assertEqual(unbound_warning.detail.get('source_sns'), 'SERIAL000003')
+            self.assertEqual(unbound_warning.detail.get('source_time'), '2026-09-11T05:44:24.000')
+            self.assertNotIn('batch_candidates', unbound_warning.detail)
+            self.assertTrue(all(result.status == 'WAITING' for result in rounds.snapshot().results))
+
+            partial = output / 'partial-evidence.log'
+            partial.write_text(
+                "2026-09-11 05:44:25,000 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:26,123 PASS:TestRunner Item complete.\n',
+                encoding='utf-8',
+            )
+            rounds.monitor.poll_once()
+            partial_warning = next(event.event for event in rounds.snapshot().events
+                                   if event.event.kind == 'warning' and event.event.source == str(partial))
+
+            self.assertEqual(partial_warning.detail.get('source_time'), '2026-09-11T05:44:26.123')
+            self.assertEqual(partial_warning.detail.get('batch_candidates'), '2026-09-11T05:44:25.000')
+            self.assertNotIn('source_slots', partial_warning.detail)
+            self.assertNotIn('source_sns', partial_warning.detail)
+            self.assertTrue(all(result.status == 'WAITING' for result in rounds.snapshot().results))
+
+    def test_rswmt_live_log_preserves_source_timestamp_precision_in_round_evidence(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1,), callback=callback,
+                now=lambda: start + timedelta(seconds=20), monotonic=lambda: 20.0,
+                session_root=root / 'sessions',
+            ), run_async=False)
+            (output / 'live.log').write_text(
+                "2026-09-11 05:44:16,688 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:16,793 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_1", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:27,462 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000001 05 5B\n'
+                '2026-09-11 05:44:28,401 PASS:TestRunner Item complete.\n',
+                encoding='utf-8',
+            )
+
+            rounds.monitor.poll_once()
+            result_event = next(event.event for event in rounds.snapshot().events
+                                if event.event.status == 'TESTING')
+
+            self.assertEqual(result_event.detail.get('source_time'), '2026-09-11T05:44:28.401')
+            self.assertEqual(result_event.detail.get('batch_evidence'), '2026-09-11T05:44:16.688')
+
+    def test_rswmt_final_only_source_delivers_final_evidence_through_round_interface(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        elapsed = [0.0]
+        headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
+                   'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
+                   'tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None:pwr=None;']
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1,), callback=callback,
+                now=lambda: start + timedelta(seconds=elapsed[0]), monotonic=lambda: elapsed[0],
+                session_root=root / 'sessions',
+            ), run_async=False)
+
+            result_dir = output / '2026-09-11_05-45-44'
+            result_dir.mkdir()
+            result = io.StringIO()
+            writer = csv.writer(result)
+            writer.writerow(['Overlay', 'SmtCal'] + [''] * 6)
+            writer.writerow(headers)
+            writer.writerow(['SERIAL000001', 'Pass', '[]', '', '2026/11/09 05:44:16',
+                             '2026/11/09 05:45:44', 'B518', '1'])
+            source = result_dir / 'SERIAL000001_2026-09-11_05-45-44.csv'
+            source.write_text(result.getvalue(), encoding='utf-8')
+
+            monitor = rounds.monitor
+            elapsed[0] = 88.0
+            monitor.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, 'COMPLETING')
+            self.assertFalse(any(event.event.status == 'TESTING' for event in rounds.events_since()))
+            elapsed[0] = 93.0
+            monitor.poll_once()
+
+            snapshot = rounds.snapshot()
+            self.assertEqual(snapshot.results[0].status, 'PASS')
+            final = [event.event for event in snapshot.events if event.event.status == 'PASS'][-1]
+            self.assertEqual(final.source, str(source))
+            self.assertEqual(final.detail.get('source_time'), '2026-09-11T05:45:44')
+            self.assertEqual(final.detail.get('batch_evidence'), '2026-09-11T05:44:16')
+
     def test_repeated_start_while_running_keeps_the_same_round(self):
         monitors = []
 

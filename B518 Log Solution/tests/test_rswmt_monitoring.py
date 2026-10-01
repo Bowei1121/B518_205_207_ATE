@@ -135,7 +135,8 @@ class RsWmtTests(unittest.TestCase):
         path.write_text(text[:50])
         monitor.poll_once()
         self.assertEqual(monitor.results[1].status, 'WAITING')
-        path.write_text(text)
+        with path.open('a') as handle:
+            handle.write(text[50:])
         self.write_result()
         monitor.poll_once()
         self.assertEqual(monitor.results[1].sn, 'TESTSERIAL0001')
