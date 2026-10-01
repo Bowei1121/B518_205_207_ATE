@@ -34,6 +34,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         testdata, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
         caseinfo.mkdir()
         path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
+        rounds = self.start_round(testdata, caseinfo)
         path.write_text(
             "2026-08-21 15:19:54:160, 4,InitResource,SNRead,--,SNRead,"
             "HK5HVH6ZSB300003YV,NA,NA,NA,Passed,9.50\r\n"
@@ -41,7 +42,6 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
             "WRONGSERIAL123,NA,NA,NA,Passed,0.00\r\n",
             encoding="utf-8",
         )
-        rounds = self.start_round(testdata, caseinfo)
 
         rounds.monitor.poll_once()
         snapshot = rounds.snapshot()
@@ -58,8 +58,8 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         caseinfo.mkdir()
         path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
         prefix = "2026-08-21 15:19:54:160, 4,InitResource,SNRead,--,SNRead,HK5HVH6ZF4U00003YV"
-        path.write_text(prefix, encoding="utf-8")
         rounds = self.start_round(testdata, caseinfo)
+        path.write_text(prefix, encoding="utf-8")
 
         rounds.monitor.poll_once()
         self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
@@ -111,6 +111,31 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         rounds.monitor.poll_once()
 
         self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
+
+    def test_caseinfo_content_present_at_round_start_is_ignored_until_new_line_is_appended(self):
+        testdata, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
+        caseinfo.mkdir()
+        path = caseinfo / "thread1CaseInfo_2026-08-22.txt"
+        path.write_text(
+            "2026-08-21 15:19:54:160, 4,InitResource,SNRead,--,SNRead,"
+            "HISTORICALSN0001,NA,NA,NA,Passed,9.50\r\n",
+            encoding="utf-8",
+        )
+        rounds = self.start_round(testdata, caseinfo)
+
+        rounds.monitor.poll_once()
+        self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
+
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                "2026-08-21 15:19:55:160, 5,TestFlow,SNRead,--,SNRead,"
+                "HK5HVH6ZF4U00003YV,NA,NA,NA,Passed,9.50\r\n"
+            )
+        rounds.monitor.poll_once()
+
+        result = rounds.snapshot().results[0]
+        self.assertEqual(result.status, "TESTING")
+        self.assertEqual(result.sn, "HK5HVH6ZF4U00003YV")
 
 
 if __name__ == "__main__":

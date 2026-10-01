@@ -138,8 +138,21 @@ class B482SourceAdapter:
         self.monotonic = monotonic
         self._baseline = snapshot_files(testdata_root, ".csv")
         self._seen_signatures: Dict[str, Tuple[int, int, float]] = {}
-        self._caseinfo_offsets: Dict[str, int] = {}
+        self._caseinfo_offsets = self._snapshot_caseinfo_offsets()
         self._caseinfo_tails: Dict[str, str] = {}
+
+    def _snapshot_caseinfo_offsets(self) -> Dict[str, int]:
+        if not self.caseinfo_root or not self.caseinfo_root.is_dir():
+            return {}
+        offsets = {}
+        for path in self.caseinfo_root.glob("thread*CaseInfo_*.txt"):
+            if not CASEINFO_FILE.fullmatch(path.name):
+                continue
+            try:
+                offsets[str(path)] = path.stat().st_size
+            except OSError:
+                continue
+        return offsets
 
     def poll(self) -> Tuple[B482Observation, ...]:
         return tuple(self._caseinfo_observations() + self._testdata_observations())
@@ -208,8 +221,10 @@ class B482SourceAdapter:
             key = str(path)
             offset = self._caseinfo_offsets.get(key, 0)
             if len(content) < offset:
-                offset = 0
+                offset = len(content)
                 self._caseinfo_tails.pop(key, None)
+                self._caseinfo_offsets[key] = offset
+                continue
             if offset >= len(content):
                 continue
             chunk = self._caseinfo_tails.get(key, "") + content[offset:]
