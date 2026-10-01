@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="${0:A:h}"
+ROOT="${0:A:h:h}"
 cd "$ROOT"
 
 [[ "$(uname -m)" == "arm64" ]] || { print -u2 'Requires an Apple Silicon arm64 builder.'; exit 1; }
@@ -15,8 +15,8 @@ export MACOSX_DEPLOYMENT_TARGET=26.0 CMAKE_OSX_DEPLOYMENT_TARGET=26.0 CMAKE_OSX_
 VENV=.venv-macos26-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
-"$VENV/bin/python" -m pip install -r requirements-macos15-arm64.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_rswmt_monitoring.py
+"$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
+"$VENV/bin/python" scripts/run_tests.py
 
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
@@ -33,7 +33,7 @@ BUILD=build-macos26-arm64
 rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
-  --distpath "$DIST" --workpath "$BUILD" b518_log_solution.py
+  --distpath "$DIST" --workpath "$BUILD" --paths src --add-data "assets:assets" src/b518_log_solution.py
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"

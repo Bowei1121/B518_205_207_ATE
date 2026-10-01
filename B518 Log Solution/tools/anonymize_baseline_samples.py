@@ -7,6 +7,10 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+# Allow direct CLI execution from any working directory.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from log_monitoring import (
     CASEINFO_FILE,
     is_trusted_sn,

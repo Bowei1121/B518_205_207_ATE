@@ -14,6 +14,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Allow direct CLI execution from any working directory.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from log_monitoring import (
     AtlasActiveArchiveMonitor,
     BtLogMonitor,

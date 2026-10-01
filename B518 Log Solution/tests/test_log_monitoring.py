@@ -292,7 +292,7 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertFalse(monitor.finished)
 
     def test_log_solution_never_imports_control_dependencies(self):
-        base = Path(__file__).parent
+        base = Path(__file__).resolve().parents[1] / "src"
         content = "".join((base / name).read_text() for name in (
             "log_monitoring.py", "b518_log_solution.py", "global_hotkey.py",
         ))

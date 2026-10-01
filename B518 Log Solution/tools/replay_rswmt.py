@@ -11,6 +11,10 @@ from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
 
+# Allow direct CLI execution from any working directory.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor, parse_rswmt_csv
 

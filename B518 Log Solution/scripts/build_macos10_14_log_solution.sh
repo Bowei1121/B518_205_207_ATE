@@ -1,6 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
-ROOT="${0:A:h}"
+ROOT="${0:A:h:h}"
 cd "$ROOT"
 [[ "$(uname -m)" == "x86_64" ]] || { print -u2 'Requires an Intel x86_64 builder.'; exit 1; }
 [[ "$(sw_vers -productVersion)" == 10.15.* ]] || { print -u2 'Requires macOS 10.15.x Catalina VM.'; exit 1; }
@@ -10,8 +10,8 @@ export MACOSX_DEPLOYMENT_TARGET=10.14 CMAKE_OSX_DEPLOYMENT_TARGET=10.14 CMAKE_OS
 VENV=.venv-macos10.14-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
-"$VENV/bin/python" -m pip install -r requirements-macos10.14-common.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_rswmt_monitoring.py
+"$VENV/bin/python" -m pip install -r requirements/requirements-macos10.14-common.txt
+"$VENV/bin/python" scripts/run_tests.py
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
 parts = [int(v) for v in Path('VERSION').read_text().strip().split('.')]
@@ -23,7 +23,7 @@ PY
 )"
 DIST=dist-macos10.14-common BUILD=build-macos10.14-common
 rm -rf "$DIST" "$BUILD"
-"$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture x86_64 --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution --distpath "$DIST" --workpath "$BUILD" b518_log_solution.py
+"$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture x86_64 --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution --distpath "$DIST" --workpath "$BUILD" --paths src --add-data "assets:assets" src/b518_log_solution.py
 APP="$DIST/B518 Log Solution.app"; PLIST="$APP/Contents/Info.plist"
 for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LSMinimumSystemVersion 10.14"; do
   key=${pair%% *}; value=${pair#* }

@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="${0:A:h}"
+ROOT="${0:A:h:h}"
 cd "$ROOT"
 
 [[ "$(uname -m)" == "arm64" ]] || { print -u2 'Requires an Apple Silicon arm64 builder.'; exit 1; }
@@ -13,16 +13,16 @@ OS_MAJOR="${OS_VERSION%%.*}"
 
 PYTHON_BIN="${PYTHON_BIN:-/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN (install Python.org 3.12.10 universal2 or set PYTHON_BIN)"; exit 1; }
-"$PYTHON_BIN" check_macos_build_python.py
+"$PYTHON_BIN" scripts/check_macos_build_python.py
 
 export MACOSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_ARCHITECTURES=arm64
 
 VENV=.venv-macos15_0-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
-"$VENV/bin/python" check_macos_build_python.py
+"$VENV/bin/python" scripts/check_macos_build_python.py
 "$VENV/bin/python" -m pip install --upgrade pip
-"$VENV/bin/python" -m pip install -r requirements-macos15-arm64.txt
-"$VENV/bin/python" -m unittest -v test_log_monitoring.py test_log_solution_ui.py test_verify_macos_bundle.py test_rswmt_monitoring.py
+"$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
+"$VENV/bin/python" scripts/run_tests.py
 
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
@@ -39,7 +39,7 @@ BUILD=build-macos15_0-arm64
 rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
-  --distpath "$DIST" --workpath "$BUILD" b518_log_solution.py
+  --distpath "$DIST" --workpath "$BUILD" --paths src --add-data "assets:assets" src/b518_log_solution.py
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"
@@ -50,7 +50,7 @@ for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LS
     /usr/libexec/PlistBuddy -c "Add :$key string $value" "$PLIST"
 done
 
-"$VENV/bin/python" verify_macos_bundle.py "$APP" --target 15.0
+"$VENV/bin/python" scripts/verify_macos_bundle.py "$APP" --target 15.0
 
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"

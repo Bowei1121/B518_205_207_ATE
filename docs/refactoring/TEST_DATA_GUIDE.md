@@ -36,7 +36,7 @@
 在專案的 `B518 Log Solution` 程式目錄執行：
 
 ```zsh
-python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE Test doc"
+python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE Test doc"
 ```
 
 將最後參數替換為實際資料根目錄。CaseInfo 有多個完整日期時須明確指定 `--caseinfo-date`；B518 BT 若增加多組候選資料夾，須另以 `--rswmt-run` 指定該資料夾名稱，不默認取最新或第一筆。

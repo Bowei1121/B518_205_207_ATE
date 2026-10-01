@@ -59,7 +59,7 @@ real FAIL and live-update samples are still needed for station acceptance.
 ## Build owner
 
 On a native M4 builder (macOS 15 or later), install Python.org 3.12.10 universal2,
-then run `./build_macos15_arm64_log_solution.sh` from the application source folder.
+then run `./scripts/build_macos15_arm64_log_solution.sh` from the application source folder.
 It uses a dedicated environment and checks every bundled arm64 binary against
 macOS 15.0 before signing/creating the ZIP and SHA-256 file. Open the packaged app
 on the builder, then test it on 15.4.1. Supporting the entire 15.x range also requires

@@ -6,16 +6,16 @@
 
 ```zsh
 cd "B518 Log Solution"
-python3 b518_log_solution.py
+python3 src/b518_log_solution.py
 ```
 
 ## 建置安裝包
 
-舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./build_macos10_14_log_solution.sh`。
+舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./scripts/build_macos10_14_log_solution.sh`。
 
-M4／macOS 26.5.2 建置給美國 M4／macOS 15.4.1 使用時（最低目標為 15.0，涵蓋 15.x），先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_0-arm64/B518-Log-Solution-V版本號-macOS15.0-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.4.1 實機驗證，並在支援 15.0 的硬體驗證最低版本，目標機不需另外安裝 Python。
+M4／macOS 26.5.2 建置給美國 M4／macOS 15.4.1 使用時（最低目標為 15.0，涵蓋 15.x），先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./scripts/build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_0-arm64/B518-Log-Solution-V版本號-macOS15.0-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.4.1 實機驗證，並在支援 15.0 的硬體驗證最低版本，目標機不需另外安裝 Python。
 
-`./build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.0 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
+`./scripts/build_macos26_arm64_log_solution.sh` 仍供 macOS 26.x 測試機使用，最低系統版本為 26.0，產物不能在 15.0 啟動。所有建置腳本均會執行測試、遞增 `VERSION`、以 ad-hoc 簽章打包並輸出 SHA-256。
 
 ### M4／15.0 候選產物驗證
 
@@ -23,13 +23,13 @@ Python.org 3.12.10 universal2 是本流程的初始建置環境，並非最新 P
 
 ```zsh
 cd "B518 Log Solution"
-./build_macos15_arm64_log_solution.sh
+./scripts/build_macos15_arm64_log_solution.sh
 open "dist-macos15_0-arm64/B518 Log Solution.app"
 ```
 
 建置須在登入桌面的 M4 上執行，完整核心、UI 與建置檢查測試任一失敗都會中止。建置後先在 26.5.2 確認 App 視窗正常開啟，再將 ZIP 與 SHA-256 檔交給目標機測試人員。
 
-`verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、每個 Mach-O 的 arm64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
+`scripts/verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、每個 Mach-O 的 arm64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
 
 目標 M4／macOS 15.4.1 不另外安裝 Python 或 Homebrew，解壓縮後逐項驗收並記錄版本號與結果：
 
@@ -96,7 +96,32 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 
 ```zsh
 # 在程式目錄執行；只讀原始檔，使用暫存目錄與對齊的模擬時鐘
-python3 replay_rswmt.py /完整路徑/2026-09-11_05-45-44
+python3 tools/replay_rswmt.py /完整路徑/2026-09-11_05-45-44
 ```
 
-美國同事可使用 [英文試用說明](RSWMT_US_PILOT.md)。建置候選 App 後需在 15.4.1 確認實際檔案更新時機、四個 DUT、Fail（含無 SN）、快捷鍵、前景顯示與逾時。
+美國同事可使用 [英文試用說明](docs/RSWMT_US_PILOT.md)。建置候選 App 後需在 15.4.1 確認實際檔案更新時機、四個 DUT、Fail（含無 SN）、快捷鍵、前景顯示與逾時。
+
+## 開發目錄與驗證
+
+以下指令由本 README 所在的應用程式資料夾執行：
+
+```zsh
+python3 src/b518_log_solution.py
+python3 scripts/run_tests.py
+python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/anonymized-baseline
+```
+
+| 目錄 | 內容 |
+| --- | --- |
+| `src/` | 桌面介面、監控核心、輪次與快捷鍵 |
+| `tests/` | 行為、介面與打包驗證測試 |
+| `tools/` | 樣本匿名化與回放 CLI |
+| `scripts/` | macOS 建置、環境檢查、bundle 檢查與測試入口 |
+| `requirements/` | 各目標平台建置依賴 |
+| `docs/` | 試用說明與 `images/` 截圖 |
+| `assets/` | App 使用的圖像資產 |
+| `testdata/` | 匿名化行為基準樣本 |
+
+指定測試可使用 `python3 scripts/run_tests.py test_monitoring_round`。完整測試包含 Tk 桌面測試，需可使用圖形介面的 macOS 工作階段。
+
+Git 根目錄位於上一層；技能設定見 [AGENTS.md](../AGENTS.md)，領域詞彙見 [CONTEXT.md](../CONTEXT.md)，架構決策與重構規格見 [docs](../docs/)。歷史摘要與 ticket 執行紀錄保留當時的檔案位置與命令；目前命令以本節為準。

@@ -7,12 +7,12 @@ Coverage includes one Atlas DFU archive record, one Atlas FCT archive record, on
 To regenerate the set, pass the read-only source directory and a new or empty output directory:
 
 ```zsh
-python3 anonymize_baseline_samples.py "/path/to/ATE Test doc" "/path/to/new/anonymized-baseline"
-python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/path/to/new/anonymized-baseline"
+python3 tools/anonymize_baseline_samples.py "/path/to/ATE Test doc" "/path/to/new/anonymized-baseline"
+python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 "/path/to/new/anonymized-baseline"
 ```
 
-To replay the checked-in set from this directory:
+To replay the checked-in set from the application root (the directory containing `src/`, `tools/`, and `testdata/`):
 
 ```zsh
-python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/anonymized-baseline
+python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/anonymized-baseline
 ```

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import subprocess
 import tkinter as tk
 from pathlib import Path
@@ -18,7 +19,7 @@ from rswmt_monitoring import RsWmtLogMonitor
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
 PREFS_PATH = APP_ROOT / "preferences.json"
-ASSETS_ROOT = Path(__file__).with_name("assets")
+ASSETS_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])) / "assets"
 COMPANY_LOGO_PATH = ASSETS_ROOT / "foxlink_logo.png"
 LIGHT_BACKGROUND = "#f3f4f6"
 FIELD_BACKGROUND = "#ffffff"
