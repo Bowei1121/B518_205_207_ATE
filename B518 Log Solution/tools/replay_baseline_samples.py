@@ -89,6 +89,9 @@ def replay_atlas_archive_sample(sample, source_root, station):
         clock["now"] += timedelta(seconds=1)
         clock["elapsed"] = 1.0
         monitor.poll_once()
+        # Atlas archives are only accepted after their file signature remains
+        # unchanged across consecutive polls.
+        monitor.poll_once()
 
         expected = records_status(sample)
         observed = rounds.snapshot().results[0].status

@@ -60,6 +60,8 @@ class LogMonitoringTests(unittest.TestCase):
         shutil.rmtree(active / "group0-slot1")
         write_records(final / "HK5HUX6STQ800003YV" / "20220618_2-29-01.374-X" / "system" / "records.csv", "HK5HUX6STQ800003YV", "FAIL")
         monitor.poll_once()
+        self.assertEqual(monitor.results[1].status, "COMPLETING")
+        monitor.poll_once()
         self.assertEqual(monitor.results[1].sn, "HK5HUX6STQ800003YV")
         self.assertEqual(monitor.results[1].status, "FAIL")
 
