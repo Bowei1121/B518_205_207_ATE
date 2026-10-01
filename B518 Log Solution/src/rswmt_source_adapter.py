@@ -188,6 +188,7 @@ class RsWmtSourceAdapter:
         self.csv_signatures: Dict[str, Tuple[Tuple[int, int], float]] = {}
         self.csv_candidates: Dict[str, Tuple[Tuple[int, int], bool]] = {}
         self.log_signatures: Dict[str, Tuple[int, int]] = {}
+        self.log_candidate_evidence: Dict[str, Dict[str, str]] = {}
         self.announced: Set[Tuple[str, str]] = set()
         self.batch_start: Optional[datetime] = None
 
@@ -260,20 +261,16 @@ class RsWmtSourceAdapter:
             record = parse_rswmt_log(text, path)
             if record is None:
                 evidence = rswmt_log_evidence(text)
-                multiple_candidates = any(
-                    len(evidence.get(field, "").split(",")) > 1
-                    for field in ("batch_candidates", "source_slots", "source_sns")
+                has_source_candidates = any(
+                    field in evidence for field in ("batch_candidates", "source_slots", "source_sns")
                 )
-                has_unbound_source = (
-                    ("source_slots" in evidence or "source_sns" in evidence)
-                    and "batch_candidates" not in evidence
-                )
-                if multiple_candidates or has_unbound_source:
+                if has_source_candidates and self.log_candidate_evidence.get(key) != evidence:
                     observations.append(RsWmtObservation(
                         "warning", str(path),
-                        message="RS-WMT: source round is ambiguous; evidence retained for review.",
+                        message="RS-WMT: source round is incomplete or ambiguous; evidence retained for review.",
                         evidence=evidence,
                     ))
+                    self.log_candidate_evidence[key] = evidence
                 continue
             batch_events = self._round_evidence(record)
             if batch_events is None:

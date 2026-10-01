@@ -80,6 +80,22 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertNotIn('batch_candidates', unbound_warning.detail)
             self.assertTrue(all(result.status == 'WAITING' for result in rounds.snapshot().results))
 
+            partial = output / 'partial-evidence.log'
+            partial.write_text(
+                "2026-09-11 05:44:25,000 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:26,123 PASS:TestRunner Item complete.\n',
+                encoding='utf-8',
+            )
+            rounds.monitor.poll_once()
+            partial_warning = next(event.event for event in rounds.snapshot().events
+                                   if event.event.kind == 'warning' and event.event.source == str(partial))
+
+            self.assertEqual(partial_warning.detail.get('source_time'), '2026-09-11T05:44:26.123')
+            self.assertEqual(partial_warning.detail.get('batch_candidates'), '2026-09-11T05:44:25.000')
+            self.assertNotIn('source_slots', partial_warning.detail)
+            self.assertNotIn('source_sns', partial_warning.detail)
+            self.assertTrue(all(result.status == 'WAITING' for result in rounds.snapshot().results))
+
     def test_rswmt_live_log_preserves_source_timestamp_precision_in_round_evidence(self):
         start = datetime(2026, 9, 11, 5, 44, 16)
         with tempfile.TemporaryDirectory() as temporary:
