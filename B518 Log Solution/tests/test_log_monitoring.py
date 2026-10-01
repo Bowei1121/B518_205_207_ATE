@@ -247,7 +247,7 @@ class LogMonitoringTests(unittest.TestCase):
         clock[0] = 30.0
         monitor.poll_once()
         self.assertTrue(monitor.finished)
-        self.assertEqual([monitor.results[slot].status for slot in (1, 2)], ["TIMEOUT", "TIMEOUT"])
+        self.assertEqual([monitor.results[slot].status for slot in (1, 2)], ["NOTEST", "NOTEST"])
         self.assertEqual(events[-1].kind, "timeout")
         self.assertIn("未進入測試", events[-1].message)
 

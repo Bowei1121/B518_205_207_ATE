@@ -226,7 +226,7 @@ class BaseMonitor:
         elif kind == "start":
             for slot, result in self.results.items():
                 if result.status not in TERMINAL:
-                    self.set_result(slot, "TIMEOUT")
+                    self.set_result(slot, "NOTEST")
             message = "{} 未進入測試逾時：{} 秒（經過 {} 秒）".format(
                 self.station, self.start_timeout_seconds, int(elapsed),
             )
