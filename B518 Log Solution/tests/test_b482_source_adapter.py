@@ -95,6 +95,41 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         self.assertEqual(event.detail["batch_id"], "20260821151940")
         self.assertEqual(event.detail["batch_evidence"], "thread=0;config=cfg")
 
+    def test_testdata_threads_keep_their_established_round_positions(self):
+        testdata = self.temp / "TestData"
+        testdata.mkdir()
+        clock = [0.0]
+        rounds = self.start_round(testdata, monotonic=lambda: clock[0])
+        samples = (
+            (0, "PASSED", "SAMPLE00000001"),
+            (1, "FAILED", "SAMPLE00000002"),
+            (2, "FAILED", ""),
+            (3, "PASSED", "SAMPLE00000004"),
+        )
+        for thread, folder_status, sn in samples:
+            name = "[Thread{}][cfg][{}][{}][20260821151940].csv".format(
+                thread, sn, folder_status,
+            )
+            path = testdata / "2026-08-21" / folder_status / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "SerialNumber,Unit Number,Test Pass/Fail Status,StartTime,EndTime\n"
+                "{},{},{},start,end\n".format(sn, thread, folder_status),
+                encoding="utf-8",
+            )
+
+        rounds.monitor.poll_once()
+        clock[0] = 5.1
+        rounds.monitor.poll_once()
+
+        results = rounds.snapshot().results
+        self.assertEqual([(item.slot, item.sn, item.status) for item in results], [
+            (1, "SAMPLE00000001", "PASS"),
+            (2, "SAMPLE00000002", "FAIL"),
+            (3, "", "NOTEST"),
+            (4, "SAMPLE00000004", "PASS"),
+        ])
+
     def test_testdata_present_at_round_start_is_not_used_as_this_round_result(self):
         testdata = self.temp / "TestData"
         result = testdata / "2026-08-21" / "PASSED" / (
