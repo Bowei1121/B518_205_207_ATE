@@ -1,7 +1,11 @@
+import csv
+import io
 import json
 import queue
 import tkinter as tk
+import time
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from tkinter import ttk
@@ -30,6 +34,72 @@ class FakeHotkey:
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def test_app_completes_rswmt_final_only_round_through_shared_entry(self):
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "output" / "SmtCal"
+            output.mkdir(parents=True)
+            app = object.__new__(B518LogSolutionApp)
+            app.root = MagicMock()
+            app.events = queue.Queue()
+            app.rounds = RoundCoordinator(app.events.put)
+            app.active_round_id = None
+            app.monitor = None
+            app.station = SimpleNamespace(get=lambda: "BT")
+            app.bt_format = SimpleNamespace(get=lambda: "B518 RS-WMT")
+            app.paths = {name: {
+                "active": SimpleNamespace(get=lambda: ""),
+                "final": SimpleNamespace(get=lambda: str(output)),
+                "caseinfo": SimpleNamespace(get=lambda: ""),
+            } for name in ("DFU", "FCT", "BT")}
+            app.timeouts = {name: {
+                "start": SimpleNamespace(get=lambda: "240"),
+                "test": SimpleNamespace(get=lambda: "480"),
+            } for name in ("DFU", "FCT", "BT")}
+            app.start_button = MagicMock()
+            app.monitor_state = MagicMock()
+            app.event_lines = []
+            app.settings_log = None
+            app._save_preferences = MagicMock()
+            app._reset_rows = MagicMock()
+            app._set_monitor_controls = MagicMock()
+
+            with patch("log_monitoring.SessionStore"):
+                app.start_monitor()
+                monitor = app.rounds.monitor
+                start = monitor.started.replace(microsecond=0)
+                stop = start + timedelta(seconds=5)
+                headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
+                           'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
+                           'tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None:pwr=None;']
+                for slot in range(1, 5):
+                    name = "SERIAL{:06d}".format(slot)
+                    result_dir = output / stop.strftime("%Y-%m-%d_%H-%M-%S")
+                    result_dir.mkdir(exist_ok=True)
+                    content = io.StringIO()
+                    writer = csv.writer(content)
+                    writer.writerow(["Overlay", "SmtCal"] + [""] * 6)
+                    writer.writerow(headers)
+                    writer.writerow([name, "Pass", "[]", "", start.strftime("%Y/%d/%m %H:%M:%S"),
+                                     stop.strftime("%Y/%d/%m %H:%M:%S"), "B518", slot])
+                    (result_dir / (name + "_" + stop.strftime("%Y-%m-%d_%H-%M-%S") + ".csv")).write_text(
+                        content.getvalue(), encoding="utf-8",
+                    )
+
+                deadline = time.monotonic() + 12
+                while time.monotonic() < deadline:
+                    snapshot = app.rounds.snapshot()
+                    if snapshot.result_available:
+                        break
+                    time.sleep(0.1)
+                else:
+                    app.rounds.stop()
+                    self.fail("RS-WMT final-only files did not complete the App round")
+
+            snapshot = app.rounds.snapshot()
+            self.assertEqual(snapshot.station, "BT")
+            self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
+            self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
+
     def test_station_specific_slot_counts_and_heights(self):
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
