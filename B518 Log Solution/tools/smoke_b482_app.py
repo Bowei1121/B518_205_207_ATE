@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import tkinter as tk
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -52,9 +53,13 @@ def main():
             testdata.mkdir()
             root = tk.Tk()
             app = B518LogSolutionApp(root, hotkey_factory=LocalHotkey)
+            app.project.set("B482")
             app.station.set("BT")
-            app.bt_format.set("B482 TestData")
-            app.paths["BT"]["final"].set(str(testdata))
+            profile = app.profiles.get("B482", "BT")
+            paths = dict(profile.paths)
+            paths["final"] = str(testdata)
+            app.profiles = app.profiles.with_profile(replace(profile, paths=paths))
+            app._load_selected_profile_values()
             root.deiconify()
             root.update()
             try:

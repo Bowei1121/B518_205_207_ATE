@@ -57,6 +57,9 @@ class RsWmtLogMonitor(BaseMonitor):
     def poll_once(self) -> None:
         if self.finished or self._stop.is_set():
             return
+        self.check_round_timeout()
+        if self.finished or self._stop.is_set():
+            return
         for observation in self.source_adapter.poll():
             if observation.kind == 'warning':
                 evidence = observation.evidence

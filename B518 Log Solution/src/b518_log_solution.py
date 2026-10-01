@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import json
+import os
 import queue
 import sys
 import subprocess
+import time
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, Optional
@@ -14,6 +16,10 @@ from typing import Dict, Optional
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
+from configured_monitor import ConfiguredMonitor
+from machine_profiles import (
+    MachineProfile, MachineProfileStore, ProfileError,
+)
 from rswmt_monitoring import RsWmtLogMonitor
 
 
@@ -26,7 +32,7 @@ FIELD_BACKGROUND = "#ffffff"
 TEXT_COLOUR = "#111827"
 MUTED_TEXT_COLOUR = "#555555"
 STATION_SLOTS = {"DFU": 7, "FCT": 6, "BT": 4}
-WINDOW_HEIGHTS = {"DFU": 612, "FCT": 565, "BT": 471}
+WINDOW_HEIGHTS = {"DFU": 642, "FCT": 595, "BT": 501}
 WINDOW_WIDTH = 360
 MAIN_FONT_SIZE = 14
 ROW_HEIGHT = 46
@@ -69,7 +75,7 @@ def configured_directory(value: str) -> Optional[Path]:
         return None
     path = Path(text).expanduser()
     try:
-        return path if path.is_dir() else None
+        return path if path.is_dir() and os.access(str(path), os.R_OK | os.X_OK) else None
     except OSError:
         return None
 
@@ -84,15 +90,20 @@ class B518LogSolutionApp:
         self.rounds = RoundCoordinator(self.events.put)
         self.active_round_id: Optional[str] = None
         self.monitor = None
-        self.prefs = self._load_preferences()
-        self.station = tk.StringVar(value=self.prefs.get("station", "FCT"))
-        self.bt_format = tk.StringVar(value=self.prefs.get("bt_format", "B482 TestData"))
+        self.prefs = {}
+        self.profile_store = MachineProfileStore(PREFS_PATH)
+        self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
+        self.project = tk.StringVar(value=selected_project)
+        self.station = tk.StringVar(value=selected_machine)
+        self.bt_format = tk.StringVar(value="B518 RS-WMT" if self._profile_platform() == "rswmt"
+                                      else "B482 TestData")
         self.paths = {name: {field: tk.StringVar(value=self.prefs.get("paths", {}).get(name, {}).get(field, ""))
                              for field in ("active", "final", "caseinfo")}
                       for name in STATION_SLOTS}
         self.timeouts = {name: {field: tk.StringVar(value=str(self._stored_timeout(name, field)))
-                                for field in ("start", "test")}
+                                for field in ("start", "test", "round")}
                          for name in STATION_SLOTS}
+        self._load_selected_profile_values()
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
         self.template_labels: Dict[str, tk.Label] = {}
         self.kvm_result_blocks: Dict[int, tk.Label] = {}
@@ -167,6 +178,19 @@ class B518LogSolutionApp:
         self.monitor_state = tk.Label(header, background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.monitor_state.pack(side="right")
+
+        selection = tk.Frame(body, background=LIGHT_BACKGROUND)
+        selection.pack(fill="x", pady=(4, 3))
+        ttk.Label(selection, text="專案").pack(side="left")
+        self.project_choice = ttk.Combobox(selection, textvariable=self.project, state="readonly", width=10,
+                                           values=self.profiles.projects)
+        self.project_choice.pack(side="left", padx=(5, 12))
+        self.project_choice.bind("<<ComboboxSelected>>", self._project_changed)
+        ttk.Label(selection, text="機型").pack(side="left")
+        self.machine_choice = ttk.Combobox(selection, textvariable=self.station, state="readonly", width=8)
+        self.machine_choice.pack(side="left", padx=(5, 0))
+        self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
+        self._refresh_machine_choices()
 
         kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=48)
         kvm_results.pack(fill="x", pady=(2, 4))
@@ -246,7 +270,10 @@ class B518LogSolutionApp:
             child.destroy()
         self.status_rows = {}
         station = self.station.get().upper()
-        row_count = slot_count(station)
+        try:
+            row_count = self._selected_profile().capacity
+        except (AttributeError, ProfileError):
+            row_count = slot_count(station)
         self.rows_box.configure(height=row_count * (ROW_HEIGHT + ROW_GAP) - ROW_GAP)
         self.station_title.configure(text="{} Log 監控".format(station))
         self.monitor_state.configure(text="監控中" if self.monitor else "待命")
@@ -274,14 +301,52 @@ class B518LogSolutionApp:
         x = max(self.root.winfo_screenwidth() - width - 12, 0)
         self.root.geometry("{}x{}+{}+32".format(width, height, x))
 
-    def _load_preferences(self) -> dict:
+    def _selected_profile(self) -> MachineProfile:
+        if self.profile_error:
+            raise ProfileError(self.profile_error)
+        return self.profiles.get(self.project.get(), self.station.get())
+
+    def _profile_platform(self) -> str:
         try:
-            return json.loads(PREFS_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
+            return self.profiles.get(self.project.get(), self.station.get()).platform
+        except (AttributeError, ProfileError):
+            return "atlas" if self.station.get() in {"DFU", "FCT"} else "b482"
+
+    def _load_selected_profile_values(self) -> None:
+        try:
+            profile = self.profiles.get(self.project.get(), self.station.get())
+        except (AttributeError, ProfileError):
+            return
+        for field, value in profile.paths.items():
+            if field in self.paths[profile.machine]:
+                self.paths[profile.machine][field].set(value)
+        for field in ("start", "test", "round"):
+            self.timeouts[profile.machine][field].set(str(profile.timeouts[field]))
+        self.bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
+
+    def _refresh_machine_choices(self) -> None:
+        available = self.profiles.for_project(self.project.get())
+        machines = tuple(profile.machine for profile in available)
+        self.machine_choice.configure(values=machines)
+        if self.station.get() not in machines and machines:
+            self.station.set(machines[0])
+        self._load_selected_profile_values()
+
+    def _project_changed(self, _event=None) -> None:
+        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+            self.profile_error = None
+        self._refresh_machine_choices()
+        self._render_rows()
+
+    def _profile_changed(self, _event=None) -> None:
+        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+            self.profile_error = None
+        self._load_selected_profile_values()
+        self.bt_format.set("B518 RS-WMT" if self._profile_platform() == "rswmt" else "B482 TestData")
+        self._render_rows()
 
     def _stored_timeout(self, station: str, field: str) -> int:
-        default = DEFAULT_TIMEOUTS[station][field]
+        default = DEFAULT_TIMEOUTS.get(station, DEFAULT_TIMEOUTS["FCT"]).get(field, 7200)
         value = self.prefs.get("timeouts", {}).get(station, {}).get(field, default)
         try:
             value = int(value)
@@ -292,10 +357,26 @@ class B518LogSolutionApp:
     def _timeout_seconds(self, station: str, values: Optional[Dict[str, Dict[str, tk.StringVar]]] = None) -> Dict[str, int]:
         variables = (values or self.timeouts)[station]
         result = {}
-        for field, label in (("start", "等待開始測試逾時"), ("test", "測試時間上限")):
+        for field, label in (("start", "等待開始測試逾時"), ("test", "測試時間上限"),
+                             ("round", "整輪監控上限")):
             try:
-                value = int(variables[field].get().strip())
-            except (KeyError, ValueError):
+                raw_value = variables[field].get().strip()
+                missing_value = False
+            except KeyError:
+                raw_value = ""
+                missing_value = True
+            if field == "round" and missing_value:
+                try:
+                    if values is self.settings_timeouts:
+                        configured = self.profiles.get(self.settings_project.get(), station)
+                    else:
+                        configured = self.profiles.get(self.project.get(), station)
+                    raw_value = str(configured.timeouts[field])
+                except (AttributeError, KeyError, ProfileError):
+                    raw_value = "7200"
+            try:
+                value = int(raw_value)
+            except ValueError:
                 value = 0
             if value <= 0:
                 raise ValueError("{}必須是正整數秒數。".format(label))
@@ -303,12 +384,12 @@ class B518LogSolutionApp:
         return result
 
     def _save_preferences(self) -> None:
-        APP_ROOT.mkdir(parents=True, exist_ok=True)
-        payload = {"station": self.station.get(), "bt_format": self.bt_format.get(), "paths": {station: {field: value.get() for field, value in values.items()}
-                  for station, values in self.paths.items()},
-                  "timeouts": {station: {field: value.get() for field, value in values.items()}
-                               for station, values in self.timeouts.items()}}
-        PREFS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        if self.profile_error:
+            raise ProfileError(self.profile_error)
+        self.profile_store.save(
+            self.profiles, self.project.get(), self.station.get(),
+            preserve_legacy=self.profile_store.migration_required,
+        )
 
     def _on_local_hotkey(self, _event: object) -> str:
         self._start_from_hotkey()
@@ -330,6 +411,10 @@ class B518LogSolutionApp:
         self.start_button.configure(state="disabled" if monitoring else "normal")
         self.stop_button.configure(state="normal" if monitoring else "disabled")
         self.monitor_state.configure(text=state_text or ("監控中" if monitoring else "待命"))
+        for name in ("project_choice", "machine_choice"):
+            choice = getattr(self, name, None)
+            if choice:
+                choice.configure(state="disabled" if monitoring else "readonly")
 
     def _set_row(self, slot: int, sn: str, status: str) -> None:
         widgets = self.status_rows.get(slot)
@@ -351,47 +436,95 @@ class B518LogSolutionApp:
         station = self.station.get().upper()
         values = self.paths[station]
         try:
+            profile = self._selected_profile()
+        except (AttributeError, ProfileError) as error:
+            if hasattr(self, "profiles"):
+                messagebox.showerror("配置錯誤", str(error), parent=self.root)
+                return
+            profile = None
+        try:
             timeouts = self._timeout_seconds(station)
         except ValueError as error:
             messagebox.showerror("逾時設定錯誤", str(error), parent=self.root)
             return
-        if station == "BT":
-            final = configured_directory(values["final"].get())
-            if final is None:
-                messagebox.showerror("路徑錯誤", "請選擇可讀取的 BT 結果根路徑。", parent=self.root)
-                return
-            caseinfo_text = values["caseinfo"].get().strip()
-            caseinfo = configured_directory(caseinfo_text) if caseinfo_text else None
-            if caseinfo_text and caseinfo is None:
-                messagebox.showerror("路徑錯誤", "BT 即時 Log 路徑不存在或無法讀取。", parent=self.root)
-                return
-        else:
+        platform = profile.platform if profile else (
+            "rswmt" if station == "BT" and self.bt_format.get() == "B518 RS-WMT"
+            else ("b482" if station == "BT" else "atlas")
+        )
+        if platform == "atlas":
             active = configured_directory(values["active"].get())
             final = configured_directory(values["final"].get())
             if active is None or final is None:
-                messagebox.showerror("路徑錯誤", "請同時選擇 active 與最終結果根路徑。", parent=self.root)
+                messagebox.showerror("路徑錯誤", "請設定存在且可讀取的 active 與最終結果路徑。", parent=self.root)
                 return
+            caseinfo = None
+        else:
+            final = configured_directory(values["final"].get())
+            if final is None:
+                messagebox.showerror("路徑錯誤", "請設定存在且可讀取的結果根路徑。", parent=self.root)
+                return
+            optional_field = "caseinfo"
+            optional_value = values[optional_field].get()
+            caseinfo_text = optional_value.strip()
+            caseinfo = configured_directory(caseinfo_text) if caseinfo_text else None
+            if caseinfo_text and caseinfo is None:
+                messagebox.showerror("路徑錯誤", "即時 Log 路徑不存在或無法讀取。", parent=self.root)
+                return
+        if profile and profile.capacity > slot_count(station):
+            messagebox.showerror("配置不相容", "目前 {} Adapter／畫面支援容量上限為 {}。".format(
+                station, slot_count(station)), parent=self.root)
+            return
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
+        round_started_monotonic = time.monotonic()
         try:
             def monitor_factory(on_event):
-                if station == "BT":
-                    if self.bt_format.get() == "B518 RS-WMT":
-                        return RsWmtLogMonitor(
-                            final, progress_root=caseinfo, callback=on_event,
-                            start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                        )
-                    if self.bt_format.get() == "B482 TestData":
-                        return BtLogMonitor(
-                            final, (1, 2, 3, 4), caseinfo_root=caseinfo, callback=on_event,
-                            start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                        )
-                    raise ValueError("請選擇支援的 BT 格式。")
-                return AtlasActiveArchiveMonitor(
-                    station, active, final, tuple(range(1, slot_count(station) + 1)), callback=on_event,
-                    start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                )
+                capacity = profile.capacity if profile else slot_count(station)
+                mapping = dict(profile.mapping) if profile else {slot: slot for slot in range(1, capacity + 1)}
+                source_slots = tuple(mapping)
+                view_holder = {}
+
+                def deliver(event):
+                    view = view_holder.get("view")
+                    if view is not None:
+                        view.deliver(event, on_event)
+                    else:
+                        on_event(event)
+
+                if platform == "rswmt":
+                    monitor = RsWmtLogMonitor(
+                        final, slots=source_slots, progress_root=caseinfo, callback=deliver,
+                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
+                    )
+                elif platform == "b482":
+                    monitor = BtLogMonitor(
+                        final, source_slots, caseinfo_root=caseinfo, callback=deliver,
+                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
+                    )
+                elif platform == "atlas":
+                    monitor = AtlasActiveArchiveMonitor(
+                        station, active, final, source_slots, callback=deliver,
+                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
+                    )
+                else:
+                    raise ValueError("未知平台：{}。".format(platform))
+                configured = ConfiguredMonitor(monitor, mapping)
+                if profile:
+                    monitor.session.update_settings({
+                        "profile_snapshot": {
+                            "schema_version": 1,
+                            "profile": profile.to_dict(),
+                        },
+                    })
+                view_holder["view"] = configured
+                return configured
 
             self._save_preferences()
             self._reset_rows()
@@ -466,6 +599,11 @@ class B518LogSolutionApp:
         if event.kind == "timeout" and event.detail.get("kind") == "start":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")
+        if event.kind == "timeout" and event.detail.get("kind") == "round":
+            self.monitor = None
+            self._set_monitor_controls(False, "逾時停止")
+            messagebox.showwarning("整輪監控逾時", event.message + "\n\n已停止讀取來源並保留本輪結果。",
+                                   parent=self.root)
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
             self._set_monitor_controls(False)
@@ -493,6 +631,7 @@ class B518LogSolutionApp:
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.settings_station = tk.StringVar(value=self.station.get())
+        self.settings_project = tk.StringVar(value=self.project.get())
         self.settings_bt_format = tk.StringVar(value=self.bt_format.get())
         self.settings_paths = {station: {field: tk.StringVar(value=value.get()) for field, value in fields.items()}
                                for station, fields in self.paths.items()}
@@ -502,7 +641,14 @@ class B518LogSolutionApp:
         state = "disabled" if self.monitor else "readonly"
         station_choice = ttk.Combobox(parent, values=tuple(STATION_SLOTS), textvariable=self.settings_station, state=state, width=14)
         station_choice.grid(row=0, column=1, sticky="w", padx=(8, 0))
-        station_choice.bind("<<ComboboxSelected>>", lambda _event: self._render_setting_paths())
+        station_choice.bind("<<ComboboxSelected>>", self._settings_profile_changed)
+        ttk.Label(parent, text="專案").grid(row=0, column=2, sticky="w", padx=(16, 0))
+        self.settings_project_choice = ttk.Combobox(
+            parent, values=self.profiles.projects, textvariable=self.settings_project,
+            state="readonly", width=12,
+        )
+        self.settings_project_choice.grid(row=0, column=3, sticky="w", padx=(8, 0))
+        self.settings_project_choice.bind("<<ComboboxSelected>>", self._settings_profile_changed)
         self.settings_paths_box = ttk.Frame(parent)
         self.settings_paths_box.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(16, 0))
         parent.columnconfigure(1, weight=1)
@@ -546,13 +692,41 @@ class B518LogSolutionApp:
             ttk.Button(self.settings_paths_box, text="選擇", state="disabled" if disabled else "normal",
                        command=lambda current=field: self._choose_setting_path(current)).grid(row=row, column=2, pady=5)
         timeout_row = len(schema) + offset
-        for offset, (field, label) in enumerate((("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"))):
+        for offset, (field, label) in enumerate((
+                ("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"),
+                ("round", "整輪監控上限（秒）"))):
             ttk.Label(self.settings_paths_box, text=label).grid(row=timeout_row + offset, column=0, sticky="w", pady=5)
             ttk.Entry(self.settings_paths_box, textvariable=self.settings_timeouts[station][field], width=16,
                       state="disabled" if disabled else "normal").grid(row=timeout_row + offset, column=1, sticky="w", padx=8, pady=5)
         self.settings_paths_box.columnconfigure(1, weight=1)
 
+    def _settings_profile_changed(self, _event=None) -> None:
+        machine = self.settings_station.get()
+        project = self.settings_project.get()
+        try:
+            profile = self.profiles.get(project, machine)
+        except ProfileError:
+            candidates = self.profiles.for_project(project)
+            if not candidates:
+                candidates = tuple(item for item in self.profiles.profiles if item.machine == machine)
+            if not candidates:
+                return
+            profile = candidates[0]
+            self.settings_project.set(profile.project)
+            self.settings_station.set(profile.machine)
+        for field, value in profile.paths.items():
+            if field in self.settings_paths[profile.machine]:
+                self.settings_paths[profile.machine][field].set(value)
+        for field in ("start", "test", "round"):
+            self.settings_timeouts[profile.machine][field].set(str(profile.timeouts[field]))
+        self.settings_bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
+        self._render_setting_paths()
+
     def _bt_format_changed(self, _event=None) -> None:
+        if self.settings_bt_format.get() == "B518 RS-WMT":
+            self.settings_project.set("B518")
+        else:
+            self.settings_project.set("B482")
         if self.settings_bt_format.get() == "B518 RS-WMT" and self.settings_timeouts["BT"]["start"].get() == "30":
             # Archived output may first appear only when the ~90 s test finishes.
             self.settings_timeouts["BT"]["start"].set("240")
@@ -578,21 +752,50 @@ class B518LogSolutionApp:
         self.settings_log.configure(state="disabled")
 
     def _save_settings(self) -> None:
+        if self.profile_error:
+            messagebox.showerror("配置錯誤", self.profile_error, parent=self.settings_window)
+            return
         try:
             for station in STATION_SLOTS:
                 self._timeout_seconds(station, self.settings_timeouts)
         except ValueError as error:
             messagebox.showerror("逾時設定錯誤", str(error), parent=self.settings_window)
             return
-        self.station.set(self.settings_station.get())
-        self.bt_format.set(self.settings_bt_format.get())
+        machine = self.settings_station.get()
+        project = self.settings_project.get()
+        if machine == "BT":
+            project = "B518" if self.settings_bt_format.get() == "B518 RS-WMT" else "B482"
+        try:
+            profile = self.profiles.get(project, machine)
+        except ProfileError as error:
+            messagebox.showerror("配置錯誤", str(error), parent=self.settings_window)
+            return
+        profile_paths = dict(profile.paths)
         for station, fields in self.settings_paths.items():
-            for field, variable in fields.items():
-                self.paths[station][field].set(variable.get())
-        for station, fields in self.settings_timeouts.items():
-            for field, variable in fields.items():
-                self.timeouts[station][field].set(variable.get())
-        self._save_preferences()
+            if station == machine:
+                profile_paths.update({field: variable.get() for field, variable in fields.items()
+                                      if field in profile_paths})
+        profile_timeouts = dict(profile.timeouts)
+        profile_timeouts.update(self._timeout_seconds(machine, self.settings_timeouts))
+        updated = replace(profile, paths=profile_paths, timeouts=profile_timeouts)
+        updated_catalog = self.profiles.with_profile(updated)
+        try:
+            self.profile_store.save(
+                updated_catalog, project, machine,
+                preserve_legacy=self.profile_store.migration_required,
+            )
+        except OSError as error:
+            messagebox.showerror("設定儲存失敗", "配置未變更：{}".format(error), parent=self.settings_window)
+            return
+        self.profiles = updated_catalog
+        self.project.set(project)
+        self.station.set(machine)
+        self._refresh_machine_choices()
+        for field, variable in self.settings_paths[machine].items():
+            self.paths[machine][field].set(variable.get())
+        for field, variable in self.settings_timeouts[machine].items():
+            self.timeouts[machine][field].set(variable.get())
+        self.bt_format.set("B518 RS-WMT" if updated.platform == "rswmt" else "B482 TestData")
         self._render_rows()
         self._close_settings()
 
@@ -614,7 +817,10 @@ class B518LogSolutionApp:
         self.hotkey.close()
         if self.monitor:
             self.rounds.stop()
-        self._save_preferences()
+        try:
+            self._save_preferences()
+        except (OSError, ProfileError) as error:
+            messagebox.showerror("偏好儲存失敗", str(error), parent=self.root)
         self.root.destroy()
 
 

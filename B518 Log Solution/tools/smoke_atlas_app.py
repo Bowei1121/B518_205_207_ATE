@@ -1,11 +1,13 @@
 """Exercise the real Tk app against controlled, anonymized Atlas file replay."""
 
 import os
+import json
 import shutil
 import sys
 import tempfile
 import time
 import tkinter as tk
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -55,15 +57,24 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
 
     root = tk.Tk()
     app = app_type(root, hotkey_factory=LocalHotkey)
+    app.project.set("B518")
     app.station.set(station)
-    app.paths[station]["active"].set(str(active))
-    app.paths[station]["final"].set(str(final))
+    profile = app.profiles.get("B518", station)
+    paths = dict(profile.paths)
+    paths.update({"active": str(active), "final": str(final)})
+    app.profiles = app.profiles.with_profile(replace(profile, paths=paths))
+    app._load_selected_profile_values()
     root.deiconify()
     root.update()
     try:
         app.start_button.invoke()
         if app.monitor is None:
             raise RuntimeError("The {} monitor did not start.".format(station))
+        running_monitor = app.monitor
+
+        running_profile = app.profiles.get("B518", station)
+        changed_mapping = ((1, 2), (2, 1)) + running_profile.mapping[2:]
+        app.profiles = app.profiles.with_profile(replace(running_profile, mapping=changed_mapping))
 
         shutil.copyfile(sample, record)
         wait_for(
@@ -92,6 +103,10 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
             raise RuntimeError("The {} completed round is not marked available.".format(station))
         if app.status_rows[1]["status"].cget("text") != expected:
             raise RuntimeError("The {} App row did not display the completed result.".format(station))
+        session = json.loads((running_monitor.session.path / "session.json").read_text(encoding="utf-8"))
+        snapshot_mapping = session["settings"]["profile_snapshot"]["profile"]["mapping"]
+        if snapshot_mapping[0]["display"] != 1:
+            raise RuntimeError("The {} round profile snapshot changed after start.".format(station))
         return {"station": station, "result": expected, "completed_slots": 1,
                 "notest_slots": sum(result.status == "NOTEST" for result in snapshot.results)}
     finally:

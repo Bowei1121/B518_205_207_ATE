@@ -247,7 +247,7 @@ class LogMonitoringTests(unittest.TestCase):
         clock[0] = 30.0
         monitor.poll_once()
         self.assertTrue(monitor.finished)
-        self.assertEqual([monitor.results[slot].status for slot in (1, 2)], ["TIMEOUT", "TIMEOUT"])
+        self.assertEqual([monitor.results[slot].status for slot in (1, 2)], ["NOTEST", "NOTEST"])
         self.assertEqual(events[-1].kind, "timeout")
         self.assertIn("未進入測試", events[-1].message)
 
@@ -267,6 +267,28 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[3].status, "TIMEOUT")
         self.assertFalse(monitor.finished)
         self.assertEqual([event.slot for event in events if event.kind == "timeout"], [2, 3])
+
+    def test_round_timeout_preserves_results_times_out_active_slots_and_stops_once(self):
+        clock, events = [0.0], []
+        monitor = TimeoutMonitor("FCT", {}, (1, 2, 3, 4), now=lambda: self.now,
+                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
+                                 test_timeout_seconds=60, round_timeout_seconds=100,
+                                 callback=events.append, session_root=self.temp / "sessions")
+        monitor.set_result(1, "PASS", "DONE")
+        monitor.set_result(2, "TESTING", "RUNNING")
+        monitor.set_result(3, "COMPLETING", "FINALIZING")
+
+        clock[0] = 100.0
+        monitor.poll_once()
+        monitor.poll_once()
+
+        self.assertEqual([monitor.results[slot].status for slot in (1, 2, 3, 4)],
+                         ["PASS", "TIMEOUT", "TIMEOUT", "NOTEST"])
+        alerts = [event for event in events if event.kind == "timeout"]
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0].detail["kind"], "round")
+        self.assertTrue(monitor.finished)
+        self.assertTrue(monitor._stop.is_set())
 
     def test_test_updates_and_completing_do_not_reset_the_timeout_clock(self):
         clock = [0.0]

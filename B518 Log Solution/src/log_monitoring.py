@@ -39,9 +39,9 @@ from monitoring_files import (
 
 TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}
 DEFAULT_TIMEOUTS = {
-    "DFU": {"start": 30, "test": 480},
-    "FCT": {"start": 30, "test": 480},
-    "BT": {"start": 30, "test": 240},
+    "DFU": {"start": 30, "test": 480, "round": 7200},
+    "FCT": {"start": 30, "test": 480, "round": 7200},
+    "BT": {"start": 30, "test": 240, "round": 7200},
 }
 
 
@@ -95,6 +95,10 @@ class SessionStore:
         self.sources.add(str(path))
         self._write_metadata()
 
+    def update_settings(self, settings: Dict[str, object]) -> None:
+        self.settings.update(settings)
+        self._write_metadata()
+
     def finish(self) -> None:
         self.finished_at = datetime.now().isoformat(timespec="seconds")
         self._write_metadata()
@@ -107,18 +111,23 @@ class BaseMonitor:
                  session_root: Optional[Path] = None, now: Callable[[], datetime] = datetime.now,
                  monotonic: Callable[[], float] = time.monotonic,
                  start_timeout_seconds: Optional[int] = None,
-                 test_timeout_seconds: Optional[int] = None):
+                 test_timeout_seconds: Optional[int] = None,
+                 round_timeout_seconds: Optional[int] = None,
+                 round_started_monotonic: Optional[float] = None):
         self.station, self.settings, self.slots = station, settings, tuple(sorted(slots))
         defaults = DEFAULT_TIMEOUTS.get(station.upper(), DEFAULT_TIMEOUTS["FCT"])
         self.start_timeout_seconds = int(start_timeout_seconds or defaults["start"])
         self.test_timeout_seconds = int(test_timeout_seconds or defaults["test"])
-        if self.start_timeout_seconds <= 0 or self.test_timeout_seconds <= 0:
+        self.round_timeout_seconds = int(round_timeout_seconds or defaults["round"])
+        if min(self.start_timeout_seconds, self.test_timeout_seconds, self.round_timeout_seconds) <= 0:
             raise ValueError("逾時秒數必須為正整數")
         self.settings.update({"start_timeout_seconds": str(self.start_timeout_seconds),
-                              "test_timeout_seconds": str(self.test_timeout_seconds)})
+                              "test_timeout_seconds": str(self.test_timeout_seconds),
+                              "round_timeout_seconds": str(self.round_timeout_seconds)})
         self.callback, self.now, self.monotonic = callback, now, monotonic
         self.started = now()
-        self._started_monotonic = monotonic()
+        self._started_monotonic = (monotonic() if round_started_monotonic is None
+                                   else round_started_monotonic)
         self._activity_seen = False
         self._test_started_monotonic: Dict[int, float] = {}
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
@@ -171,13 +180,14 @@ class BaseMonitor:
             self.emit(MonitorEvent("finished", "{} 本輪完成".format(self.station)))
 
     def begin_timeout_clock(self) -> None:
-        """Start timeout measurement only after a monitor has made its snapshots."""
-        self.started = self.now()
-        self._started_monotonic = self.monotonic()
+        """Keep deadlines anchored to the accepted round start, including snapshot work."""
+        return
 
     def check_timeouts(self) -> None:
-        """Stop the session when it never starts or one active slot runs too long."""
+        """Stop the session when the round, start, or an active slot exceeds its limit."""
         if self.finished:
+            return
+        if self.check_round_timeout():
             return
         elapsed = self.monotonic() - self._started_monotonic
         if not self._activity_seen and elapsed >= self.start_timeout_seconds:
@@ -193,11 +203,30 @@ class BaseMonitor:
         for slot, test_elapsed in timed_out_slots:
             self._finish_timeout("test", slot, test_elapsed)
 
+    def check_round_timeout(self) -> bool:
+        """Enforce the round deadline before a poll can read any more source data."""
+        if self.finished:
+            return True
+        elapsed = self.monotonic() - self._started_monotonic
+        if elapsed >= self.round_timeout_seconds:
+            for slot, result in self.results.items():
+                if result.status in TERMINAL:
+                    continue
+                self.set_result(slot, "TIMEOUT" if result.status in {"TESTING", "COMPLETING"}
+                                else "NOTEST")
+            self._finish_timeout("round", None, elapsed)
+            return True
+        return False
+
     def _finish_timeout(self, kind: str, timed_out_slot: Optional[int], elapsed: float) -> None:
-        if kind == "start":
+        if kind == "round":
+            message = "{} 整輪監控逾時：{} 秒（經過 {} 秒）".format(
+                self.station, self.round_timeout_seconds, int(elapsed),
+            )
+        elif kind == "start":
             for slot, result in self.results.items():
                 if result.status not in TERMINAL:
-                    self.set_result(slot, "TIMEOUT")
+                    self.set_result(slot, "NOTEST")
             message = "{} 未進入測試逾時：{} 秒（經過 {} 秒）".format(
                 self.station, self.start_timeout_seconds, int(elapsed),
             )
@@ -209,7 +238,7 @@ class BaseMonitor:
             )
         self.emit(MonitorEvent("timeout", message, timed_out_slot, status="TIMEOUT",
                                detail={"kind": kind, "elapsed_seconds": str(int(elapsed))}))
-        if kind == "start":
+        if kind in {"start", "round"}:
             self._stop.set()
             self.finished = True
             self.session.finish()
@@ -248,6 +277,11 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
         self.begin_timeout_clock()
 
     def poll_once(self) -> None:
+        if self.finished or self._stop.is_set():
+            return
+        self.check_round_timeout()
+        if self.finished or self._stop.is_set():
+            return
         for observation in self.source.poll():
             if observation.kind == AtlasObservationKind.SOURCE_PREPARED:
                 self.emit(MonitorEvent("source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。"))
@@ -303,6 +337,11 @@ class BtLogMonitor(BaseMonitor):
         self.review_pending = None
 
     def poll_once(self) -> None:
+        if self.finished or self._stop.is_set():
+            return
+        self.check_round_timeout()
+        if self.finished or self._stop.is_set():
+            return
         for observation in self.source_adapter.poll():
             if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
                 if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
