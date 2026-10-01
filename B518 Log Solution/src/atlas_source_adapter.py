@@ -104,6 +104,7 @@ class AtlasSourceAdapter:
         self._prepared_reported = False
         self._final_signatures: Dict[str, Tuple[int, int]] = {}
         self._final_slots: Set[int] = set()
+        self._notest_slots: Set[int] = set()
 
     def poll(self) -> Tuple[AtlasObservation, ...]:
         observations: List[AtlasObservation] = []
@@ -158,10 +159,11 @@ class AtlasSourceAdapter:
             if self._inactive_since is None:
                 self._inactive_since = self.now()
             elif self.now() - self._inactive_since >= timedelta(seconds=3):
-                for slot in sorted(set(self.slots) - self._seen_slots):
+                for slot in sorted(set(self.slots) - self._seen_slots - self._notest_slots):
                     observations.append(AtlasObservation(
                         AtlasObservationKind.NOTEST, slot, status="NOTEST",
                     ))
+                    self._notest_slots.add(slot)
         else:
             self._inactive_since = None
         return tuple(observations)

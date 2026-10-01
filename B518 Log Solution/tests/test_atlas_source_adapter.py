@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from log_monitoring import AtlasActiveArchiveMonitor
@@ -122,6 +122,37 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
 
             self.assertEqual(snapshot.results[0].status, "TESTING")
             self.assertFalse(any(event.event.kind == "completing" for event in snapshot.events))
+
+    def test_unseen_slot_notest_is_emitted_only_once_during_completion_wait(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            current_time = [datetime(2026, 9, 10, 10, 0, 0)]
+            rounds = RoundCoordinator()
+            rounds.start(
+                "FCT",
+                lambda callback: AtlasActiveArchiveMonitor(
+                    "FCT", active, final, (1, 2), callback=callback,
+                    now=lambda: current_time[0], session_root=root / "sessions",
+                ),
+                run_async=False,
+            )
+            rounds.monitor.poll_once()
+            write_records(active / "group0-slot1" / "system" / "records.csv", "SAMPLE123456")
+            rounds.monitor.poll_once()
+            shutil.rmtree(active / "group0-slot1")
+            rounds.monitor.poll_once()
+
+            current_time[0] += timedelta(seconds=4)
+            rounds.monitor.poll_once()
+            rounds.monitor.poll_once()
+            notest_results = [
+                event for event in rounds.events_since()
+                if event.event.kind == "result" and event.event.slot == 2
+                and event.event.status == "NOTEST"
+            ]
+
+            self.assertEqual(len(notest_results), 1)
 
     def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
         with tempfile.TemporaryDirectory() as temporary:
