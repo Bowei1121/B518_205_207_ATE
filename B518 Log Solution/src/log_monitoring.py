@@ -361,95 +361,33 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
     """DFU/FCT monitor: active/group0-slotN followed by final archive data."""
     def __init__(self, station: str, active_root: Path, final_root: Path, slots: Sequence[int], **kwargs):
         super().__init__(station, {"active_root": str(active_root), "final_root": str(final_root)}, slots, **kwargs)
-        self.active_root, self.final_root = active_root, final_root
-        self.baseline_active = snapshot_files(active_root, ".csv")
-        self.baseline_final = snapshot_files(final_root, ".csv")
+        from atlas_source_adapter import AtlasSourceAdapter
+
+        self.source = AtlasSourceAdapter(active_root, final_root, slots, self.started, self.now)
         self.begin_timeout_clock()
-        self.seen_slots: Set[int] = set()
-        self.locked_sn: Dict[int, str] = {}
-        self.last_active_at: Dict[int, datetime] = {}
-        self._inactive_since: Optional[datetime] = None
-
-    def _active_records(self, slot: int) -> Optional[Path]:
-        root = self.active_root / "group0-slot{}".format(slot)
-        if not root.is_dir():
-            return None
-        candidates = list(root.rglob("records.csv")) + list(root.rglob("record.csv"))
-        return max(candidates, key=lambda path: path.stat().st_mtime_ns) if candidates else None
-
-    def _is_new_or_changed(self, path: Path) -> bool:
-        try:
-            return self.baseline_final.get(str(path.resolve())) != file_signature(path)
-        except OSError:
-            return False
-
-    def _active_is_new_or_changed(self, path: Path) -> bool:
-        try:
-            return self.baseline_active.get(str(path.resolve())) != file_signature(path)
-        except OSError:
-            return False
-
-    def _final_csv(self, sn: str) -> Optional[Path]:
-        sn_root = self.final_root / sn
-        if not sn_root.is_dir():
-            return None
-        threshold = self.started - timedelta(seconds=30)
-        candidates: List[Tuple[datetime, Path]] = []
-        for folder in sn_root.iterdir():
-            if not folder.is_dir():
-                continue
-            stamp = parse_archive_timestamp(folder.name)
-            if stamp is None or stamp < threshold:
-                continue
-            for name in ("records.csv", "record.csv"):
-                candidate = folder / "system" / name
-                if candidate.is_file() and self._is_new_or_changed(candidate):
-                    candidates.append((stamp, candidate))
-        return max(candidates, key=lambda item: item[0])[1] if candidates else None
 
     def poll_once(self) -> None:
-        active_now: Set[int] = set()
-        active_directories: Set[int] = set()
-        for slot in self.slots:
-            if (self.active_root / "group0-slot{}".format(slot)).is_dir():
-                active_directories.add(slot)
-            record = self._active_records(slot)
-            if record and self._active_is_new_or_changed(record):
-                active_now.add(slot)
-                self.seen_slots.add(slot)
-                self.last_active_at[slot] = self.now()
-                sn = trusted_sn_from_records(record)
-                if sn and slot not in self.locked_sn:
-                    self.locked_sn[slot] = sn
-                    self.set_result(slot, "TESTING", sn, str(record))
-                    self.emit(MonitorEvent("sn_locked", "slot{} 鎖定 SN {}".format(slot, sn), slot, sn, "TESTING", str(record)))
-                elif slot not in self.locked_sn:
-                    self.set_result(slot, "TESTING", "", str(record))
-                elif self.results[slot].status not in TERMINAL:
-                    self.set_result(slot, "TESTING", self.locked_sn[slot], str(record))
-        for slot in sorted(self.seen_slots - active_now):
-            if slot not in self.locked_sn:
-                self.set_result(slot, "FAIL", "SN 讀取失敗")
-                continue
-            if self.results[slot].status in TERMINAL:
-                continue
-            sn = self.locked_sn[slot]
-            self.set_result(slot, "COMPLETING", sn)
-            candidate = self._final_csv(sn)
-            if candidate:
-                state = records_status(candidate)
-                if state in {"PASS", "FAIL"}:
-                    self.set_result(slot, state, sn, str(candidate))
-                    self.emit(MonitorEvent("final", "slot{} 最終 {}".format(slot, state), slot, sn, state, str(candidate)))
-        if self.seen_slots and not active_directories:
-            if self._inactive_since is None:
-                self._inactive_since = self.now()
-            elif self.now() - self._inactive_since >= timedelta(seconds=3):
-                for slot in set(self.slots) - self.seen_slots:
-                    if self.results[slot].status == "WAITING":
-                        self.set_result(slot, "NOTEST")
-        else:
-            self._inactive_since = None
+        for observation in self.source.poll():
+            if observation.kind == "source_prepared":
+                self.emit(MonitorEvent("source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。"))
+            elif observation.kind == "sn_locked":
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+                self.emit(MonitorEvent(
+                    "sn_locked", "slot{} 已鎖定可信 SN".format(observation.slot),
+                    observation.slot, observation.sn, observation.status, observation.source,
+                ))
+            elif observation.kind == "activity":
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+            elif observation.kind == "sn_read_failed":
+                self.set_result(observation.slot, observation.status, observation.sn)
+            elif observation.kind in {"completing", "notest"}:
+                self.set_result(observation.slot, observation.status, observation.sn)
+            elif observation.kind == "final":
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+                self.emit(MonitorEvent(
+                    "final", "slot{} 最終 {}".format(observation.slot, observation.status),
+                    observation.slot, observation.sn, observation.status, observation.source,
+                ))
         self.check_timeouts()
         self.complete_if_stable()
 

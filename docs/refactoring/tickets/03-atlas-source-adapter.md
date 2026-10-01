@@ -8,7 +8,7 @@
 
 - [02：讓現有 App 經統一輪次接口操作](02-shared-round-interface.md)
 
-**Status：**blocked（前置任務完成後；另依本票外部前置檢查）
+**Status：**in-progress（Ticket 02 已核實完成；可先進行 Adapter 搬移與受控回放。現有 Atlas 樣本只有 archive，沒有真實 active tree；實機來源及 App 驗證仍須分別記錄）
 
 ## 驗收條件
 
