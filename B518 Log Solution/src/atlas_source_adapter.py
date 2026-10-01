@@ -111,14 +111,12 @@ class AtlasSourceAdapter:
             self._prepared_reported = True
             observations.append(AtlasObservation(AtlasObservationKind.SOURCE_PREPARED))
 
-        active_now: Set[int] = set()
         active_directories: Set[int] = set()
         for slot in self.slots:
             if (self.active_root / "group0-slot{}".format(slot)).is_dir():
                 active_directories.add(slot)
             record = self._active_records(slot)
             if record and self._is_new_or_changed(record, self._baseline_active):
-                active_now.add(slot)
                 self._seen_slots.add(slot)
                 sn = trusted_sn_from_records(record)
                 if sn and slot not in self._locked_sn:
@@ -135,7 +133,9 @@ class AtlasSourceAdapter:
                         AtlasObservationKind.ACTIVITY, slot, self._locked_sn[slot], "TESTING", str(record),
                     ))
 
-        for slot in sorted(self._seen_slots - active_now):
+        # A quiet or unchanged records.csv is still active while its slot tree
+        # exists. Only disappearance of the active directory starts finalization.
+        for slot in sorted(self._seen_slots - active_directories):
             if slot in self._final_slots:
                 continue
             if slot not in self._locked_sn:

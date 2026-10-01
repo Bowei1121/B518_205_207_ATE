@@ -1,4 +1,5 @@
 import csv
+import os
 import shutil
 import tempfile
 import unittest
@@ -99,6 +100,28 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 sum(event.event.kind == "final" for event in after_later_progress.events),
                 1,
             )
+
+    def test_unchanged_record_in_existing_active_directory_is_still_active(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            system = active / "group0-slot1" / "system"
+            older_record = system / "records.csv"
+            selected_record = system / "record.csv"
+            write_records(older_record, "NUMBER_SOF0", "PASS")
+            write_records(selected_record, "NUMBER_SOF0", "PASS")
+            selected_mtime = selected_record.stat().st_mtime_ns
+            rounds = self.start_round(root, active, final)
+            rounds.monitor.poll_once()
+            write_records(older_record, "SAMPLE123456", "FAIL")
+            rounds.monitor.poll_once()
+
+            os.utime(older_record, ns=(selected_mtime - 1_000_000_000, selected_mtime - 1_000_000_000))
+            rounds.monitor.poll_once()
+            snapshot = rounds.snapshot()
+
+            self.assertEqual(snapshot.results[0].status, "TESTING")
+            self.assertFalse(any(event.event.kind == "completing" for event in snapshot.events))
 
     def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
         with tempfile.TemporaryDirectory() as temporary:
