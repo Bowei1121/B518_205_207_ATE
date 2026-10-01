@@ -8,7 +8,7 @@
 
 - [03：搬移 Atlas 資料來源並保護完整監控流程](03-atlas-source-adapter.md)
 
-**Status：**ready-for-merge（六項 Ticket 06 驗收、測試及 Standards／Spec 複審完成；合併與同步待執行）
+**Status：**complete（六項 Ticket 06 驗收、測試及 Standards／Spec 複審完成；已一般合併、雙遠端同步並安全清理專用分支）
 
 ## 驗收條件
 
@@ -80,4 +80,12 @@
 
 ### 合併與外部限制
 
-Ticket 03 仍保持 `in-progress`，其未勾選驗收沒有改寫為通過。Ticket 03 所需程式與共同接口已在 Ticket 06 固定基準中；使用者另於 2026-10-01 明確確認本機受控 Atlas App 流程足以滿足 Ticket 06 AC 6，因此本票以自己的測試與驗收完成 AC 6，沒有沿用 Ticket 03 的延期豁免。雙軸複審無未解問題，Ticket 06 已達 `ready-for-merge`，依指定 Git 流程合併回 `B518-Log-Solution`；目標設備、發布 App、KVM／上位機及真實 active tree 限制仍留在驗收紀錄中。
+Ticket 03 仍保持 `in-progress`，其未勾選驗收沒有改寫為通過。Ticket 03 所需程式與共同接口已在 Ticket 06 固定基準中；使用者另於 2026-10-01 明確確認本機受控 Atlas App 流程足以滿足 Ticket 06 AC 6，因此本票以自己的測試與驗收完成 AC 6，沒有沿用 Ticket 03 的延期豁免。目標設備、發布 App、KVM／上位機及真實 active tree 限制仍留在驗收紀錄中，且不改寫 Ticket 03 狀態。
+
+### 合併完成紀錄｜2026-10-01
+
+- 合併前 `B518-Log-Solution` 工作樹乾淨，並確認已納入 Gitea 與 GitHub 上最新的目標分支提交 `9de46477629bbea1afffe26bb21238033135bf8a`。
+- 以一般非快轉合併 `git merge --no-ff --no-edit codex/ticket-06` 完成；合併 commit：`1977bca94d34f6f2955dc1e4ec438964514d036b`。
+- 合併後 `python3 scripts/run_tests.py` 通過 114 tests；`python3 tools/smoke_atlas_app.py`、`python3 tools/smoke_b482_app.py`、`python3 -m compileall -q src tests tools scripts` 及 `git diff --check` 均通過。
+- 合併 commit 已推送至兩個既有 push 目的地：Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 與 GitHub `git@github.com:Bowei1121/B518_205_207_ATE.git`；逐一查詢確認兩端 `B518-Log-Solution` 均為 `1977bca94d34f6f2955dc1e4ec438964514d036b`。
+- 確認兩端合併結果同步後，已從 Gitea 與 GitHub 刪除遠端 `codex/ticket-06`，兩端查詢均不再列出該 ref；再以 `git branch -d codex/ticket-06` 安全刪除本地分支。最後工作樹位於 `B518-Log-Solution` 且乾淨。

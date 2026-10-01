@@ -11,7 +11,7 @@
 
 ## 本次確認與變更
 
-- Ticket 06 在 `codex/ticket-06` 完成配置選擇、版本化 profile、遷移、路徑檢查、快照映射及期限行為；114 項完整測試、Atlas/B482 受控 App 回放、編譯及 whitespace 檢查通過。使用者明確接受受控 Atlas App 回放滿足 Ticket 06 AC 6；Ticket 03 仍為 `in-progress`，其未完成驗收維持未勾選。Ticket 06 Standards／Spec 複審無未解問題，已進入合併流程；詳見 `docs/refactoring/tickets/06-project-machine-profile-selection.md`。
+- Ticket 06 已完成並以非快轉合併 commit `1977bca94d34f6f2955dc1e4ec438964514d036b` 合併至 `B518-Log-Solution`；合併後 114 項測試、Atlas/B482 受控 App 回放、編譯及 whitespace 檢查通過，Gitea 與 GitHub 同步成功，專用分支本地與遠端均已安全清理。使用者明確接受受控 Atlas App 回放滿足 Ticket 06 AC 6；Ticket 03 仍為 `in-progress`，其未完成驗收維持未勾選。詳見 `docs/refactoring/tickets/06-project-machine-profile-selection.md`。
 
 - 使用者要求執行 setup-matt-pocock-skills，再整理內層 B518 Log Solution 資料夾。
 - 使用者逐項選定 GitHub Issues（Bowei1121/B518_205_207_ATE）、五個預設 triage 標籤，並批准設定草稿及建立 AGENTS.md。
