@@ -6,6 +6,7 @@ import os
 import queue
 import sys
 import subprocess
+import time
 import tkinter as tk
 from dataclasses import replace
 from pathlib import Path
@@ -100,7 +101,7 @@ class B518LogSolutionApp:
                              for field in ("active", "final", "caseinfo")}
                       for name in STATION_SLOTS}
         self.timeouts = {name: {field: tk.StringVar(value=str(self._stored_timeout(name, field)))
-                                for field in ("start", "test")}
+                                for field in ("start", "test", "round")}
                          for name in STATION_SLOTS}
         self._load_selected_profile_values()
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
@@ -345,7 +346,7 @@ class B518LogSolutionApp:
         self._render_rows()
 
     def _stored_timeout(self, station: str, field: str) -> int:
-        default = DEFAULT_TIMEOUTS[station][field]
+        default = DEFAULT_TIMEOUTS.get(station, DEFAULT_TIMEOUTS["FCT"]).get(field, 7200)
         value = self.prefs.get("timeouts", {}).get(station, {}).get(field, default)
         try:
             value = int(value)
@@ -356,10 +357,26 @@ class B518LogSolutionApp:
     def _timeout_seconds(self, station: str, values: Optional[Dict[str, Dict[str, tk.StringVar]]] = None) -> Dict[str, int]:
         variables = (values or self.timeouts)[station]
         result = {}
-        for field, label in (("start", "等待開始測試逾時"), ("test", "測試時間上限")):
+        for field, label in (("start", "等待開始測試逾時"), ("test", "測試時間上限"),
+                             ("round", "整輪監控上限")):
             try:
-                value = int(variables[field].get().strip())
-            except (KeyError, ValueError):
+                raw_value = variables[field].get().strip()
+                missing_value = False
+            except KeyError:
+                raw_value = ""
+                missing_value = True
+            if field == "round" and missing_value:
+                try:
+                    if values is self.settings_timeouts:
+                        configured = self.profiles.get(self.settings_project.get(), station)
+                    else:
+                        configured = self.profiles.get(self.project.get(), station)
+                    raw_value = str(configured.timeouts[field])
+                except (AttributeError, KeyError, ProfileError):
+                    raw_value = "7200"
+            try:
+                value = int(raw_value)
+            except ValueError:
                 value = 0
             if value <= 0:
                 raise ValueError("{}必須是正整數秒數。".format(label))
@@ -460,6 +477,7 @@ class B518LogSolutionApp:
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
+        round_started_monotonic = time.monotonic()
         try:
             def monitor_factory(on_event):
                 capacity = profile.capacity if profile else slot_count(station)
@@ -478,16 +496,22 @@ class B518LogSolutionApp:
                     monitor = RsWmtLogMonitor(
                         final, slots=source_slots, progress_root=caseinfo, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
                     )
                 elif platform == "b482":
                     monitor = BtLogMonitor(
                         final, source_slots, caseinfo_root=caseinfo, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
                     )
                 elif platform == "atlas":
                     monitor = AtlasActiveArchiveMonitor(
                         station, active, final, source_slots, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
+                        round_timeout_seconds=timeouts["round"],
+                        round_started_monotonic=round_started_monotonic,
                     )
                 else:
                     raise ValueError("未知平台：{}。".format(platform))
@@ -575,6 +599,11 @@ class B518LogSolutionApp:
         if event.kind == "timeout" and event.detail.get("kind") == "start":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")
+        if event.kind == "timeout" and event.detail.get("kind") == "round":
+            self.monitor = None
+            self._set_monitor_controls(False, "逾時停止")
+            messagebox.showwarning("整輪監控逾時", event.message + "\n\n已停止讀取來源並保留本輪結果。",
+                                   parent=self.root)
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
             self._set_monitor_controls(False)
@@ -663,7 +692,9 @@ class B518LogSolutionApp:
             ttk.Button(self.settings_paths_box, text="選擇", state="disabled" if disabled else "normal",
                        command=lambda current=field: self._choose_setting_path(current)).grid(row=row, column=2, pady=5)
         timeout_row = len(schema) + offset
-        for offset, (field, label) in enumerate((("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"))):
+        for offset, (field, label) in enumerate((
+                ("start", "等待開始測試逾時（秒）"), ("test", "測試時間上限（秒）"),
+                ("round", "整輪監控上限（秒）"))):
             ttk.Label(self.settings_paths_box, text=label).grid(row=timeout_row + offset, column=0, sticky="w", pady=5)
             ttk.Entry(self.settings_paths_box, textvariable=self.settings_timeouts[station][field], width=16,
                       state="disabled" if disabled else "normal").grid(row=timeout_row + offset, column=1, sticky="w", padx=8, pady=5)
@@ -686,7 +717,7 @@ class B518LogSolutionApp:
         for field, value in profile.paths.items():
             if field in self.settings_paths[profile.machine]:
                 self.settings_paths[profile.machine][field].set(value)
-        for field in ("start", "test"):
+        for field in ("start", "test", "round"):
             self.settings_timeouts[profile.machine][field].set(str(profile.timeouts[field]))
         self.settings_bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
         self._render_setting_paths()

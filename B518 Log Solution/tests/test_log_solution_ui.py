@@ -289,9 +289,9 @@ class LogSolutionUiTests(unittest.TestCase):
             "BT": {"active": "", "final": "/logs/bt/testdata", "caseinfo": "/logs/bt/caseinfo"},
         }
         saved_timeouts = {
-            "DFU": {"start": "30", "test": "480"},
-            "FCT": {"start": "30", "test": "480"},
-            "BT": {"start": "30", "test": "240"},
+            "DFU": {"start": "30", "test": "480", "round": "7200"},
+            "FCT": {"start": "30", "test": "480", "round": "7200"},
+            "BT": {"start": "30", "test": "240", "round": "6300"},
         }
         with TemporaryDirectory() as temporary_directory:
             app_root = Path(temporary_directory) / "B518LogSolution"
@@ -311,7 +311,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                        for field in ("active", "final", "caseinfo")}
                              for station in ("DFU", "FCT", "BT")}
                 app.timeouts = {station: {field: tk.StringVar(master=interpreter, value="")
-                                          for field in ("start", "test")}
+                                          for field in ("start", "test", "round")}
                                 for station in ("DFU", "FCT", "BT")}
                 app.settings_station = tk.StringVar(master=interpreter, value="BT")
                 app.settings_paths = {
@@ -340,6 +340,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual((restored[1], restored[2]), ("B518", "BT"))
                 self.assertEqual(restored[0].get("B518", "BT").platform, "rswmt")
                 self.assertEqual(restored[0].get("B518", "BT").paths["final"], saved_paths["BT"]["final"])
+                self.assertEqual(restored[0].get("B518", "BT").timeouts["round"], 6300)
 
     def test_timeout_values_require_positive_integers(self):
         interpreter = tk.Tcl()
