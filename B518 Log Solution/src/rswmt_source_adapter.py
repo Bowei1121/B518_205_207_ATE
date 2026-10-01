@@ -260,8 +260,15 @@ class RsWmtSourceAdapter:
             record = parse_rswmt_log(text, path)
             if record is None:
                 evidence = rswmt_log_evidence(text)
-                if any(len(evidence.get(field, "").split(",")) > 1
-                       for field in ("batch_candidates", "source_slots", "source_sns")):
+                multiple_candidates = any(
+                    len(evidence.get(field, "").split(",")) > 1
+                    for field in ("batch_candidates", "source_slots", "source_sns")
+                )
+                has_unbound_source = (
+                    ("source_slots" in evidence or "source_sns" in evidence)
+                    and "batch_candidates" not in evidence
+                )
+                if multiple_candidates or has_unbound_source:
                     observations.append(RsWmtObservation(
                         "warning", str(path),
                         message="RS-WMT: source round is ambiguous; evidence retained for review.",

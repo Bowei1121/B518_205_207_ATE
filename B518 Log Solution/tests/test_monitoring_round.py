@@ -63,6 +63,23 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(review.detail.get('source_time'), '2026-09-11T05:44:22.000')
             self.assertTrue(all(result.status == 'WAITING' for result in snapshot.results))
 
+            unbound = output / 'unbound.log'
+            unbound.write_text(
+                '2026-09-11 05:44:23,000 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_3", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:24,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000003 05 5B\n',
+                encoding='utf-8',
+            )
+            rounds.monitor.poll_once()
+            unbound_warning = next(event.event for event in rounds.snapshot().events
+                                   if event.event.kind == 'warning' and event.event.source == str(unbound))
+
+            self.assertEqual(unbound_warning.detail.get('source_slots'), '3')
+            self.assertEqual(unbound_warning.detail.get('source_sns'), 'SERIAL000003')
+            self.assertEqual(unbound_warning.detail.get('source_time'), '2026-09-11T05:44:24.000')
+            self.assertNotIn('batch_candidates', unbound_warning.detail)
+            self.assertTrue(all(result.status == 'WAITING' for result in rounds.snapshot().results))
+
     def test_rswmt_live_log_preserves_source_timestamp_precision_in_round_evidence(self):
         start = datetime(2026, 9, 11, 5, 44, 16)
         with tempfile.TemporaryDirectory() as temporary:
