@@ -8,7 +8,7 @@
 
 - [06：以專案＋機型選擇配置並啟動一輪](06-project-machine-profile-selection.md)
 
-**Status：**in-progress（驗收、完整測試及 Standards／Spec 審查通過；合併與遠端同步待完成）
+**Status：**complete（驗收、完整測試及 Standards／Spec 審查通過；已合併、同步並清理專用分支）
 
 ## 驗收條件
 
@@ -77,4 +77,6 @@
 - `034324c` — `fix: refresh settings draft after profile changes`。
 - `0572c38` — `test: prevent stale settings after profile reload`。
 - `6e53f69` — `docs: record ticket 07 implementation progress`。
-- 最終驗收紀錄、完整測試結果及提交同步狀態於本次文件更新後一併提交。程式與文件批次均推送至 Gitea 與 GitHub 同名專用分支；合併 commit、合併後驗證、全部目的地同步與安全分支清理結果將於本段追加。
+- `c19320b` — `docs: record ticket 07 acceptance and review`。
+- 一般非快轉合併 commit：`f060ba19721f25a179ab6c203cbca2b041abaf55`（父提交為基準 `0fd33075223a88cce2d76585d38d57d9a8e1407d` 與專用分支 `c19320be069a4b79b20510cf2bd753c093f3a5f8`）。合併後完整套件再次通過：125 tests。
+- 合併 commit 已推送並逐一確認 Gitea `origin` 與 GitHub `github` 的 `B518-Log-Solution` 均為 `f060ba19721f25a179ab6c203cbca2b041abaf55`。其後兩個目的地的 `codex/ticket-07` 均安全刪除並確認遠端 ref 不存在；本地分支以 `git branch -d` 安全刪除。最後 checkout 為 `B518-Log-Solution`，工作樹乾淨。
