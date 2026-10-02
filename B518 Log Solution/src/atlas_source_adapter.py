@@ -18,6 +18,7 @@ ARCHIVE_TIMESTAMP = re.compile(
     r"(?:\.(?P<millisecond>\d{1,3}))?(?:-.+)?$"
 )
 TRUSTED_SN_FIELDS = {"mlb_sn", "primaryidentity", "serialnumber"}
+MAX_SOURCE_POSITION = 20
 
 
 def parse_archive_timestamp(name: str) -> Optional[datetime]:

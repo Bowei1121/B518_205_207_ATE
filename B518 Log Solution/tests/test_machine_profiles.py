@@ -23,6 +23,40 @@ def valid_profile():
 
 
 class MachineProfileTests(unittest.TestCase):
+    def test_capacity_and_source_positions_follow_parser_capabilities(self):
+        for capacity in (1, 4, 6, 10, 12, 20):
+            pairs = [{"source": source, "display": display}
+                     for display, source in enumerate(range(20, 20 - capacity, -1), 1)]
+            record = valid_profile()
+            record.update({"capacity": capacity, "mapping": pairs})
+            catalog = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [record]})
+            self.assertEqual(catalog.get("B518", "DFU").capacity, capacity)
+
+        atlas_one_position = valid_profile()
+        atlas_one_position.update({"capacity": 1, "mapping": [{"source": 20, "display": 1}]})
+        self.assertEqual(ProfileCatalog.from_dict({"schema_version": 1, "profiles": [atlas_one_position]})
+                         .get("B518", "DFU").mapping, ((20, 1),))
+
+        for platform, project, paths in (
+                ("b482", "B482", {"final": "/tmp/b482"}),
+                ("rswmt", "B518", {"final": "/tmp/rswmt"})):
+            record = {"project": project, "machine": "BT", "platform": platform,
+                      "capacity": 1, "paths": paths,
+                      "mapping": [{"source": 4, "display": 1}],
+                      "timeouts": {"start": 30, "test": 240, "round": 7200}}
+            catalog = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [record]})
+            self.assertEqual(catalog.get(project, "BT").mapping, ((4, 1),))
+
+        for platform, project, paths in (
+                ("b482", "B482", {"final": "/tmp/b482"}),
+                ("rswmt", "B518", {"final": "/tmp/rswmt"})):
+            record = {"project": project, "machine": "BT", "platform": platform,
+                      "capacity": 5, "paths": paths,
+                      "mapping": [{"source": source, "display": source} for source in range(1, 6)],
+                      "timeouts": {"start": 30, "test": 240, "round": 7200}}
+            with self.subTest(platform=platform), self.assertRaises(ProfileError):
+                ProfileCatalog.from_dict({"schema_version": 1, "profiles": [record]})
+
     def test_versioned_profile_round_trip_preserves_project_machine_and_mapping(self):
         catalog = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
 
@@ -68,7 +102,7 @@ class MachineProfileTests(unittest.TestCase):
         duplicate_display["mapping"][1]["display"] = 2
         cases.append(duplicate_display)
         out_of_range_source = valid_profile()
-        out_of_range_source["mapping"][1]["source"] = 3
+        out_of_range_source["mapping"][1]["source"] = 21
         cases.append(out_of_range_source)
         out_of_range = valid_profile()
         out_of_range["mapping"][1]["display"] = 3

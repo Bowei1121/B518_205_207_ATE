@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from configured_monitor import ConfiguredMonitor
-from log_monitoring import BtLogMonitor, MonitorEvent, SlotResult
+from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent, SlotResult
 from machine_profiles import MachineProfile, validate_profile
 from monitoring_round import RoundCoordinator
 
@@ -23,6 +23,86 @@ class FakeMonitor:
 
 
 class ConfiguredMonitorTests(unittest.TestCase):
+    def test_capacity_fixtures_publish_mapped_positions_through_shared_round(self):
+        for capacity in (4, 6, 10, 12, 20):
+            with self.subTest(capacity=capacity):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    active, final = root / "active", root / "final"
+                    active.mkdir()
+                    final.mkdir()
+                    sources = tuple(range(20, 20 - capacity, -1))
+                    mapping = {source: display
+                               for display, source in enumerate(sources, start=1)}
+
+                    def create(callback):
+                        holder = {}
+
+                        def deliver(event):
+                            holder["view"].deliver(event, callback)
+
+                        monitor = AtlasActiveArchiveMonitor(
+                            "FCT", active, final, sources, callback=deliver,
+                            session_root=root / "sessions",
+                        )
+                        holder["view"] = ConfiguredMonitor(monitor, mapping)
+                        return holder["view"]
+
+                    rounds = RoundCoordinator()
+                    rounds.start("FCT", create, run_async=False)
+                    for source in reversed(sources):
+                        records = active / "group0-slot{}".format(source) / "system" / "records.csv"
+                        records.parent.mkdir(parents=True)
+                        records.write_text(
+                            "MLB_SN,status\nSERIAL{:08d},Pass\n".format(source),
+                            encoding="utf-8",
+                        )
+                    rounds.monitor.poll_once()
+                    snapshot = rounds.snapshot()
+
+                    self.assertEqual(len(snapshot.results), capacity)
+                    self.assertEqual([result.slot for result in snapshot.results],
+                                     list(range(1, capacity + 1)))
+                    self.assertEqual(snapshot.results[0].sn, "SERIAL{:08d}".format(sources[0]))
+                    self.assertEqual(snapshot.results[-1].sn, "SERIAL{:08d}".format(sources[-1]))
+                    self.assertTrue(all(result.status == "TESTING" for result in snapshot.results))
+                    self.assertEqual([event.event.slot for event in snapshot.events
+                                      if event.event.kind == "sn_locked"],
+                                     list(range(capacity, 0, -1)))
+                    rounds.stop()
+
+    def test_out_of_order_native_positions_map_to_configured_displays_in_round(self):
+        class FourPositionMonitor:
+            def __init__(self, callback):
+                self.callback = callback
+                self.results = {slot: SlotResult(slot) for slot in range(1, 5)}
+
+            def start(self):
+                for source, status in ((4, "FAIL"), (1, "PASS")):
+                    self.results[source].status = status
+                    self.callback(MonitorEvent("result", "source result", source, status=status))
+
+            def stop(self):
+                pass
+
+        mapping = {1: 4, 2: 3, 3: 2, 4: 1}
+
+        def create(callback):
+            holder = {}
+            monitor = FourPositionMonitor(lambda event: holder["view"].deliver(event, callback))
+            holder["view"] = ConfiguredMonitor(monitor, mapping)
+            return holder["view"]
+
+        rounds = RoundCoordinator()
+        rounds.start("BT", create, run_async=False)
+        rounds.monitor.start()
+        snapshot = rounds.snapshot()
+
+        self.assertEqual([(result.slot, result.status) for result in snapshot.results], [
+            (1, "FAIL"), (2, "WAITING"), (3, "WAITING"), (4, "PASS"),
+        ])
+        self.assertEqual([event.event.slot for event in snapshot.events], [1, 4])
+
     def test_profile_mapping_is_visible_through_round_snapshot_and_events(self):
         def create(callback):
             holder = {}

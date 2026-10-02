@@ -55,9 +55,9 @@ open "dist-macos15_0-arm64/B518 Log Solution.app"
 
 ## KVM 顯示與快捷鍵
 
-主視窗是供 KVM 擷取的固定高對比看板：只顯示目前工站、KVM 狀態模板、Slot、狀態、產品 SN 與開始／停止按鈕。它採瘦長的 360 px 固定寬度，所有主畫面文字固定為 14 pt，啟動時會自動放在螢幕右上方；DFU、FCT、BT 分別顯示 7、6、4 個通道。設定、路徑、即時事件與 Session 紀錄都位於左上角的「設定」視窗。
+主視窗是供 KVM 擷取的固定高對比看板：只顯示目前專案／機型、KVM 狀態模板、有效位置、狀態、產品 SN 與開始／停止按鈕。它採瘦長的 376 px 固定寬度，所有主畫面文字固定為 14 pt，啟動時會自動放在螢幕右上方；工程師配置決定有效容量及位置映射。設定、路徑、即時事件與 Session 紀錄都位於左上角的「設定」視窗。
 
-看板頂端的 `KVM RESULT` 是供上位機影像辨識的固定七格色帶。色塊由左至右永遠代表 slot1～7，而且格內不顯示文字。色塊兩端有方向相反的黑白定位標記，可用來定位色帶、確認方向並依固定中心位置取色；因此上位機不需要 OCR。有效通道在每輪開始時為灰色，出現測試活動後為黃色，最終結果為綠色 PASS 或紅色 FAIL；本輪確定完成後仍未參與的有效通道才改為粉紅色 NOTEST，逾時則為橘色 TIMEOUT。設備不存在的通道固定為黑色：FCT 的 slot7，BT 的 slot5～7。
+看板頂端的 `KVM RESULT` 是固定十格色帶；配置容量 1～10 時顯示一排十格，容量 11～20 時顯示兩排各十格。第一排代表位置 1～10，第二排代表 11～20，而且格內不顯示文字。色帶兩端有方向相反的黑白定位標記，可用來定位色帶、確認方向並依固定中心位置取色。容量內有效位置在每輪開始時為灰色 WAITING，出現測試活動後為黃色 TESTING，完成後依結果顯示綠色 PASS、紅色 FAIL 或粉紅色 NOTEST，逾時為橘色 TIMEOUT；容量內未投入位置仍使用 WAITING 等狀態色，容量外位置固定黑色。明細位於可捲動區，色帶不隨明細捲動。
 
 若要顯示正式公司圖標，將提供的原始 PNG 置於 `assets/foxlink_logo.png`。該檔存在時會自動載入；未提供時畫面保留藍色 `FOXlink` 文字識別，避免阻擋監控程式啟動。
 
@@ -71,9 +71,9 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 - 如果這組快捷鍵已被其他程式占用，App 會顯示警告；仍可按主畫面按鈕，或在 Log Solution 有焦點時使用相同按鍵。
 - 目標最小螢幕解析度為 `1280 x 1024`。App 不會強制置頂，部署時應讓 Atlas／BT HMI 不覆蓋右上角看板。
 
-- DFU：選擇 `active` 及 `unitest`；監看 slot1～7。
-- FCT：選擇 `active` 及 `unit-archive`；監看 slot1～6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。
-- BT／B482 TestData 格式：選擇 `TestData`，CaseInfo 根路徑可選。每輪固定監控 Thread0～3；CaseInfo 支援實機的 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
+- DFU：選擇 `active` 及 `unitest`；舊偏好遷移的預設容量為 7。Atlas Adapter 可解析來源位置 1～20，配置容量需依實際設備證據設定。
+- FCT：選擇 `active` 及 `unit-archive`；舊偏好遷移的預設容量為 6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。Atlas Adapter 的 parser 上限不表示真實設備具有相同通道容量。
+- BT／B482 TestData 格式：選擇配置的平台與機型，CaseInfo 根路徑可選。Adapter 將原始 Thread0～3 正規化為來源位置 1～4，再依 profile mapping 顯示在配置位置；CaseInfo 支援既有 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
 每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含事件、結果、設定、時間與來源檔案。
 
@@ -83,14 +83,14 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 
 每輪先按「開始監控」，再到 RS-WMT 按 `Run All`。啟動快照排除原本已存在的檔案，不能把歷史資料夾直接指定為路徑就期待立即顯示結果。歷史驗證請用下方回放工具。
 
-- CSV 跳過 Overlay 與上下限／單位列，讀取 `Serial Number`、`Test Pass/Fail Status`、`Test Start Time`／`Test Stop Time`，以 `tc=Slot...` 的值 1～4 對應 Slot1～4。`Summary_*.csv` 不作為單機結果。
+- CSV 跳過 Overlay 與上下限／單位列，讀取 `Serial Number`、`Test Pass/Fail Status`、`Test Start Time`／`Test Stop Time`，以 `tc=Slot...` 的值 1～4 作為來源位置，再依 profile mapping 對應顯示位置。`Summary_*.csv` 不作為單機結果。
 - 每個結果檔穩定五秒後才定案。不同 Slot 的結束時間可以不同；本輪以解析後的開始時間（秒）鎖定。另一輪／重複 Slot／SN 衝突會記錄事件並保留原結果，不混入本輪。
 - 樣本 CSV 為 `YYYY/DD/MM`，檔名及 Log 為 `YYYY-MM-DD`。解析器以檔名結束時間核對日期，不以檔案複製時間代替測試時間。
 - 無 SN 的明確 Fail 保留 `FAIL`，與 B482「空 SN FAILED → NOTEST」規則分開。沒有觀察到資料的 Slot 保留 WAITING，不憑空推定 PASS／FAIL／NOTEST；現場若有缺檔請停止本輪並收集資料。
 - 即時 Log 支援樣本中的 `initialize`、`instance_active_1～4`、`MLB#..條碼` 與 `shutdown`。單項 `PASS:TestRunner Item complete.` 不代表整機 PASS。若提供另外的 Live logs 路徑，必須是相同格式、每個檔案包含單一 DUT／單輪的 Log；未指定時從結果根目錄讀取 `.log`。
 - 目前只有完成後的原始匯出檔能確定，尚未確認測試中是否就能讀到這些 Log。只有最終匯出時會先等待、接著 COMPLETING，再顯示結果，無法從尚未存在的資料判定 Testing 或測試已當機。
 - 在設定頁切換到 RS-WMT 時，原本 30 秒的等待時間會改為 240 秒供結果匯出模式試用；取消不保存，其他自訂數值保留。測試時間上限仍為 240 秒，從首次觀察到該 Slot 的有效活動起算。若確認即時 Log 可用，可將等待時間設回 30 秒。
-- 最終結果沿用主看板、七格 KVM 色帶與回到前景行為；逾時後的 Slot 不接受遲到結果。
+- 最終結果沿用依 profile 容量顯示的一排或兩排 KVM 色帶與回到前景行為；逾時後的 Slot 不接受遲到結果。
 
 匿名化回歸測試保留實機欄位／Log 標記，不把原始條碼、站點或網路資訊提交到 repo。已用實際四組 CSV／Log 回放核對 Slot 與結果；失敗／缺件／分次寫入等情境另以測試資料驗證，尚待美國現場驗收。
 

@@ -15,7 +15,8 @@ from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
     B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
-    STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour, slot_count, sn_font_size, window_height,
+    STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
+    slot_count, sn_font_size, visible_detail_rows, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -36,6 +37,159 @@ class FakeHotkey:
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def test_running_round_keeps_its_capacity_and_mapping_after_profile_update(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
+            try:
+                app.open_settings()
+                app.profile_editor_capacity.set("3")
+                app.profile_editor_mapping.set("1:3, 2:2, 3:1")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app.start_monitor()
+
+                self.assertIsNotNone(app.monitor)
+                self.assertEqual(app.active_profile_snapshot.capacity, 3)
+                self.assertEqual(len(app.status_rows), 3)
+                self.assertEqual(app.monitor.session.settings["profile_snapshot"]["profile"]["mapping"], [
+                    {"source": 1, "display": 3},
+                    {"source": 2, "display": 2},
+                    {"source": 3, "display": 1},
+                ])
+
+                app.profile_editor_capacity.set("12")
+                app.profile_editor_mapping.set(", ".join("{}:{}".format(slot, slot)
+                                                            for slot in range(1, 13)))
+                app._apply_profile_editor()
+                self.assertEqual(app.profiles.get("B518", "FCT").capacity, 12)
+                self.assertEqual(len(app.status_rows), 3)
+                self.assertEqual(app.active_profile_snapshot.capacity, 3)
+
+                record = active / "group0-slot1" / "system" / "records.csv"
+                record.parent.mkdir(parents=True)
+                record.write_text("MLB_SN,status\nSERIAL00000001,Pass\n", encoding="utf-8")
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    root.update()
+                    snapshot = app.rounds.snapshot()
+                    if any(event.event.kind == "sn_locked" for event in snapshot.events):
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("The running Atlas round did not report the controlled source position")
+
+                result = next(result for result in app.rounds.snapshot().results if result.slot == 3)
+                self.assertEqual((result.sn, result.status), ("SERIAL00000001", "TESTING"))
+                self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
+
+                archive_stamp = app.monitor.started.strftime("%Y%m%d_%H-%M-%S")
+                archive = final / "SERIAL00000001" / archive_stamp / "system" / "records.csv"
+                archive.parent.mkdir(parents=True)
+                archive.write_text("MLB_SN,status\nSERIAL00000001,Pass\n", encoding="utf-8")
+                record.unlink()
+                record.parent.rmdir()
+                (active / "group0-slot1").rmdir()
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline:
+                    root.update()
+                    snapshot = app.rounds.snapshot()
+                    result = next(result for result in snapshot.results if result.slot == 3)
+                    if result.status == "PASS":
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("The Atlas final result did not reach its configured display position")
+
+                app._drain_events()
+                self.assertEqual(app.status_rows[3]["status"].cget("text"), "PASS")
+                self.assertEqual(app.kvm_result_blocks[3].cget("background"), STATUS_COLOURS["PASS"])
+                self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
+            finally:
+                if app.monitor:
+                    app.rounds.stop()
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                app.open_settings()
+                app.profile_editor_capacity.set("10")
+                app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
+                                                            for source in range(1, 11)))
+                app._apply_profile_editor()
+                root.deiconify()
+                root.update()
+                self.assertTrue(app.kvm_result_blocks[10].winfo_ismapped())
+                self.assertFalse(app.kvm_result_blocks[11].winfo_ismapped())
+                self.assertEqual(root.winfo_height(), window_height(10, root.winfo_screenheight()))
+
+                app.profile_editor_capacity.set("11")
+                app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
+                                                            for source in range(1, 12)))
+                app._apply_profile_editor()
+                root.update()
+                self.assertTrue(app.kvm_result_blocks[11].winfo_ismapped())
+                self.assertGreater(app.kvm_result_blocks[11].winfo_y(),
+                                   app.kvm_result_blocks[10].winfo_y())
+                self.assertEqual(root.winfo_height(), window_height(11, root.winfo_screenheight()))
+
+                app.profile_editor_capacity.set("20")
+                app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
+                                                            for source in range(1, 21)))
+                app._apply_profile_editor()
+                root.update_idletasks()
+                root.update()
+
+                self.assertTrue(root.winfo_ismapped())
+                self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                self.assertEqual(root.winfo_height(), window_height(20, root.winfo_screenheight()))
+                self.assertLessEqual(root.winfo_height(), root.winfo_screenheight())
+                self.assertEqual(len(app.status_rows), 20)
+                self.assertEqual(len(app.kvm_result_blocks), 20)
+                self.assertEqual(app.kvm_result_blocks[1].winfo_y(), app.kvm_result_blocks[10].winfo_y())
+                self.assertGreater(app.kvm_result_blocks[11].winfo_y(), app.kvm_result_blocks[10].winfo_y())
+                self.assertEqual(app.kvm_result_blocks[11].winfo_x(), app.kvm_result_blocks[1].winfo_x())
+                self.assertEqual(app.kvm_result_blocks[20].winfo_y(), app.kvm_result_blocks[11].winfo_y())
+                self.assertEqual(app.kvm_result_blocks[20].cget("background"), STATUS_COLOURS["WAITING"])
+                self.assertLess(app.rows_canvas.winfo_height(), len(app.status_rows) * ROW_HEIGHT)
+
+                original_scaling = float(root.tk.call("tk", "scaling"))
+                root.tk.call("tk", "scaling", 1.5)
+                root.update_idletasks()
+                self.assertLessEqual(app.rows_panel.winfo_rooty() + app.rows_panel.winfo_height(),
+                                     root.winfo_rooty() + root.winfo_height())
+                for label in app.template_labels.values():
+                    self.assertLessEqual(label.winfo_reqheight(), label.winfo_height())
+                for row in app.status_rows.values():
+                    self.assertLessEqual(row["status"].winfo_reqheight(), ROW_HEIGHT)
+                root.tk.call("tk", "scaling", original_scaling)
+                root.update_idletasks()
+
+                marker_y = app.kvm_result_blocks[1].winfo_rooty()
+                app.rows_canvas.yview_scroll(100, "units")
+                root.update_idletasks()
+                self.assertEqual(app.kvm_result_blocks[1].winfo_rooty(), marker_y)
+                self.assertEqual(app.rows_canvas.yview()[1], 1.0)
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_engineer_can_apply_and_cancel_a_complete_profile_draft(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -282,27 +436,29 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
 
     def test_station_specific_slot_counts_and_heights(self):
+        # Existing migrated profiles retain their configured capacities.
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
         self.assertEqual(slot_count("BT"), 4)
-        self.assertEqual(window_height("DFU"), 642)
-        self.assertEqual(window_height("FCT"), 595)
-        self.assertEqual(window_height("BT"), 501)
-        self.assertEqual(WINDOW_WIDTH, 360)
+        self.assertEqual(window_height(4), 502)
+        self.assertEqual(window_height(6), 596)
+        self.assertEqual(window_height(7), 643)
+        self.assertEqual(window_height(20), 670)
+        self.assertEqual(visible_detail_rows(20, 500), 2)
+        self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
     def test_all_display_statuses_have_explicit_colours(self):
         for status in ("PASS", "FAIL", "TESTING", "NOTEST", "WAITING", "COMPLETING", "STALLED", "STOPPED", "TIMEOUT"):
             self.assertRegex(STATUS_COLOURS[status], r"^#[0-9a-fA-F]{6}$")
         self.assertRegex(UNAVAILABLE_COLOUR, r"^#[0-9a-fA-F]{6}$")
-        self.assertEqual(KVM_BLOCK_COUNT, 7)
+        self.assertEqual(KVM_BLOCK_COUNT, 20)
 
-    def test_kvm_result_band_keeps_seven_fixed_slot_positions(self):
-        self.assertEqual(kvm_block_colour("DFU", 7, "WAITING"), STATUS_COLOURS["WAITING"])
-        self.assertEqual(kvm_block_colour("FCT", 6, "NOTEST"), STATUS_COLOURS["NOTEST"])
-        self.assertEqual(kvm_block_colour("FCT", 7, "PASS"), UNAVAILABLE_COLOUR)
-        self.assertEqual(kvm_block_colour("BT", 4, "FAIL"), STATUS_COLOURS["FAIL"])
-        self.assertEqual(kvm_block_colour("BT", 5, "TESTING"), UNAVAILABLE_COLOUR)
-        self.assertEqual(kvm_block_colour("BT", 7, "NOTEST"), UNAVAILABLE_COLOUR)
+    def test_kvm_band_separates_capacity_colours_from_unavailable_positions(self):
+        self.assertEqual(kvm_block_colour(20, 20, "PASS"), STATUS_COLOURS["PASS"])
+        self.assertEqual(kvm_block_colour(12, 12, "NOTEST"), STATUS_COLOURS["NOTEST"])
+        self.assertEqual(kvm_block_colour(12, 13, "PASS"), UNAVAILABLE_COLOUR)
+        self.assertEqual(kvm_block_colour(4, 4, "FAIL"), STATUS_COLOURS["FAIL"])
+        self.assertEqual(kvm_block_colour(4, 5, "TESTING"), UNAVAILABLE_COLOUR)
 
     def test_all_serial_numbers_use_fixed_fourteen_point_font(self):
         self.assertEqual(MAIN_FONT_SIZE, 14)

@@ -32,12 +32,17 @@ FIELD_BACKGROUND = "#ffffff"
 TEXT_COLOUR = "#111827"
 MUTED_TEXT_COLOUR = "#555555"
 STATION_SLOTS = {"DFU": 7, "FCT": 6, "BT": 4}
-WINDOW_HEIGHTS = {"DFU": 642, "FCT": 595, "BT": 501}
-WINDOW_WIDTH = 360
+WINDOW_WIDTH = 376
 MAIN_FONT_SIZE = 14
 ROW_HEIGHT = 46
 ROW_GAP = 1
 ROW_WIDTH = 342
+KVM_BAND_HEIGHT = 76
+KVM_SINGLE_ROW_HEIGHT = 49
+KVM_COLUMN_COUNT = 10
+KVM_BLOCK_WIDTH = 34
+DETAIL_ROWS_VISIBLE = 7
+WINDOW_FIXED_HEIGHT = 341
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -45,20 +50,27 @@ STATUS_COLOURS = {
     "TIMEOUT": "#ff9900",
 }
 UNAVAILABLE_COLOUR = "#000000"
-KVM_BLOCK_COUNT = 7
+KVM_BLOCK_COUNT = 20
 
 
 def slot_count(station: str) -> int:
     return STATION_SLOTS.get(station.upper(), STATION_SLOTS["FCT"])
 
 
-def window_height(station: str) -> int:
-    return WINDOW_HEIGHTS.get(station.upper(), WINDOW_HEIGHTS["FCT"])
+def visible_detail_rows(capacity: int, screen_height: int) -> int:
+    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
+    screen_limit = max(1, (screen_height - 64 - fixed_height) // (ROW_HEIGHT + ROW_GAP))
+    return min(max(1, capacity), DETAIL_ROWS_VISIBLE, screen_limit)
 
 
-def kvm_block_colour(station: str, slot: int, status: str) -> str:
+def window_height(capacity: int, screen_height: int = 900) -> int:
+    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
+    return fixed_height + visible_detail_rows(capacity, screen_height) * (ROW_HEIGHT + ROW_GAP)
+
+
+def kvm_block_colour(capacity: int, slot: int, status: str) -> str:
     """Return the no-text KVM result colour for one fixed slot position."""
-    if slot > slot_count(station):
+    if slot > capacity:
         return UNAVAILABLE_COLOUR
     return STATUS_COLOURS.get(status, STATUS_COLOURS["WAITING"])
 
@@ -81,8 +93,10 @@ def configured_directory(value: str) -> Optional[Path]:
 
 
 class B518LogSolutionApp:
-    def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey):
+    def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey,
+                 session_root: Optional[Path] = None):
         self.root = root
+        self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
         self.root.title("B518 Log Solution-V0.1.0")
         self.root.resizable(False, False)
         self.events: queue.Queue[RoundEvent] = queue.Queue()
@@ -90,6 +104,7 @@ class B518LogSolutionApp:
         self.rounds = RoundCoordinator(self.events.put)
         self.active_round_id: Optional[str] = None
         self.monitor = None
+        self.active_profile_snapshot: Optional[MachineProfile] = None
         self.prefs = {}
         self.profile_store = MachineProfileStore(PREFS_PATH)
         self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
@@ -192,16 +207,19 @@ class B518LogSolutionApp:
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
 
-        kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=48)
-        kvm_results.pack(fill="x", pady=(2, 4))
-        kvm_results.pack_propagate(False)
-        tk.Label(kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+        self.kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=KVM_BAND_HEIGHT)
+        self.kvm_results.pack(fill="x", pady=(2, 4))
+        self.kvm_results.pack_propagate(False)
+        tk.Label(self.kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                  font=("Helvetica", 10, "bold"), anchor="w").place(x=0, y=0, width=80, height=16)
-        self._build_kvm_locator(kvm_results, 82, 2, mirrored=False)
-        self._build_kvm_locator(kvm_results, 320, 2, mirrored=True)
+        self._build_kvm_locator(self.kvm_results, 82, 2, mirrored=False)
+        self._build_kvm_locator(self.kvm_results, 320, 2, mirrored=True)
         for slot in range(1, KVM_BLOCK_COUNT + 1):
-            block = tk.Label(kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
-            block.place(x=(slot - 1) * 49, y=20, width=47, height=26)
+            block = tk.Label(self.kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
+            row = (slot - 1) // KVM_COLUMN_COUNT
+            column = (slot - 1) % KVM_COLUMN_COUNT
+            block.place(x=column * KVM_BLOCK_WIDTH, y=20 + row * 27,
+                        width=KVM_BLOCK_WIDTH, height=26)
             self.kvm_result_blocks[slot] = block
 
         legend = tk.Frame(body, background=LIGHT_BACKGROUND, height=58)
@@ -223,10 +241,20 @@ class B518LogSolutionApp:
                      font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center").place(
                 x=x, y=0, width=width, height=30)
 
-        self.rows_box = tk.Frame(body, background="#111111", highlightthickness=1, highlightbackground="#111111",
-                                 width=ROW_WIDTH + 2, height=1)
-        self.rows_box.pack(fill="x")
-        self.rows_box.pack_propagate(False)
+        self.rows_panel = tk.Frame(body, background=LIGHT_BACKGROUND)
+        self.rows_panel.pack(fill="both", expand=True)
+        self.rows_canvas = tk.Canvas(
+            self.rows_panel, background="#111111", highlightthickness=1,
+            highlightbackground="#111111", borderwidth=0, width=ROW_WIDTH + 2, height=1,
+        )
+        self.rows_scrollbar = ttk.Scrollbar(self.rows_panel, orient="vertical", command=self.rows_canvas.yview)
+        self.rows_canvas.configure(yscrollcommand=self.rows_scrollbar.set)
+        self.rows_canvas.pack(side="left", fill="both", expand=True)
+        self.rows_scrollbar.pack(side="right", fill="y")
+        self.rows_box = tk.Frame(self.rows_canvas, background="#111111", width=ROW_WIDTH + 2, height=1)
+        self.rows_canvas_window = self.rows_canvas.create_window((0, 0), anchor="nw", window=self.rows_box)
+        self.rows_box.bind("<Configure>", self._update_rows_scroll_region)
+        self.rows_canvas.bind("<Configure>", self._resize_rows_content)
         controls = tk.Frame(body, background=LIGHT_BACKGROUND, pady=9)
         controls.pack(fill="x", side="bottom")
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
@@ -263,18 +291,38 @@ class B518LogSolutionApp:
         block = self.kvm_result_blocks.get(slot)
         if not block:
             return
-        block.configure(background=kvm_block_colour(self.station.get(), slot, status))
+        block.configure(background=kvm_block_colour(self._display_capacity(), slot, status))
+
+    def _display_capacity(self) -> int:
+        if self.monitor is not None and self.active_profile_snapshot is not None:
+            return self.active_profile_snapshot.capacity
+        try:
+            return self._selected_profile().capacity
+        except (AttributeError, ProfileError):
+            return slot_count(self.station.get())
+
+    def _update_rows_scroll_region(self, _event=None) -> None:
+        self.rows_canvas.configure(scrollregion=self.rows_canvas.bbox("all"))
+
+    def _resize_rows_content(self, event) -> None:
+        self.rows_canvas.itemconfigure(self.rows_canvas_window, width=event.width)
 
     def _render_rows(self) -> None:
         for child in self.rows_box.winfo_children():
             child.destroy()
         self.status_rows = {}
         station = self.station.get().upper()
-        try:
-            row_count = self._selected_profile().capacity
-        except (AttributeError, ProfileError):
-            row_count = slot_count(station)
-        self.rows_box.configure(height=row_count * (ROW_HEIGHT + ROW_GAP) - ROW_GAP)
+        row_count = self._display_capacity()
+        screen_height = self.root.winfo_screenheight()
+        visible_rows = visible_detail_rows(row_count, screen_height)
+        has_second_kvm_row = row_count > KVM_COLUMN_COUNT
+        self.kvm_results.configure(height=KVM_BAND_HEIGHT if has_second_kvm_row
+                                   else KVM_SINGLE_ROW_HEIGHT)
+        self.rows_canvas.configure(height=visible_rows * (ROW_HEIGHT + ROW_GAP))
+        self.rows_box.configure(height=row_count * (ROW_HEIGHT + ROW_GAP), width=ROW_WIDTH + 2)
+        self.rows_scrollbar.pack_forget()
+        if row_count > visible_rows:
+            self.rows_scrollbar.pack(side="right", fill="y")
         self.station_title.configure(text="{} Log 監控".format(station))
         self.monitor_state.configure(text="監控中" if self.monitor else "待命")
         for slot in range(1, row_count + 1):
@@ -292,12 +340,26 @@ class B518LogSolutionApp:
             sn_label.place(x=154, y=0, width=188, height=ROW_HEIGHT)
             self.status_rows[slot] = {"slot": slot_label, "status": status_label, "sn": sn_label}
         for slot in range(1, KVM_BLOCK_COUNT + 1):
+            block = self.kvm_result_blocks[slot]
+            if slot > KVM_COLUMN_COUNT and not has_second_kvm_row:
+                block.place_forget()
+            else:
+                row = (slot - 1) // KVM_COLUMN_COUNT
+                column = (slot - 1) % KVM_COLUMN_COUNT
+                block.place(x=column * KVM_BLOCK_WIDTH, y=20 + row * 27,
+                            width=KVM_BLOCK_WIDTH, height=26)
             self._set_kvm_result_block(slot, "WAITING")
         self._position_window()
 
     def _position_window(self) -> None:
         self.root.update_idletasks()
-        width, height = WINDOW_WIDTH, window_height(self.station.get())
+        capacity = self._display_capacity()
+        width = WINDOW_WIDTH
+        height = window_height(capacity, self.root.winfo_screenheight())
+        visible_rows = visible_detail_rows(capacity, self.root.winfo_screenheight())
+        self.kvm_results.configure(height=KVM_BAND_HEIGHT if capacity > KVM_COLUMN_COUNT
+                                   else KVM_SINGLE_ROW_HEIGHT)
+        self.rows_canvas.configure(height=visible_rows * (ROW_HEIGHT + ROW_GAP))
         x = max(self.root.winfo_screenwidth() - width - 12, 0)
         self.root.geometry("{}x{}+{}+32".format(width, height, x))
 
@@ -473,10 +535,7 @@ class B518LogSolutionApp:
             if caseinfo_text and caseinfo is None:
                 messagebox.showerror("路徑錯誤", "即時 Log 路徑不存在或無法讀取。", parent=self.root)
                 return
-        if profile and profile.capacity > slot_count(station):
-            messagebox.showerror("配置不相容", "目前 {} Adapter／畫面支援容量上限為 {}。".format(
-                station, slot_count(station)), parent=self.root)
-            return
+        self.active_profile_snapshot = profile
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
@@ -501,6 +560,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         round_started_monotonic=round_started_monotonic,
+                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 elif platform == "b482":
                     monitor = BtLogMonitor(
@@ -508,6 +568,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         round_started_monotonic=round_started_monotonic,
+                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 elif platform == "atlas":
                     monitor = AtlasActiveArchiveMonitor(
@@ -515,6 +576,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         round_started_monotonic=round_started_monotonic,
+                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 else:
                     raise ValueError("未知平台：{}。".format(platform))
@@ -536,6 +598,7 @@ class B518LogSolutionApp:
             self.monitor = self.rounds.monitor
         except Exception as error:
             self.monitor = None
+            self.active_profile_snapshot = None
             self._set_monitor_controls(False)
             message = "無法開始監控：{}".format(error)
             self._log(message)
@@ -609,6 +672,7 @@ class B518LogSolutionApp:
                                    parent=self.root)
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
+            self.active_profile_snapshot = None
             self._set_monitor_controls(False)
 
     def open_settings(self) -> None:
@@ -1074,7 +1138,7 @@ class B518LogSolutionApp:
         self.settings_log = None
 
     def open_session(self) -> None:
-        path = self.monitor.session.path if self.monitor else (APP_ROOT / "sessions")
+        path = self.monitor.session.path if self.monitor else self.session_root
         path.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.Popen(["open", str(path)])

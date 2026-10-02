@@ -9,12 +9,21 @@ from pathlib import Path
 import tempfile
 from typing import Dict, Iterable, Mapping, Tuple
 
+from atlas_source_adapter import MAX_SOURCE_POSITION as ATLAS_MAX_SOURCE_POSITION
+from b482_source_adapter import MAX_SOURCE_POSITION as B482_MAX_SOURCE_POSITION
+from rswmt_source_adapter import MAX_SOURCE_POSITION as RSWMT_MAX_SOURCE_POSITION
+
 
 PROFILE_SCHEMA_VERSION = 1
 SUPPORTED_MACHINES = ("DFU", "FCT", "BT")
 SUPPORTED_PLATFORMS = ("atlas", "b482", "rswmt")
 MAX_CAPACITY = 20
 TIMEOUT_FIELDS = ("start", "test", "round")
+PLATFORM_SOURCE_POSITIONS = {
+    "atlas": tuple(range(1, ATLAS_MAX_SOURCE_POSITION + 1)),
+    "b482": tuple(range(1, B482_MAX_SOURCE_POSITION + 1)),
+    "rswmt": tuple(range(1, RSWMT_MAX_SOURCE_POSITION + 1)),
+}
 
 
 class ProfileError(ValueError):
@@ -281,6 +290,10 @@ def validate_profile(profile: MachineProfile) -> None:
         raise ProfileError("{} 平台僅支援 BT 機型。".format(profile.platform))
     if type(profile.capacity) is not int or not 1 <= profile.capacity <= MAX_CAPACITY:
         raise ProfileError("capacity 必須是 1 至 {} 的整數。".format(MAX_CAPACITY))
+    source_positions = PLATFORM_SOURCE_POSITIONS[profile.platform]
+    if profile.capacity > len(source_positions):
+        raise ProfileError("{} 平台解析器目前支援最多 {} 個來源位置，配置容量不可超出。".format(
+            profile.platform, len(source_positions)))
     required_paths = {"atlas": {"active", "final"}, "b482": {"final"},
                       "rswmt": {"final"}}[profile.platform]
     if not isinstance(profile.paths, Mapping) or not required_paths.issubset(profile.paths):
@@ -294,8 +307,9 @@ def validate_profile(profile: MachineProfile) -> None:
         if not isinstance(pair, tuple) or len(pair) != 2:
             raise ProfileError("mapping 必須是 source/display 整數組。")
         source, display = pair
-        if type(source) is not int or not 1 <= source <= profile.capacity:
-            raise ProfileError("mapping source 超出配置容量。")
+        if type(source) is not int or source not in source_positions:
+            raise ProfileError("mapping source 不受 {} 平台解析器支援（來源位置 {} 至 {}）。".format(
+                profile.platform, source_positions[0], source_positions[-1]))
         if type(display) is not int or not 1 <= display <= profile.capacity:
             raise ProfileError("mapping display 超出配置容量。")
         sources.append(source)
