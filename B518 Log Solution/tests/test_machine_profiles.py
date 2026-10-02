@@ -1,10 +1,12 @@
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from machine_profiles import (
-    MachineProfile, MachineProfileStore, ProfileCatalog, ProfileError, migrate_legacy_preferences,
+    MachineProfile, MachineProfileStore, ProfileCatalog, ProfileError,
+    migrate_legacy_preferences, profile_from_editor_fields,
 )
 
 
@@ -30,6 +32,23 @@ class MachineProfileTests(unittest.TestCase):
         self.assertEqual(restored.capacity, 2)
         self.assertEqual(restored.mapping, ((1, 2), (2, 1)))
 
+    def test_profile_document_json_round_trip_preserves_equivalent_catalog(self):
+        catalog = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+        restored = ProfileCatalog.from_json(catalog.to_json())
+
+        self.assertEqual(restored.to_dict(), catalog.to_dict())
+
+    def test_profile_document_json_rejects_invalid_text_without_path_checks(self):
+        payload = {"schema_version": 1, "profiles": [valid_profile()]}
+        payload["profiles"][0]["paths"]["active"] = "/path/not/on-this-computer"
+
+        restored = ProfileCatalog.from_json(json.dumps(payload))
+
+        self.assertEqual(restored.get("B518", "DFU").paths["active"], "/path/not/on-this-computer")
+        with self.assertRaisesRegex(ProfileError, "JSON"):
+            ProfileCatalog.from_json("{")
+
     def test_invalid_profile_matrix_is_rejected(self):
         cases = []
         unknown_platform = valid_profile()
@@ -45,6 +64,12 @@ class MachineProfileTests(unittest.TestCase):
         duplicate_source = valid_profile()
         duplicate_source["mapping"][1]["source"] = 1
         cases.append(duplicate_source)
+        duplicate_display = valid_profile()
+        duplicate_display["mapping"][1]["display"] = 2
+        cases.append(duplicate_display)
+        out_of_range_source = valid_profile()
+        out_of_range_source["mapping"][1]["source"] = 3
+        cases.append(out_of_range_source)
         out_of_range = valid_profile()
         out_of_range["mapping"][1]["display"] = 3
         cases.append(out_of_range)
@@ -64,6 +89,11 @@ class MachineProfileTests(unittest.TestCase):
         incompatible["machine"] = "BT"
         with self.assertRaises(ProfileError):
             ProfileCatalog.from_dict({"schema_version": 1, "profiles": [incompatible]})
+
+    def test_duplicate_project_and_machine_profiles_are_rejected(self):
+        record = valid_profile()
+        with self.assertRaisesRegex(ProfileError, "重複"):
+            ProfileCatalog.from_dict({"schema_version": 1, "profiles": [record, record]})
 
     def test_legacy_preferences_migrate_to_a_profile_and_restore_selection(self):
         catalog, project, machine = migrate_legacy_preferences({
@@ -125,6 +155,68 @@ class MachineProfileTests(unittest.TestCase):
 
             self.assertIn("不支援的偏好版本", error)
             self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_import_document_replaces_catalog_only_after_validated_save(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original_catalog, _project, _machine = migrate_legacy_preferences({})
+            store = MachineProfileStore(path)
+            store.save(original_catalog, "B518", "FCT")
+            original = path.read_text(encoding="utf-8")
+            imported = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+            with self.assertRaisesRegex(ProfileError, "JSON"):
+                store.import_document("{", "B518", "DFU")
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+            restored, project, machine = store.import_document(imported.to_json(), "B518", "FCT")
+
+            self.assertEqual((project, machine), ("B518", "DFU"))
+            self.assertEqual(restored.to_dict(), imported.to_dict())
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["project"], "B518")
+            self.assertEqual(persisted["machine"], "DFU")
+
+    def test_import_save_failure_keeps_existing_preference_file(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            original_catalog, _project, _machine = migrate_legacy_preferences({})
+            store.save(original_catalog, "B518", "FCT")
+            original = path.read_text(encoding="utf-8")
+            imported = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+            with patch("machine_profiles.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    store.import_document(imported.to_json(), "B518", "DFU")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_engineer_fields_build_a_profile_and_validate_required_paths(self):
+        profile = profile_from_editor_fields(
+            "Demo", "DFU", "atlas", "2",
+            {"active": "/deployed/active", "final": "/deployed/final", "caseinfo": ""},
+            "1:2, 2:1", {"start": "30", "test": "480", "round": "7200"},
+        )
+
+        self.assertEqual(profile.key, ("Demo", "DFU"))
+        self.assertEqual(profile.mapping, ((1, 2), (2, 1)))
+        self.assertEqual(profile.paths["active"], "/deployed/active")
+        with self.assertRaisesRegex(ProfileError, "容量"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2.0", {"active": "", "final": ""}, "1:1,2:2",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
+        with self.assertRaisesRegex(ProfileError, "mapping"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2", {"active": "/a", "final": "/b"}, "1:1,2:oops",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
+        with self.assertRaisesRegex(ProfileError, "路徑"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2", {"final": "/b"}, "1:1,2:2",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Dict, Iterable, Mapping, Tuple
 
 
@@ -86,6 +87,19 @@ class ProfileCatalog:
         return {"schema_version": PROFILE_SCHEMA_VERSION,
                 "profiles": [profile.to_dict() for profile in self._profiles.values()]}
 
+    def to_json(self) -> str:
+        """Serialize a portable profile document without checking local paths."""
+        return _profile_document_json(self.to_dict())
+
+    @classmethod
+    def from_json(cls, document: str) -> "ProfileCatalog":
+        """Parse and structurally validate a portable profile document."""
+        try:
+            payload = json.loads(document)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ProfileError("配置 JSON 格式錯誤：{}".format(error))
+        return cls.from_dict(payload)
+
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "ProfileCatalog":
         if not isinstance(payload, Mapping):
@@ -145,18 +159,87 @@ class MachineProfileStore:
 
     def save(self, catalog: ProfileCatalog, project: str, machine: str,
              preserve_legacy: bool = False) -> None:
-        if preserve_legacy and self.path.exists():
-            legacy_path = self.path.with_name("preferences.legacy.json")
-            if not legacy_path.exists():
-                legacy_path.write_text(self.path.read_text(encoding="utf-8"), encoding="utf-8")
         catalog.get(project, machine)
         payload = catalog.to_dict()
         payload.update({"project": project, "machine": machine})
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(self.path.name + ".tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(str(temporary), str(self.path))
+        if preserve_legacy and self.path.exists():
+            legacy_path = self.path.with_name("preferences.legacy.json")
+            if not legacy_path.exists():
+                _atomic_write_text(legacy_path, self.path.read_text(encoding="utf-8"))
+        _atomic_write_text(self.path, _profile_document_json(payload))
         self.migration_required = False
+
+    def import_document(self, document: str, selected_project: str, selected_machine: str):
+        """Validate a complete catalog, then atomically replace the saved catalog."""
+        catalog = ProfileCatalog.from_json(document)
+        try:
+            catalog.get(selected_project, selected_machine)
+        except ProfileError:
+            selected_project, selected_machine = catalog.profiles[0].key
+        self.save(catalog, selected_project, selected_machine)
+        return catalog, selected_project, selected_machine
+
+    @staticmethod
+    def export_document(path: Path, catalog: ProfileCatalog) -> None:
+        _atomic_write_text(Path(path), catalog.to_json())
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace one text file atomically and remove a temporary file on failure."""
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(path.parent),
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(text)
+        os.replace(str(temporary_path), str(path))
+    except OSError:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def _profile_document_json(payload: Mapping[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def profile_from_editor_fields(project: str, machine: str, platform: str, capacity: str,
+                               paths: Mapping[str, str], mapping: str,
+                               timeouts: Mapping[str, str]) -> MachineProfile:
+    """Build and structurally validate one profile from engineer form values."""
+    capacity_value = _editor_integer(capacity, "容量")
+    pairs = []
+    for entry in mapping.split(","):
+        pieces = entry.strip().split(":")
+        if len(pieces) != 2:
+            raise ProfileError("mapping 欄位須使用來源:顯示位置格式，例如 1:1,2:2。")
+        pairs.append((_editor_integer(pieces[0], "mapping source"),
+                      _editor_integer(pieces[1], "mapping display")))
+    parsed_timeouts = {
+        name: _editor_integer(timeouts.get(name, ""), "{} 期限（正整數秒）".format(label))
+        for name, label in (("start", "開始"), ("test", "測試"), ("round", "整輪"))
+    }
+    profile = MachineProfile(
+        project=project.strip() if isinstance(project, str) else project,
+        machine=machine, platform=platform, capacity=capacity_value,
+        paths=dict(paths), mapping=tuple(pairs), timeouts=parsed_timeouts,
+    )
+    validate_profile(profile)
+    return profile
+
+
+def _editor_integer(value: str, field: str) -> int:
+    text = value.strip() if isinstance(value, str) else ""
+    if not text or any(character < "0" or character > "9" for character in text):
+        raise ProfileError("{}必須是正整數。".format(field))
+    parsed = int(text)
+    if parsed <= 0:
+        raise ProfileError("{}必須是正整數。".format(field))
+    return parsed
 
 def _profile_from_dict(record: object) -> MachineProfile:
     if not isinstance(record, Mapping):
@@ -211,8 +294,8 @@ def validate_profile(profile: MachineProfile) -> None:
         if not isinstance(pair, tuple) or len(pair) != 2:
             raise ProfileError("mapping 必須是 source/display 整數組。")
         source, display = pair
-        if type(source) is not int or source < 1:
-            raise ProfileError("mapping source 必須是正整數。")
+        if type(source) is not int or not 1 <= source <= profile.capacity:
+            raise ProfileError("mapping source 超出配置容量。")
         if type(display) is not int or not 1 <= display <= profile.capacity:
             raise ProfileError("mapping display 超出配置容量。")
         sources.append(source)

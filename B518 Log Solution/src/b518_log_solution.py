@@ -18,7 +18,7 @@ from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMon
 from monitoring_round import RoundCoordinator, RoundEvent
 from configured_monitor import ConfiguredMonitor
 from machine_profiles import (
-    MachineProfile, MachineProfileStore, ProfileError,
+    MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
 from rswmt_monitoring import RsWmtLogMonitor
 
@@ -325,6 +325,7 @@ class B518LogSolutionApp:
         self.bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
 
     def _refresh_machine_choices(self) -> None:
+        self.project_choice.configure(values=self.profiles.projects)
         available = self.profiles.for_project(self.project.get())
         machines = tuple(profile.machine for profile in available)
         self.machine_choice.configure(values=machines)
@@ -333,13 +334,15 @@ class B518LogSolutionApp:
         self._load_selected_profile_values()
 
     def _project_changed(self, _event=None) -> None:
-        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+        if self.profile_error and self.profile_error.startswith((
+                "已保存的專案與機型選擇", "目前選擇已從配置清單移除")):
             self.profile_error = None
         self._refresh_machine_choices()
         self._render_rows()
 
     def _profile_changed(self, _event=None) -> None:
-        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+        if self.profile_error and self.profile_error.startswith((
+                "已保存的專案與機型選擇", "目前選擇已從配置清單移除")):
             self.profile_error = None
         self._load_selected_profile_values()
         self.bt_format.set("B518 RS-WMT" if self._profile_platform() == "rswmt" else "B482 TestData")
@@ -621,13 +624,278 @@ class B518LogSolutionApp:
         dialog.transient(self.root)
         dialog.protocol("WM_DELETE_WINDOW", self._close_settings)
         notebook = ttk.Notebook(dialog)
+        self.settings_notebook = notebook
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
         settings_tab = ttk.Frame(notebook, padding=12)
+        profile_tab = ttk.Frame(notebook, padding=12)
         log_tab = ttk.Frame(notebook, padding=12)
         notebook.add(settings_tab, text="監控設定")
+        notebook.add(profile_tab, text="工程師配置")
         notebook.add(log_tab, text="事件與 Session")
         self._build_settings_tab(settings_tab)
+        self._build_profile_editor_tab(profile_tab)
         self._build_log_tab(log_tab)
+
+    def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
+        """Build a draft editor whose values stay separate until explicit apply."""
+        try:
+            profile = self.profiles.get(self.project.get(), self.station.get())
+        except ProfileError:
+            profile = self.profiles.profiles[0]
+        self.profile_editor_original = profile
+        self.profile_editor_project = tk.StringVar(value=profile.project)
+        self.profile_editor_machine = tk.StringVar(value=profile.machine)
+        self.profile_editor_platform = tk.StringVar(value=profile.platform)
+        self.profile_editor_capacity = tk.StringVar(value=str(profile.capacity))
+        self.profile_editor_paths = {
+            field: tk.StringVar(value=profile.paths.get(field, ""))
+            for field in ("active", "final", "caseinfo")
+        }
+        self.profile_editor_mapping = tk.StringVar(value=self._mapping_text(profile.mapping))
+        self.profile_editor_timeouts = {
+            field: tk.StringVar(value=str(profile.timeouts[field]))
+            for field in ("start", "test", "round")
+        }
+        self.profile_editor_status = tk.StringVar(
+            value="編輯草稿；路徑只做結構檢查，實際可讀性在開始監控前檢查。")
+
+        ttk.Label(parent, text="專案代號").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.profile_editor_project, width=18).grid(
+            row=0, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(parent, text="機型").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=4)
+        self.profile_editor_machine_choice = ttk.Combobox(
+            parent, textvariable=self.profile_editor_machine,
+            values=("DFU", "FCT", "BT"), state="readonly", width=9)
+        self.profile_editor_machine_choice.grid(
+            row=0, column=3, sticky="w", padx=6, pady=4)
+        ttk.Label(parent, text="平台").grid(row=0, column=4, sticky="w", padx=(12, 0), pady=4)
+        ttk.Combobox(parent, textvariable=self.profile_editor_platform,
+                     values=("atlas", "b482", "rswmt"), state="readonly", width=12).grid(
+            row=0, column=5, sticky="w", padx=6, pady=4)
+
+        ttk.Label(parent, text="測試容量").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.profile_editor_capacity, width=10).grid(
+            row=1, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(parent, text="來源:顯示位置映射").grid(row=1, column=2, sticky="w", padx=(12, 0), pady=4)
+        ttk.Entry(parent, textvariable=self.profile_editor_mapping, width=34).grid(
+            row=1, column=3, columnspan=3, sticky="ew", padx=6, pady=4)
+
+        path_labels = (("active", "即時 Log 路徑"), ("final", "最終結果路徑"),
+                       ("caseinfo", "CaseInfo／進度路徑（選填）"))
+        for row, (field, label) in enumerate(path_labels, 2):
+            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Entry(parent, textvariable=self.profile_editor_paths[field]).grid(
+                row=row, column=1, columnspan=4, sticky="ew", padx=6, pady=4)
+            ttk.Button(parent, text="選擇本機資料夾",
+                       command=lambda current=field: self._choose_profile_editor_path(current)).grid(
+                row=row, column=5, sticky="e", padx=6, pady=4)
+
+        timeout_labels = (("start", "開始期限（秒）"), ("test", "測試期限（秒）"),
+                          ("round", "整輪期限（秒）"))
+        for row, (field, label) in enumerate(timeout_labels, 5):
+            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
+                row=row, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(parent, textvariable=self.profile_editor_status, wraplength=620,
+                  foreground=TEXT_COLOUR).grid(row=8, column=0, columnspan=6, sticky="w", pady=(10, 6))
+        edit_actions = ttk.Frame(parent)
+        edit_actions.grid(row=9, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        for label, action in (("載入已保存配置", self._load_profile_editor_selection),
+                              ("驗證草稿", self._validate_profile_editor),
+                              ("套用並保存", self._apply_profile_editor),
+                              ("取消草稿", self._cancel_profile_editor)):
+            ttk.Button(edit_actions, text=label, command=action).pack(side="left", padx=(0, 6))
+        file_actions = ttk.Frame(parent)
+        file_actions.grid(row=10, column=0, columnspan=6, sticky="ew", pady=(6, 0))
+        for label, action in (("匯入配置", self._import_profiles),
+                              ("匯出配置", self._export_profiles),
+                              ("重新載入部署配置", self._reload_profiles)):
+            ttk.Button(file_actions, text=label, command=action).pack(side="left", padx=(0, 6))
+        parent.columnconfigure(3, weight=1)
+        parent.rowconfigure(7, weight=1)
+
+    @staticmethod
+    def _mapping_text(mapping) -> str:
+        return ", ".join("{}:{}".format(source, display) for source, display in mapping)
+
+    def _choose_profile_editor_path(self, field: str) -> None:
+        path = filedialog.askdirectory(parent=self.settings_window, mustexist=True,
+                                       title="選擇配置路徑")
+        if path:
+            self.profile_editor_paths[field].set(path)
+
+    def _profile_editor_draft(self) -> Optional[MachineProfile]:
+        try:
+            profile = profile_from_editor_fields(
+                self.profile_editor_project.get(), self.profile_editor_machine.get(),
+                self.profile_editor_platform.get(), self.profile_editor_capacity.get(),
+                {field: variable.get() for field, variable in self.profile_editor_paths.items()},
+                self.profile_editor_mapping.get(),
+                {field: variable.get() for field, variable in self.profile_editor_timeouts.items()},
+            )
+        except (ProfileError, TypeError, ValueError) as error:
+            self.profile_editor_status.set("配置欄位錯誤：{}".format(error))
+            return None
+        self.profile_editor_status.set("結構驗證通過；部署電腦仍會在開始前檢查路徑。")
+        return profile
+
+    def _validate_profile_editor(self) -> None:
+        self._profile_editor_draft()
+
+    def _apply_profile_editor(self) -> None:
+        profile = self._profile_editor_draft()
+        if profile is None:
+            return
+        catalog = self.profiles.with_profile(profile)
+        try:
+            self.profile_store.save(
+                catalog, profile.project, profile.machine,
+                preserve_legacy=self.profile_store.migration_required,
+            )
+        except (OSError, ProfileError, TypeError, ValueError) as error:
+            self.profile_editor_status.set("保存失敗，原配置仍有效：{}".format(error))
+            return
+        self.profiles = catalog
+        self.profile_error = None
+        self.profile_editor_original = profile
+        if self.monitor is None:
+            self.project.set(profile.project)
+            self.station.set(profile.machine)
+        self._load_selected_profile_values()
+        self._refresh_machine_choices()
+        self._synchronize_monitor_settings_draft()
+        if self.monitor is None:
+            self._render_rows()
+        self._render_profile_editor(profile)
+        self.profile_editor_status.set("配置已套用並保存；更新供後續輪次使用。")
+
+    def _cancel_profile_editor(self) -> None:
+        self._render_profile_editor(self.profile_editor_original)
+        self.profile_editor_status.set("草稿已取消，已保存配置未變更。")
+
+    def _load_profile_editor_selection(self) -> None:
+        try:
+            profile = self.profiles.get(
+                self.profile_editor_project.get().strip(), self.profile_editor_machine.get())
+        except ProfileError as error:
+            self.profile_editor_status.set("找不到可載入配置：{}".format(error))
+            return
+        self.profile_editor_original = profile
+        self._render_profile_editor(profile)
+        self.profile_editor_status.set("已載入已保存配置作為草稿。")
+
+    def _render_profile_editor(self, profile: MachineProfile) -> None:
+        self.profile_editor_project.set(profile.project)
+        self.profile_editor_machine.set(profile.machine)
+        self.profile_editor_platform.set(profile.platform)
+        self.profile_editor_capacity.set(str(profile.capacity))
+        for field in self.profile_editor_paths:
+            self.profile_editor_paths[field].set(profile.paths.get(field, ""))
+        self.profile_editor_mapping.set(self._mapping_text(profile.mapping))
+        for field in self.profile_editor_timeouts:
+            self.profile_editor_timeouts[field].set(str(profile.timeouts[field]))
+
+    def _synchronize_monitor_settings_draft(self) -> None:
+        """Prevent the legacy settings tab from saving values captured before an update."""
+        settings_paths = getattr(self, "settings_paths", None)
+        settings_timeouts = getattr(self, "settings_timeouts", None)
+        if settings_paths is None or settings_timeouts is None:
+            return
+        try:
+            profile = self.profiles.get(self.project.get(), self.station.get())
+        except ProfileError:
+            return
+        self.settings_project.set(profile.project)
+        self.settings_station.set(profile.machine)
+        self.settings_bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
+        for field, value in profile.paths.items():
+            if field in settings_paths[profile.machine]:
+                settings_paths[profile.machine][field].set(value)
+        for field, value in profile.timeouts.items():
+            settings_timeouts[profile.machine][field].set(str(value))
+
+    def _import_profiles(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self.settings_window, title="匯入工程師配置",
+            filetypes=(("JSON 配置", "*.json"), ("所有檔案", "*")),
+        )
+        if not path:
+            return
+        try:
+            document = Path(path).read_text(encoding="utf-8")
+            catalog, project, machine = self.profile_store.import_document(
+                document, self.project.get(), self.station.get())
+        except (OSError, ProfileError, TypeError, ValueError) as error:
+            self.profile_editor_status.set("匯入失敗，原配置保留：{}".format(error))
+            return
+        self._activate_profile_catalog(
+            catalog, project, machine,
+            "配置已驗證、完整匯入並保存。",
+            "匯入後原選擇不存在；已明確切換至文件中的有效配置：{project} / {machine}。",
+        )
+
+    def _export_profiles(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self.settings_window, title="匯出工程師配置",
+            defaultextension=".json", filetypes=(("JSON 配置", "*.json"),),
+        )
+        if not path:
+            return
+        try:
+            MachineProfileStore.export_document(Path(path), self.profiles)
+        except OSError as error:
+            self.profile_editor_status.set("匯出失敗：{}".format(error))
+            return
+        self.profile_editor_status.set("已匯出 {} 組配置。".format(len(self.profiles.profiles)))
+
+    def _reload_profiles(self) -> None:
+        catalog, saved_project, saved_machine, error = self.profile_store.load()
+        if error:
+            self.profile_editor_status.set("重新載入失敗，目前有效配置保留：{}".format(error))
+            return
+        self._activate_profile_catalog(
+            catalog, saved_project, saved_machine,
+            "已重新載入部署配置；正在進行的輪次仍使用原快照。",
+            "重新載入後原選擇不存在；已明確切換至偏好檔中的有效配置：{project} / {machine}。",
+        )
+
+    def _activate_profile_catalog(self, catalog, suggested_project: str, suggested_machine: str,
+                                  success_message: str, fallback_message: str) -> None:
+        """Activate a valid catalog while preserving or explicitly replacing selection."""
+        try:
+            profile = catalog.get(self.project.get(), self.station.get())
+        except ProfileError:
+            profile = None
+        if profile is None and self.monitor is not None:
+            self.profiles = catalog
+            self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
+            editor_profile = catalog.get(suggested_project, suggested_machine)
+            self.profile_editor_original = editor_profile
+            self._render_profile_editor(editor_profile)
+            self.profile_editor_status.set(self.profile_error)
+            return
+        selection_changed = profile is None
+        if selection_changed:
+            profile = catalog.get(suggested_project, suggested_machine)
+        try:
+            catalog.get(profile.project, profile.machine)
+        except ProfileError:
+            raise ProfileError("匯入／重新載入配置缺少建議的有效選擇。")
+        self.profiles = catalog
+        self.project.set(profile.project)
+        self.station.set(profile.machine)
+        self.profile_error = None
+        self._refresh_machine_choices()
+        self._synchronize_monitor_settings_draft()
+        if self.monitor is None:
+            self._render_rows()
+        self.profile_editor_original = profile
+        self._render_profile_editor(profile)
+        if selection_changed:
+            self.profile_editor_status.set(fallback_message.format(
+                project=profile.project, machine=profile.machine))
+        else:
+            self.profile_editor_status.set(success_message)
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.settings_station = tk.StringVar(value=self.station.get())
