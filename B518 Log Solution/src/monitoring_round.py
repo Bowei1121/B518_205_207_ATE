@@ -7,7 +7,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from datetime import datetime
 from enum import Enum
 from typing import Callable, Dict, Optional, Tuple
 
@@ -138,6 +137,22 @@ class MonitoringRound:
                     self._completion_reason = "manual_stop"
             return self.snapshot()
 
+    def resolve_review(self, choice: str) -> RoundSnapshot:
+        """Resolve captured review evidence, then apply the normal release rule."""
+        with self._poll_lock:
+            with self._lock:
+                monitor = self._monitor
+                if monitor is None or self._state not in {
+                        RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                    return self.snapshot()
+            resolver = getattr(monitor, "resolve_review", None)
+            if not callable(resolver):
+                return self.snapshot()
+            resolver(choice)
+            if self._collection_stopped:
+                self._finish_if_terminal()
+            return self.snapshot()
+
     def snapshot(self) -> RoundSnapshot:
         with self._lock:
             results = tuple(
@@ -173,9 +188,6 @@ class MonitoringRound:
         with self._lock:
             self._monitor = monitor
             stop_requested = self._stop_requested
-        session = getattr(monitor, "session", None)
-        if session is not None:
-            session.update_settings({"accepted_start_at": self._accepted_start_at})
         session = getattr(monitor, "session", None)
         if session is not None:
             session.update_settings({"accepted_start_at": self._accepted_start_at})
@@ -283,7 +295,7 @@ class MonitoringRound:
         if self._monitor is None:
             return
         with self._lock:
-            if self._state != RoundState.RUNNING:
+            if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return
         if not self._monitor.results or any(result.status not in TERMINAL
                                             for result in self._monitor.results.values()):
@@ -295,7 +307,7 @@ class MonitoringRound:
                 self._completion_reason = "review_pending"
             return
         with self._lock:
-            if self._state != RoundState.RUNNING:
+            if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return
             self._state = RoundState.COMPLETED
             self._completion_reason = "results_terminal"
@@ -361,6 +373,11 @@ class RoundCoordinator:
     def stop(self) -> Optional[RoundSnapshot]:
         with self._lock:
             return self._current.stop() if self._current is not None else None
+
+    def resolve_review(self, choice: str) -> Optional[RoundSnapshot]:
+        with self._lock:
+            current = self._current
+        return current.resolve_review(choice) if current is not None else None
 
     def snapshot(self) -> Optional[RoundSnapshot]:
         with self._lock:

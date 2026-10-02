@@ -660,7 +660,7 @@ class B518LogSolutionApp:
             self._bring_dashboard_to_front()
         if event.kind == "review" and self.monitor:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
-            self.monitor.resolve_review("accept" if choice else "reject")
+            self.rounds.resolve_review("accept" if choice else "reject")
         if event.kind == "timeout" and event.detail.get("kind") == "start":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")

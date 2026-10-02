@@ -47,7 +47,7 @@ Ticket 03 的實機／發布驗收及 Ticket 05 的 RS-WMT 實機即時時機仍
 - 明確推進順序：每次 poll_once() 以推進開始時間判斷期限；到期（包含恰好相等）先裁決期限、不讀來源；尚未到期則先完整讀取該批資料，再進入下一次期限判斷。這使批次內多來源結果不受檔名、掃描或執行緒排序左右，並保留 Adapter 的檔案穩定等待。
 - 7 項驗收如上均已勾選。測試涵蓋全空／部分活動／部分終態、準備期間跨過期限、開始 t0 不重設、TESTING 與 COMPLETING 個別逾時、終態鎖定、RS-WMT final-only、到期前／恰好到期、人工停止混合狀態、停止後遲到結果及舊輪事件隔離；Atlas／B482／RS-WMT 透過共同入口回歸。
 - 實際 Tk App 隔離回放命令：python3 'B518 Log Solution/tools/smoke_deadline_app.py'。App 由同一視窗驗證 Atlas 未放滿 [PASS, NOTEST]、全空 [NOTEST, NOTEST]、個別逾時加人工停止 [TIMEOUT, STOPPED]，以及 RS-WMT final-only [PASS, NOTEST, NOTEST, NOTEST]。Tk 視窗 376x596，scaling 1.0；回放偏好、profile、來源與輸出均在臨時目錄，序號為合成資料。
-- 專案完整測試命令：python3 'B518 Log Solution/scripts/run_tests.py'，132 tests 通過。相關單檔命令：python3 scripts/run_tests.py test_monitoring_round test_configured_monitor test_atlas_source_adapter test_b482_source_adapter test_rswmt_monitoring test_log_monitoring，59 tests 通過；Tk UI 單檔 36 tests 通過。專案沒有 mypy、pyright 或其他型別檢查設定；未以 compileall 代替型別檢查。
+- 專案完整測試命令：python3 scripts/run_tests.py，133 tests 通過。相關單檔命令：python3 scripts/run_tests.py test_monitoring_round test_configured_monitor test_atlas_source_adapter test_b482_source_adapter test_rswmt_monitoring test_log_monitoring，60 tests 通過；Tk UI 單檔 36 tests 通過。專案沒有 mypy、pyright 或其他型別檢查設定；未以 compileall 代替型別檢查。
 - 原始實機資料保持唯讀；本次未做實機即時時機、目標設備、正式發布 App 或上位機共同驗收，依指示沒有宣稱通過。Ticket 16／17 與 Ticket 18 的分工及未決政策維持不變。
-- 審查基準固定為 9950cabb1d01d9b022065ba9ef065a6b9527938a。Standards／Spec 審查結果、修正與複審結果待本節補記後才可結案。
+- 審查基準固定為 9950cabb1d01d9b022065ba9ef065a6b9527938a。初審發現重複 import／重複 session 設定，已移除並通過輪次單檔測試；Spec 初審發現所有位置終態時仍有 B482 候選覆核會因停止輪詢而無法釋放，已將覆核決策接到共同輪次公開接口，直接消化已捕捉候選而不讀新檔，並新增兩位置真 Adapter 公開流程回歸測試。修正後完整套件 133 tests 通過；固定基準複審待完成。
 - 提交、各 push 目的地同步、非快轉合併與分支清理結果待執行後補記。

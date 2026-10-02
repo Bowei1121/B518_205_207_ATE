@@ -241,75 +241,83 @@ class BtLogMonitor(BaseMonitor):
         self.review_decisions: Dict[str, str] = {}
 
     def resolve_review(self, choice: str) -> None:
-        """Apply the one pending UI decision on the next polling pass.
+        """Apply a pending UI decision using its captured source candidate.
 
         A batch acceptance intentionally starts a new BT batch and clears only
         non-final rows.  A duplicate-thread acceptance replaces that thread's
-        result; rejection ignores just the offered file.
+        result; rejection ignores just the offered file. This does not read
+        the source adapter, so it also works after collection has stopped.
         """
         if self.review_pending is None:
             return
-        path = str(self.review_pending["path"])
+        pending = self.review_pending
+        path = str(pending["path"])
         self.review_decisions[path] = choice.lower()
         self.emit(MonitorEvent("review_resolved", "BT 人工覆核：{}".format("接受" if choice.lower() == "accept" else "忽略"), source=path))
         self.review_pending = None
+        if choice.lower() == "accept":
+            self._process_observation(pending["observation"])
 
     def poll_once(self) -> None:
         if self.finished or self._stop.is_set():
             return
         for observation in self.source_adapter.poll():
-            if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
-                if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
-                    continue
-                self.set_result(observation.slot, observation.status, observation.sn,
-                                observation.source, observation.evidence())
-                continue
-            if not self.batch_stamp:
+            self._process_observation(observation)
+
+    def _process_observation(self, observation) -> None:
+        if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
+            if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
+                return
+            self.set_result(observation.slot, observation.status, observation.sn,
+                            observation.source, observation.evidence())
+            return
+        if not self.batch_stamp:
+            self.batch_stamp = observation.batch_id
+            self.emit(MonitorEvent(
+                "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                detail=observation.evidence(),
+            ))
+        if observation.batch_id != self.batch_stamp:
+            decision = self.review_decisions.get(observation.source)
+            if decision == "reject":
+                return
+            if decision == "accept":
                 self.batch_stamp = observation.batch_id
+                for result_slot, result in self.results.items():
+                    if result.status not in TERMINAL:
+                        self.set_result(result_slot, "WAITING", "")
                 self.emit(MonitorEvent(
-                    "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                    "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
                     detail=observation.evidence(),
                 ))
-            if observation.batch_id != self.batch_stamp:
-                decision = self.review_decisions.get(observation.source)
-                if decision == "reject":
-                    continue
-                if decision == "accept":
-                    self.batch_stamp = observation.batch_id
-                    for result_slot, result in self.results.items():
-                        if result.status not in TERMINAL:
-                            self.set_result(result_slot, "WAITING", "")
+            else:
+                if self.review_pending is None:
+                    self.review_pending = {
+                        "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
+                        "locked": self.batch_stamp, "observation": observation,
+                    }
                     self.emit(MonitorEvent(
-                        "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
-                        detail=observation.evidence(),
+                        "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
+                        detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
+                                "source_id": observation.source_id},
                     ))
-                else:
-                    if self.review_pending is None:
-                        self.review_pending = {
-                            "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
-                            "locked": self.batch_stamp,
-                        }
-                        self.emit(MonitorEvent(
-                            "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
-                            detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
-                                    "source_id": observation.source_id},
-                        ))
-                    continue
-            slot = observation.slot
-            if slot not in self.results:
-                continue
-            current = self.results[slot]
-            if current.status in TERMINAL and current.source != observation.source:
-                decision = self.review_decisions.get(observation.source)
-                if decision == "reject":
-                    continue
-                if decision != "accept":
-                    if self.review_pending is None:
-                        self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
-                                               "old": current.source, "new": observation.source}
-                        self.emit(MonitorEvent(
-                            "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
-                            source=observation.source, detail=observation.evidence(),
-                        ))
-                    continue
-            self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())
+                return
+        slot = observation.slot
+        if slot not in self.results:
+            return
+        current = self.results[slot]
+        if current.status in TERMINAL and current.source != observation.source:
+            decision = self.review_decisions.get(observation.source)
+            if decision == "reject":
+                return
+            if decision != "accept":
+                if self.review_pending is None:
+                    self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
+                                           "old": current.source, "new": observation.source,
+                                           "observation": observation}
+                    self.emit(MonitorEvent(
+                        "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
+                        source=observation.source, detail=observation.evidence(),
+                    ))
+                return
+        self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())

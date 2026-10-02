@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from log_monitoring import MonitorEvent, SlotResult
+from log_monitoring import BtLogMonitor, MonitorEvent, SlotResult
 from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor
 
@@ -96,6 +96,77 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_pending_bt_candidate_can_be_resolved_after_collection_stops(self):
+        elapsed = [0.0]
+        now = datetime(2026, 10, 2, 10, 0, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "TestData"
+            caseinfo = Path(temporary) / "CaseInfo"
+            caseinfo.mkdir()
+            caseinfo_path = caseinfo / "thread1CaseInfo_2026-10-02.txt"
+            caseinfo_path.write_text("", encoding="utf-8")
+            sessions = Path(temporary) / "sessions"
+            coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+
+            def factory(callback):
+                return BtLogMonitor(
+                    root, (1, 2), caseinfo_root=caseinfo, callback=callback, now=lambda: now,
+                    monotonic=lambda: elapsed[0], start_timeout_seconds=60,
+                    test_timeout_seconds=100, round_timeout_seconds=500,
+                    session_root=sessions,
+                )
+
+            def write_result(thread, serial, stamp):
+                path = root / "2026-10-02" / "PASSED" / (
+                    "[Thread{}][cfg][{}][PASSED][{}].csv".format(thread, serial, stamp)
+                )
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("w", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=[
+                        "SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime",
+                    ])
+                    writer.writeheader()
+                    writer.writerow({"SerialNumber": serial, "Unit Number": "0",
+                                     "Test Pass/Fail Status": "PASSED", "StartTime": "x", "EndTime": "y"})
+                return path
+
+            coordinator.start("BT", factory, run_async=False)
+            monitor = coordinator.monitor
+            caseinfo_path.write_text(
+                "2026-10-02 10:00:00:000, 1,InitResource,SNRead,--,SNRead,"
+                "HK5HUX6STQ800003YV,NA,NA,NA,Passed,1.00\r\n",
+                encoding="utf-8",
+            )
+            first = write_result(1, "HK5HUX6STQ900003YV", "20261002100001")
+            coordinator.poll_once()
+            elapsed[0] = 5.1
+            coordinator.poll_once()
+            self.assertEqual([result.status for result in coordinator.snapshot().results],
+                             ["TESTING", "PASS"])
+
+            slot1 = write_result(0, "HK5HUX6STQ800003YV", "20261002100001")
+            second = write_result(1, "HK5HUX6STQ000003YV", "20261002100001")
+            elapsed[0] = 6.0
+            coordinator.poll_once()
+            elapsed[0] = 11.1
+            waiting = coordinator.poll_once()
+            self.assertEqual(waiting.state.value, "AWAITING_REVIEW")
+            self.assertFalse(waiting.result_available)
+            self.assertEqual(monitor.review_pending["path"], str(second))
+            self.assertEqual([result.status for result in waiting.results], ["PASS", "PASS"])
+
+            released = coordinator.resolve_review("accept")
+            self.assertEqual(released.state.value, "COMPLETED")
+            self.assertTrue(released.result_available)
+            self.assertEqual(released.results[1].sn, "HK5HUX6STQ000003YV")
+            self.assertEqual(monitor.review_pending, None)
+            self.assertTrue(first.exists())
+            self.assertTrue(slot1.exists())
+            third = write_result(0, "HK5HUX6STQ100003YV", "20261002100002")
+            coordinator.poll_once()
+            self.assertEqual(coordinator.snapshot().results[1].sn, "HK5HUX6STQ000003YV")
+            self.assertTrue(third.exists())
+
     def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
         elapsed = [0.0]
         monitors = []
