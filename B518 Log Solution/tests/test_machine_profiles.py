@@ -30,6 +30,23 @@ class MachineProfileTests(unittest.TestCase):
         self.assertEqual(restored.capacity, 2)
         self.assertEqual(restored.mapping, ((1, 2), (2, 1)))
 
+    def test_profile_document_json_round_trip_preserves_equivalent_catalog(self):
+        catalog = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+        restored = ProfileCatalog.from_json(catalog.to_json())
+
+        self.assertEqual(restored.to_dict(), catalog.to_dict())
+
+    def test_profile_document_json_rejects_invalid_text_without_path_checks(self):
+        payload = {"schema_version": 1, "profiles": [valid_profile()]}
+        payload["profiles"][0]["paths"]["active"] = "/path/not/on-this-computer"
+
+        restored = ProfileCatalog.from_json(json.dumps(payload))
+
+        self.assertEqual(restored.get("B518", "DFU").paths["active"], "/path/not/on-this-computer")
+        with self.assertRaisesRegex(ProfileError, "JSON"):
+            ProfileCatalog.from_json("{")
+
     def test_invalid_profile_matrix_is_rejected(self):
         cases = []
         unknown_platform = valid_profile()

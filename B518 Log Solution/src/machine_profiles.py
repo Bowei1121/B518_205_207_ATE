@@ -86,6 +86,19 @@ class ProfileCatalog:
         return {"schema_version": PROFILE_SCHEMA_VERSION,
                 "profiles": [profile.to_dict() for profile in self._profiles.values()]}
 
+    def to_json(self) -> str:
+        """Serialize a portable profile document without checking local paths."""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2) + "\n"
+
+    @classmethod
+    def from_json(cls, document: str) -> "ProfileCatalog":
+        """Parse and structurally validate a portable profile document."""
+        try:
+            payload = json.loads(document)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ProfileError("配置 JSON 格式錯誤：{}".format(error))
+        return cls.from_dict(payload)
+
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "ProfileCatalog":
         if not isinstance(payload, Mapping):
