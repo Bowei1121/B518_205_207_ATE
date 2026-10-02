@@ -692,7 +692,10 @@ class B518LogSolutionApp:
             window = tk.Toplevel(self.root)
             self.conflict_window = window
             window.title("同輪結果衝突確認")
-            window.geometry("820x430")
+            self.root.update_idletasks()
+            window_x = max(self.root.winfo_rootx() - 820 - 12, 0)
+            window_y = max(self.root.winfo_rooty(), 0)
+            window.geometry("820x430+{}+{}".format(window_x, window_y))
             window.minsize(720, 360)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)

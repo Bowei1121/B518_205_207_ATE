@@ -201,6 +201,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.conflict_window.winfo_viewable())
                 self.assertEqual((app.conflict_window.winfo_width(), app.conflict_window.winfo_height()),
                                  (820, 430))
+                self.assertLessEqual(app.conflict_window.winfo_rootx() + app.conflict_window.winfo_width(),
+                                     root.winfo_rootx())
                 self.assertEqual(app._display_capacity(), 2)
                 self.assertEqual(app.rounds.snapshot().results[0].status, "TESTING")
                 self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
