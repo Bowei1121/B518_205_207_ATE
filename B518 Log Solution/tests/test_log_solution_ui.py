@@ -122,10 +122,118 @@ class LogSolutionUiTests(unittest.TestCase):
                 else:
                     self.fail("The Atlas final result did not reach its configured display position")
 
-                app._drain_events()
+                ui_deadline = time.monotonic() + 2
+                while time.monotonic() < ui_deadline:
+                    root.update()
+                    if app.status_rows[3]["status"].cget("text") == "PASS":
+                        break
+                    time.sleep(0.02)
                 self.assertEqual(app.status_rows[3]["status"].cget("text"), "PASS")
                 self.assertEqual(app.kvm_result_blocks[3].cget("background"), STATUS_COLOURS["PASS"])
                 self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
+            finally:
+                if app.monitor:
+                    app.rounds.stop()
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_atlas_round_shows_nonblocking_conflict_and_releases_after_other_slot_finishes(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
+            def wait_ui(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.02)
+                self.fail("Timed out waiting for the controlled Atlas conflict flow")
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("2")
+                app.profile_editor_mapping.set("1:2, 2:1")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_monitor()
+                wait_ui(lambda: app.monitor is not None)
+
+                def write_records(path, serial, status="Pass"):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("MLB_SN,status\n{},{}\n".format(serial, status), encoding="utf-8")
+
+                first_sn, second_sn = "SERIAL00000001", "SERIAL00000002"
+                first_active = active / "group0-slot1" / "system" / "records.csv"
+                second_active = active / "group0-slot2" / "system" / "records.csv"
+                write_records(first_active, first_sn)
+                write_records(second_active, second_sn)
+                wait_ui(lambda: all(result.status == "TESTING"
+                                    for result in app.rounds.snapshot().results))
+
+                stamp = (app.monitor.started + timedelta(seconds=1)).strftime("%Y%m%d_%H-%M-%S.000-run")
+                first_archive = final / first_sn / stamp / "system" / "records.csv"
+                first_active.unlink()
+                first_active.parent.rmdir()
+                (active / "group0-slot1").rmdir()
+                write_records(first_archive, first_sn)
+                wait_ui(lambda: next(result for result in app.rounds.snapshot().results
+                                      if result.slot == 2).status == "PASS", timeout=5)
+                write_records(first_archive, first_sn, "FAIL")
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 1, timeout=5)
+                wait_ui(lambda: app.conflict_window is not None, timeout=5)
+                root.update_idletasks()
+
+                self.assertIsNotNone(app.conflict_window, app.event_lines)
+                self.assertTrue(app.conflict_window.winfo_exists())
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                self.assertEqual((app.conflict_window.winfo_width(), app.conflict_window.winfo_height()),
+                                 (820, 430))
+                self.assertEqual(app._display_capacity(), 2)
+                self.assertEqual(app.rounds.snapshot().results[0].status, "TESTING")
+                self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
+                conflict = app.rounds.snapshot().pending_conflicts[0]
+                self.assertEqual(conflict.slot, 2)
+                self.assertEqual(conflict.original.status, "PASS")
+                self.assertEqual(conflict.candidate.status, "FAIL")
+
+                second_stamp = (app.monitor.started + timedelta(seconds=2)).strftime("%Y%m%d_%H-%M-%S.000-run")
+                second_archive = final / second_sn / second_stamp / "system" / "records.csv"
+                second_active.unlink()
+                second_active.parent.rmdir()
+                (active / "group0-slot2").rmdir()
+                write_records(second_archive, second_sn)
+                wait_ui(lambda: app.rounds.snapshot().collection_stopped
+                        and next(result for result in app.rounds.snapshot().results
+                                 if result.slot == 1).status == "PASS", timeout=5)
+                self.assertFalse(app.rounds.snapshot().result_available)
+                self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+
+                app.conflict_window.withdraw()
+                self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+                app._open_conflict_review()
+                app.conflict_list.selection_set(0)
+                app._resolve_selected_conflict("keep_original")
+                self.assertFalse(app.rounds.snapshot().pending_conflicts)
+                self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
+                self.assertTrue(app.rounds.snapshot().result_available)
+                self.assertEqual([result.status for result in app.rounds.snapshot().results], ["PASS", "PASS"])
+                self.assertEqual(app.rounds.snapshot().state.value, "COMPLETED")
+                app._drain_events()
+                self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+                self.assertEqual(app.status_rows[2]["status"].cget("text"), "PASS")
             finally:
                 if app.monitor:
                     app.rounds.stop()
