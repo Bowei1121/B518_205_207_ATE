@@ -8,7 +8,7 @@
 
 - [06：以專案＋機型選擇配置並啟動一輪](06-project-machine-profile-selection.md)
 
-**Status：**completed（本票七項驗收、受控 Tk 回放、完整測試與固定基準 Standards／Spec 複審均通過；等待合併及全目的地同步／清理）
+**Status：**completed（本票七項驗收、受控 Tk 回放、完整測試與固定基準 Standards／Spec 複審均通過；合併、兩目的地同步及分支清理完成）
 
 ## 驗收條件
 
@@ -52,4 +52,4 @@ Ticket 03 的實機／發布驗收及 Ticket 05 的 RS-WMT 實機即時時機仍
 - 專案完整測試命令：python3 scripts/run_tests.py，134 tests 通過。相關單檔命令：python3 scripts/run_tests.py test_monitoring_round test_configured_monitor test_atlas_source_adapter test_b482_source_adapter test_rswmt_monitoring test_log_monitoring，61 tests 通過；Tk UI 單檔 36 tests 通過。專案沒有 mypy、pyright 或其他型別檢查設定；未以 compileall 代替型別檢查。
 - 原始實機資料保持唯讀；本次未做實機即時時機、目標設備、正式發布 App 或上位機共同驗收，依指示沒有宣稱通過。Ticket 16／17 與 Ticket 18 的分工及未決政策維持不變。
 - 審查基準固定為 9950cabb1d01d9b022065ba9ef065a6b9527938a。初審發現重複 import／重複 session 設定，已移除並通過輪次單檔測試；Spec 初審發現所有位置終態時仍有 B482 候選覆核會因停止輪詢而無法釋放，已將覆核決策接到共同輪次公開接口，直接消化已捕捉候選而不讀新檔，並新增兩位置真 Adapter 公開流程回歸測試。複審另發現候選覆核不得解除整輪期限的待確認狀態；已以明確完成原因保持結果不可取用並加回歸測試。另將公開輪詢時間留在共同輪次，避免修改 Adapter 私有欄位。Standards 複審指出輪次與 Adapter 欄位耦合及重複反向映射；已新增 `RoundMonitor` 公開契約、單一雙向位置索引，並補公開介面測試。來源準備失敗事件亦修正為不依賴尚未建立的 Adapter。固定基準 Standards／Spec 最後複審（9950cabb1d01d9b022065ba9ef065a6b9527938a…94e299bb12ea74fcd0e8a0d9ad474686e11c1c06）均無未解決發現；完整套件 134 tests 通過。
-- Ticket 09 實作提交：`807e0ce`、`46f61b6`、`3031c30`、`48baadc`、`94e299b`；驗收與審查紀錄提交 `5f51aee`。一般非快轉合併 commit 為 `1b4b8d1e8867f00c6c7a584a063182a7967d3270`；合併後完整測試再次通過（134 tests）。合併結果推送至兩個既有目的地及專用分支清理仍待核對。
+- Ticket 09 實作提交：`807e0ce`、`46f61b6`、`3031c30`、`48baadc`、`94e299b`；驗收與審查紀錄提交 `5f51aee`。一般非快轉合併 commit 為 `1b4b8d1e8867f00c6c7a584a063182a7967d3270`；合併後完整測試再次通過（134 tests）。合併分支已推送並核對 Gitea、GitHub 兩端相同；兩端 `codex/ticket-09` 均已刪除，本地使用 `git branch -d` 安全刪除，並移除已確認失效的 `origin/codex/ticket-09` 追蹤引用。最後停在乾淨的 `B518-Log-Solution`。最終交付紀錄提交及推送狀態由本次 Git 結果核對。
