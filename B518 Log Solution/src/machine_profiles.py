@@ -89,7 +89,7 @@ class ProfileCatalog:
 
     def to_json(self) -> str:
         """Serialize a portable profile document without checking local paths."""
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2) + "\n"
+        return _profile_document_json(self.to_dict())
 
     @classmethod
     def from_json(cls, document: str) -> "ProfileCatalog":
@@ -167,7 +167,7 @@ class MachineProfileStore:
             legacy_path = self.path.with_name("preferences.legacy.json")
             if not legacy_path.exists():
                 _atomic_write_text(legacy_path, self.path.read_text(encoding="utf-8"))
-        _atomic_write_text(self.path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        _atomic_write_text(self.path, _profile_document_json(payload))
         self.migration_required = False
 
     def import_document(self, document: str, selected_project: str, selected_machine: str):
@@ -201,6 +201,10 @@ def _atomic_write_text(path: Path, text: str) -> None:
             except OSError:
                 pass
         raise
+
+
+def _profile_document_json(payload: Mapping[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
 def profile_from_editor_fields(project: str, machine: str, platform: str, capacity: str,

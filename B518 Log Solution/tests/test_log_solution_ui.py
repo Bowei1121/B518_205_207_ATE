@@ -20,7 +20,7 @@ from b518_log_solution import (
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
-from machine_profiles import MachineProfileStore, migrate_legacy_preferences
+from machine_profiles import MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 
 
 class FakeHotkey:
@@ -87,7 +87,9 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertEqual(app.profile_editor_capacity.get(), "4")
             self.assertEqual(app.profile_editor_mapping.get(), "1:1, 2:2, 3:3, 4:4")
             app._cancel_profile_editor()
-            self.assertEqual(app.profile_editor_project.get(), app.project.get())
+            self.assertEqual(app.profile_editor_project.get(), "B482")
+            self.assertEqual(app.profile_editor_machine.get(), "BT")
+            self.assertEqual(app.profile_editor_capacity.get(), "4")
         finally:
             app._close_settings()
             app.hotkey.close()
@@ -120,6 +122,7 @@ class LogSolutionUiTests(unittest.TestCase):
             source_preferences = Path(temporary) / "source.json"
             deployment_preferences = Path(temporary) / "deployed" / "preferences.json"
             exported = Path(temporary) / "deployment-profile.json"
+            single_profile_export = Path(temporary) / "single-profile.json"
             with patch("b518_log_solution.PREFS_PATH", source_preferences):
                 root = tk.Tk()
                 root.withdraw()
@@ -137,6 +140,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     source._apply_profile_editor()
                     with patch("b518_log_solution.filedialog.asksaveasfilename", return_value=str(exported)):
                         source._export_profiles()
+                    MachineProfileStore.export_document(
+                        single_profile_export,
+                        ProfileCatalog((source.profiles.get("Demo", "DFU"),)),
+                    )
                 finally:
                     source._close_settings()
                     source.hotkey.close()
@@ -148,10 +155,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 deployed = B518LogSolutionApp(deploy_root, hotkey_factory=FakeHotkey)
                 try:
                     deployed.open_settings()
-                    with patch("b518_log_solution.filedialog.askopenfilename", return_value=str(exported)):
+                    with patch("b518_log_solution.filedialog.askopenfilename",
+                               return_value=str(single_profile_export)):
                         deployed._import_profiles()
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/deployment/active")
+                    self.assertEqual((deployed.project.get(), deployed.station.get()), ("Demo", "DFU"))
+                    self.assertIn("原選擇不存在", deployed.profile_editor_status.get())
                     original = deployed.profiles.to_dict()
                     invalid_export = Path(temporary) / "invalid.json"
                     invalid_export.write_text("{", encoding="utf-8")

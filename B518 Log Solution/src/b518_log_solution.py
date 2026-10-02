@@ -642,6 +642,7 @@ class B518LogSolutionApp:
             profile = self.profiles.get(self.project.get(), self.station.get())
         except ProfileError:
             profile = self.profiles.profiles[0]
+        self.profile_editor_original = profile
         self.profile_editor_project = tk.StringVar(value=profile.project)
         self.profile_editor_machine = tk.StringVar(value=profile.machine)
         self.profile_editor_platform = tk.StringVar(value=profile.platform)
@@ -696,7 +697,7 @@ class B518LogSolutionApp:
             ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
                 row=row, column=1, sticky="w", padx=6, pady=4)
         ttk.Label(parent, textvariable=self.profile_editor_status, wraplength=620,
-                  foreground="#b02a37").grid(row=8, column=0, columnspan=6, sticky="w", pady=(10, 6))
+                  foreground=TEXT_COLOUR).grid(row=8, column=0, columnspan=6, sticky="w", pady=(10, 6))
         edit_actions = ttk.Frame(parent)
         edit_actions.grid(row=9, column=0, columnspan=6, sticky="ew", pady=(8, 0))
         for label, action in (("載入已保存配置", self._load_profile_editor_selection),
@@ -756,6 +757,7 @@ class B518LogSolutionApp:
             return
         self.profiles = catalog
         self.profile_error = None
+        self.profile_editor_original = profile
         if self.monitor is None:
             self.project.set(profile.project)
             self.station.set(profile.machine)
@@ -767,11 +769,7 @@ class B518LogSolutionApp:
         self.profile_editor_status.set("配置已套用並保存；更新供後續輪次使用。")
 
     def _cancel_profile_editor(self) -> None:
-        try:
-            profile = self.profiles.get(self.project.get(), self.station.get())
-        except ProfileError:
-            profile = self.profiles.profiles[0]
-        self._render_profile_editor(profile)
+        self._render_profile_editor(self.profile_editor_original)
         self.profile_editor_status.set("草稿已取消，已保存配置未變更。")
 
     def _load_profile_editor_selection(self) -> None:
@@ -781,6 +779,7 @@ class B518LogSolutionApp:
         except ProfileError as error:
             self.profile_editor_status.set("找不到可載入配置：{}".format(error))
             return
+        self.profile_editor_original = profile
         self._render_profile_editor(profile)
         self.profile_editor_status.set("已載入已保存配置作為草稿。")
 
@@ -809,9 +808,11 @@ class B518LogSolutionApp:
         except (OSError, ProfileError, TypeError, ValueError) as error:
             self.profile_editor_status.set("匯入失敗，原配置保留：{}".format(error))
             return
-        self.profiles = catalog
-        self._select_reloaded_profile(catalog, project, machine)
-        self.profile_editor_status.set("配置已驗證、完整匯入並保存。")
+        self._activate_profile_catalog(
+            catalog, project, machine,
+            "配置已驗證、完整匯入並保存。",
+            "匯入後原選擇不存在；已明確切換至文件中的有效配置：{project} / {machine}。",
+        )
 
     def _export_profiles(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -832,47 +833,48 @@ class B518LogSolutionApp:
         if error:
             self.profile_editor_status.set("重新載入失敗，目前有效配置保留：{}".format(error))
             return
-        project, machine = self.project.get(), self.station.get()
-        try:
-            catalog.get(project, machine)
-        except ProfileError:
-            if self.monitor is not None:
-                self.profiles = catalog
-                self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
-                self._render_profile_editor(catalog.get(saved_project, saved_machine))
-                self.profile_editor_status.set(self.profile_error)
-                return
-            project, machine = saved_project, saved_machine
-            message = "原選擇已不存在，已切換至部署檔保存的有效選擇。"
-        else:
-            message = "已重新載入部署配置；正在進行的輪次仍使用原快照。"
-        self.profiles = catalog
-        self.project.set(project)
-        self.station.set(machine)
-        self.profile_error = None
-        self._refresh_machine_choices()
-        if self.monitor is None:
-            self._render_rows()
-        self._render_profile_editor(catalog.get(project, machine))
-        self.profile_editor_status.set(message)
+        self._activate_profile_catalog(
+            catalog, saved_project, saved_machine,
+            "已重新載入部署配置；正在進行的輪次仍使用原快照。",
+            "重新載入後原選擇不存在；已明確切換至偏好檔中的有效配置：{project} / {machine}。",
+        )
 
-    def _select_reloaded_profile(self, catalog, project: str, machine: str) -> None:
-        """Keep a running operator selection stable when an import removes it."""
+    def _activate_profile_catalog(self, catalog, suggested_project: str, suggested_machine: str,
+                                  success_message: str, fallback_message: str) -> None:
+        """Activate a valid catalog while preserving or explicitly replacing selection."""
         try:
-            catalog.get(self.project.get(), self.station.get())
+            profile = catalog.get(self.project.get(), self.station.get())
         except ProfileError:
-            if self.monitor is not None:
-                self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
-                self._render_profile_editor(catalog.get(project, machine))
-                self.profile_editor_status.set(self.profile_error)
-                return
-            self.project.set(project)
-            self.station.set(machine)
+            profile = None
+        if profile is None and self.monitor is not None:
+            self.profiles = catalog
+            self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
+            editor_profile = catalog.get(suggested_project, suggested_machine)
+            self.profile_editor_original = editor_profile
+            self._render_profile_editor(editor_profile)
+            self.profile_editor_status.set(self.profile_error)
+            return
+        selection_changed = profile is None
+        if selection_changed:
+            profile = catalog.get(suggested_project, suggested_machine)
+        try:
+            catalog.get(profile.project, profile.machine)
+        except ProfileError:
+            raise ProfileError("匯入／重新載入配置缺少建議的有效選擇。")
+        self.profiles = catalog
+        self.project.set(profile.project)
+        self.station.set(profile.machine)
         self.profile_error = None
         self._refresh_machine_choices()
         if self.monitor is None:
             self._render_rows()
-        self._render_profile_editor(catalog.get(self.project.get(), self.station.get()))
+        self.profile_editor_original = profile
+        self._render_profile_editor(profile)
+        if selection_changed:
+            self.profile_editor_status.set(fallback_message.format(
+                project=profile.project, machine=profile.machine))
+        else:
+            self.profile_editor_status.set(success_message)
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.settings_station = tk.StringVar(value=self.station.get())
