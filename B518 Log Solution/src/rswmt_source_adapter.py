@@ -15,6 +15,7 @@ RESULT_NAME = re.compile(
 )
 LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) (.*)$")
 SLOT_COLUMN = re.compile(r"^tc=Slot(?:[:;]|$)", re.I)
+MAX_SOURCE_POSITION = 4
 
 
 def serial_number(value):

@@ -26,6 +26,7 @@ BT_FILENAME = re.compile(
     re.IGNORECASE,
 )
 CASEINFO_FILE = re.compile(r"^thread(?P<thread>[1-4])CaseInfo_(?P<date>\d{4}-\d{2}-\d{2})\.txt$", re.I)
+MAX_SOURCE_POSITION = 4
 CASEINFO_TIMESTAMP = re.compile(
     r"(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}:\d{2}(?:(?:\.|:)\d+)?)"
 )
@@ -96,6 +97,9 @@ def parse_bt_csv(path: Path) -> Optional[Dict[str, str]]:
         state = "PASS" if name["status"].upper() == "PASSED" else "FAIL"
     else:
         return None
+    # B482 TestData labels its four logical positions as Thread0..Thread3.
+    # Normalize those identifiers to source positions 1..4; ConfiguredMonitor
+    # still applies the engineer's independent source-to-display mapping.
     return {
         "slot": str(int(name["thread"]) + 1),
         "sn": sn,
