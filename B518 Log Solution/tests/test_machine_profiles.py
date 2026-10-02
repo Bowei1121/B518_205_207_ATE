@@ -5,7 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from machine_profiles import (
-    MachineProfile, MachineProfileStore, ProfileCatalog, ProfileError, migrate_legacy_preferences,
+    MachineProfile, MachineProfileStore, ProfileCatalog, ProfileError,
+    migrate_legacy_preferences, profile_from_editor_fields,
 )
 
 
@@ -179,6 +180,32 @@ class MachineProfileTests(unittest.TestCase):
                     store.import_document(imported.to_json(), "B518", "DFU")
 
             self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_engineer_fields_build_a_profile_and_validate_required_paths(self):
+        profile = profile_from_editor_fields(
+            "Demo", "DFU", "atlas", "2",
+            {"active": "/deployed/active", "final": "/deployed/final", "caseinfo": ""},
+            "1:2, 2:1", {"start": "30", "test": "480", "round": "7200"},
+        )
+
+        self.assertEqual(profile.key, ("Demo", "DFU"))
+        self.assertEqual(profile.mapping, ((1, 2), (2, 1)))
+        self.assertEqual(profile.paths["active"], "/deployed/active")
+        with self.assertRaisesRegex(ProfileError, "容量"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2.0", {"active": "", "final": ""}, "1:1,2:2",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
+        with self.assertRaisesRegex(ProfileError, "mapping"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2", {"active": "/a", "final": "/b"}, "1:1,2:oops",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
+        with self.assertRaisesRegex(ProfileError, "路徑"):
+            profile_from_editor_fields(
+                "Demo", "DFU", "atlas", "2", {"final": "/b"}, "1:1,2:2",
+                {"start": "30", "test": "480", "round": "7200"},
+            )
 
 
 if __name__ == "__main__":

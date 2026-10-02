@@ -36,6 +36,103 @@ class FakeHotkey:
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def test_engineer_can_apply_and_cancel_a_complete_profile_draft(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("Demo")
+                app.profile_editor_machine.set("DFU")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("2")
+                app.profile_editor_paths["active"].set("/deployment/active")
+                app.profile_editor_paths["final"].set("/deployment/final")
+                app.profile_editor_mapping.set("1:2, 2:1")
+                app.profile_editor_timeouts["start"].set("45")
+                app._apply_profile_editor()
+
+                saved = app.profiles.get("Demo", "DFU")
+                self.assertEqual(saved.mapping, ((1, 2), (2, 1)))
+                self.assertEqual(saved.timeouts["start"], 45)
+                self.assertIn("Demo", app.project_choice.cget("values"))
+                self.assertEqual(MachineProfileStore(Path(temporary) / "preferences.json").load()[0]
+                                 .get("Demo", "DFU"), saved)
+
+                app.profile_editor_project.set("Unsaved")
+                app.profile_editor_capacity.set("3")
+                app._cancel_profile_editor()
+
+                self.assertEqual(app.profile_editor_project.get(), "Demo")
+                self.assertEqual(app.profile_editor_capacity.get(), "2")
+                self.assertNotIn("Unsaved", app.profiles.projects)
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_engineer_import_export_and_reload_preserve_a_deployable_catalog(self):
+        with TemporaryDirectory() as temporary:
+            source_preferences = Path(temporary) / "source.json"
+            deployment_preferences = Path(temporary) / "deployed" / "preferences.json"
+            exported = Path(temporary) / "deployment-profile.json"
+            with patch("b518_log_solution.PREFS_PATH", source_preferences):
+                root = tk.Tk()
+                root.withdraw()
+                source = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+                try:
+                    source.open_settings()
+                    source.profile_editor_project.set("Demo")
+                    source.profile_editor_machine.set("DFU")
+                    source.profile_editor_platform.set("atlas")
+                    source.profile_editor_capacity.set("2")
+                    source.profile_editor_paths["active"].set("/deployment/active")
+                    source.profile_editor_paths["final"].set("/deployment/final")
+                    source.profile_editor_mapping.set("1:2, 2:1")
+                    source.profile_editor_timeouts["start"].set("45")
+                    source._apply_profile_editor()
+                    with patch("b518_log_solution.filedialog.asksaveasfilename", return_value=str(exported)):
+                        source._export_profiles()
+                finally:
+                    source._close_settings()
+                    source.hotkey.close()
+                    root.destroy()
+
+            with patch("b518_log_solution.PREFS_PATH", deployment_preferences):
+                deploy_root = tk.Tk()
+                deploy_root.withdraw()
+                deployed = B518LogSolutionApp(deploy_root, hotkey_factory=FakeHotkey)
+                try:
+                    deployed.open_settings()
+                    with patch("b518_log_solution.filedialog.askopenfilename", return_value=str(exported)):
+                        deployed._import_profiles()
+                    self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
+                                     "/deployment/active")
+                    deployed.profile_editor_project.set("bad draft")
+                    original = deployed.profiles.to_dict()
+                    with patch("b518_log_solution.filedialog.askopenfilename", return_value=str(exported)):
+                        deployed._import_profiles()
+                    self.assertEqual(deployed.profiles.to_dict(), original)
+
+                    replacement = deployed.profiles.with_profile(replace(
+                        deployed.profiles.get("Demo", "DFU"),
+                        paths={"active": "/updated/active", "final": "/updated/final"},
+                    ))
+                    deployed.project.set("Demo")
+                    deployed.station.set("DFU")
+                    deployed.profile_store.save(replacement, "Demo", "DFU")
+                    deployed._reload_profiles()
+
+                    self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
+                                     "/updated/active")
+                    self.assertEqual(deployed.profile_editor_project.get(), "Demo")
+                finally:
+                    deployed._close_settings()
+                    deployed.hotkey.close()
+                    deploy_root.destroy()
+
     def test_app_completes_rswmt_final_only_round_through_shared_entry(self):
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "output" / "SmtCal"

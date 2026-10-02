@@ -180,6 +180,10 @@ class MachineProfileStore:
         self.save(catalog, selected_project, selected_machine)
         return catalog, selected_project, selected_machine
 
+    @staticmethod
+    def export_document(path: Path, catalog: ProfileCatalog) -> None:
+        _atomic_write_text(Path(path), catalog.to_json())
+
 
 def _atomic_write_text(path: Path, text: str) -> None:
     """Replace one text file atomically and remove a temporary file on failure."""
@@ -197,6 +201,41 @@ def _atomic_write_text(path: Path, text: str) -> None:
             except OSError:
                 pass
         raise
+
+
+def profile_from_editor_fields(project: str, machine: str, platform: str, capacity: str,
+                               paths: Mapping[str, str], mapping: str,
+                               timeouts: Mapping[str, str]) -> MachineProfile:
+    """Build and structurally validate one profile from engineer form values."""
+    capacity_value = _editor_integer(capacity, "容量")
+    pairs = []
+    for entry in mapping.split(","):
+        pieces = entry.strip().split(":")
+        if len(pieces) != 2:
+            raise ProfileError("mapping 欄位須使用來源:顯示位置格式，例如 1:1,2:2。")
+        pairs.append((_editor_integer(pieces[0], "mapping source"),
+                      _editor_integer(pieces[1], "mapping display")))
+    parsed_timeouts = {
+        name: _editor_integer(timeouts.get(name, ""), "{} 期限（正整數秒）".format(label))
+        for name, label in (("start", "開始"), ("test", "測試"), ("round", "整輪"))
+    }
+    profile = MachineProfile(
+        project=project.strip() if isinstance(project, str) else project,
+        machine=machine, platform=platform, capacity=capacity_value,
+        paths=dict(paths), mapping=tuple(pairs), timeouts=parsed_timeouts,
+    )
+    validate_profile(profile)
+    return profile
+
+
+def _editor_integer(value: str, field: str) -> int:
+    text = value.strip() if isinstance(value, str) else ""
+    if not text.isdigit():
+        raise ProfileError("{}必須是正整數。".format(field))
+    parsed = int(text)
+    if parsed <= 0:
+        raise ProfileError("{}必須是正整數。".format(field))
+    return parsed
 
 def _profile_from_dict(record: object) -> MachineProfile:
     if not isinstance(record, Mapping):
