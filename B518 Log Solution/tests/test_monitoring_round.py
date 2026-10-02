@@ -21,6 +21,26 @@ class FakeMonitor:
         self.test_timeout_seconds = 480
         self.round_timeout_seconds = 7200
 
+    def round_results(self):
+        return tuple(self.results.values())
+
+    def timeout_seconds(self, kind):
+        return {"start": self.start_timeout_seconds,
+                "test": self.test_timeout_seconds,
+                "round": self.round_timeout_seconds}[kind]
+
+    def has_pending_review(self):
+        return False
+
+    def resolve_review(self, _choice):
+        pass
+
+    def update_round_settings(self, _settings):
+        pass
+
+    def publish_round_event(self, event):
+        self.callback(event)
+
     def start(self):
         self.started += 1
 
@@ -70,6 +90,23 @@ class DeadlineMonitor:
 
     def resolve_review(self, _choice):
         self.review_pending = None
+
+    def round_results(self):
+        return tuple(self.results.values())
+
+    def timeout_seconds(self, kind):
+        return {"start": self.start_timeout_seconds,
+                "test": self.test_timeout_seconds,
+                "round": self.round_timeout_seconds}[kind]
+
+    def has_pending_review(self):
+        return self.review_pending is not None
+
+    def update_round_settings(self, _settings):
+        pass
+
+    def publish_round_event(self, event):
+        self.callback(event)
 
     def set_result(self, slot, status, detail=None, lock_terminal=False):
         if slot in self._locked:

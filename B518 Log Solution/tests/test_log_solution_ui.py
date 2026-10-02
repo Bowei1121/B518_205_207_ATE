@@ -838,6 +838,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch("b518_log_solution." + factory_name) as factory:
                     app.start_monitor()
                     self.wait_for(lambda: factory.called)
+                    self.wait_for(lambda: factory.return_value.start.called)
 
                 snapshot = app.rounds.snapshot()
                 self.assertEqual(snapshot.station, station)

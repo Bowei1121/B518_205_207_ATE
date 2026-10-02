@@ -10,10 +10,10 @@ import csv
 import json
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from b482_source_adapter import (
     B482ObservationKind,
@@ -137,6 +137,32 @@ class BaseMonitor:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
+    def round_results(self) -> Tuple[SlotResult, ...]:
+        """Return a stable view of results for the shared round lifecycle."""
+        return tuple(replace(result) for result in self.results.values())
+
+    def timeout_seconds(self, kind: str) -> int:
+        """Expose configured limits through the common round contract."""
+        return {
+            "start": self.start_timeout_seconds,
+            "test": self.test_timeout_seconds,
+            "round": self.round_timeout_seconds,
+        }[kind]
+
+    def has_pending_review(self) -> bool:
+        """Whether captured source evidence is awaiting an existing UI decision."""
+        return False
+
+    def resolve_review(self, _choice: str) -> None:
+        """Resolve review evidence when this adapter supports that workflow."""
+        return
+
+    def update_round_settings(self, settings: Dict[str, object]) -> None:
+        self.session.update_settings(settings)
+
+    def publish_round_event(self, event: MonitorEvent) -> None:
+        self.emit(event)
+
     def emit(self, event: MonitorEvent) -> None:
         self.session.event(event.message, event.detail)
         if event.source:
@@ -236,6 +262,9 @@ class BtLogMonitor(BaseMonitor):
         self.batch_stamp = ""
         self.review_pending: Optional[Dict[str, object]] = None
         self.review_decisions: Dict[str, str] = {}
+
+    def has_pending_review(self) -> bool:
+        return self.review_pending is not None
 
     def resolve_review(self, choice: str) -> None:
         """Apply a pending UI decision using its captured source candidate.

@@ -18,6 +18,26 @@ class FakeMonitor:
         self.round_timeout_seconds = 7200
         self._published = False
 
+    def round_results(self):
+        return tuple(self.results.values())
+
+    def timeout_seconds(self, kind):
+        return {"start": self.start_timeout_seconds,
+                "test": self.test_timeout_seconds,
+                "round": self.round_timeout_seconds}[kind]
+
+    def has_pending_review(self):
+        return False
+
+    def resolve_review(self, _choice):
+        pass
+
+    def update_round_settings(self, _settings):
+        pass
+
+    def publish_round_event(self, event):
+        self.callback(event)
+
     def start(self):
         pass
 
@@ -100,6 +120,37 @@ class ConfiguredMonitorTests(unittest.TestCase):
                 self.start_timeout_seconds = 30
                 self.test_timeout_seconds = 480
                 self.round_timeout_seconds = 7200
+
+            def round_results(self):
+                return tuple(self.results.values())
+
+            def timeout_seconds(self, kind):
+                return {"start": self.start_timeout_seconds,
+                        "test": self.test_timeout_seconds,
+                        "round": self.round_timeout_seconds}[kind]
+
+            def has_pending_review(self):
+                return False
+
+            def resolve_review(self, _choice):
+                pass
+
+            def update_round_settings(self, _settings):
+                pass
+
+            def publish_round_event(self, event):
+                self.callback(event)
+
+            def stop_collection(self):
+                pass
+
+            def finish(self):
+                pass
+
+            def set_result(self, slot, status, sn=None, source="", detail=None, lock_terminal=False):
+                self.results[slot].status = status
+                self.callback(MonitorEvent("result", "source result", slot, sn or "", status,
+                                           source, detail or {}))
 
             def start(self):
                 pass

@@ -8,9 +8,26 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
+
+
+class RoundMonitor(Protocol):
+    """Public adapter contract consumed by the shared round lifecycle."""
+
+    def round_results(self) -> Tuple[SlotResult, ...]: ...
+    def timeout_seconds(self, kind: str) -> int: ...
+    def has_pending_review(self) -> bool: ...
+    def resolve_review(self, choice: str) -> None: ...
+    def update_round_settings(self, settings: Dict[str, object]) -> None: ...
+    def publish_round_event(self, event: MonitorEvent) -> None: ...
+    def set_result(self, slot: int, status: str, detail=None, lock_terminal: bool = False) -> None: ...
+    def start(self) -> None: ...
+    def poll_once(self) -> None: ...
+    def stop_collection(self) -> None: ...
+    def finish(self) -> None: ...
+    def stop(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -76,7 +93,7 @@ class MonitoringRound:
         self._poll_started_at: Optional[float] = None
         self._run_thread: Optional[threading.Thread] = None
         self._monitor_factory = monitor_factory
-        self._monitor = None
+        self._monitor: Optional[RoundMonitor] = None
 
     @property
     def monitor(self):
@@ -143,10 +160,7 @@ class MonitoringRound:
                 if monitor is None or self._state not in {
                         RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                     return self.snapshot()
-            resolver = getattr(monitor, "resolve_review", None)
-            if not callable(resolver):
-                return self.snapshot()
-            resolver(choice)
+            monitor.resolve_review(choice)
             if self._collection_stopped:
                 self._finish_if_terminal()
             return self.snapshot()
@@ -155,7 +169,7 @@ class MonitoringRound:
         with self._lock:
             results = tuple(
                 RoundResult(result.slot, result.sn, result.status, result.source, result.updated_at)
-                for result in sorted(self._monitor.results.values(), key=lambda result: result.slot)
+                for result in sorted(self._monitor.round_results(), key=lambda result: result.slot)
             ) if self._monitor is not None else ()
             return RoundSnapshot(
                 self.round_id, self.station, self._state, results,
@@ -175,7 +189,9 @@ class MonitoringRound:
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
-            self._publish_round_event(MonitorEvent("start_failed", "無法準備監控來源：{}".format(error)))
+            self._receive_monitor_event(
+                MonitorEvent("start_failed", "無法準備監控來源：{}".format(error))
+            )
             return
         self._run()
 
@@ -184,9 +200,7 @@ class MonitoringRound:
         with self._lock:
             self._monitor = monitor
             stop_requested = self._stop_requested
-        session = getattr(monitor, "session", None)
-        if session is not None:
-            session.update_settings({"accepted_start_at": self._accepted_start_at})
+        monitor.update_round_settings({"accepted_start_at": self._accepted_start_at})
         if stop_requested:
             monitor.stop()
             return
@@ -208,9 +222,10 @@ class MonitoringRound:
         if self._monitor is None:
             return
         elapsed = max(0.0, at - self._started_monotonic)
-        round_limit = self._timeout_limit("round_timeout_seconds", 7200)
+        round_limit = self._timeout_limit("round", 7200)
         if elapsed >= round_limit:
-            for slot, result in sorted(self._monitor.results.items()):
+            for result in self._monitor.round_results():
+                slot = result.slot
                 if result.status in TERMINAL:
                     continue
                 status = "TIMEOUT" if result.status in {"TESTING", "COMPLETING"} else "NOTEST"
@@ -221,24 +236,25 @@ class MonitoringRound:
                 self._state = RoundState.AWAITING_REVIEW
             return
 
-        start_limit = self._timeout_limit("start_timeout_seconds", 30)
+        start_limit = self._timeout_limit("start", 30)
         if elapsed >= start_limit:
-            for slot, result in sorted(self._monitor.results.items()):
+            for result in self._monitor.round_results():
+                slot = result.slot
                 if result.status != "WAITING" or slot in self._activity_slots:
                     continue
                 self._set_deadline_result(slot, "NOTEST", "start_deadline_no_activity", start_limit, elapsed)
 
-        test_limit = self._timeout_limit("test_timeout_seconds", 480)
+        test_limit = self._timeout_limit("test", 480)
         for slot, started_at in sorted(self._test_started.items()):
-            result = self._monitor.results.get(slot)
+            result = next((item for item in self._monitor.round_results() if item.slot == slot), None)
             if result is None or result.status in TERMINAL or slot in self._deadline_slots:
                 continue
             test_elapsed = max(0.0, at - started_at)
             if test_elapsed >= test_limit:
                 self._set_deadline_result(slot, "TIMEOUT", "test_deadline", test_limit, test_elapsed)
 
-    def _timeout_limit(self, name: str, fallback: int) -> int:
-        value = getattr(self._monitor, name, fallback)
+    def _timeout_limit(self, kind: str, fallback: int) -> int:
+        value = self._monitor.timeout_seconds(kind)
         return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else fallback
 
     def _set_deadline_result(self, slot: int, status: str, reason: str,
@@ -270,12 +286,7 @@ class MonitoringRound:
         ))
 
     def _publish_round_event(self, event: MonitorEvent) -> None:
-        if hasattr(self._monitor, "emit_display_event"):
-            self._monitor.emit_display_event(event)
-        elif hasattr(self._monitor, "emit"):
-            self._monitor.emit(event)
-        else:
-            self._receive_monitor_event(event)
+        self._monitor.publish_round_event(event)
 
     def _stop_collection(self, reason: str) -> None:
         if self._collection_stopped:
@@ -295,11 +306,11 @@ class MonitoringRound:
                 return
             if self._state == RoundState.AWAITING_REVIEW and self._completion_reason == "round_deadline":
                 return
-        if not self._monitor.results or any(result.status not in TERMINAL
-                                            for result in self._monitor.results.values()):
+        results = self._monitor.round_results()
+        if not results or any(result.status not in TERMINAL for result in results):
             return
         self._stop_collection("results_terminal")
-        if getattr(self._monitor, "review_pending", None) is not None:
+        if self._monitor.has_pending_review():
             with self._lock:
                 self._state = RoundState.AWAITING_REVIEW
                 self._completion_reason = "review_pending"
@@ -315,7 +326,8 @@ class MonitoringRound:
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
         with self._lock:
             if event.kind == "result" and event.slot is not None:
-                result = self._monitor.results.get(event.slot) if self._monitor is not None else None
+                result = next((item for item in self._monitor.round_results()
+                               if item.slot == event.slot), None) if self._monitor is not None else None
                 if result is not None and result.status in {"TESTING", "COMPLETING"}:
                     self._activity_slots.add(event.slot)
                     if event.status == "TESTING" or event.detail.get("trusted_activity") == "true":
