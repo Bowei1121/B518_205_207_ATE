@@ -31,4 +31,4 @@
 - Ticket 08 實際驗收、能力證據、命令及限制記在 `docs/refactoring/tickets/08-capacity-mapping-kvm-layout.md`；本票實機KVM／上位機共同驗收、目標設備與發布App未宣稱通過，分別依Ticket16／設備驗收工作追蹤。
 - 實作與交付文件首批提交 `cae6337afb50d6102ff6e90d141aa574d9ac5d2e` 已推到 Gitea 及 GitHub 的 `codex/ticket-08`，兩端遠端 ref 均已核對為該 SHA，tracking 設為 `origin/codex/ticket-08`。
 - 驗收紀錄提交 `05d0272943e181337b48dcdcafa3ea0d6d98fc28` 亦已推至兩端專用分支。使用者要求的一般非快轉合併 commit 為 `3b024107f497836b0eeea780b30ae5627439ef53`；合併後完整套件再次 130 tests 通過，SHA 已推至 Gitea 與 GitHub 的 `B518-Log-Solution` 並逐一核對一致。
-- 最後的合併紀錄提交、兩端最終目標分支 ref 及專用分支安全清理／最後 checkout 結果，待本次 Git 流程結束後補記。
+- 合併與驗收紀錄提交 `62a71285a9db66d5f03ecfdf66ae411bed69e594` 已推至 Gitea 與 GitHub，兩端 `B518-Log-Solution` ref 一致並包含 Ticket 08 merge commit。兩端 `codex/ticket-08` ref 均已確認不存在；本地專用分支使用 `git branch -d` 安全刪除，最後停在乾淨的 `B518-Log-Solution`。分支清理結果已寫入 Ticket 08 與本摘要。
