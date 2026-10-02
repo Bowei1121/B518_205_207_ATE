@@ -116,8 +116,7 @@ class BaseMonitor:
                  monotonic: Callable[[], float] = time.monotonic,
                  start_timeout_seconds: Optional[int] = None,
                  test_timeout_seconds: Optional[int] = None,
-                 round_timeout_seconds: Optional[int] = None,
-                 round_started_monotonic: Optional[float] = None):
+                 round_timeout_seconds: Optional[int] = None):
         self.station, self.settings, self.slots = station, settings, tuple(sorted(slots))
         defaults = DEFAULT_TIMEOUTS.get(station.upper(), DEFAULT_TIMEOUTS["FCT"])
         self.start_timeout_seconds = int(start_timeout_seconds or defaults["start"])
@@ -130,8 +129,6 @@ class BaseMonitor:
                               "round_timeout_seconds": str(self.round_timeout_seconds)})
         self.callback, self.now, self.monotonic = callback, now, monotonic
         self.started = now()
-        self._started_monotonic = (monotonic() if round_started_monotonic is None
-                                   else round_started_monotonic)
         self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
