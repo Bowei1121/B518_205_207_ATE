@@ -64,6 +64,9 @@ class MachineProfileTests(unittest.TestCase):
         duplicate_source = valid_profile()
         duplicate_source["mapping"][1]["source"] = 1
         cases.append(duplicate_source)
+        duplicate_display = valid_profile()
+        duplicate_display["mapping"][1]["display"] = 2
+        cases.append(duplicate_display)
         out_of_range_source = valid_profile()
         out_of_range_source["mapping"][1]["source"] = 3
         cases.append(out_of_range_source)
@@ -86,6 +89,11 @@ class MachineProfileTests(unittest.TestCase):
         incompatible["machine"] = "BT"
         with self.assertRaises(ProfileError):
             ProfileCatalog.from_dict({"schema_version": 1, "profiles": [incompatible]})
+
+    def test_duplicate_project_and_machine_profiles_are_rejected(self):
+        record = valid_profile()
+        with self.assertRaisesRegex(ProfileError, "重複"):
+            ProfileCatalog.from_dict({"schema_version": 1, "profiles": [record, record]})
 
     def test_legacy_preferences_migrate_to_a_profile_and_restore_selection(self):
         catalog, project, machine = migrate_legacy_preferences({
