@@ -334,13 +334,15 @@ class B518LogSolutionApp:
         self._load_selected_profile_values()
 
     def _project_changed(self, _event=None) -> None:
-        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+        if self.profile_error and self.profile_error.startswith((
+                "已保存的專案與機型選擇", "目前選擇已從配置清單移除")):
             self.profile_error = None
         self._refresh_machine_choices()
         self._render_rows()
 
     def _profile_changed(self, _event=None) -> None:
-        if self.profile_error and self.profile_error.startswith("已保存的專案與機型選擇"):
+        if self.profile_error and self.profile_error.startswith((
+                "已保存的專案與機型選擇", "目前選擇已從配置清單移除")):
             self.profile_error = None
         self._load_selected_profile_values()
         self.bt_format.set("B518 RS-WMT" if self._profile_platform() == "rswmt" else "B482 TestData")
@@ -660,8 +662,10 @@ class B518LogSolutionApp:
         ttk.Entry(parent, textvariable=self.profile_editor_project, width=18).grid(
             row=0, column=1, sticky="w", padx=6, pady=4)
         ttk.Label(parent, text="機型").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=4)
-        ttk.Combobox(parent, textvariable=self.profile_editor_machine,
-                     values=("DFU", "FCT", "BT"), state="readonly", width=9).grid(
+        self.profile_editor_machine_choice = ttk.Combobox(
+            parent, textvariable=self.profile_editor_machine,
+            values=("DFU", "FCT", "BT"), state="readonly", width=9)
+        self.profile_editor_machine_choice.grid(
             row=0, column=3, sticky="w", padx=6, pady=4)
         ttk.Label(parent, text="平台").grid(row=0, column=4, sticky="w", padx=(12, 0), pady=4)
         ttk.Combobox(parent, textvariable=self.profile_editor_platform,
@@ -693,15 +697,19 @@ class B518LogSolutionApp:
                 row=row, column=1, sticky="w", padx=6, pady=4)
         ttk.Label(parent, textvariable=self.profile_editor_status, wraplength=620,
                   foreground="#b02a37").grid(row=8, column=0, columnspan=6, sticky="w", pady=(10, 6))
-        actions = ttk.Frame(parent)
-        actions.grid(row=9, column=0, columnspan=6, sticky="ew", pady=(10, 0))
-        for label, action in (("驗證草稿", self._validate_profile_editor),
+        edit_actions = ttk.Frame(parent)
+        edit_actions.grid(row=9, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        for label, action in (("載入已保存配置", self._load_profile_editor_selection),
+                              ("驗證草稿", self._validate_profile_editor),
                               ("套用並保存", self._apply_profile_editor),
-                              ("取消草稿", self._cancel_profile_editor),
-                              ("匯入配置", self._import_profiles),
+                              ("取消草稿", self._cancel_profile_editor)):
+            ttk.Button(edit_actions, text=label, command=action).pack(side="left", padx=(0, 6))
+        file_actions = ttk.Frame(parent)
+        file_actions.grid(row=10, column=0, columnspan=6, sticky="ew", pady=(6, 0))
+        for label, action in (("匯入配置", self._import_profiles),
                               ("匯出配置", self._export_profiles),
                               ("重新載入部署配置", self._reload_profiles)):
-            ttk.Button(actions, text=label, command=action).pack(side="left", padx=(0, 6))
+            ttk.Button(file_actions, text=label, command=action).pack(side="left", padx=(0, 6))
         parent.columnconfigure(3, weight=1)
         parent.rowconfigure(7, weight=1)
 
@@ -748,11 +756,13 @@ class B518LogSolutionApp:
             return
         self.profiles = catalog
         self.profile_error = None
-        self.project.set(profile.project)
-        self.station.set(profile.machine)
+        if self.monitor is None:
+            self.project.set(profile.project)
+            self.station.set(profile.machine)
         self._load_selected_profile_values()
         self._refresh_machine_choices()
-        self._render_rows()
+        if self.monitor is None:
+            self._render_rows()
         self._render_profile_editor(profile)
         self.profile_editor_status.set("配置已套用並保存；更新供後續輪次使用。")
 
@@ -763,6 +773,16 @@ class B518LogSolutionApp:
             profile = self.profiles.profiles[0]
         self._render_profile_editor(profile)
         self.profile_editor_status.set("草稿已取消，已保存配置未變更。")
+
+    def _load_profile_editor_selection(self) -> None:
+        try:
+            profile = self.profiles.get(
+                self.profile_editor_project.get().strip(), self.profile_editor_machine.get())
+        except ProfileError as error:
+            self.profile_editor_status.set("找不到可載入配置：{}".format(error))
+            return
+        self._render_profile_editor(profile)
+        self.profile_editor_status.set("已載入已保存配置作為草稿。")
 
     def _render_profile_editor(self, profile: MachineProfile) -> None:
         self.profile_editor_project.set(profile.project)
@@ -790,12 +810,7 @@ class B518LogSolutionApp:
             self.profile_editor_status.set("匯入失敗，原配置保留：{}".format(error))
             return
         self.profiles = catalog
-        self.project.set(project)
-        self.station.set(machine)
-        self.profile_error = None
-        self._refresh_machine_choices()
-        self._render_rows()
-        self._render_profile_editor(catalog.get(project, machine))
+        self._select_reloaded_profile(catalog, project, machine)
         self.profile_editor_status.set("配置已驗證、完整匯入並保存。")
 
     def _export_profiles(self) -> None:
@@ -821,6 +836,12 @@ class B518LogSolutionApp:
         try:
             catalog.get(project, machine)
         except ProfileError:
+            if self.monitor is not None:
+                self.profiles = catalog
+                self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
+                self._render_profile_editor(catalog.get(saved_project, saved_machine))
+                self.profile_editor_status.set(self.profile_error)
+                return
             project, machine = saved_project, saved_machine
             message = "原選擇已不存在，已切換至部署檔保存的有效選擇。"
         else:
@@ -830,9 +851,28 @@ class B518LogSolutionApp:
         self.station.set(machine)
         self.profile_error = None
         self._refresh_machine_choices()
-        self._render_rows()
+        if self.monitor is None:
+            self._render_rows()
         self._render_profile_editor(catalog.get(project, machine))
         self.profile_editor_status.set(message)
+
+    def _select_reloaded_profile(self, catalog, project: str, machine: str) -> None:
+        """Keep a running operator selection stable when an import removes it."""
+        try:
+            catalog.get(self.project.get(), self.station.get())
+        except ProfileError:
+            if self.monitor is not None:
+                self.profile_error = "目前選擇已從配置清單移除；請明確選擇有效專案與機型。"
+                self._render_profile_editor(catalog.get(project, machine))
+                self.profile_editor_status.set(self.profile_error)
+                return
+            self.project.set(project)
+            self.station.set(machine)
+        self.profile_error = None
+        self._refresh_machine_choices()
+        if self.monitor is None:
+            self._render_rows()
+        self._render_profile_editor(catalog.get(self.project.get(), self.station.get()))
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.settings_station = tk.StringVar(value=self.station.get())

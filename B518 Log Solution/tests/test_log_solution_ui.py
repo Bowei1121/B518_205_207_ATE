@@ -73,6 +73,48 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_engineer_can_load_an_existing_profile_before_editing_it(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        try:
+            app.open_settings()
+            app.profile_editor_project.set("B482")
+            app.profile_editor_machine.set("BT")
+            app._load_profile_editor_selection()
+
+            self.assertEqual(app.profile_editor_platform.get(), "b482")
+            self.assertEqual(app.profile_editor_capacity.get(), "4")
+            self.assertEqual(app.profile_editor_mapping.get(), "1:1, 2:2, 3:3, 4:4")
+            app._cancel_profile_editor()
+            self.assertEqual(app.profile_editor_project.get(), app.project.get())
+        finally:
+            app._close_settings()
+            app.hotkey.close()
+            root.destroy()
+
+    def test_failed_profile_save_keeps_the_active_catalog_and_selected_configuration(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                app.open_settings()
+                original_catalog = app.profiles.to_dict()
+                original_selection = (app.project.get(), app.station.get())
+                app.profile_editor_project.set("Unsaved")
+                with patch.object(app.profile_store, "save", side_effect=OSError("disk full")):
+                    app._apply_profile_editor()
+
+                self.assertEqual(app.profiles.to_dict(), original_catalog)
+                self.assertEqual((app.project.get(), app.station.get()), original_selection)
+                self.assertIn("原配置仍有效", app.profile_editor_status.get())
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_engineer_import_export_and_reload_preserve_a_deployable_catalog(self):
         with TemporaryDirectory() as temporary:
             source_preferences = Path(temporary) / "source.json"
@@ -110,11 +152,14 @@ class LogSolutionUiTests(unittest.TestCase):
                         deployed._import_profiles()
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/deployment/active")
-                    deployed.profile_editor_project.set("bad draft")
                     original = deployed.profiles.to_dict()
-                    with patch("b518_log_solution.filedialog.askopenfilename", return_value=str(exported)):
+                    invalid_export = Path(temporary) / "invalid.json"
+                    invalid_export.write_text("{", encoding="utf-8")
+                    with patch("b518_log_solution.filedialog.askopenfilename",
+                               return_value=str(invalid_export)):
                         deployed._import_profiles()
                     self.assertEqual(deployed.profiles.to_dict(), original)
+                    self.assertIn("原配置保留", deployed.profile_editor_status.get())
 
                     replacement = deployed.profiles.with_profile(replace(
                         deployed.profiles.get("Demo", "DFU"),

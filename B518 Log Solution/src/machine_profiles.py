@@ -230,7 +230,7 @@ def profile_from_editor_fields(project: str, machine: str, platform: str, capaci
 
 def _editor_integer(value: str, field: str) -> int:
     text = value.strip() if isinstance(value, str) else ""
-    if not text.isdigit():
+    if not text or any(character < "0" or character > "9" for character in text):
         raise ProfileError("{}必須是正整數。".format(field))
     parsed = int(text)
     if parsed <= 0:
@@ -290,8 +290,8 @@ def validate_profile(profile: MachineProfile) -> None:
         if not isinstance(pair, tuple) or len(pair) != 2:
             raise ProfileError("mapping 必須是 source/display 整數組。")
         source, display = pair
-        if type(source) is not int or source < 1:
-            raise ProfileError("mapping source 必須是正整數。")
+        if type(source) is not int or not 1 <= source <= profile.capacity:
+            raise ProfileError("mapping source 超出配置容量。")
         if type(display) is not int or not 1 <= display <= profile.capacity:
             raise ProfileError("mapping display 超出配置容量。")
         sources.append(source)

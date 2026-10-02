@@ -7,9 +7,9 @@ import sys
 import tempfile
 import time
 import tkinter as tk
-from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -55,15 +55,41 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
     record = active / "group0-slot1" / "system" / "records.csv"
     record.parent.mkdir(parents=True)
 
-    root = tk.Tk()
-    app = app_type(root, hotkey_factory=LocalHotkey)
-    app.project.set("B518")
-    app.station.set(station)
-    profile = app.profiles.get("B518", station)
-    paths = dict(profile.paths)
-    paths.update({"active": str(active), "final": str(final)})
-    app.profiles = app.profiles.with_profile(replace(profile, paths=paths))
-    app._load_selected_profile_values()
+    export_path = station_root / "deployment-profile.json"
+    maker_preferences = station_root / "engineer" / "preferences.json"
+    with patch("b518_log_solution.APP_ROOT", maker_preferences.parent), \
+            patch("b518_log_solution.PREFS_PATH", maker_preferences):
+        maker_root = tk.Tk()
+        maker = app_type(maker_root, hotkey_factory=LocalHotkey)
+        maker.open_settings()
+        maker.profile_editor_project.set("Demo")
+        maker.profile_editor_machine.set(station)
+        maker.profile_editor_platform.set("atlas")
+        maker.profile_editor_capacity.set(str(maker.profiles.get("B518", station).capacity))
+        maker.profile_editor_paths["active"].set(str(active))
+        maker.profile_editor_paths["final"].set(str(final))
+        maker.profile_editor_mapping.set(maker._mapping_text(
+            maker.profiles.get("B518", station).mapping))
+        maker._apply_profile_editor()
+        with patch("b518_log_solution.filedialog.asksaveasfilename", return_value=str(export_path)):
+            maker._export_profiles()
+        maker._close_settings()
+        maker.hotkey.close()
+        maker_root.destroy()
+
+    deployment_preferences = station_root / "deployment" / "preferences.json"
+    with patch("b518_log_solution.APP_ROOT", deployment_preferences.parent), \
+            patch("b518_log_solution.PREFS_PATH", deployment_preferences):
+        root = tk.Tk()
+        app = app_type(root, hotkey_factory=LocalHotkey)
+        app.open_settings()
+        with patch("b518_log_solution.filedialog.askopenfilename", return_value=str(export_path)):
+            app._import_profiles()
+        app.project.set("Demo")
+        app._project_changed()
+        app.station.set(station)
+        app._profile_changed()
+        app._close_settings()
     root.deiconify()
     root.update()
     try:
@@ -72,9 +98,12 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
             raise RuntimeError("The {} monitor did not start.".format(station))
         running_monitor = app.monitor
 
-        running_profile = app.profiles.get("B518", station)
+        running_profile = app.profiles.get("Demo", station)
         changed_mapping = ((1, 2), (2, 1)) + running_profile.mapping[2:]
-        app.profiles = app.profiles.with_profile(replace(running_profile, mapping=changed_mapping))
+        app.open_settings()
+        app.profile_editor_mapping.set(app._mapping_text(changed_mapping))
+        app._apply_profile_editor()
+        app._close_settings()
 
         shutil.copyfile(sample, record)
         wait_for(
@@ -111,6 +140,7 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
                 "notest_slots": sum(result.status == "NOTEST" for result in snapshot.results)}
     finally:
         try:
+            app._close_settings()
             app.close()
         except tk.TclError:
             root.destroy()

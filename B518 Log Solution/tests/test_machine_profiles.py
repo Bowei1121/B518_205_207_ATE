@@ -64,6 +64,9 @@ class MachineProfileTests(unittest.TestCase):
         duplicate_source = valid_profile()
         duplicate_source["mapping"][1]["source"] = 1
         cases.append(duplicate_source)
+        out_of_range_source = valid_profile()
+        out_of_range_source["mapping"][1]["source"] = 3
+        cases.append(out_of_range_source)
         out_of_range = valid_profile()
         out_of_range["mapping"][1]["display"] = 3
         cases.append(out_of_range)
