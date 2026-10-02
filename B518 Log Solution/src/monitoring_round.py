@@ -420,6 +420,8 @@ class MonitoringRound:
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:
         """Admit source facts, queue confirmed contradictions, and retain uncertainty."""
+        outbound_event = None
+        decision = "ignore"
         with self._lock:
             current = next((item for item in self._monitor.round_results()
                             if item.slot == event.slot), None) if self._monitor else None
@@ -433,65 +435,73 @@ class MonitoringRound:
             same_value = current.status == event.status and current.sn == event.sn
             if same_value:
                 if current.source != event.source:
-                    self._append_event(MonitorEvent(
+                    outbound_event = MonitorEvent(
                         "duplicate_source", "slot{} 一致重複來源已記錄".format(event.slot),
                         event.slot, event.sn, event.status, event.source,
                         {"original_source": current.source, "source_id": candidate_detail.get("source_id", "unknown"),
                          "source_time": candidate_detail.get("source_time", "unknown")},
-                    ))
-                return "ignore"
-            terminal_conflict = current.status in TERMINAL and event.status in TERMINAL
-            identity_conflict = bool(current.sn and event.sn and current.sn != event.sn)
-            evidence_conflict = terminal_conflict or identity_conflict
-            if not evidence_conflict:
-                return "accept"
-            if not same_round:
-                self._append_event(MonitorEvent(
-                    "unresolved_source_conflict", "slot{} 出現無法確認同輪的矛盾來源；保留證據待後續政策處理".format(event.slot),
-                    event.slot, event.sn, event.status, event.source,
-                    {"original_sn": current.sn or "unknown", "original_status": current.status,
-                     "original_source": current.source, "candidate_sn": event.sn or "unknown",
-                     "candidate_status": event.status, "candidate_source_id": candidate_detail.get("source_id", "unknown"),
-                     "candidate_source_time": candidate_detail.get("source_time", "unknown"), **candidate_detail},
-                ))
-                return "ignore"
-            original = self._conflict_side(current.sn, current.status, current.source, current_detail)
-            candidate = self._conflict_side(event.sn, event.status, event.source, candidate_detail)
-            for pending in self._pending_conflicts.values():
-                if (pending.slot == event.slot and pending.original.sn == original.sn
-                        and pending.original.status == original.status
-                        and pending.candidate.sn == candidate.sn
-                        and pending.candidate.status == candidate.status
-                        and dict(pending.same_round_evidence).get("round_evidence_id", "") == evidence_id):
-                    self._append_event(MonitorEvent(
-                        "duplicate_source", "slot{} 重複衝突來源已記錄，沿用既有待確認項目".format(event.slot),
+                    )
+            else:
+                terminal_conflict = current.status in TERMINAL and event.status in TERMINAL
+                identity_conflict = bool(current.sn and event.sn and current.sn != event.sn)
+                evidence_conflict = terminal_conflict or identity_conflict
+                if not evidence_conflict:
+                    return "accept"
+                if not same_round:
+                    outbound_event = MonitorEvent(
+                        "unresolved_source_conflict",
+                        "slot{} 出現無法確認同輪的矛盾來源；保留證據待後續政策處理".format(event.slot),
                         event.slot, event.sn, event.status, event.source,
-                        {"conflict_id": pending.conflict_id,
-                         "source_id": candidate.source_id or "unknown",
-                         "source_time": candidate.source_time or "unknown"},
-                    ))
-                    return "ignore"
-            conflict = RoundConflict(
-                uuid.uuid4().hex, self.round_id, event.slot or 0, original, candidate,
-                tuple(sorted((key, value) for key, value in candidate_detail.items()
-                             if key.endswith("evidence") or key == "round_evidence_id")),
-                datetime.now().isoformat(timespec="seconds"),
-            )
-            self._pending_conflicts[conflict.conflict_id] = conflict
-            self._state = RoundState.AWAITING_REVIEW
-            self._append_event(MonitorEvent(
-                "conflict_detected", "slot{} 發現同輪結果衝突，等待人工確認".format(event.slot),
-                event.slot, event.sn, event.status, event.source,
-                {"round_id": self.round_id, "conflict_id": conflict.conflict_id,
-                 "original_sn": original.sn or "unknown", "original_status": original.status,
-                 "original_source_id": original.source_id or "unknown",
-                 "original_source_time": original.source_time or "unknown",
-                 "candidate_sn": candidate.sn or "unknown", "candidate_status": candidate.status,
-                 "candidate_source_id": candidate.source_id or "unknown",
-                 "candidate_source_time": candidate.source_time or "unknown",
-                 "same_round_evidence_id": evidence_id or "unknown"},
-            ))
-            return "defer"
+                        {"original_sn": current.sn or "unknown", "original_status": current.status,
+                         "original_source": current.source, "candidate_sn": event.sn or "unknown",
+                         "candidate_status": event.status,
+                         "candidate_source_id": candidate_detail.get("source_id", "unknown"),
+                         "candidate_source_time": candidate_detail.get("source_time", "unknown"),
+                         **candidate_detail},
+                    )
+                else:
+                    original = self._conflict_side(current.sn, current.status, current.source, current_detail)
+                    candidate = self._conflict_side(event.sn, event.status, event.source, candidate_detail)
+                    duplicate = next((pending for pending in self._pending_conflicts.values()
+                                      if pending.slot == event.slot and pending.original.sn == original.sn
+                                      and pending.original.status == original.status
+                                      and pending.candidate.sn == candidate.sn
+                                      and pending.candidate.status == candidate.status
+                                      and dict(pending.same_round_evidence).get(
+                                          "round_evidence_id", "") == evidence_id), None)
+                    if duplicate:
+                        outbound_event = MonitorEvent(
+                            "duplicate_source", "slot{} 重複衝突來源已記錄，沿用既有待確認項目".format(event.slot),
+                            event.slot, event.sn, event.status, event.source,
+                            {"conflict_id": duplicate.conflict_id,
+                             "source_id": candidate.source_id or "unknown",
+                             "source_time": candidate.source_time or "unknown"},
+                        )
+                    else:
+                        conflict = RoundConflict(
+                            uuid.uuid4().hex, self.round_id, event.slot or 0, original, candidate,
+                            tuple(sorted((key, value) for key, value in candidate_detail.items()
+                                         if key.endswith("evidence") or key == "round_evidence_id")),
+                            datetime.now().isoformat(timespec="seconds"),
+                        )
+                        self._pending_conflicts[conflict.conflict_id] = conflict
+                        self._state = RoundState.AWAITING_REVIEW
+                        outbound_event = MonitorEvent(
+                            "conflict_detected", "slot{} 發現同輪結果衝突，等待人工確認".format(event.slot),
+                            event.slot, event.sn, event.status, event.source,
+                            {"round_id": self.round_id, "conflict_id": conflict.conflict_id,
+                             "original_sn": original.sn or "unknown", "original_status": original.status,
+                             "original_source_id": original.source_id or "unknown",
+                             "original_source_time": original.source_time or "unknown",
+                             "candidate_sn": candidate.sn or "unknown", "candidate_status": candidate.status,
+                             "candidate_source_id": candidate.source_id or "unknown",
+                             "candidate_source_time": candidate.source_time or "unknown",
+                             "same_round_evidence_id": evidence_id or "unknown"},
+                        )
+                        decision = "defer"
+        if outbound_event is not None:
+            self._append_event(outbound_event)
+        return decision
 
     @staticmethod
     def _conflict_side(sn: str, status: str, source: str, detail: Dict[str, str]) -> ConflictSide:
@@ -499,9 +509,11 @@ class MonitoringRound:
                             tuple(sorted(detail.items())))
 
     def _append_event(self, event: MonitorEvent) -> None:
-        round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
-        self._events.append(round_event)
-        self._on_event(round_event)
+        # Route common decisions through the adapter's public event seam so
+        # round snapshots, the Tk queue, and the persistent session share one
+        # ordered record, including the source path when one is available.
+        if self._monitor is not None:
+            self._monitor.publish_round_event(event)
 
 
 class RoundCoordinator:
