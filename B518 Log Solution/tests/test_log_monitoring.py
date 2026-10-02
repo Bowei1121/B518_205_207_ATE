@@ -5,12 +5,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from log_monitoring import (
-    AtlasActiveArchiveMonitor,
-    BaseMonitor,
-    BtLogMonitor,
-    parse_archive_timestamp,
-)
+from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
 
 
 def write_records(path, sn="", status="PASS"):
@@ -30,12 +25,6 @@ def write_bt(path, sn, status, unit):
         writer.writeheader()
         writer.writerow({"SerialNumber": sn, "Unit Number": unit,
                          "Test Pass/Fail Status": status, "StartTime": "x", "EndTime": "y"})
-
-
-class TimeoutMonitor(BaseMonitor):
-    """Minimal monitor that exercises BaseMonitor timeout handling."""
-    def poll_once(self):
-        self.check_timeouts()
 
 
 class LogMonitoringTests(unittest.TestCase):
@@ -75,7 +64,7 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[1].sn, "SN 讀取失敗")
         self.assertEqual(monitor.results[1].status, "FAIL")
 
-    def test_active_batch_marks_unseen_slots_notest_only_after_active_is_gone(self):
+    def test_active_batch_leaves_unseen_slots_waiting_for_shared_start_deadline(self):
         active, final = self.temp / "active", self.temp / "unitest"
         monitor = AtlasActiveArchiveMonitor("DFU", active, final, (1, 2), now=lambda: self.now, session_root=self.temp / "sessions")
         write_records(active / "group0-slot1" / "system" / "records.csv", "HK5HUX6STQ800003YV", "PASS")
@@ -83,9 +72,9 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[2].status, "WAITING")
         (active / "group0-slot1").rename(active / "completed-slot1")
         monitor.poll_once()
-        self.now += timedelta(seconds=3)
+        self.now += timedelta(seconds=300)
         monitor.poll_once()
-        self.assertEqual(monitor.results[2].status, "NOTEST")
+        self.assertEqual(monitor.results[2].status, "WAITING")
 
     def test_active_csv_from_before_monitor_start_is_ignored_until_changed(self):
         active, final = self.temp / "active", self.temp / "unit-archive"
@@ -229,91 +218,10 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.results[1].sn, "HK5HVH6ZF4U00003YV")
 
     def test_station_timeout_defaults_match_the_operating_limits(self):
-        clock = [0.0]
-        monitor = TimeoutMonitor("BT", {}, (1,), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], session_root=self.temp / "sessions")
+        monitor = BtLogMonitor(self.temp / "TestData", (1,),
+                               now=lambda: self.now, session_root=self.temp / "sessions")
         self.assertEqual(monitor.start_timeout_seconds, 30)
         self.assertEqual(monitor.test_timeout_seconds, 240)
-
-    def test_start_timeout_marks_all_slots_and_stops_monitoring(self):
-        clock, events = [0.0], []
-        monitor = TimeoutMonitor("FCT", {}, (1, 2), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
-                                 test_timeout_seconds=480, callback=events.append,
-                                 session_root=self.temp / "sessions")
-        clock[0] = 29.9
-        monitor.poll_once()
-        self.assertFalse(monitor.finished)
-        clock[0] = 30.0
-        monitor.poll_once()
-        self.assertTrue(monitor.finished)
-        self.assertEqual([monitor.results[slot].status for slot in (1, 2)], ["NOTEST", "NOTEST"])
-        self.assertEqual(events[-1].kind, "timeout")
-        self.assertIn("未進入測試", events[-1].message)
-
-    def test_test_timeout_marks_only_the_slots_that_exceeded_their_limit(self):
-        clock, events = [0.0], []
-        monitor = TimeoutMonitor("DFU", {}, (1, 2, 3), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
-                                 test_timeout_seconds=10, callback=events.append,
-                                 session_root=self.temp / "sessions")
-        monitor.set_result(1, "PASS", "DONE")
-        monitor.set_result(2, "TESTING", "RUNNING")
-        monitor.set_result(3, "TESTING", "ALSO_RUNNING")
-        clock[0] = 10.0
-        monitor.poll_once()
-        self.assertEqual(monitor.results[1].status, "PASS")
-        self.assertEqual(monitor.results[2].status, "TIMEOUT")
-        self.assertEqual(monitor.results[3].status, "TIMEOUT")
-        self.assertFalse(monitor.finished)
-        self.assertEqual([event.slot for event in events if event.kind == "timeout"], [2, 3])
-
-    def test_round_timeout_preserves_results_times_out_active_slots_and_stops_once(self):
-        clock, events = [0.0], []
-        monitor = TimeoutMonitor("FCT", {}, (1, 2, 3, 4), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
-                                 test_timeout_seconds=60, round_timeout_seconds=100,
-                                 callback=events.append, session_root=self.temp / "sessions")
-        monitor.set_result(1, "PASS", "DONE")
-        monitor.set_result(2, "TESTING", "RUNNING")
-        monitor.set_result(3, "COMPLETING", "FINALIZING")
-
-        clock[0] = 100.0
-        monitor.poll_once()
-        monitor.poll_once()
-
-        self.assertEqual([monitor.results[slot].status for slot in (1, 2, 3, 4)],
-                         ["PASS", "TIMEOUT", "TIMEOUT", "NOTEST"])
-        alerts = [event for event in events if event.kind == "timeout"]
-        self.assertEqual(len(alerts), 1)
-        self.assertEqual(alerts[0].detail["kind"], "round")
-        self.assertTrue(monitor.finished)
-        self.assertTrue(monitor._stop.is_set())
-
-    def test_test_updates_and_completing_do_not_reset_the_timeout_clock(self):
-        clock = [0.0]
-        monitor = TimeoutMonitor("FCT", {}, (1,), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
-                                 test_timeout_seconds=10, session_root=self.temp / "sessions")
-        monitor.set_result(1, "TESTING")
-        clock[0] = 9.0
-        monitor.set_result(1, "TESTING")
-        monitor.set_result(1, "COMPLETING")
-        clock[0] = 10.0
-        monitor.poll_once()
-        self.assertEqual(monitor.results[1].status, "TIMEOUT")
-
-    def test_final_result_at_the_timeout_boundary_wins_over_timeout(self):
-        clock = [0.0]
-        monitor = TimeoutMonitor("FCT", {}, (1,), now=lambda: self.now,
-                                 monotonic=lambda: clock[0], start_timeout_seconds=30,
-                                 test_timeout_seconds=10, session_root=self.temp / "sessions")
-        monitor.set_result(1, "TESTING", "RUNNING")
-        clock[0] = 10.0
-        monitor.set_result(1, "PASS", "DONE")
-        monitor.poll_once()
-        self.assertEqual(monitor.results[1].status, "PASS")
-        self.assertFalse(monitor.finished)
 
     def test_log_solution_never_imports_control_dependencies(self):
         base = Path(__file__).resolve().parents[1] / "src"

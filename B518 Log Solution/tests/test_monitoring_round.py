@@ -17,6 +17,9 @@ class FakeMonitor:
         self.started = 0
         self.stopped = 0
         self.finished = False
+        self.start_timeout_seconds = 30
+        self.test_timeout_seconds = 480
+        self.round_timeout_seconds = 7200
 
     def start(self):
         self.started += 1
@@ -27,8 +30,186 @@ class FakeMonitor:
         self.finished = True
         self.callback(MonitorEvent("stopped", "stopped"))
 
+    def poll_once(self):
+        pass
+
+
+class DeadlineMonitor:
+    """Small source monitor that exposes facts through the shared round API."""
+    def __init__(self, callback, monotonic, slots=(1, 2, 3), start=10, test=5, round_limit=100):
+        self.callback = callback
+        self.monotonic = monotonic
+        self.results = {slot: SlotResult(slot) for slot in slots}
+        self.start_timeout_seconds = start
+        self.test_timeout_seconds = test
+        self.round_timeout_seconds = round_limit
+        self._started_monotonic = monotonic()
+        self._test_started_monotonic = {}
+        self._pending = []
+        self._locked = set()
+        self.finished = False
+        self.collection_stopped = False
+        self.poll_count = 0
+
+    def start(self):
+        pass
+
+    def poll_once(self):
+        if self.collection_stopped:
+            return
+        self.poll_count += 1
+        pending, self._pending = self._pending, []
+        for slot, status in pending:
+            if slot in self._locked:
+                continue
+            self.results[slot].status = status
+            self.callback(MonitorEvent("result", "slot{} {}".format(slot, status), slot, status=status))
+
+    def publish(self, slot, status):
+        self._pending.append((slot, status))
+
+    def set_result(self, slot, status, detail=None, lock_terminal=False):
+        if slot in self._locked:
+            return
+        self.results[slot].status = status
+        if lock_terminal:
+            self._locked.add(slot)
+        self.callback(MonitorEvent("result", "slot{} {}".format(slot, status), slot, status=status,
+                                   detail=detail or {}))
+
+    def stop_collection(self):
+        self.collection_stopped = True
+
+    def finish(self):
+        self.stop_collection()
+        self.finished = True
+
+    def stop(self):
+        if self.finished:
+            return
+        self.stop_collection()
+        for result in self.results.values():
+            if result.status not in {"PASS", "FAIL", "NOTEST", "TIMEOUT", "STOPPED"}:
+                self.set_result(result.slot, "STOPPED")
+        self.finished = True
+        self.callback(MonitorEvent("stopped", "manually stopped"))
+
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0])
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        elapsed[0] = 10.0
+        snapshot = rounds.poll_once()
+
+        self.assertEqual([result.status for result in snapshot.results], ["NOTEST"] * 3)
+        self.assertEqual(snapshot.state, "COMPLETED")
+        self.assertTrue(snapshot.result_available)
+        notest_events = [item.event for item in snapshot.events
+                         if item.event.kind == "timeout" and item.event.status == "NOTEST"]
+        self.assertEqual(len(notest_events), 3)
+        self.assertTrue(all(event.detail.get("reason") == "start_deadline_no_activity" for event in notest_events))
+        self.assertTrue(all(event.detail.get("deadline_seconds") == "10" for event in notest_events))
+
+    def test_shared_start_deadline_preserves_active_and_final_slots_while_others_wait(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0])
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        monitors[0].publish(1, "TESTING")
+        monitors[0].publish(2, "PASS")
+        elapsed[0] = 9.0
+        rounds.poll_once()
+        elapsed[0] = 10.0
+        snapshot = rounds.poll_once()
+
+        self.assertEqual([result.status for result in snapshot.results], ["TESTING", "PASS", "NOTEST"])
+        self.assertEqual(snapshot.state, "RUNNING")
+        self.assertFalse(snapshot.result_available)
+
+    def test_source_preparation_time_counts_from_the_accepted_start(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            elapsed[0] = 12.0
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], start=10)
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        snapshot = rounds.poll_once()
+
+        self.assertEqual([result.status for result in snapshot.results], ["NOTEST"] * 3)
+        self.assertEqual(monitors[0].poll_count, 0)
+        self.assertEqual(snapshot.state, "COMPLETED")
+
+    def test_individual_deadline_times_out_completing_slot_and_keeps_other_slots_running(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], test=5)
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        monitors[0].publish(1, "TESTING")
+        elapsed[0] = 1.0
+        rounds.poll_once()
+        monitors[0].publish(1, "COMPLETING")
+        elapsed[0] = 4.0
+        rounds.poll_once()
+        elapsed[0] = 6.0
+        snapshot = rounds.poll_once()
+
+        self.assertEqual([result.status for result in snapshot.results], ["TIMEOUT", "WAITING", "WAITING"])
+        self.assertEqual(snapshot.state, "RUNNING")
+        timeout = next(item.event for item in snapshot.events
+                       if item.event.status == "TIMEOUT")
+        self.assertEqual(timeout.detail.get("reason"), "test_deadline")
+        self.assertEqual(timeout.detail.get("elapsed_seconds"), "5")
+
+    def test_deadline_wins_at_exact_boundary_and_results_complete_without_grace_period(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,), start=10)
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        monitors[0].publish(1, "PASS")
+        elapsed[0] = 10.0
+        boundary = rounds.poll_once()
+        self.assertEqual(boundary.results[0].status, "NOTEST")
+        self.assertEqual(boundary.state, "COMPLETED")
+        self.assertTrue(monitors[0].collection_stopped)
+        poll_count = monitors[0].poll_count
+
+        elapsed[0] = 11.0
+        rounds.poll_once()
+        self.assertEqual(monitors[0].poll_count, poll_count)
+        self.assertEqual(rounds.snapshot().results[0].status, "NOTEST")
+
     def test_ambiguous_rswmt_log_retains_candidate_evidence_without_selecting_a_round(self):
         start = datetime(2026, 9, 11, 5, 44, 16)
         with tempfile.TemporaryDirectory() as temporary:
@@ -52,7 +233,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 encoding='utf-8',
             )
 
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             snapshot = rounds.snapshot()
             review = next(event.event for event in snapshot.events if event.event.kind == 'warning')
 
@@ -70,7 +251,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 '2026-09-11 05:44:24,000 DEBUG:HciCommunication << 30 bytes: .[....MLB#..SERIAL000003 05 5B\n',
                 encoding='utf-8',
             )
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             unbound_warning = next(event.event for event in rounds.snapshot().events
                                    if event.event.kind == 'warning' and event.event.source == str(unbound))
 
@@ -86,7 +267,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 '2026-09-11 05:44:26,123 PASS:TestRunner Item complete.\n',
                 encoding='utf-8',
             )
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             partial_warning = next(event.event for event in rounds.snapshot().events
                                    if event.event.kind == 'warning' and event.event.source == str(partial))
 
@@ -117,7 +298,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 encoding='utf-8',
             )
 
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             result_event = next(event.event for event in rounds.snapshot().events
                                 if event.event.status == 'TESTING')
 
@@ -138,6 +319,7 @@ class MonitoringRoundTests(unittest.TestCase):
             rounds.start('BT', lambda callback: RsWmtLogMonitor(
                 output, slots=(1,), callback=callback,
                 now=lambda: start + timedelta(seconds=elapsed[0]), monotonic=lambda: elapsed[0],
+                start_timeout_seconds=240, test_timeout_seconds=480, round_timeout_seconds=7200,
                 session_root=root / 'sessions',
             ), run_async=False)
 
@@ -154,18 +336,81 @@ class MonitoringRoundTests(unittest.TestCase):
 
             monitor = rounds.monitor
             elapsed[0] = 88.0
-            monitor.poll_once()
+            rounds.poll_once()
             self.assertEqual(rounds.snapshot().results[0].status, 'COMPLETING')
             self.assertFalse(any(event.event.status == 'TESTING' for event in rounds.events_since()))
             elapsed[0] = 93.0
-            monitor.poll_once()
+            rounds.poll_once()
 
             snapshot = rounds.snapshot()
             self.assertEqual(snapshot.results[0].status, 'PASS')
+            self.assertEqual(snapshot.state, 'COMPLETED')
+            self.assertTrue(snapshot.collection_stopped)
             final = [event.event for event in snapshot.events if event.event.status == 'PASS'][-1]
             self.assertEqual(final.source, str(source))
             self.assertEqual(final.detail.get('source_time'), '2026-09-11T05:45:44')
             self.assertEqual(final.detail.get('batch_evidence'), '2026-09-11T05:44:16')
+
+            accepted_sequence = snapshot.event_sequence
+            late_dir = output / '2026-09-11_05-46-44'
+            late_dir.mkdir()
+            (late_dir / 'LATE00000001_2026-09-11_05-46-44.csv').write_text('late data')
+            elapsed[0] = 94.0
+            rounds.poll_once()
+            self.assertEqual(rounds.snapshot().event_sequence, accepted_sequence)
+            self.assertEqual(rounds.snapshot().results[0].status, 'PASS')
+
+    def test_rswmt_timeout_is_applied_by_round_and_late_csv_cannot_replace_it(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        elapsed = [0.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output' / 'SmtCal'
+            output.mkdir(parents=True)
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+
+            def create(callback):
+                return RsWmtLogMonitor(
+                    output, slots=(1, 2), callback=callback,
+                    now=lambda: start + timedelta(seconds=elapsed[0]),
+                    monotonic=lambda: elapsed[0], start_timeout_seconds=30,
+                    test_timeout_seconds=5, round_timeout_seconds=100,
+                    session_root=root / 'sessions',
+                )
+
+            rounds.start('BT', create, run_async=False)
+            (output / 'live.log').write_text(
+                "2026-09-11 05:44:16,688 STATE:TestRunner Add-in 'initialize'...\n"
+                '2026-09-11 05:44:16,793 DEBUG:instrument >> '
+                '\'CONFigure:SCSTools:VARiable:DEFine "instance_active_1", 0, INSTrument\\n\'\n'
+                '2026-09-11 05:44:27,462 DEBUG:HciCommunication << 30 bytes: .[....MLB#..'
+                'TESTSERIAL0001 05 5B\n'
+                '2026-09-11 05:44:28,000 PASS:TestRunner Item complete.\n',
+                encoding='utf-8',
+            )
+            rounds.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, 'TESTING')
+            elapsed[0] = 5.0
+            rounds.poll_once()
+            self.assertEqual([result.status for result in rounds.snapshot().results],
+                             ['TIMEOUT', 'WAITING'])
+
+            result_dir = output / '2026-09-11_05-45-44'
+            result_dir.mkdir()
+            final_data = io.StringIO()
+            writer = csv.writer(final_data)
+            headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
+                       'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
+                       'tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None:pwr=None;']
+            writer.writerow(['Overlay', 'SmtCal'] + [''] * 6)
+            writer.writerow(headers)
+            writer.writerow(['TESTSERIAL0001', 'Pass', '[]', '', '2026/11/09 05:44:16',
+                             '2026/11/09 05:45:44', 'B518', '1'])
+            (result_dir / 'TESTSERIAL0001_2026-09-11_05-45-44.csv').write_text(final_data.getvalue())
+            elapsed[0] = 6.0
+            rounds.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, 'TIMEOUT')
+            rounds.stop()
 
     def test_repeated_start_while_running_keeps_the_same_round(self):
         monitors = []
@@ -176,9 +421,9 @@ class MonitoringRoundTests(unittest.TestCase):
             return monitor
 
         rounds = RoundCoordinator()
-        first = rounds.start("FCT", create)
+        first = rounds.start("FCT", create, run_async=False)
         monitors[0].results[1].status = "PASS"
-        again = rounds.start("FCT", create)
+        again = rounds.start("FCT", create, run_async=False)
 
         self.assertEqual(first.round_id, again.round_id)
         self.assertEqual(monitors[0].started, 1)
@@ -194,10 +439,10 @@ class MonitoringRoundTests(unittest.TestCase):
             return monitor
 
         rounds = RoundCoordinator()
-        old_round = rounds.start("FCT", create)
+        old_round = rounds.start("FCT", create, run_async=False)
         rounds.stop()
         old_events = rounds.events_since()
-        current_round = rounds.start("FCT", create)
+        current_round = rounds.start("FCT", create, run_async=False)
         before = rounds.snapshot()
         old_monitor = monitors[0]
         old_monitor.results[1].status = "FAIL"
@@ -218,7 +463,7 @@ class MonitoringRoundTests(unittest.TestCase):
             return monitor
 
         rounds = RoundCoordinator()
-        rounds.start("FCT", create)
+        rounds.start("FCT", create, run_async=False)
         monitor.results[1].status = "PASS"
         snapshot = rounds.stop()
 
@@ -227,6 +472,32 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(snapshot.state, "STOPPED")
         self.assertFalse(snapshot.result_available)
         self.assertEqual(snapshot.events[-1].event.kind, "stopped")
+
+    def test_manual_stop_keeps_mixed_terminals_and_stops_only_incomplete_positions(self):
+        elapsed = [0.0]
+        monitors = []
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0],
+                                      slots=range(1, 8), start=30, test=100)
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("FCT", create, run_async=False)
+        for slot, status in ((1, "PASS"), (2, "FAIL"), (3, "NOTEST"), (4, "TIMEOUT"),
+                             (5, "TESTING"), (6, "COMPLETING")):
+            monitors[0].publish(slot, status)
+        rounds.poll_once()
+        snapshot = rounds.stop()
+
+        self.assertEqual([result.status for result in snapshot.results], [
+            "PASS", "FAIL", "NOTEST", "TIMEOUT", "STOPPED", "STOPPED", "STOPPED",
+        ])
+        self.assertEqual(snapshot.state, "STOPPED")
+        self.assertFalse(snapshot.result_available)
+        self.assertTrue(snapshot.collection_stopped)
+        self.assertEqual(snapshot.completion_reason, "manual_stop")
 
 
 if __name__ == "__main__":

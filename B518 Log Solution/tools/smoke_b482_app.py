@@ -64,8 +64,7 @@ def main():
             root.update()
             try:
                 app.start_button.invoke()
-                if app.monitor is None:
-                    raise RuntimeError("The BT monitor did not start.")
+                wait_for(root, lambda: app.monitor is not None, "BT source preparation")
 
                 stamp = (datetime.now() + timedelta(seconds=2)).strftime("%Y%m%d%H%M%S")
                 for sample in samples:
@@ -81,7 +80,9 @@ def main():
 
                 wait_for(
                     root,
-                    lambda: app.rounds.snapshot().state == "COMPLETED",
+                    lambda: app.rounds.snapshot().state == "COMPLETED"
+                    and all(app.status_rows[slot]["status"].cget("text") == "NOTEST"
+                            for slot in range(1, 5)),
                     "completed B482 round",
                 )
                 snapshot = app.rounds.snapshot()

@@ -81,9 +81,13 @@ class SessionStore:
                    "finished_at": self.finished_at, "sources": sorted(self.sources)}
         (self.path / "session.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def event(self, message: str) -> None:
+    def event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
         with (self.path / "events.log").open("a", encoding="utf-8") as handle:
-            handle.write("{} {}\n".format(datetime.now().isoformat(timespec="seconds"), message))
+            handle.write(json.dumps({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "message": message,
+                "detail": detail or {},
+            }, ensure_ascii=False) + "\n")
 
     def update_results(self, results: Iterable[SlotResult]) -> None:
         with (self.path / "results.csv").open("w", encoding="utf-8", newline="") as handle:
@@ -128,35 +132,30 @@ class BaseMonitor:
         self.started = now()
         self._started_monotonic = (monotonic() if round_started_monotonic is None
                                    else round_started_monotonic)
-        self._activity_seen = False
-        self._test_started_monotonic: Dict[int, float] = {}
+        self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
         self.session = SessionStore(session_id, settings, session_root)
         self.finished = False
-        self._stable_since: Optional[datetime] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
     def emit(self, event: MonitorEvent) -> None:
-        self.session.event(event.message)
+        self.session.event(event.message, event.detail)
         if event.source:
             self.session.source(Path(event.source))
         if self.callback:
             self.callback(event)
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
-                   detail: Optional[Dict[str, str]] = None) -> None:
+                   detail: Optional[Dict[str, str]] = None, lock_terminal: bool = False) -> None:
         if self.finished:
+            return
+        if slot in self._deadline_locked_slots:
             return
         result = self.results[slot]
         if result.status in TERMINAL and status not in TERMINAL:
             return
-        if status in {"TESTING", "COMPLETING"}:
-            self._activity_seen = True
-            self._test_started_monotonic.setdefault(slot, self.monotonic())
-        elif status in {"PASS", "FAIL", "NOTEST"}:
-            self._activity_seen = True
         if sn:
             result.sn = sn
         result.status, result.source = status, source or result.source
@@ -164,96 +163,22 @@ class BaseMonitor:
         self.session.update_results(self.results.values())
         self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status,
                                source, detail or {}))
-
-    def _all_terminal(self) -> bool:
-        return bool(self.results) and all(result.status in TERMINAL for result in self.results.values())
-
-    def complete_if_stable(self) -> None:
-        if not self._all_terminal():
-            self._stable_since = None
-            return
-        if self._stable_since is None:
-            self._stable_since = self.now()
-        elif self.now() - self._stable_since >= timedelta(seconds=3):
-            self.finished = True
-            self.session.finish()
-            self.emit(MonitorEvent("finished", "{} 本輪完成".format(self.station)))
-
-    def begin_timeout_clock(self) -> None:
-        """Keep deadlines anchored to the accepted round start, including snapshot work."""
-        return
-
-    def check_timeouts(self) -> None:
-        """Stop the session when the round, start, or an active slot exceeds its limit."""
-        if self.finished:
-            return
-        if self.check_round_timeout():
-            return
-        elapsed = self.monotonic() - self._started_monotonic
-        if not self._activity_seen and elapsed >= self.start_timeout_seconds:
-            self._finish_timeout("start", None, elapsed)
-            return
-        timed_out_slots = []
-        for slot in sorted(self._test_started_monotonic):
-            if self.results[slot].status in TERMINAL:
-                continue
-            test_elapsed = self.monotonic() - self._test_started_monotonic[slot]
-            if test_elapsed >= self.test_timeout_seconds:
-                timed_out_slots.append((slot, test_elapsed))
-        for slot, test_elapsed in timed_out_slots:
-            self._finish_timeout("test", slot, test_elapsed)
-
-    def check_round_timeout(self) -> bool:
-        """Enforce the round deadline before a poll can read any more source data."""
-        if self.finished:
-            return True
-        elapsed = self.monotonic() - self._started_monotonic
-        if elapsed >= self.round_timeout_seconds:
-            for slot, result in self.results.items():
-                if result.status in TERMINAL:
-                    continue
-                self.set_result(slot, "TIMEOUT" if result.status in {"TESTING", "COMPLETING"}
-                                else "NOTEST")
-            self._finish_timeout("round", None, elapsed)
-            return True
-        return False
-
-    def _finish_timeout(self, kind: str, timed_out_slot: Optional[int], elapsed: float) -> None:
-        if kind == "round":
-            message = "{} 整輪監控逾時：{} 秒（經過 {} 秒）".format(
-                self.station, self.round_timeout_seconds, int(elapsed),
-            )
-        elif kind == "start":
-            for slot, result in self.results.items():
-                if result.status not in TERMINAL:
-                    self.set_result(slot, "NOTEST")
-            message = "{} 未進入測試逾時：{} 秒（經過 {} 秒）".format(
-                self.station, self.start_timeout_seconds, int(elapsed),
-            )
-        else:
-            assert timed_out_slot is not None
-            self.set_result(timed_out_slot, "TIMEOUT")
-            message = "{} slot{} 測試逾時：{} 秒（上限 {} 秒）".format(
-                self.station, timed_out_slot, int(elapsed), self.test_timeout_seconds,
-            )
-        self.emit(MonitorEvent("timeout", message, timed_out_slot, status="TIMEOUT",
-                               detail={"kind": kind, "elapsed_seconds": str(int(elapsed))}))
-        if kind in {"start", "round"}:
-            self._stop.set()
-            self.finished = True
-            self.session.finish()
+        if lock_terminal:
+            self._deadline_locked_slots.add(slot)
 
     def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        """Mark adapter readiness; MonitoringRound owns the polling schedule."""
+        return
 
-    def _run(self) -> None:
-        while not self._stop.wait(0.5):
-            self.poll_once()
-            if self.finished:
-                return
+    def stop_collection(self) -> None:
+        """Stop source reads while leaving round result-release policy to the round."""
+        self._stop.set()
+
+    def finish(self) -> None:
+        self.stop_collection()
+        if not self.finished:
+            self.finished = True
+            self.session.finish()
 
     def stop(self) -> None:
         self._stop.set()
@@ -261,8 +186,7 @@ class BaseMonitor:
             for slot, result in self.results.items():
                 if result.status not in TERMINAL:
                     self.set_result(slot, "STOPPED")
-            self.finished = True
-            self.session.finish()
+            self.finish()
             self.emit(MonitorEvent("stopped", "{} 監控已由人員停止".format(self.station)))
 
     def poll_once(self) -> None:
@@ -274,12 +198,8 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
     def __init__(self, station: str, active_root: Path, final_root: Path, slots: Sequence[int], **kwargs):
         super().__init__(station, {"active_root": str(active_root), "final_root": str(final_root)}, slots, **kwargs)
         self.source = AtlasSourceAdapter(active_root, final_root, slots, self.started, self.now)
-        self.begin_timeout_clock()
 
     def poll_once(self) -> None:
-        if self.finished or self._stop.is_set():
-            return
-        self.check_round_timeout()
         if self.finished or self._stop.is_set():
             return
         for observation in self.source.poll():
@@ -303,8 +223,7 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                     "final", "slot{} 最終 {}".format(observation.slot, observation.status),
                     observation.slot, observation.sn, observation.status, observation.source,
                 ))
-        self.check_timeouts()
-        self.complete_if_stable()
+
 
 
 class BtLogMonitor(BaseMonitor):
@@ -317,7 +236,6 @@ class BtLogMonitor(BaseMonitor):
         self.source_adapter = B482SourceAdapter(
             testdata_root, caseinfo_root, self.started, self.now, self.monotonic,
         )
-        self.begin_timeout_clock()
         self.batch_stamp = ""
         self.review_pending: Optional[Dict[str, object]] = None
         self.review_decisions: Dict[str, str] = {}
@@ -337,9 +255,6 @@ class BtLogMonitor(BaseMonitor):
         self.review_pending = None
 
     def poll_once(self) -> None:
-        if self.finished or self._stop.is_set():
-            return
-        self.check_round_timeout()
         if self.finished or self._stop.is_set():
             return
         for observation in self.source_adapter.poll():
@@ -398,5 +313,3 @@ class BtLogMonitor(BaseMonitor):
                         ))
                     continue
             self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())
-        self.check_timeouts()
-        self.complete_if_stable()
