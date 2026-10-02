@@ -285,4 +285,10 @@ class RsWmtSourceAdapter:
                 continue
             observations.extend(batch_events)
             observations.append(RsWmtObservation("progress", str(path), record=record))
-        return observations
+        def order(item):
+            record = item.record
+            evidence = record.evidence() if record is not None else (item.evidence or {})
+            source_time = evidence.get("batch_evidence", evidence.get("source_time", ""))
+            rank = {"batch": 0, "progress": 1, "final": 2, "warning": 3}.get(item.kind, 4)
+            return source_time, item.source, record.slot if record else 0, rank
+        return sorted(observations, key=order)

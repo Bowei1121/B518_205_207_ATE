@@ -267,6 +267,30 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(len(duplicates), 1)
         self.assertEqual(duplicates[0].detail["source_id"], "copy.csv")
 
+    def test_repeated_conflicting_candidate_is_traced_without_a_second_review_item(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        evidence = {"round_evidence_id": "b482:1:20261002100001:thread=0;config=cfg",
+                    "source_id": "candidate-a.csv", "source_time": "2026-10-02T10:00:01"}
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", evidence)
+        monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-a.csv", evidence)
+        monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-copy.csv", dict(
+            evidence, source_id="candidate-copy.csv"))
+
+        snapshot = rounds.snapshot()
+        self.assertEqual(len(snapshot.pending_conflicts), 1)
+        duplicate = next(item.event for item in snapshot.events
+                         if item.event.kind == "duplicate_source")
+        self.assertEqual(duplicate.detail["source_id"], "candidate-copy.csv")
+
     def test_conflict_resolution_does_not_release_round_deadline_results(self):
         elapsed = [0.0]
         holder = {}
