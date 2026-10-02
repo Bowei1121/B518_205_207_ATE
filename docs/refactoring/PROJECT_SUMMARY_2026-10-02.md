@@ -29,4 +29,5 @@
 - 完整 `python3 scripts/run_tests.py`：130 tests 通過；單檔及 UI 目標測試分批通過。專案未配置 mypy、pyright 等型別檢查。
 - `$code-review` 固定基準 Standards／Spec 初審發現容量≤10時仍顯示第二排；已按容量隱藏位置11～20、調整色帶與視窗高度，並增加10／11切換測試。README舊七格敘述已更新。兩軸複審無未解決發現。
 - Ticket 08 實際驗收、能力證據、命令及限制記在 `docs/refactoring/tickets/08-capacity-mapping-kvm-layout.md`；本票實機KVM／上位機共同驗收、目標設備與發布App未宣稱通過，分別依Ticket16／設備驗收工作追蹤。
-- Git commit、全部既有 push 目的地狀態、非快轉合併 SHA、合併後測試與分支清理結果於本次完成後補記。
+- 實作與交付文件首批提交 `cae6337afb50d6102ff6e90d141aa574d9ac5d2e` 已推到 Gitea 及 GitHub 的 `codex/ticket-08`，兩端遠端 ref 均已核對為該 SHA，tracking 設為 `origin/codex/ticket-08`。
+- 合併 commit、合併後測試與推送、各遠端專用分支清理及最後 checkout 結果，待本次 Git 流程結束後補記。
