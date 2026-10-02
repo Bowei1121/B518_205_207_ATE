@@ -201,11 +201,15 @@ class LogSolutionUiTests(unittest.TestCase):
                     deployed.project.set("Demo")
                     deployed.station.set("DFU")
                     deployed.profile_store.save(replacement, "Demo", "DFU")
+                    deployed.settings_paths["DFU"]["active"].set("/stale/active")
                     deployed._reload_profiles()
 
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/updated/active")
                     self.assertEqual(deployed.profile_editor_project.get(), "Demo")
+                    deployed._save_settings()
+                    self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
+                                     "/updated/active")
                 finally:
                     deployed._close_settings()
                     deployed.hotkey.close()
