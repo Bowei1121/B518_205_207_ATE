@@ -8,15 +8,15 @@
 
 - [06：以專案＋機型選擇配置並啟動一輪](06-project-machine-profile-selection.md)
 
-**Status：**in-progress（前置程式已核對；驗收、雙軸審查與合併紀錄進行中）
+**Status：**in-progress（驗收、完整測試及 Standards／Spec 審查通過；合併與遠端同步待完成）
 
 ## 驗收條件
 
-- [ ] 編輯欄位涵蓋專案、機型、平台、容量、路徑、映射及三種期限，驗證結果可讀。
-- [ ] 匯出再匯入恢復等價配置，取消或匯入失敗保留完整原配置，不留下半套設定。
-- [ ] 編輯／匯入結構檢查與部署電腦的實際路徑可讀性檢查分開。
-- [ ] 已支援平台的配置可更新並重新載入，不更換 App 二進位；當前輪次仍使用原快照。
-- [ ] 配置製作、匯出、部署、選擇到監控的完整流程有驗證證據。
+- [x] 編輯欄位涵蓋專案、機型、平台、容量、路徑、映射及三種期限，驗證結果可讀。
+- [x] 匯出再匯入恢復等價配置，取消或匯入失敗保留完整原配置，不留下半套設定。
+- [x] 編輯／匯入結構檢查與部署電腦的實際路徑可讀性檢查分開。
+- [x] 已支援平台的配置可更新並重新載入，不更換 App 二進位；當前輪次仍使用原快照。
+- [x] 配置製作、匯出、部署、選擇到監控的完整流程有驗證證據。
 
 ## 驗證方式
 
@@ -58,10 +58,11 @@
 
 - 環境：macOS 15.7.9、Intel `x86_64`、Python 3.8.10。原始實機資料保持唯讀；App 受控回放只讀匿名化樣本並複製至臨時目錄。
 - `python3 scripts/run_tests.py test_machine_profiles`：13 tests 通過，涵蓋 schema／JSON 等價往返、錯誤矩陣、路徑結構與部署檢查分離、重複 profile／映射、失敗匯入及寫入失敗保留原檔、既有偏好遷移與錯誤處理。
-- `python3 scripts/run_tests.py test_log_solution_ui`：32 tests 通過，含工程師載入／取消／套用、保存失敗保留、隔離部署匯入／匯出／重新載入，以及既有 operator、preflight、輪次與 UI 回歸。
-- `python3 tools/smoke_atlas_app.py`：通過；DFU PASS（另 6 NOTEST）、FCT PASS（另 5 NOTEST），兩輪完成且結果可取用；工程師設定匯出部署與進行中快照檢查均通過。
+- `python3 scripts/run_tests.py test_log_solution_ui`：34 tests 通過，含工程師載入／取消／套用、保存失敗保留、隔離部署匯入／匯出／重新載入、重載後舊設定表單不覆蓋新配置，以及既有 operator、preflight、輪次與 UI 回歸。
+- `python3 scripts/run_tests.py`：125 tests 通過（完整專案測試套件）。
+- `python3 tools/smoke_atlas_app.py`：實際 Tk App 受控回放通過；DFU PASS（另 6 NOTEST）、FCT PASS（另 5 NOTEST），兩輪完成且結果可取用；工程師設定匯出部署、操作員選擇、監控結果及進行中快照檢查均通過。
 - `python3 tools/smoke_b482_app.py`：通過；4 個平台 NOTEST 結果顯示並完成共同輪次。
-- 專案沒有 mypy、pyright 或其他型別檢查設定；不以 Python 編譯檢查替代型別檢查。完整測試套件、最後 Standards／Spec 審查及其後結果待執行後記錄。
+- 專案沒有 mypy、pyright 或其他型別檢查設定；不以 Python 編譯檢查替代型別檢查。完成 `$code-review` 固定基準 `0fd33075223a88cce2d76585d38d57d9a8e1407d` 的 Standards 與 Spec 雙軸審查；初審缺失已修正，複審均無未解決問題。
 - 未執行目標設備、正式發布 App、產線 KVM／上位機驗收；本機受控部署流程的證據不代表上述實機驗收。上述未執行範圍依 Ticket 及 REFACTOR_SPEC 的待驗原則分開保留。
 
 ### 提交
@@ -72,4 +73,8 @@
 - `f7e5c87` — `feat: add engineer profile editor and deployment flow`。
 - `f9f7463` — `feat: validate and apply deployed profile drafts`。
 - `6a8786f` — `test: cover duplicate and out of range profiles`。
-- 以上程式批次均在相關單檔或受控 App 驗證後提交，並 push 到 Gitea 與 GitHub 上的同名專用分支。最終遠端核對、合併、合併後驗證與分支清理待完成後追加。
+- `fdcee0f` — `fix: preserve explicit profile editor selection`。
+- `034324c` — `fix: refresh settings draft after profile changes`。
+- `0572c38` — `test: prevent stale settings after profile reload`。
+- `6e53f69` — `docs: record ticket 07 implementation progress`。
+- 最終驗收紀錄、完整測試結果及提交同步狀態於本次文件更新後一併提交。程式與文件批次均推送至 Gitea 與 GitHub 同名專用分支；合併 commit、合併後驗證、全部目的地同步與安全分支清理結果將於本段追加。
