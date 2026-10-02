@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Dict, Iterable, Mapping, Tuple
 
 
@@ -158,18 +159,44 @@ class MachineProfileStore:
 
     def save(self, catalog: ProfileCatalog, project: str, machine: str,
              preserve_legacy: bool = False) -> None:
-        if preserve_legacy and self.path.exists():
-            legacy_path = self.path.with_name("preferences.legacy.json")
-            if not legacy_path.exists():
-                legacy_path.write_text(self.path.read_text(encoding="utf-8"), encoding="utf-8")
         catalog.get(project, machine)
         payload = catalog.to_dict()
         payload.update({"project": project, "machine": machine})
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(self.path.name + ".tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(str(temporary), str(self.path))
+        if preserve_legacy and self.path.exists():
+            legacy_path = self.path.with_name("preferences.legacy.json")
+            if not legacy_path.exists():
+                _atomic_write_text(legacy_path, self.path.read_text(encoding="utf-8"))
+        _atomic_write_text(self.path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         self.migration_required = False
+
+    def import_document(self, document: str, selected_project: str, selected_machine: str):
+        """Validate a complete catalog, then atomically replace the saved catalog."""
+        catalog = ProfileCatalog.from_json(document)
+        try:
+            catalog.get(selected_project, selected_machine)
+        except ProfileError:
+            selected_project, selected_machine = catalog.profiles[0].key
+        self.save(catalog, selected_project, selected_machine)
+        return catalog, selected_project, selected_machine
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace one text file atomically and remove a temporary file on failure."""
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(path.parent),
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(text)
+        os.replace(str(temporary_path), str(path))
+    except OSError:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        raise
 
 def _profile_from_dict(record: object) -> MachineProfile:
     if not isinstance(record, Mapping):

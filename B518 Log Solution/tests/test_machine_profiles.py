@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -141,6 +142,42 @@ class MachineProfileTests(unittest.TestCase):
             _catalog, _project, _machine, error = MachineProfileStore(path).load()
 
             self.assertIn("不支援的偏好版本", error)
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_import_document_replaces_catalog_only_after_validated_save(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            original_catalog, _project, _machine = migrate_legacy_preferences({})
+            store = MachineProfileStore(path)
+            store.save(original_catalog, "B518", "FCT")
+            original = path.read_text(encoding="utf-8")
+            imported = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+            with self.assertRaisesRegex(ProfileError, "JSON"):
+                store.import_document("{", "B518", "DFU")
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+            restored, project, machine = store.import_document(imported.to_json(), "B518", "FCT")
+
+            self.assertEqual((project, machine), ("B518", "DFU"))
+            self.assertEqual(restored.to_dict(), imported.to_dict())
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["project"], "B518")
+            self.assertEqual(persisted["machine"], "DFU")
+
+    def test_import_save_failure_keeps_existing_preference_file(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            original_catalog, _project, _machine = migrate_legacy_preferences({})
+            store.save(original_catalog, "B518", "FCT")
+            original = path.read_text(encoding="utf-8")
+            imported = ProfileCatalog.from_dict({"schema_version": 1, "profiles": [valid_profile()]})
+
+            with patch("machine_profiles.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    store.import_document(imported.to_json(), "B518", "DFU")
+
             self.assertEqual(path.read_text(encoding="utf-8"), original)
 
 
