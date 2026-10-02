@@ -43,13 +43,13 @@ class DeadlineMonitor:
         self.start_timeout_seconds = start
         self.test_timeout_seconds = test
         self.round_timeout_seconds = round_limit
-        self._started_monotonic = monotonic()
         self._test_started_monotonic = {}
         self._pending = []
         self._locked = set()
         self.finished = False
         self.collection_stopped = False
         self.poll_count = 0
+        self.review_pending = None
 
     def start(self):
         pass
@@ -67,6 +67,9 @@ class DeadlineMonitor:
 
     def publish(self, slot, status):
         self._pending.append((slot, status))
+
+    def resolve_review(self, _choice):
+        self.review_pending = None
 
     def set_result(self, slot, status, detail=None, lock_terminal=False):
         if slot in self._locked:
@@ -96,6 +99,32 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_conflict_resolution_does_not_release_round_deadline_results(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), round_limit=5)
+            monitor.review_pending = {"candidate": "captured"}
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        coordinator.start("FCT", factory, run_async=False)
+        holder["monitor"].publish(1, "PASS")
+        coordinator.poll_once()
+        elapsed[0] = 5.0
+        expired = coordinator.poll_once()
+
+        self.assertEqual(expired.state.value, "AWAITING_REVIEW")
+        self.assertEqual(expired.completion_reason, "round_deadline")
+        self.assertFalse(expired.result_available)
+        released = coordinator.resolve_review("accept")
+        self.assertEqual(released.state.value, "AWAITING_REVIEW")
+        self.assertEqual(released.completion_reason, "round_deadline")
+        self.assertFalse(released.result_available)
+        self.assertFalse(holder["monitor"].finished)
+
     def test_pending_bt_candidate_can_be_resolved_after_collection_stops(self):
         elapsed = [0.0]
         now = datetime(2026, 10, 2, 10, 0, 0)

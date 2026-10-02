@@ -73,6 +73,7 @@ class MonitoringRound:
         self._test_started: Dict[int, float] = {}
         self._activity_slots = set()
         self._deadline_slots = set()
+        self._poll_started_at: Optional[float] = None
         self._run_thread: Optional[threading.Thread] = None
         self._monitor_factory = monitor_factory
         self._monitor = None
@@ -110,14 +111,11 @@ class MonitoringRound:
                 if self._state != RoundState.RUNNING or self._collection_stopped:
                     self._finish_if_terminal()
                     return self.snapshot()
-            self._monitor._round_poll_timestamp = poll_time
+            self._poll_started_at = poll_time
             try:
                 self._monitor.poll_once()
             finally:
-                try:
-                    del self._monitor._round_poll_timestamp
-                except AttributeError:
-                    pass
+                self._poll_started_at = None
             self._finish_if_terminal()
             return self.snapshot()
 
@@ -183,8 +181,6 @@ class MonitoringRound:
 
     def _prepare_monitor(self) -> None:
         monitor = self._monitor_factory(self._receive_monitor_event)
-        if hasattr(monitor, "_started_monotonic"):
-            monitor._started_monotonic = self._started_monotonic
         with self._lock:
             self._monitor = monitor
             stop_requested = self._stop_requested
@@ -297,6 +293,8 @@ class MonitoringRound:
         with self._lock:
             if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return
+            if self._state == RoundState.AWAITING_REVIEW and self._completion_reason == "round_deadline":
+                return
         if not self._monitor.results or any(result.status not in TERMINAL
                                             for result in self._monitor.results.values()):
             return
@@ -321,7 +319,7 @@ class MonitoringRound:
                 if result is not None and result.status in {"TESTING", "COMPLETING"}:
                     self._activity_slots.add(event.slot)
                     if event.status == "TESTING" or event.detail.get("trusted_activity") == "true":
-                        started_at = getattr(self._monitor, "_round_poll_timestamp", None)
+                        started_at = self._poll_started_at
                         if started_at is None:
                             started_at = self._monotonic()
                         self._test_started.setdefault(event.slot, started_at)
