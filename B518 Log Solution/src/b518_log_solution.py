@@ -763,6 +763,7 @@ class B518LogSolutionApp:
             self.station.set(profile.machine)
         self._load_selected_profile_values()
         self._refresh_machine_choices()
+        self._synchronize_monitor_settings_draft()
         if self.monitor is None:
             self._render_rows()
         self._render_profile_editor(profile)
@@ -793,6 +794,25 @@ class B518LogSolutionApp:
         self.profile_editor_mapping.set(self._mapping_text(profile.mapping))
         for field in self.profile_editor_timeouts:
             self.profile_editor_timeouts[field].set(str(profile.timeouts[field]))
+
+    def _synchronize_monitor_settings_draft(self) -> None:
+        """Prevent the legacy settings tab from saving values captured before an update."""
+        settings_paths = getattr(self, "settings_paths", None)
+        settings_timeouts = getattr(self, "settings_timeouts", None)
+        if settings_paths is None or settings_timeouts is None:
+            return
+        try:
+            profile = self.profiles.get(self.project.get(), self.station.get())
+        except ProfileError:
+            return
+        self.settings_project.set(profile.project)
+        self.settings_station.set(profile.machine)
+        self.settings_bt_format.set("B518 RS-WMT" if profile.platform == "rswmt" else "B482 TestData")
+        for field, value in profile.paths.items():
+            if field in settings_paths[profile.machine]:
+                settings_paths[profile.machine][field].set(value)
+        for field, value in profile.timeouts.items():
+            settings_timeouts[profile.machine][field].set(str(value))
 
     def _import_profiles(self) -> None:
         path = filedialog.askopenfilename(
@@ -866,6 +886,7 @@ class B518LogSolutionApp:
         self.station.set(profile.machine)
         self.profile_error = None
         self._refresh_machine_choices()
+        self._synchronize_monitor_settings_draft()
         if self.monitor is None:
             self._render_rows()
         self.profile_editor_original = profile

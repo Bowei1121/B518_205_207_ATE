@@ -117,6 +117,29 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_legacy_settings_save_cannot_overwrite_a_newly_applied_profile(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app._load_profile_editor_selection()
+                app.profile_editor_paths["active"].set("/deployment/new-active")
+                app.profile_editor_paths["final"].set("/deployment/new-final")
+                app._apply_profile_editor()
+                app._save_settings()
+
+                saved = app.profiles.get("B518", "FCT")
+                self.assertEqual(saved.paths["active"], "/deployment/new-active")
+                self.assertEqual(saved.paths["final"], "/deployment/new-final")
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
     def test_engineer_import_export_and_reload_preserve_a_deployable_catalog(self):
         with TemporaryDirectory() as temporary:
             source_preferences = Path(temporary) / "source.json"
