@@ -30,12 +30,10 @@ class RsWmtLogMonitor(BaseMonitor):
 
     def _accept_final(self, record: RsWmtRecord, stable: bool) -> None:
         current = self.results[record.slot]
-        if current.sn and record.sn and current.sn != record.sn:
-            self._notice(record.source, 'RS-WMT: serial conflict for slot; result not accepted.')
-            return
-        if current.status in TERMINAL:
-            if current.source != record.source:
-                self._notice(record.source, 'RS-WMT: duplicate/late slot result ignored; previous result retained.')
+        # A second terminal export is only a candidate after its own stable
+        # write interval; the temporary COMPLETING state must never replace
+        # an already accepted terminal result.
+        if not stable and current.status in TERMINAL:
             return
         status = record.status if stable else 'COMPLETING'
         if status != current.status or record.sn != current.sn or record.source != current.source:
@@ -43,11 +41,6 @@ class RsWmtLogMonitor(BaseMonitor):
 
     def _accept_progress(self, record: RsWmtRecord) -> None:
         current = self.results[record.slot]
-        if current.status in TERMINAL:
-            return
-        if current.sn and record.sn and current.sn != record.sn:
-            self._notice(record.source, 'RS-WMT: serial conflict for slot; progress not accepted.')
-            return
         # A final export stays COMPLETING during its stable-write interval.
         status = 'COMPLETING' if current.status == 'COMPLETING' else record.status
         if status != current.status or (record.sn and record.sn != current.sn):

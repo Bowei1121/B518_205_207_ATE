@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
+from b482_source_adapter import B482SourceAdapter, B482ObservationKind
 
 
 def write_records(path, sn="", status="PASS"):
@@ -99,20 +100,24 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(monitor.batch_stamp, "20220618022901")
         self.assertEqual(monitor.results[1].status, "NOTEST")
 
-    def test_bt_batch_conflict_requires_and_applies_review(self):
+    def test_b482_adapter_exposes_exact_batch_identity_for_common_round(self):
         clock = [0.0]
         root = self.temp / "TestData"
-        monitor = BtLogMonitor(root, (1,), now=lambda: self.now, monotonic=lambda: clock[0], session_root=self.temp / "sessions")
+        root.mkdir()
+        adapter = B482SourceAdapter(root, None, self.now, lambda: self.now, lambda: clock[0])
         first = root / "2022-06-18" / "PASSED" / "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv"
-        second = root / "2022-06-18" / "PASSED" / "[Thread0][cfg][HK5HUX6STQ900003YV][PASSED][20220618023001].csv"
+        second = root / "2022-06-18" / "PASSED" / "[Thread0][cfg][HK5HUX6STQ900003YV][PASSED][20220618022901].csv"
+        other_batch = root / "2022-06-18" / "PASSED" / "[Thread0][cfg][HK5HUX6STQ700003YV][PASSED][20220618023001].csv"
         write_bt(first, "HK5HUX6STQ800003YV", "PASSED", "0")
-        monitor.poll_once(); clock[0] = 5.1; monitor.poll_once()
         write_bt(second, "HK5HUX6STQ900003YV", "PASSED", "0")
-        clock[0] = 6.0; monitor.poll_once(); clock[0] = 11.1; monitor.poll_once()
-        self.assertIsNotNone(monitor.review_pending)
-        monitor.resolve_review("accept")
-        monitor.poll_once()
-        self.assertEqual(monitor.batch_stamp, "20220618023001")
+        write_bt(other_batch, "HK5HUX6STQ700003YV", "PASSED", "0")
+        adapter.poll()
+        clock[0] = 5.1
+        observations = [item for item in adapter.poll()
+                        if item.kind == B482ObservationKind.TESTDATA_RESULT]
+        evidence = {item.sn: item.evidence()["round_evidence_id"] for item in observations}
+        self.assertEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ900003YV"])
+        self.assertNotEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ700003YV"])
 
     def test_bt_caseinfo_reports_testing_before_final_csv(self):
         root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"

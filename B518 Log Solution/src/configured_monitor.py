@@ -26,15 +26,15 @@ class ConfiguredMonitor:
     def results(self):
         return {result.slot: result for result in self.round_results()}
 
-    def deliver(self, event, callback: Callable) -> None:
+    def deliver(self, event, callback: Callable):
         display = self._source_to_display.get(event.slot) if event.slot is not None else None
         if event.slot is not None and display is None:
             if event.kind == "warning":
                 detail = dict(event.detail)
                 detail["source_slot"] = str(event.slot)
                 callback(replace(event, slot=None, detail=detail))
-            return
-        callback(replace(event, slot=display) if event.slot is not None else event)
+            return "ignore"
+        return callback(replace(event, slot=display) if event.slot is not None else event)
 
     def round_results(self):
         return tuple(
@@ -46,12 +46,6 @@ class ConfiguredMonitor:
 
     def timeout_seconds(self, kind):
         return self._monitor.timeout_seconds(kind)
-
-    def has_pending_review(self):
-        return self._monitor.has_pending_review()
-
-    def resolve_review(self, choice):
-        self._monitor.resolve_review(choice)
 
     def update_round_settings(self, settings):
         self._monitor.update_round_settings(settings)
@@ -85,6 +79,12 @@ class ConfiguredMonitor:
         if source_slot is None:
             return
         self._monitor.set_result(source_slot, status, sn, source, detail, lock_terminal)
+
+    def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
+        source_slot = self._source_slot(slot)
+        if source_slot is None:
+            return
+        self._monitor.apply_round_result(source_slot, status, sn, source, detail, lock_terminal)
 
     def emit_display_event(self, event) -> None:
         """Compatibility alias for older callers of the round event seam."""

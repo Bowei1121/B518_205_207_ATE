@@ -74,6 +74,7 @@ class AtlasObservationKind(str, Enum):
     COMPLETING = "completing"
     FINAL = "final"
     NOTEST = "notest"
+    UNRESOLVED_CONFLICT = "unresolved_conflict"
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class AtlasObservation:
     sn: str = ""
     status: str = ""
     source: str = ""
+    detail: Dict[str, str] = None
 
 
 class AtlasSourceAdapter:
@@ -101,9 +103,12 @@ class AtlasSourceAdapter:
         self._baseline_final = snapshot_files(final_root, ".csv")
         self._seen_slots: Set[int] = set()
         self._locked_sn: Dict[int, str] = {}
+        self._locked_source: Dict[int, str] = {}
+        self._active_signatures: Dict[str, Tuple[int, int]] = {}
+        self._completion_reported_slots: Set[int] = set()
         self._prepared_reported = False
         self._final_signatures: Dict[str, Tuple[int, int]] = {}
-        self._final_slots: Set[int] = set()
+        self._delivered_final_signatures: Dict[str, Tuple[int, int]] = {}
 
     def poll(self) -> Tuple[AtlasObservation, ...]:
         observations: List[AtlasObservation] = []
@@ -118,43 +123,94 @@ class AtlasSourceAdapter:
             record = self._active_records(slot)
             if record and self._is_new_or_changed(record, self._baseline_active):
                 self._seen_slots.add(slot)
+                try:
+                    signature = file_signature(record)
+                except OSError:
+                    continue
+                key = str(record.resolve())
+                if self._active_signatures.get(key) == signature:
+                    continue
+                self._active_signatures[key] = signature
                 sn = trusted_sn_from_records(record)
                 if sn and slot not in self._locked_sn:
                     self._locked_sn[slot] = sn
+                    self._locked_source[slot] = str(record)
+                    evidence = self._active_evidence(slot, sn, record)
                     observations.append(AtlasObservation(
-                        AtlasObservationKind.SN_LOCKED, slot, sn, "TESTING", str(record),
+                        AtlasObservationKind.SN_LOCKED, slot, sn, "TESTING", str(record), evidence,
+                    ))
+                elif slot in self._locked_sn and sn and sn != self._locked_sn[slot]:
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.UNRESOLVED_CONFLICT, slot, sn, "TESTING", str(record),
+                        {"source_id": record.name, "source_time": "unknown", "source_slot": str(slot),
+                         "original_sn": self._locked_sn[slot], "candidate_sn": sn,
+                         "original_source_id": Path(self._locked_source[slot]).name,
+                         "candidate_status": "TESTING", "original_status": "TESTING",
+                         "reason": "active_record_identity_changed_without_round_link"},
                     ))
                 elif slot not in self._locked_sn:
                     observations.append(AtlasObservation(
                         AtlasObservationKind.ACTIVITY, slot, status="TESTING", source=str(record),
+                        detail=self._active_evidence(slot, "", record),
                     ))
                 else:
                     observations.append(AtlasObservation(
                         AtlasObservationKind.ACTIVITY, slot, self._locked_sn[slot], "TESTING", str(record),
+                        self._active_evidence(slot, self._locked_sn[slot], record),
                     ))
 
         # A quiet or unchanged records.csv is still active while its slot tree
         # exists. Only disappearance of the active directory starts finalization.
         for slot in sorted(self._seen_slots - active_directories):
-            if slot in self._final_slots:
-                continue
             if slot not in self._locked_sn:
-                observations.append(AtlasObservation(
-                    AtlasObservationKind.SN_READ_FAILED, slot, "SN 讀取失敗", "FAIL",
-                ))
+                if slot not in self._completion_reported_slots:
+                    active_record = self._active_records(slot)
+                    observations.append(AtlasObservation(
+                        AtlasObservationKind.SN_READ_FAILED, slot, "SN 讀取失敗", "FAIL",
+                        str(active_record) if active_record else "",
+                        self._active_evidence(slot, "", active_record),
+                    ))
+                    self._completion_reported_slots.add(slot)
                 continue
             sn = self._locked_sn[slot]
-            observations.append(AtlasObservation(AtlasObservationKind.COMPLETING, slot, sn, "COMPLETING"))
+            if slot not in self._completion_reported_slots:
+                observations.append(AtlasObservation(
+                    AtlasObservationKind.COMPLETING, slot, sn, "COMPLETING",
+                    detail=self._active_evidence(slot, sn, None),
+                ))
+                self._completion_reported_slots.add(slot)
             candidate = self._final_csv(sn)
             if candidate:
                 state = records_status(candidate)
                 if state in {"PASS", "FAIL"}:
-                    observations.append(AtlasObservation(
-                        AtlasObservationKind.FINAL, slot, sn, state, str(candidate),
-                    ))
-                    self._final_slots.add(slot)
+                    key = str(candidate.resolve())
+                    signature = file_signature(candidate)
+                    if self._delivered_final_signatures.get(key) != signature:
+                        stamp = parse_archive_timestamp(candidate.parent.parent.name)
+                        detail = self._active_evidence(slot, sn, candidate)
+                        detail["source_id"] = candidate.name
+                        detail["source_time"] = stamp.isoformat(timespec="milliseconds") if stamp else ""
+                        self._delivered_final_signatures[key] = signature
+                        observations.append(AtlasObservation(
+                            AtlasObservationKind.FINAL, slot, sn, state, str(candidate), detail,
+                        ))
 
         return tuple(observations)
+
+    @staticmethod
+    def _active_evidence(slot: int, sn: str, source: Optional[Path]) -> Dict[str, str]:
+        detail = {
+            "source_id": source.name if source is not None else "unknown",
+            "source_time": "unknown",
+            "source_slot": str(slot),
+        }
+        if sn:
+            # A trusted SN observed in this active slot lifecycle links its
+            # archived result back to the same source round. Paths and app
+            # round IDs alone are deliberately insufficient evidence.
+            detail["round_evidence_id"] = "atlas:{}:{}".format(slot, sn)
+            detail["same_round_evidence"] = "active_slot_trusted_sn"
+        return detail
 
     def _active_records(self, slot: int) -> Optional[Path]:
         root = self.active_root / "group0-slot{}".format(slot)

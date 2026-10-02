@@ -47,6 +47,10 @@ class RsWmtRecord:
         }
         if self.sn:
             evidence["source_sn"] = self.sn
+        batch_key = (self.batch_time or self.started).isoformat(timespec="seconds")
+        evidence["round_evidence_id"] = "rswmt:{}:{}".format(self.slot, batch_key)
+        evidence["same_round_evidence"] = "source_slot_and_test_start"
+        evidence["source_id"] = Path(self.source).name
         return evidence
 
 

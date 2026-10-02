@@ -60,6 +60,10 @@ class B482Observation:
             fields["batch_id"] = self.batch_id
         if self.batch_evidence:
             fields["batch_evidence"] = self.batch_evidence
+        if self.batch_id and self.batch_evidence:
+            fields["round_evidence_id"] = "b482:{}:{}:{}".format(
+                self.slot, self.batch_id, self.batch_evidence,
+            )
         return fields
 
 
@@ -158,7 +162,10 @@ class B482SourceAdapter:
         return offsets
 
     def poll(self) -> Tuple[B482Observation, ...]:
-        return tuple(self._caseinfo_observations() + self._testdata_observations())
+        observations = self._caseinfo_observations() + self._testdata_observations()
+        return tuple(sorted(observations, key=lambda item: (
+            item.source_time, item.source_id, item.slot, item.kind.value,
+        )))
 
     def _csv_candidates(self) -> List[Path]:
         if not self.testdata_root.is_dir():
@@ -213,7 +220,7 @@ class B482SourceAdapter:
             return []
         observations = []
         threshold = self.started - timedelta(seconds=30)
-        for path in self.caseinfo_root.glob("thread*CaseInfo_*.txt"):
+        for path in sorted(self.caseinfo_root.glob("thread*CaseInfo_*.txt")):
             match = CASEINFO_FILE.match(path.name)
             if not match:
                 continue

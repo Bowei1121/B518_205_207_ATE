@@ -18,11 +18,11 @@ class RoundMonitor(Protocol):
 
     def round_results(self) -> Tuple[SlotResult, ...]: ...
     def timeout_seconds(self, kind: str) -> int: ...
-    def has_pending_review(self) -> bool: ...
-    def resolve_review(self, choice: str) -> None: ...
     def update_round_settings(self, settings: Dict[str, object]) -> None: ...
     def publish_round_event(self, event: MonitorEvent) -> None: ...
     def set_result(self, slot: int, status: str, detail=None, lock_terminal: bool = False) -> None: ...
+    def apply_round_result(self, slot: int, status: str, sn: str = "", source: str = "", detail=None,
+                           lock_terminal: bool = False) -> None: ...
     def start(self) -> None: ...
     def poll_once(self) -> None: ...
     def stop_collection(self) -> None: ...
@@ -55,6 +55,27 @@ class RoundResult:
 
 
 @dataclass(frozen=True)
+class ConflictSide:
+    sn: str
+    status: str
+    source: str
+    source_id: str
+    source_time: str
+    evidence: Tuple[Tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class RoundConflict:
+    conflict_id: str
+    round_id: str
+    slot: int
+    original: ConflictSide
+    candidate: ConflictSide
+    same_round_evidence: Tuple[Tuple[str, str], ...]
+    detected_at: str
+
+
+@dataclass(frozen=True)
 class RoundSnapshot:
     round_id: str
     station: str
@@ -65,6 +86,7 @@ class RoundSnapshot:
     events: Tuple[RoundEvent, ...]
     collection_stopped: bool = False
     completion_reason: str = ""
+    pending_conflicts: Tuple[RoundConflict, ...] = ()
 
 
 class MonitoringRound:
@@ -90,6 +112,8 @@ class MonitoringRound:
         self._test_started: Dict[int, float] = {}
         self._activity_slots = set()
         self._deadline_slots = set()
+        self._result_evidence: Dict[int, Dict[str, str]] = {}
+        self._pending_conflicts: Dict[str, RoundConflict] = {}
         self._poll_started_at: Optional[float] = None
         self._run_thread: Optional[threading.Thread] = None
         self._monitor_factory = monitor_factory
@@ -117,7 +141,7 @@ class MonitoringRound:
         """Read one deterministic source batch, then apply due deadlines."""
         with self._poll_lock:
             with self._lock:
-                if self._state != RoundState.RUNNING or self._collection_stopped:
+                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     return self.snapshot()
                 if self._monitor is None:
                     return self.snapshot()
@@ -125,7 +149,7 @@ class MonitoringRound:
             self._apply_deadlines(poll_time)
             self._finish_if_terminal()
             with self._lock:
-                if self._state != RoundState.RUNNING or self._collection_stopped:
+                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     self._finish_if_terminal()
                     return self.snapshot()
             self._poll_started_at = poll_time
@@ -138,7 +162,7 @@ class MonitoringRound:
 
     def stop(self) -> RoundSnapshot:
         with self._lock:
-            if self._state == RoundState.RUNNING:
+            if self._state in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 self._stop_requested = True
                 if self._monitor is not None:
                     self._monitor.stop()
@@ -152,15 +176,57 @@ class MonitoringRound:
                     self._completion_reason = "manual_stop"
             return self.snapshot()
 
-    def resolve_review(self, choice: str) -> RoundSnapshot:
-        """Resolve captured review evidence, then apply the normal release rule."""
+    def resolve_review(self, conflict_id: str, choice: str) -> RoundSnapshot:
+        """Resolve exactly one captured same-round conflict."""
         with self._poll_lock:
             with self._lock:
+                conflict = self._pending_conflicts.get(conflict_id)
                 monitor = self._monitor
-                if monitor is None or self._state not in {
-                        RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                if (monitor is None or conflict is None or self._state not in {
+                        RoundState.RUNNING, RoundState.AWAITING_REVIEW, RoundState.STOPPED}):
                     return self.snapshot()
-            monitor.resolve_review(choice)
+                if choice not in {"keep_original", "accept_candidate"}:
+                    raise ValueError("未知衝突選擇：{}".format(choice))
+                del self._pending_conflicts[conflict_id]
+            if choice == "accept_candidate":
+                candidate = conflict.candidate
+                monitor.apply_round_result(
+                    conflict.slot, candidate.status, candidate.sn, candidate.source,
+                    dict(candidate.evidence),
+                )
+            event = MonitorEvent(
+                "conflict_resolved", "slot{} 衝突已{}".format(
+                    conflict.slot, "採用新結果" if choice == "accept_candidate" else "保留原結果",
+                ), slot=conflict.slot,
+                sn=conflict.candidate.sn, status=conflict.candidate.status,
+                source=conflict.candidate.source,
+                detail={
+                    "round_id": conflict.round_id,
+                    "conflict_id": conflict.conflict_id,
+                    "choice": choice,
+                    "chosen_sn": (conflict.candidate.sn if choice == "accept_candidate"
+                                  else conflict.original.sn),
+                    "chosen_status": (conflict.candidate.status if choice == "accept_candidate"
+                                      else conflict.original.status),
+                    "chosen_source": (conflict.candidate.source if choice == "accept_candidate"
+                                      else conflict.original.source),
+                    "original_sn": conflict.original.sn or "unknown",
+                    "original_status": conflict.original.status,
+                    "candidate_sn": conflict.candidate.sn or "unknown",
+                    "candidate_status": conflict.candidate.status,
+                    "candidate_source_id": conflict.candidate.source_id or "unknown",
+                    "candidate_source_time": conflict.candidate.source_time or "unknown",
+                    "selected_at": datetime.now().isoformat(timespec="seconds"),
+                },
+            )
+            self._publish_round_event(event)
+            with self._lock:
+                if self._state == RoundState.STOPPED:
+                    pass
+                elif self._pending_conflicts:
+                    self._state = RoundState.AWAITING_REVIEW
+                elif not self._collection_stopped:
+                    self._state = RoundState.RUNNING
             if self._collection_stopped:
                 self._finish_if_terminal()
             return self.snapshot()
@@ -175,6 +241,7 @@ class MonitoringRound:
                 self.round_id, self.station, self._state, results,
                 self._state == RoundState.COMPLETED, self._events[-1].sequence if self._events else 0,
                 tuple(self._events), self._collection_stopped, self._completion_reason,
+                tuple(self._pending_conflicts.values()),
             )
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
@@ -200,7 +267,8 @@ class MonitoringRound:
         with self._lock:
             self._monitor = monitor
             stop_requested = self._stop_requested
-        monitor.update_round_settings({"accepted_start_at": self._accepted_start_at})
+        monitor.update_round_settings({"accepted_start_at": self._accepted_start_at,
+                                       "round_candidate_mode": True})
         if stop_requested:
             monitor.stop()
             return
@@ -210,11 +278,11 @@ class MonitoringRound:
     def _run(self) -> None:
         while True:
             with self._lock:
-                if self._state != RoundState.RUNNING or self._collection_stopped:
+                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     return
             self.poll_once()
             with self._lock:
-                if self._state != RoundState.RUNNING or self._collection_stopped:
+                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     return
             time.sleep(0.5)
 
@@ -267,7 +335,7 @@ class MonitoringRound:
             "accepted_start_at": self._accepted_start_at,
         }
         self._deadline_slots.add(slot)
-        self._monitor.set_result(slot, status, detail=detail, lock_terminal=True)
+        self._monitor.apply_round_result(slot, status, detail=detail, lock_terminal=True)
         event = MonitorEvent(
             "timeout", "{} slot{} {}（期限 {} 秒，經過 {} 秒）".format(
                 self.station, slot, "未觀察到測試" if status == "NOTEST" else "測試逾時",
@@ -310,7 +378,7 @@ class MonitoringRound:
         if not results or any(result.status not in TERMINAL for result in results):
             return
         self._stop_collection("results_terminal")
-        if self._monitor.has_pending_review():
+        if self._pending_conflicts:
             with self._lock:
                 self._state = RoundState.AWAITING_REVIEW
                 self._completion_reason = "review_pending"
@@ -324,6 +392,8 @@ class MonitoringRound:
         self._publish_round_event(MonitorEvent("finished", "{} 本輪完成".format(self.station)))
 
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
+        if event.kind == "result_candidate":
+            return self._consider_result_candidate(event)
         with self._lock:
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()
@@ -335,6 +405,7 @@ class MonitoringRound:
                         if started_at is None:
                             started_at = self._monotonic()
                         self._test_started.setdefault(event.slot, started_at)
+                self._result_evidence[event.slot] = dict(event.detail)
             if event.kind == "finished":
                 self._state = RoundState.COMPLETED
                 self._collection_stopped = True
@@ -345,6 +416,91 @@ class MonitoringRound:
                 self._completion_reason = "manual_stop"
             round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
             self._events.append(round_event)
+        self._on_event(round_event)
+
+    def _consider_result_candidate(self, event: MonitorEvent) -> str:
+        """Admit source facts, queue confirmed contradictions, and retain uncertainty."""
+        with self._lock:
+            current = next((item for item in self._monitor.round_results()
+                            if item.slot == event.slot), None) if self._monitor else None
+            current_detail = self._result_evidence.get(event.slot or -1, {})
+            candidate_detail = dict(event.detail)
+            evidence_id = candidate_detail.get("round_evidence_id", "")
+            current_evidence_id = current_detail.get("round_evidence_id", "")
+            if current is None or current.status == "WAITING":
+                return "accept"
+            same_round = bool(evidence_id and current_evidence_id and evidence_id == current_evidence_id)
+            same_value = current.status == event.status and current.sn == event.sn
+            if same_value:
+                if current.source != event.source:
+                    self._append_event(MonitorEvent(
+                        "duplicate_source", "slot{} 一致重複來源已記錄".format(event.slot),
+                        event.slot, event.sn, event.status, event.source,
+                        {"original_source": current.source, "source_id": candidate_detail.get("source_id", "unknown"),
+                         "source_time": candidate_detail.get("source_time", "unknown")},
+                    ))
+                return "ignore"
+            terminal_conflict = current.status in TERMINAL and event.status in TERMINAL
+            identity_conflict = bool(current.sn and event.sn and current.sn != event.sn)
+            evidence_conflict = terminal_conflict or identity_conflict
+            if not evidence_conflict:
+                return "accept"
+            if not same_round:
+                self._append_event(MonitorEvent(
+                    "unresolved_source_conflict", "slot{} 出現無法確認同輪的矛盾來源；保留證據待後續政策處理".format(event.slot),
+                    event.slot, event.sn, event.status, event.source,
+                    {"original_sn": current.sn or "unknown", "original_status": current.status,
+                     "original_source": current.source, "candidate_sn": event.sn or "unknown",
+                     "candidate_status": event.status, "candidate_source_id": candidate_detail.get("source_id", "unknown"),
+                     "candidate_source_time": candidate_detail.get("source_time", "unknown"), **candidate_detail},
+                ))
+                return "ignore"
+            original = self._conflict_side(current.sn, current.status, current.source, current_detail)
+            candidate = self._conflict_side(event.sn, event.status, event.source, candidate_detail)
+            for pending in self._pending_conflicts.values():
+                if (pending.slot == event.slot and pending.original.sn == original.sn
+                        and pending.original.status == original.status
+                        and pending.candidate.sn == candidate.sn
+                        and pending.candidate.status == candidate.status
+                        and dict(pending.same_round_evidence).get("round_evidence_id", "") == evidence_id):
+                    self._append_event(MonitorEvent(
+                        "duplicate_source", "slot{} 重複衝突來源已記錄，沿用既有待確認項目".format(event.slot),
+                        event.slot, event.sn, event.status, event.source,
+                        {"conflict_id": pending.conflict_id,
+                         "source_id": candidate.source_id or "unknown",
+                         "source_time": candidate.source_time or "unknown"},
+                    ))
+                    return "ignore"
+            conflict = RoundConflict(
+                uuid.uuid4().hex, self.round_id, event.slot or 0, original, candidate,
+                tuple(sorted((key, value) for key, value in candidate_detail.items()
+                             if key.endswith("evidence") or key == "round_evidence_id")),
+                datetime.now().isoformat(timespec="seconds"),
+            )
+            self._pending_conflicts[conflict.conflict_id] = conflict
+            self._state = RoundState.AWAITING_REVIEW
+            self._append_event(MonitorEvent(
+                "conflict_detected", "slot{} 發現同輪結果衝突，等待人工確認".format(event.slot),
+                event.slot, event.sn, event.status, event.source,
+                {"round_id": self.round_id, "conflict_id": conflict.conflict_id,
+                 "original_sn": original.sn or "unknown", "original_status": original.status,
+                 "original_source_id": original.source_id or "unknown",
+                 "original_source_time": original.source_time or "unknown",
+                 "candidate_sn": candidate.sn or "unknown", "candidate_status": candidate.status,
+                 "candidate_source_id": candidate.source_id or "unknown",
+                 "candidate_source_time": candidate.source_time or "unknown",
+                 "same_round_evidence_id": evidence_id or "unknown"},
+            ))
+            return "defer"
+
+    @staticmethod
+    def _conflict_side(sn: str, status: str, source: str, detail: Dict[str, str]) -> ConflictSide:
+        return ConflictSide(sn, status, source, detail.get("source_id", ""), detail.get("source_time", ""),
+                            tuple(sorted(detail.items())))
+
+    def _append_event(self, event: MonitorEvent) -> None:
+        round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
+        self._events.append(round_event)
         self._on_event(round_event)
 
 
@@ -384,10 +540,10 @@ class RoundCoordinator:
         with self._lock:
             return self._current.stop() if self._current is not None else None
 
-    def resolve_review(self, choice: str) -> Optional[RoundSnapshot]:
+    def resolve_review(self, conflict_id: str, choice: str) -> Optional[RoundSnapshot]:
         with self._lock:
             current = self._current
-        return current.resolve_review(choice) if current is not None else None
+        return current.resolve_review(conflict_id, choice) if current is not None else None
 
     def snapshot(self) -> Optional[RoundSnapshot]:
         with self._lock:

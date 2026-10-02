@@ -101,6 +101,65 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 1,
             )
 
+    def test_atlas_same_active_slot_and_trusted_sn_capture_changed_final_as_common_conflict(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            rounds = RoundCoordinator()
+            rounds.start("FCT", lambda callback: AtlasActiveArchiveMonitor(
+                "FCT", active, final, (1, 2), callback=callback,
+                now=lambda: datetime(2026, 9, 10, 10, 0, 0), session_root=root / "sessions",
+            ), run_async=False)
+            rounds.poll_once()
+            write_records(active / "group0-slot1" / "system" / "records.csv", "SAMPLE123456")
+            write_records(active / "group0-slot2" / "system" / "records.csv", "OTHER1234567")
+            rounds.poll_once()
+            shutil.rmtree(active / "group0-slot1")
+            rounds.poll_once()
+            archive = final / "SAMPLE123456" / "20260910_10-00-01.000-run" / "system" / "records.csv"
+            write_records(archive, "SAMPLE123456", "PASS")
+            rounds.poll_once()
+            rounds.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, "PASS")
+
+            write_records(archive, "SAMPLE123456", "FAIL")
+            rounds.poll_once()
+            conflict_snapshot = rounds.poll_once()
+
+            self.assertEqual(conflict_snapshot.state.value, "AWAITING_REVIEW")
+            self.assertEqual(conflict_snapshot.results[0].status, "PASS")
+            self.assertEqual(conflict_snapshot.results[1].status, "TESTING")
+            self.assertEqual(len(conflict_snapshot.pending_conflicts), 1)
+            conflict = conflict_snapshot.pending_conflicts[0]
+            self.assertEqual(conflict.original.sn, "SAMPLE123456")
+            self.assertEqual(conflict.candidate.status, "FAIL")
+            self.assertEqual(conflict.candidate.source_time, "2026-09-10T10:00:01.000")
+            self.assertEqual(dict(conflict.same_round_evidence)["round_evidence_id"],
+                             "atlas:1:SAMPLE123456")
+            rounds.stop()
+
+    def test_atlas_active_identity_change_is_retained_as_unconfirmed_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, final = root / "active", root / "unit-archive"
+            rounds = self.start_round(root, active, final)
+            rounds.poll_once()
+            record = active / "group0-slot1" / "system" / "records.csv"
+            write_records(record, "SAMPLE123456")
+            rounds.poll_once()
+            write_records(record, "OTHER1234567")
+            snapshot = rounds.poll_once()
+
+            self.assertEqual(snapshot.results[0].sn, "SAMPLE123456")
+            self.assertFalse(snapshot.pending_conflicts)
+            unresolved = [item.event for item in snapshot.events
+                          if item.event.kind == "unresolved_source_conflict"]
+            self.assertEqual(len(unresolved), 1)
+            self.assertEqual(unresolved[0].detail["original_sn"], "SAMPLE123456")
+            self.assertEqual(unresolved[0].detail["candidate_sn"], "OTHER1234567")
+            self.assertEqual(unresolved[0].detail["source_time"], "unknown")
+            rounds.stop()
+
     def test_unchanged_record_in_existing_active_directory_is_still_active(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

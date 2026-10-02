@@ -126,6 +126,10 @@ class B518LogSolutionApp:
         self.event_lines: list[str] = []
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
+        self.conflict_window: Optional[tk.Toplevel] = None
+        self.conflict_list: Optional[tk.Listbox] = None
+        self.conflict_details: Optional[tk.Text] = None
+        self._conflict_ids: list[str] = []
         self._configure_appearance()
         self._build()
         self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
@@ -192,6 +196,9 @@ class B518LogSolutionApp:
         self.station_title.pack(side="left", expand=True)
         self.monitor_state = tk.Label(header, background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
+        self.review_button = ttk.Button(header, text="待確認", command=self._open_conflict_review,
+                                        state="disabled")
+        self.review_button.pack(side="right", padx=(0, 10))
         self.monitor_state.pack(side="right")
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
@@ -549,9 +556,9 @@ class B518LogSolutionApp:
                 def deliver(event):
                     view = view_holder.get("view")
                     if view is not None:
-                        view.deliver(event, on_event)
+                        return view.deliver(event, on_event)
                     else:
-                        on_event(event)
+                        return on_event(event)
 
                 if platform == "rswmt":
                     monitor = RsWmtLogMonitor(
@@ -629,6 +636,7 @@ class B518LogSolutionApp:
                 self._start_from_hotkey()
         except queue.Empty:
             pass
+        self._refresh_conflict_review()
         self.root.after(150, self._drain_events)
 
     def _bring_dashboard_to_front(self) -> None:
@@ -658,9 +666,8 @@ class B518LogSolutionApp:
             self._set_row(event.slot, result.sn, result.status)
         if event.kind == "result" and event.status in {"PASS", "FAIL", "NOTEST"}:
             self._bring_dashboard_to_front()
-        if event.kind == "review" and self.monitor:
-            choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
-            self.rounds.resolve_review("accept" if choice else "reject")
+        if event.kind == "conflict_detected":
+            self._open_conflict_review()
         if event.kind == "timeout" and event.detail.get("kind") == "start":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")
@@ -678,6 +685,116 @@ class B518LogSolutionApp:
             self.monitor = None
             self.active_profile_snapshot = None
             self._set_monitor_controls(False)
+
+    def _open_conflict_review(self) -> None:
+        """Show the captured candidates in a modeless, non-blocking window."""
+        if not self.conflict_window or not self.conflict_window.winfo_exists():
+            window = tk.Toplevel(self.root)
+            self.conflict_window = window
+            window.title("同輪結果衝突確認")
+            window.geometry("820x430")
+            window.minsize(720, 360)
+            window.transient(self.root)
+            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            ttk.Label(window, text="逐項選擇保留原結果或採用已捕捉的新結果；關閉此視窗不會自動選擇。",
+                      wraplength=780).pack(fill="x", padx=12, pady=(12, 8))
+            body = ttk.Frame(window)
+            body.pack(fill="both", expand=True, padx=12, pady=4)
+            self.conflict_list = tk.Listbox(body, width=38, exportselection=False,
+                                            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                                            selectbackground="#1d4ed8", selectforeground="#ffffff")
+            self.conflict_list.pack(side="left", fill="y")
+            self.conflict_list.bind("<<ListboxSelect>>", self._show_selected_conflict)
+            self.conflict_details = tk.Text(body, wrap="word", height=14, state="disabled",
+                                            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                                            font=("Menlo", 11), relief="solid", borderwidth=1)
+            self.conflict_details.pack(side="left", fill="both", expand=True, padx=(10, 0))
+            actions = ttk.Frame(window)
+            actions.pack(fill="x", padx=12, pady=(8, 12))
+            ttk.Button(actions, text="保留原結果", command=lambda: self._resolve_selected_conflict(
+                "keep_original")).pack(side="left", padx=(0, 8))
+            ttk.Button(actions, text="採用新結果", command=lambda: self._resolve_selected_conflict(
+                "accept_candidate")).pack(side="left")
+            ttk.Button(actions, text="關閉", command=window.withdraw).pack(side="right")
+        self._refresh_conflict_review()
+        if self.conflict_window and self.conflict_window.winfo_exists():
+            self.conflict_window.deiconify()
+            self.conflict_window.lift()
+
+    def _refresh_conflict_review(self) -> None:
+        if not hasattr(self, "review_button"):
+            return
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        conflicts = snapshot.pending_conflicts if snapshot else ()
+        self.review_button.configure(
+            text="待確認 ({})".format(len(conflicts)),
+            state="normal" if conflicts else "disabled",
+        )
+        if conflicts:
+            self.monitor_state.configure(text="待確認 {} 項".format(len(conflicts)))
+        if self.conflict_window and self.conflict_window.winfo_exists():
+            if self.conflict_list is None:
+                return
+            selected = self.conflict_list.curselection()
+            selected_id = self._conflict_ids[selected[0]] if selected and selected[0] < len(self._conflict_ids) else None
+            self._conflict_ids = [item.conflict_id for item in conflicts]
+            self.conflict_list.delete(0, "end")
+            for item in conflicts:
+                self.conflict_list.insert("end", "位置 {}：{} {} → {} {}".format(
+                    item.slot, item.original.sn or "SN 未知", item.original.status,
+                    item.candidate.sn or "SN 未知", item.candidate.status,
+                ))
+            if selected_id in self._conflict_ids:
+                index = self._conflict_ids.index(selected_id)
+            else:
+                index = 0 if self._conflict_ids else -1
+            if index >= 0:
+                self.conflict_list.selection_set(index)
+                self.conflict_list.activate(index)
+                self._show_selected_conflict()
+            elif self.conflict_details:
+                self.conflict_details.configure(state="normal")
+                self.conflict_details.delete("1.0", "end")
+                self.conflict_details.insert("1.0", "目前沒有待確認項目。")
+                self.conflict_details.configure(state="disabled")
+
+    def _show_selected_conflict(self, _event=None) -> None:
+        if not self.conflict_list or not self.conflict_details:
+            return
+        selected = self.conflict_list.curselection()
+        if not selected or selected[0] >= len(self._conflict_ids):
+            return
+        snapshot = self.rounds.snapshot()
+        if not snapshot:
+            return
+        conflict_id = self._conflict_ids[selected[0]]
+        conflict = next((item for item in snapshot.pending_conflicts
+                         if item.conflict_id == conflict_id), None)
+        if not conflict:
+            return
+        def render(side):
+            return ("SN：{}\n結果：{}\n來源：{}\n來源識別：{}\n來源時間：{}\n證據：{}".format(
+                side.sn or "未知", side.status or "未知", side.source or "未知",
+                side.source_id or "未知", side.source_time or "未知",
+                dict(side.evidence),
+            ))
+        text = ("輪次：{}\n衝突：{}\n顯示位置：{}\n同輪證據：{}\n\n原結果\n{}\n\n候選快照\n{}"
+                .format(conflict.round_id, conflict.conflict_id, conflict.slot,
+                        dict(conflict.same_round_evidence), render(conflict.original),
+                        render(conflict.candidate)))
+        self.conflict_details.configure(state="normal")
+        self.conflict_details.delete("1.0", "end")
+        self.conflict_details.insert("1.0", text)
+        self.conflict_details.configure(state="disabled")
+
+    def _resolve_selected_conflict(self, choice: str) -> None:
+        if not self.conflict_list:
+            return
+        selected = self.conflict_list.curselection()
+        if not selected or selected[0] >= len(self._conflict_ids):
+            return
+        self.rounds.resolve_review(self._conflict_ids[selected[0]], choice)
+        self._refresh_conflict_review()
 
     def open_settings(self) -> None:
         if self.settings_window and self.settings_window.winfo_exists():
