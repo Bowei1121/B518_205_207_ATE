@@ -13,13 +13,54 @@ class FakeMonitor:
     def __init__(self, callback):
         self.callback = callback
         self.results = {1: SlotResult(1), 2: SlotResult(2)}
+        self.start_timeout_seconds = 30
+        self.test_timeout_seconds = 480
+        self.round_timeout_seconds = 7200
+        self._published = False
+
+    def round_results(self):
+        return tuple(self.results.values())
+
+    def timeout_seconds(self, kind):
+        return {"start": self.start_timeout_seconds,
+                "test": self.test_timeout_seconds,
+                "round": self.round_timeout_seconds}[kind]
+
+    def has_pending_review(self):
+        return False
+
+    def resolve_review(self, _choice):
+        pass
+
+    def update_round_settings(self, _settings):
+        pass
+
+    def publish_round_event(self, event):
+        self.callback(event)
 
     def start(self):
+        pass
+
+    def poll_once(self):
+        if self._published:
+            return
+        self._published = True
         self.results[1].status = "PASS"
         self.callback(MonitorEvent("result", "source 1 passed", 1, status="PASS"))
 
     def stop(self):
         pass
+
+    def stop_collection(self):
+        pass
+
+    def finish(self):
+        pass
+
+    def set_result(self, slot, status, sn=None, source="", detail=None, lock_terminal=False):
+        self.results[slot].status = status
+        self.callback(MonitorEvent("result", "source {}".format(status), slot,
+                                   sn or "", status, source, detail or {}))
 
 
 class ConfiguredMonitorTests(unittest.TestCase):
@@ -57,7 +98,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
                             "MLB_SN,status\nSERIAL{:08d},Pass\n".format(source),
                             encoding="utf-8",
                         )
-                    rounds.monitor.poll_once()
+                    rounds.poll_once()
                     snapshot = rounds.snapshot()
 
                     self.assertEqual(len(snapshot.results), capacity)
@@ -76,8 +117,45 @@ class ConfiguredMonitorTests(unittest.TestCase):
             def __init__(self, callback):
                 self.callback = callback
                 self.results = {slot: SlotResult(slot) for slot in range(1, 5)}
+                self.start_timeout_seconds = 30
+                self.test_timeout_seconds = 480
+                self.round_timeout_seconds = 7200
+
+            def round_results(self):
+                return tuple(self.results.values())
+
+            def timeout_seconds(self, kind):
+                return {"start": self.start_timeout_seconds,
+                        "test": self.test_timeout_seconds,
+                        "round": self.round_timeout_seconds}[kind]
+
+            def has_pending_review(self):
+                return False
+
+            def resolve_review(self, _choice):
+                pass
+
+            def update_round_settings(self, _settings):
+                pass
+
+            def publish_round_event(self, event):
+                self.callback(event)
+
+            def stop_collection(self):
+                pass
+
+            def finish(self):
+                pass
+
+            def set_result(self, slot, status, sn=None, source="", detail=None, lock_terminal=False):
+                self.results[slot].status = status
+                self.callback(MonitorEvent("result", "source result", slot, sn or "", status,
+                                           source, detail or {}))
 
             def start(self):
+                pass
+
+            def poll_once(self):
                 for source, status in ((4, "FAIL"), (1, "PASS")):
                     self.results[source].status = status
                     self.callback(MonitorEvent("result", "source result", source, status=status))
@@ -95,13 +173,14 @@ class ConfiguredMonitorTests(unittest.TestCase):
 
         rounds = RoundCoordinator()
         rounds.start("BT", create, run_async=False)
-        rounds.monitor.start()
+        rounds.poll_once()
         snapshot = rounds.snapshot()
 
         self.assertEqual([(result.slot, result.status) for result in snapshot.results], [
             (1, "FAIL"), (2, "WAITING"), (3, "WAITING"), (4, "PASS"),
         ])
-        self.assertEqual([event.event.slot for event in snapshot.events], [1, 4])
+        self.assertEqual([event.event.slot for event in snapshot.events
+                          if event.event.kind == "result"], [1, 4])
 
     def test_profile_mapping_is_visible_through_round_snapshot_and_events(self):
         def create(callback):
@@ -116,12 +195,14 @@ class ConfiguredMonitorTests(unittest.TestCase):
             return configured
 
         rounds = RoundCoordinator()
-        rounds.start("DFU", create)
+        rounds.start("DFU", create, run_async=False)
+        rounds.poll_once()
 
         snapshot = rounds.snapshot()
         self.assertEqual([(result.slot, result.status) for result in snapshot.results],
                          [(1, "WAITING"), (2, "PASS")])
-        self.assertEqual(snapshot.events[0].event.slot, 2)
+        first_result = next(event for event in snapshot.events if event.event.kind == "result")
+        self.assertEqual(first_result.event.slot, 2)
 
     def test_warning_for_unmapped_source_is_kept_without_claiming_a_display_slot(self):
         configured = ConfiguredMonitor(FakeMonitor(lambda _event: None), {1: 2, 2: 1})
@@ -168,7 +249,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
             (caseinfo / "thread1CaseInfo_2026-09-11.txt").write_text(
                 "2026-09-11 05:44:20,000 SNRead: SERIAL000001\n", encoding="utf-8",
             )
-            rounds.monitor.poll_once()
+            rounds.poll_once()
 
             self.assertEqual([(result.slot, result.status) for result in rounds.snapshot().results],
                              [(1, "WAITING"), (2, "WAITING"), (3, "TESTING")])

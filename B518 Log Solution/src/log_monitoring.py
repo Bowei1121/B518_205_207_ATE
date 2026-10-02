@@ -10,10 +10,10 @@ import csv
 import json
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from b482_source_adapter import (
     B482ObservationKind,
@@ -81,9 +81,13 @@ class SessionStore:
                    "finished_at": self.finished_at, "sources": sorted(self.sources)}
         (self.path / "session.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def event(self, message: str) -> None:
+    def event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
         with (self.path / "events.log").open("a", encoding="utf-8") as handle:
-            handle.write("{} {}\n".format(datetime.now().isoformat(timespec="seconds"), message))
+            handle.write(json.dumps({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "message": message,
+                "detail": detail or {},
+            }, ensure_ascii=False) + "\n")
 
     def update_results(self, results: Iterable[SlotResult]) -> None:
         with (self.path / "results.csv").open("w", encoding="utf-8", newline="") as handle:
@@ -112,8 +116,7 @@ class BaseMonitor:
                  monotonic: Callable[[], float] = time.monotonic,
                  start_timeout_seconds: Optional[int] = None,
                  test_timeout_seconds: Optional[int] = None,
-                 round_timeout_seconds: Optional[int] = None,
-                 round_started_monotonic: Optional[float] = None):
+                 round_timeout_seconds: Optional[int] = None):
         self.station, self.settings, self.slots = station, settings, tuple(sorted(slots))
         defaults = DEFAULT_TIMEOUTS.get(station.upper(), DEFAULT_TIMEOUTS["FCT"])
         self.start_timeout_seconds = int(start_timeout_seconds or defaults["start"])
@@ -126,37 +129,56 @@ class BaseMonitor:
                               "round_timeout_seconds": str(self.round_timeout_seconds)})
         self.callback, self.now, self.monotonic = callback, now, monotonic
         self.started = now()
-        self._started_monotonic = (monotonic() if round_started_monotonic is None
-                                   else round_started_monotonic)
-        self._activity_seen = False
-        self._test_started_monotonic: Dict[int, float] = {}
+        self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
         self.session = SessionStore(session_id, settings, session_root)
         self.finished = False
-        self._stable_since: Optional[datetime] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
+    def round_results(self) -> Tuple[SlotResult, ...]:
+        """Return a stable view of results for the shared round lifecycle."""
+        return tuple(replace(result) for result in self.results.values())
+
+    def timeout_seconds(self, kind: str) -> int:
+        """Expose configured limits through the common round contract."""
+        return {
+            "start": self.start_timeout_seconds,
+            "test": self.test_timeout_seconds,
+            "round": self.round_timeout_seconds,
+        }[kind]
+
+    def has_pending_review(self) -> bool:
+        """Whether captured source evidence is awaiting an existing UI decision."""
+        return False
+
+    def resolve_review(self, _choice: str) -> None:
+        """Resolve review evidence when this adapter supports that workflow."""
+        return
+
+    def update_round_settings(self, settings: Dict[str, object]) -> None:
+        self.session.update_settings(settings)
+
+    def publish_round_event(self, event: MonitorEvent) -> None:
+        self.emit(event)
+
     def emit(self, event: MonitorEvent) -> None:
-        self.session.event(event.message)
+        self.session.event(event.message, event.detail)
         if event.source:
             self.session.source(Path(event.source))
         if self.callback:
             self.callback(event)
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
-                   detail: Optional[Dict[str, str]] = None) -> None:
+                   detail: Optional[Dict[str, str]] = None, lock_terminal: bool = False) -> None:
         if self.finished:
+            return
+        if slot in self._deadline_locked_slots:
             return
         result = self.results[slot]
         if result.status in TERMINAL and status not in TERMINAL:
             return
-        if status in {"TESTING", "COMPLETING"}:
-            self._activity_seen = True
-            self._test_started_monotonic.setdefault(slot, self.monotonic())
-        elif status in {"PASS", "FAIL", "NOTEST"}:
-            self._activity_seen = True
         if sn:
             result.sn = sn
         result.status, result.source = status, source or result.source
@@ -164,96 +186,22 @@ class BaseMonitor:
         self.session.update_results(self.results.values())
         self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status,
                                source, detail or {}))
-
-    def _all_terminal(self) -> bool:
-        return bool(self.results) and all(result.status in TERMINAL for result in self.results.values())
-
-    def complete_if_stable(self) -> None:
-        if not self._all_terminal():
-            self._stable_since = None
-            return
-        if self._stable_since is None:
-            self._stable_since = self.now()
-        elif self.now() - self._stable_since >= timedelta(seconds=3):
-            self.finished = True
-            self.session.finish()
-            self.emit(MonitorEvent("finished", "{} 本輪完成".format(self.station)))
-
-    def begin_timeout_clock(self) -> None:
-        """Keep deadlines anchored to the accepted round start, including snapshot work."""
-        return
-
-    def check_timeouts(self) -> None:
-        """Stop the session when the round, start, or an active slot exceeds its limit."""
-        if self.finished:
-            return
-        if self.check_round_timeout():
-            return
-        elapsed = self.monotonic() - self._started_monotonic
-        if not self._activity_seen and elapsed >= self.start_timeout_seconds:
-            self._finish_timeout("start", None, elapsed)
-            return
-        timed_out_slots = []
-        for slot in sorted(self._test_started_monotonic):
-            if self.results[slot].status in TERMINAL:
-                continue
-            test_elapsed = self.monotonic() - self._test_started_monotonic[slot]
-            if test_elapsed >= self.test_timeout_seconds:
-                timed_out_slots.append((slot, test_elapsed))
-        for slot, test_elapsed in timed_out_slots:
-            self._finish_timeout("test", slot, test_elapsed)
-
-    def check_round_timeout(self) -> bool:
-        """Enforce the round deadline before a poll can read any more source data."""
-        if self.finished:
-            return True
-        elapsed = self.monotonic() - self._started_monotonic
-        if elapsed >= self.round_timeout_seconds:
-            for slot, result in self.results.items():
-                if result.status in TERMINAL:
-                    continue
-                self.set_result(slot, "TIMEOUT" if result.status in {"TESTING", "COMPLETING"}
-                                else "NOTEST")
-            self._finish_timeout("round", None, elapsed)
-            return True
-        return False
-
-    def _finish_timeout(self, kind: str, timed_out_slot: Optional[int], elapsed: float) -> None:
-        if kind == "round":
-            message = "{} 整輪監控逾時：{} 秒（經過 {} 秒）".format(
-                self.station, self.round_timeout_seconds, int(elapsed),
-            )
-        elif kind == "start":
-            for slot, result in self.results.items():
-                if result.status not in TERMINAL:
-                    self.set_result(slot, "NOTEST")
-            message = "{} 未進入測試逾時：{} 秒（經過 {} 秒）".format(
-                self.station, self.start_timeout_seconds, int(elapsed),
-            )
-        else:
-            assert timed_out_slot is not None
-            self.set_result(timed_out_slot, "TIMEOUT")
-            message = "{} slot{} 測試逾時：{} 秒（上限 {} 秒）".format(
-                self.station, timed_out_slot, int(elapsed), self.test_timeout_seconds,
-            )
-        self.emit(MonitorEvent("timeout", message, timed_out_slot, status="TIMEOUT",
-                               detail={"kind": kind, "elapsed_seconds": str(int(elapsed))}))
-        if kind in {"start", "round"}:
-            self._stop.set()
-            self.finished = True
-            self.session.finish()
+        if lock_terminal:
+            self._deadline_locked_slots.add(slot)
 
     def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        """Mark adapter readiness; MonitoringRound owns the polling schedule."""
+        return
 
-    def _run(self) -> None:
-        while not self._stop.wait(0.5):
-            self.poll_once()
-            if self.finished:
-                return
+    def stop_collection(self) -> None:
+        """Stop source reads while leaving round result-release policy to the round."""
+        self._stop.set()
+
+    def finish(self) -> None:
+        self.stop_collection()
+        if not self.finished:
+            self.finished = True
+            self.session.finish()
 
     def stop(self) -> None:
         self._stop.set()
@@ -261,8 +209,7 @@ class BaseMonitor:
             for slot, result in self.results.items():
                 if result.status not in TERMINAL:
                     self.set_result(slot, "STOPPED")
-            self.finished = True
-            self.session.finish()
+            self.finish()
             self.emit(MonitorEvent("stopped", "{} 監控已由人員停止".format(self.station)))
 
     def poll_once(self) -> None:
@@ -274,12 +221,8 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
     def __init__(self, station: str, active_root: Path, final_root: Path, slots: Sequence[int], **kwargs):
         super().__init__(station, {"active_root": str(active_root), "final_root": str(final_root)}, slots, **kwargs)
         self.source = AtlasSourceAdapter(active_root, final_root, slots, self.started, self.now)
-        self.begin_timeout_clock()
 
     def poll_once(self) -> None:
-        if self.finished or self._stop.is_set():
-            return
-        self.check_round_timeout()
         if self.finished or self._stop.is_set():
             return
         for observation in self.source.poll():
@@ -303,8 +246,7 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                     "final", "slot{} 最終 {}".format(observation.slot, observation.status),
                     observation.slot, observation.sn, observation.status, observation.source,
                 ))
-        self.check_timeouts()
-        self.complete_if_stable()
+
 
 
 class BtLogMonitor(BaseMonitor):
@@ -317,86 +259,91 @@ class BtLogMonitor(BaseMonitor):
         self.source_adapter = B482SourceAdapter(
             testdata_root, caseinfo_root, self.started, self.now, self.monotonic,
         )
-        self.begin_timeout_clock()
         self.batch_stamp = ""
         self.review_pending: Optional[Dict[str, object]] = None
         self.review_decisions: Dict[str, str] = {}
 
+    def has_pending_review(self) -> bool:
+        return self.review_pending is not None
+
     def resolve_review(self, choice: str) -> None:
-        """Apply the one pending UI decision on the next polling pass.
+        """Apply a pending UI decision using its captured source candidate.
 
         A batch acceptance intentionally starts a new BT batch and clears only
         non-final rows.  A duplicate-thread acceptance replaces that thread's
-        result; rejection ignores just the offered file.
+        result; rejection ignores just the offered file. This does not read
+        the source adapter, so it also works after collection has stopped.
         """
         if self.review_pending is None:
             return
-        path = str(self.review_pending["path"])
+        pending = self.review_pending
+        path = str(pending["path"])
         self.review_decisions[path] = choice.lower()
         self.emit(MonitorEvent("review_resolved", "BT 人工覆核：{}".format("接受" if choice.lower() == "accept" else "忽略"), source=path))
         self.review_pending = None
+        if choice.lower() == "accept":
+            self._process_observation(pending["observation"])
 
     def poll_once(self) -> None:
         if self.finished or self._stop.is_set():
             return
-        self.check_round_timeout()
-        if self.finished or self._stop.is_set():
-            return
         for observation in self.source_adapter.poll():
-            if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
-                if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
-                    continue
-                self.set_result(observation.slot, observation.status, observation.sn,
-                                observation.source, observation.evidence())
-                continue
-            if not self.batch_stamp:
+            self._process_observation(observation)
+
+    def _process_observation(self, observation) -> None:
+        if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
+            if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
+                return
+            self.set_result(observation.slot, observation.status, observation.sn,
+                            observation.source, observation.evidence())
+            return
+        if not self.batch_stamp:
+            self.batch_stamp = observation.batch_id
+            self.emit(MonitorEvent(
+                "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                detail=observation.evidence(),
+            ))
+        if observation.batch_id != self.batch_stamp:
+            decision = self.review_decisions.get(observation.source)
+            if decision == "reject":
+                return
+            if decision == "accept":
                 self.batch_stamp = observation.batch_id
+                for result_slot, result in self.results.items():
+                    if result.status not in TERMINAL:
+                        self.set_result(result_slot, "WAITING", "")
                 self.emit(MonitorEvent(
-                    "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                    "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
                     detail=observation.evidence(),
                 ))
-            if observation.batch_id != self.batch_stamp:
-                decision = self.review_decisions.get(observation.source)
-                if decision == "reject":
-                    continue
-                if decision == "accept":
-                    self.batch_stamp = observation.batch_id
-                    for result_slot, result in self.results.items():
-                        if result.status not in TERMINAL:
-                            self.set_result(result_slot, "WAITING", "")
+            else:
+                if self.review_pending is None:
+                    self.review_pending = {
+                        "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
+                        "locked": self.batch_stamp, "observation": observation,
+                    }
                     self.emit(MonitorEvent(
-                        "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
-                        detail=observation.evidence(),
+                        "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
+                        detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
+                                "source_id": observation.source_id},
                     ))
-                else:
-                    if self.review_pending is None:
-                        self.review_pending = {
-                            "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
-                            "locked": self.batch_stamp,
-                        }
-                        self.emit(MonitorEvent(
-                            "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
-                            detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
-                                    "source_id": observation.source_id},
-                        ))
-                    continue
-            slot = observation.slot
-            if slot not in self.results:
-                continue
-            current = self.results[slot]
-            if current.status in TERMINAL and current.source != observation.source:
-                decision = self.review_decisions.get(observation.source)
-                if decision == "reject":
-                    continue
-                if decision != "accept":
-                    if self.review_pending is None:
-                        self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
-                                               "old": current.source, "new": observation.source}
-                        self.emit(MonitorEvent(
-                            "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
-                            source=observation.source, detail=observation.evidence(),
-                        ))
-                    continue
-            self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())
-        self.check_timeouts()
-        self.complete_if_stable()
+                return
+        slot = observation.slot
+        if slot not in self.results:
+            return
+        current = self.results[slot]
+        if current.status in TERMINAL and current.source != observation.source:
+            decision = self.review_decisions.get(observation.source)
+            if decision == "reject":
+                return
+            if decision != "accept":
+                if self.review_pending is None:
+                    self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
+                                           "old": current.source, "new": observation.source,
+                                           "observation": observation}
+                    self.emit(MonitorEvent(
+                        "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
+                        source=observation.source, detail=observation.evidence(),
+                    ))
+                return
+        self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())

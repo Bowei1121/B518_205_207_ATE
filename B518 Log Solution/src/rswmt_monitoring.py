@@ -24,7 +24,6 @@ class RsWmtLogMonitor(BaseMonitor):
         self.source_adapter = RsWmtSourceAdapter(
             self.output_root, self.slots, self.started, self.progress_root, self.now, self.monotonic,
         )
-        self.begin_timeout_clock()
 
     def _notice(self, source: str, message: str, detail=None) -> None:
         self.emit(MonitorEvent('warning', message, source=source, detail=detail or {}))
@@ -57,9 +56,6 @@ class RsWmtLogMonitor(BaseMonitor):
     def poll_once(self) -> None:
         if self.finished or self._stop.is_set():
             return
-        self.check_round_timeout()
-        if self.finished or self._stop.is_set():
-            return
         for observation in self.source_adapter.poll():
             if observation.kind == 'warning':
                 evidence = observation.evidence
@@ -75,5 +71,3 @@ class RsWmtLogMonitor(BaseMonitor):
                 self._accept_final(observation.record, observation.stable)
             elif observation.kind == 'progress' and observation.record:
                 self._accept_progress(observation.record)
-        self.check_timeouts()
-        self.complete_if_stable()

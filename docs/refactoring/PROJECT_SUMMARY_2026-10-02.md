@@ -32,3 +32,15 @@
 - 實作與交付文件首批提交 `cae6337afb50d6102ff6e90d141aa574d9ac5d2e` 已推到 Gitea 及 GitHub 的 `codex/ticket-08`，兩端遠端 ref 均已核對為該 SHA，tracking 設為 `origin/codex/ticket-08`。
 - 驗收紀錄提交 `05d0272943e181337b48dcdcafa3ea0d6d98fc28` 亦已推至兩端專用分支。使用者要求的一般非快轉合併 commit 為 `3b024107f497836b0eeea780b30ae5627439ef53`；合併後完整套件再次 130 tests 通過，SHA 已推至 Gitea 與 GitHub 的 `B518-Log-Solution` 並逐一核對一致。
 - 合併與驗收紀錄提交 `62a71285a9db66d5f03ecfdf66ae411bed69e594` 已推至 Gitea 與 GitHub，兩端 `B518-Log-Solution` ref 一致並包含 Ticket 08 merge commit。兩端 `codex/ticket-08` ref 均已確認不存在；本地專用分支使用 `git branch -d` 安全刪除，最後停在乾淨的 `B518-Log-Solution`。分支清理結果已寫入 Ticket 08 與本摘要。
+
+## Ticket 09 執行紀錄
+
+- 2026-10-02 開始 Ticket 09，固定基準 `9950cabb1d01d9b022065ba9ef065a6b9527938a`，工作分支 `codex/ticket-09`。確認共同輪次接口、三種版本化 profile 期限、Adapter 與容量／映射快照已在基準；Ticket 03 實機／發布驗收及 Ticket 05 RS-WMT 實機即時時機仍未完成，沒有把 Ticket 06～08 的回放當成本票豁免。Ticket 16 上位機共同整合及 Ticket 18 未知來源採用政策保持原決策。
+- 共同期限與完成規則集中在 `MonitoringRound`。輪次接受開始時固定單調時鐘 t0，來源準備非同步，準備時間計入開始等待；到期僅尚未有可信活動／結果的位置成為帶有期限證據的推定 NOTEST。首次可信活動固定個別測試起點，TESTING／COMPLETING 可單獨 TIMEOUT 且終態不可被遲到資料覆寫。RS-WMT final-only 不捏造 TESTING；結果全終態即停止讀取，不加三秒觀察；人工停止保留終態並將其他位置標為 STOPPED。
+- 一次公開推進以開始時單調時間決定順序：到期（包含恰好到期）先定期限且不讀取該批資料；未到期則先處理整個資料批次。相關決策已記入 Ticket 09 並有邊界測試。
+- 初次雙軸複審發現重複 session 設定，以及 B482 待覆核候選在停止讀檔後無法消化的 Spec 缺口。已移除重複程式碼；新增共同輪次公開覆核入口，使用先前捕捉的候選且不讀新檔，並增加兩位置真實 B482 Adapter 公開流程測試。
+- Spec 複審確認整輪期限上的候選覆核不得代替 Ticket 11 的警報確認與放行；共同輪次保留 round_deadline 待確認狀態，並新增回歸測試。另將 poll 時間保存在 MonitoringRound，移除跨物件私有時間戳突變。
+- 相關單檔測試 61 項、Tk UI 單檔 36 項、修正後完整測試套件 134 項均通過。隔離實際 Tk App 回放通過 Atlas 未放滿、全空期限、個別逾時加人工停止與 RS-WMT final-only；視窗 376x596、Tk scaling 1.0。合成資料、偏好、配置及輸出均位於臨時目錄。原始實機資料唯讀，未宣稱實機即時、發布 App、目標設備或上位機驗收通過。
+- Standards 複審提出 Adapter 欄位耦合及重複反向映射兩項設計氣味；已加入明確 `RoundMonitor` 公開契約與單一雙向位置索引。來源準備失敗路徑也改為直接記錄輪次事件，並以 Tk 回歸測試覆蓋非同步啟動時序。
+- 專案沒有既有 mypy、pyright 或其他型別檢查設定。操作說明已更新，移除「全空整輪 TIMEOUT」及過期的等待描述。
+- 固定基準複審、review-fix commit 與全部 push 目的地同步、合併、合併後驗證和安全清理結果，待完成後補記。

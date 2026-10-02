@@ -539,7 +539,6 @@ class B518LogSolutionApp:
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
-        round_started_monotonic = time.monotonic()
         try:
             def monitor_factory(on_event):
                 capacity = profile.capacity if profile else slot_count(station)
@@ -559,7 +558,6 @@ class B518LogSolutionApp:
                         final, slots=source_slots, progress_root=caseinfo, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
-                        round_started_monotonic=round_started_monotonic,
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 elif platform == "b482":
@@ -567,7 +565,6 @@ class B518LogSolutionApp:
                         final, source_slots, caseinfo_root=caseinfo, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
-                        round_started_monotonic=round_started_monotonic,
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 elif platform == "atlas":
@@ -575,7 +572,6 @@ class B518LogSolutionApp:
                         station, active, final, source_slots, callback=deliver,
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
-                        round_started_monotonic=round_started_monotonic,
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
                     )
                 else:
@@ -608,7 +604,8 @@ class B518LogSolutionApp:
         self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
 
     def stop_monitor(self) -> None:
-        if self.monitor:
+        snapshot = self.rounds.snapshot()
+        if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
             self.rounds.stop()
 
     def _log(self, text: str) -> None:
@@ -648,6 +645,8 @@ class B518LogSolutionApp:
             if event.round_id != self.active_round_id:
                 return
             event = event.event
+        if self.monitor is None and hasattr(self, "rounds"):
+            self.monitor = self.rounds.monitor
         self._log(event.message)
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         if event.slot and snapshot:
@@ -661,7 +660,7 @@ class B518LogSolutionApp:
             self._bring_dashboard_to_front()
         if event.kind == "review" and self.monitor:
             choice = messagebox.askyesno("BT 人工覆核", event.message + "\n\n是否接受新檔案？", parent=self.root)
-            self.monitor.resolve_review("accept" if choice else "reject")
+            self.rounds.resolve_review("accept" if choice else "reject")
         if event.kind == "timeout" and event.detail.get("kind") == "start":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")
@@ -670,6 +669,11 @@ class B518LogSolutionApp:
             self._set_monitor_controls(False, "逾時停止")
             messagebox.showwarning("整輪監控逾時", event.message + "\n\n已停止讀取來源並保留本輪結果。",
                                    parent=self.root)
+        if event.kind == "start_failed":
+            self.monitor = None
+            self.active_profile_snapshot = None
+            self._set_monitor_controls(False, "啟動失敗")
+            messagebox.showerror("監控啟動失敗", event.message, parent=self.root)
         if event.kind in {"finished", "stopped"}:
             self.monitor = None
             self.active_profile_snapshot = None
@@ -1147,8 +1151,10 @@ class B518LogSolutionApp:
 
     def close(self) -> None:
         self.hotkey.close()
-        if self.monitor:
-            self.rounds.stop()
+        rounds = getattr(self, "rounds", None)
+        snapshot = rounds.snapshot() if rounds is not None else None
+        if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
+            rounds.stop()
         try:
             self._save_preferences()
         except (OSError, ProfileError) as error:

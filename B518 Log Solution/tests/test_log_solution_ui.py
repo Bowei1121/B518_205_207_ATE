@@ -37,6 +37,14 @@ class FakeHotkey:
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def wait_for(self, predicate, timeout=3):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.01)
+        self.fail("Timed out waiting for asynchronous monitor preparation")
+
     def test_running_round_keeps_its_capacity_and_mapping_after_profile_update(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -56,6 +64,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_paths["final"].set(str(final))
                 app._apply_profile_editor()
                 app.start_monitor()
+
+                preparation_deadline = time.monotonic() + 3
+                while app.monitor is None and time.monotonic() < preparation_deadline:
+                    root.update()
+                    time.sleep(0.01)
 
                 self.assertIsNotNone(app.monitor)
                 self.assertEqual(app.active_profile_snapshot.capacity, 3)
@@ -400,7 +413,11 @@ class LogSolutionUiTests(unittest.TestCase):
 
             with patch("log_monitoring.SessionStore"):
                 app.start_monitor()
+                prepare_deadline = time.monotonic() + 3
+                while app.rounds.monitor is None and time.monotonic() < prepare_deadline:
+                    time.sleep(0.01)
                 monitor = app.rounds.monitor
+                self.assertIsNotNone(monitor)
                 start = monitor.started.replace(microsecond=0)
                 stop = start + timedelta(seconds=5)
                 headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
@@ -429,6 +446,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 else:
                     app.rounds.stop()
                     self.fail("RS-WMT final-only files did not complete the App round")
+                app.rounds.stop()
 
             snapshot = app.rounds.snapshot()
             self.assertEqual(snapshot.station, "BT")
@@ -594,8 +612,12 @@ class LogSolutionUiTests(unittest.TestCase):
             with patch("b518_log_solution.AtlasActiveArchiveMonitor", side_effect=PermissionError("denied")), \
                     patch("b518_log_solution.messagebox.showerror") as show_error:
                 app.start_monitor()
+                deadline = time.monotonic() + 3
+                while not show_error.called and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.01)
             self.assertIsNone(app.monitor)
-            self.assertEqual(app.monitor_state.cget("text"), "待命")
+            self.assertEqual(app.monitor_state.cget("text"), "啟動失敗")
             self.assertIn("denied", app.event_lines[-1])
             show_error.assert_called_once()
         finally:
@@ -732,9 +754,11 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._save_settings()
                     with patch('b518_log_solution.RsWmtLogMonitor') as factory:
                         app.start_monitor()
+                        self.wait_for(lambda: factory.called)
                         factory.assert_called_once()
                         self.assertEqual(factory.call_args.kwargs['start_timeout_seconds'], 240)
                         factory.return_value.start.assert_called_once()
+                        app.rounds.stop()
             finally:
                 app._close_settings()
                 app.hotkey.close()
@@ -766,6 +790,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app._set_monitor_controls = MagicMock()
         with patch("b518_log_solution.AtlasActiveArchiveMonitor", return_value=monitor):
             app.start_monitor()
+            self.wait_for(lambda: monitor.start.called)
 
         monitor.start.assert_called_once()
         self.assertIsNotNone(app.rounds.snapshot())
@@ -774,6 +799,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
         app._handle_event(MonitorEvent("finished", "monitor ended"))
         app.root.attributes.assert_not_called()
+        app.rounds.stop()
         self.assertIsNone(app.monitor)
 
     def test_existing_monitor_sources_start_through_the_shared_round_entry(self):
@@ -811,12 +837,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._set_monitor_controls = MagicMock()
                 with patch("b518_log_solution." + factory_name) as factory:
                     app.start_monitor()
+                    self.wait_for(lambda: factory.called)
+                    self.wait_for(lambda: factory.return_value.start.called)
 
                 snapshot = app.rounds.snapshot()
                 self.assertEqual(snapshot.station, station)
                 self.assertEqual(snapshot.state, "RUNNING")
                 factory.assert_called_once()
                 factory.return_value.start.assert_called_once()
+                app.rounds.stop()
 
     def test_repeated_app_start_keeps_the_round_and_does_not_reset_rows(self):
         app = object.__new__(B518LogSolutionApp)
@@ -845,6 +874,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
             app.start_monitor()
             first_round_id = app.active_round_id
+            self.wait_for(lambda: factory.called)
             app.start_monitor()
 
         self.assertEqual(app.active_round_id, first_round_id)
@@ -852,6 +882,7 @@ class LogSolutionUiTests(unittest.TestCase):
         factory.assert_called_once()
         factory.return_value.start.assert_called_once()
         app._reset_rows.assert_called_once()
+        app.rounds.stop()
 
     def test_queued_prior_round_event_cannot_change_the_new_round_ui(self):
         app = object.__new__(B518LogSolutionApp)
@@ -881,9 +912,11 @@ class LogSolutionUiTests(unittest.TestCase):
         with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
             app.start_monitor()
             old_round_id = app.active_round_id
+            self.wait_for(lambda: factory.called)
             app.rounds.stop()
             app.start_monitor()
             new_round_id = app.active_round_id
+            self.wait_for(lambda: factory.call_count == 2)
             before = app.rounds.snapshot()
             messages_before_stale_event = list(app.event_lines)
             app._handle_event(RoundEvent(old_round_id, 99, MonitorEvent(
@@ -896,6 +929,7 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(app.event_lines, messages_before_stale_event)
         app._set_row.assert_not_called()
         self.assertEqual(factory.call_count, 2)
+        app.rounds.stop()
 
     def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)

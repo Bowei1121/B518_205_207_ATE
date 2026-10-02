@@ -47,7 +47,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 run_async=False,
             )
 
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             snapshot = rounds.snapshot()
 
             self.assertEqual(snapshot.results[0].status, "WAITING")
@@ -67,23 +67,23 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 ),
                 run_async=False,
             )
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             write_records(active / "group0-slot1" / "system" / "records.csv", "SAMPLE123456")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             shutil.rmtree(active / "group0-slot1")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             archive = final / "SAMPLE123456" / "20260910_10-00-01.000-run" / "system" / "records.csv"
             write_records(archive, "SAMPLE123456", "PASS")
 
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             first_observation = rounds.snapshot()
 
             self.assertEqual(first_observation.results[0].status, "COMPLETING")
             self.assertFalse(any(event.event.kind == "final" for event in first_observation.events))
 
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             stable_observation = rounds.snapshot()
-            rounds.monitor.poll_once()
+            rounds.poll_once()
 
             self.assertEqual(stable_observation.results[0].status, "PASS")
             self.assertEqual(
@@ -91,7 +91,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 1,
             )
             write_records(active / "group0-slot1" / "system" / "records.csv", "LATER987654", "FAIL")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             after_later_progress = rounds.snapshot()
 
             self.assertEqual(after_later_progress.results[0].status, "PASS")
@@ -112,18 +112,18 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             write_records(selected_record, "NUMBER_SOF0", "PASS")
             selected_mtime = selected_record.stat().st_mtime_ns
             rounds = self.start_round(root, active, final)
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             write_records(older_record, "SAMPLE123456", "FAIL")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
 
             os.utime(older_record, ns=(selected_mtime - 1_000_000_000, selected_mtime - 1_000_000_000))
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             snapshot = rounds.snapshot()
 
             self.assertEqual(snapshot.results[0].status, "TESTING")
             self.assertFalse(any(event.event.kind == "completing" for event in snapshot.events))
 
-    def test_unseen_slot_notest_is_emitted_only_once_during_completion_wait(self):
+    def test_unseen_slot_is_not_inferred_from_three_second_source_disappearance(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             active, final = root / "active", root / "unit-archive"
@@ -137,40 +137,34 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 ),
                 run_async=False,
             )
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             write_records(active / "group0-slot1" / "system" / "records.csv", "SAMPLE123456")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             shutil.rmtree(active / "group0-slot1")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
 
             current_time[0] += timedelta(seconds=4)
-            rounds.monitor.poll_once()
-            rounds.monitor.poll_once()
-            notest_results = [
-                event for event in rounds.events_since()
-                if event.event.kind == "result" and event.event.slot == 2
-                and event.event.status == "NOTEST"
-            ]
-
-            self.assertEqual(len(notest_results), 1)
+            snapshot = rounds.poll_once()
+            self.assertEqual([result.status for result in snapshot.results], ["COMPLETING", "WAITING"])
+            self.assertFalse(any(event.event.status == "NOTEST" for event in snapshot.events))
 
     def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             active, final = root / "active", root / "unit-archive"
             rounds = self.start_round(root, active, final)
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             record = active / "group0-slot1" / "system" / "records.csv"
 
             write_records(record, "NUMBER_SOF0")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             self.assertEqual(rounds.snapshot().results[0].sn, "")
             self.assertFalse(any(event.event.kind == "sn_locked" for event in rounds.events_since()))
 
             write_records(record, "SAMPLE123456")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             write_records(record, "LATER987654")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
 
             snapshot = rounds.snapshot()
             self.assertEqual(snapshot.results[0].sn, "SAMPLE123456")
@@ -182,12 +176,12 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             root = Path(temporary)
             active, final = root / "active", root / "unit-archive"
             rounds = self.start_round(root, active, final)
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             write_records(active / "group0-slot1" / "system" / "records.csv", "NUMBER_SOF0")
-            rounds.monitor.poll_once()
+            rounds.poll_once()
             shutil.rmtree(active / "group0-slot1")
 
-            snapshot = rounds.monitor.poll_once()
+            snapshot = rounds.poll_once()
             observed = rounds.snapshot()
 
             self.assertEqual(observed.results[0].status, "FAIL")

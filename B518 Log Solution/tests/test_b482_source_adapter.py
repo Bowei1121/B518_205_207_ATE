@@ -43,7 +43,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         snapshot = rounds.snapshot()
 
         self.assertEqual(snapshot.results[0].status, "TESTING")
@@ -61,11 +61,11 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         rounds = self.start_round(testdata, caseinfo)
         path.write_text(prefix, encoding="utf-8")
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
 
         path.write_text(prefix + ",NA,NA,NA,Passed,11.94\r\n", encoding="utf-8")
-        rounds.monitor.poll_once()
+        rounds.poll_once()
 
         self.assertEqual(rounds.snapshot().results[0].status, "TESTING")
         self.assertEqual(rounds.snapshot().results[0].sn, "HK5HVH6ZF4U00003YV")
@@ -83,9 +83,9 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         clock[0] = 5.1
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         snapshot = rounds.snapshot()
 
         self.assertEqual(snapshot.results[0].status, "NOTEST")
@@ -118,9 +118,9 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         clock[0] = 5.1
-        rounds.monitor.poll_once()
+        rounds.poll_once()
 
         results = rounds.snapshot().results
         self.assertEqual([(item.slot, item.sn, item.status) for item in results], [
@@ -143,7 +143,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         )
         rounds = self.start_round(testdata)
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
 
         self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
 
@@ -158,7 +158,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         )
         rounds = self.start_round(testdata, caseinfo)
 
-        rounds.monitor.poll_once()
+        rounds.poll_once()
         self.assertEqual(rounds.snapshot().results[0].status, "WAITING")
 
         with path.open("a", encoding="utf-8") as handle:
@@ -166,7 +166,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
                 "2026-08-21 15:19:55:160, 5,TestFlow,SNRead,--,SNRead,"
                 "HK5HVH6ZF4U00003YV,NA,NA,NA,Passed,9.50\r\n"
             )
-        rounds.monitor.poll_once()
+        rounds.poll_once()
 
         result = rounds.snapshot().results[0]
         self.assertEqual(result.status, "TESTING")

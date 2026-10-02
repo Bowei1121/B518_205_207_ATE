@@ -94,8 +94,8 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
     root.update()
     try:
         app.start_button.invoke()
-        if app.monitor is None:
-            raise RuntimeError("The {} monitor did not start.".format(station))
+        wait_for(root, lambda: app.monitor is not None,
+                 "{} source preparation".format(station))
         running_monitor = app.monitor
 
         running_profile = app.profiles.get("Demo", station)

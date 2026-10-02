@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from rswmt_monitoring import RsWmtLogMonitor, parse_rswmt_csv, parse_rswmt_log
+from monitoring_round import RoundCoordinator
 
 START = datetime(2026, 9, 11, 5, 44, 16)
 HEADER = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests', 'Error Description',
@@ -126,9 +127,9 @@ class RsWmtTests(unittest.TestCase):
         self.assertEqual(len([e for e in self.events if e.status == 'PASS']), count)
         self.seconds = 96
         monitor.poll_once()
-        self.assertTrue(monitor.finished)
+        self.assertFalse(monitor.finished)
 
-    def test_live_log_partial_writes_and_csv_wins_timeout_boundary(self):
+    def test_live_log_partial_writes_and_stable_csv_are_handled_by_adapter(self):
         monitor = self.monitor(test_timeout_seconds=5)
         path = self.output / 'live.log'
         text = log_text()
@@ -148,17 +149,29 @@ class RsWmtTests(unittest.TestCase):
         self.assertEqual(monitor.results[1].status, 'PASS')
 
     def test_timeout_latches_slot_and_late_csv_does_not_overwrite(self):
-        monitor = self.monitor(test_timeout_seconds=5)
+        rounds = RoundCoordinator(monotonic=lambda: self.seconds)
+
+        def create(callback):
+            return RsWmtLogMonitor(
+                self.output, callback=callback,
+                now=lambda: START + timedelta(seconds=self.seconds),
+                monotonic=lambda: self.seconds, start_timeout_seconds=30,
+                test_timeout_seconds=5, round_timeout_seconds=100,
+                session_root=self.root / 'sessions',
+            )
+
+        rounds.start('BT', create, run_async=False)
+        monitor = rounds.monitor
         (self.output / 'live.log').write_text(log_text())
-        monitor.poll_once()
+        rounds.poll_once()
         self.seconds = 5
-        monitor.poll_once()
+        rounds.poll_once()
         self.assertEqual(monitor.results[1].status, 'TIMEOUT')
         self.assertEqual(monitor.results[2].status, 'WAITING')
         self.write_result()
-        monitor.poll_once()
+        rounds.poll_once()
         self.seconds = 10
-        monitor.poll_once()
+        rounds.poll_once()
         self.assertEqual(monitor.results[1].status, 'TIMEOUT')
 
     def test_existing_files_ignored_and_stopped_monitor_frozen(self):
