@@ -86,13 +86,20 @@ class RsWmtTests(unittest.TestCase):
         self.assertIsNone(parse_rswmt_csv(path))
 
     def test_live_log_keeps_first_slot_serial_on_conflict(self):
-        monitor = self.monitor()
+        rounds = RoundCoordinator()
+        rounds.start('BT', lambda callback: RsWmtLogMonitor(
+            self.output, slots=(1,), now=lambda: START + timedelta(seconds=self.seconds),
+            monotonic=lambda: self.seconds, session_root=self.root / 'sessions', callback=callback,
+        ), run_async=False)
         (self.output / 'first.log').write_text(log_text(sn='TESTSERIAL0001'))
-        monitor.poll_once()
+        rounds.poll_once()
         (self.output / 'second.log').write_text(log_text(sn='OTHER0000001'))
-        monitor.poll_once()
-        self.assertEqual(monitor.results[1].sn, 'TESTSERIAL0001')
-        self.assertTrue(any('serial conflict' in e.message for e in self.events))
+        rounds.poll_once()
+        snapshot = rounds.snapshot()
+        self.assertEqual(snapshot.results[0].sn, 'TESTSERIAL0001')
+        self.assertEqual(len(snapshot.pending_conflicts), 1)
+        self.assertEqual(snapshot.pending_conflicts[0].candidate.sn, 'OTHER0000001')
+        rounds.stop()
 
     def test_old_content_copied_after_start_is_ignored(self):
         monitor = self.monitor()

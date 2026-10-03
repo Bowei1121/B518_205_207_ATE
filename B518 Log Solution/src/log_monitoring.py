@@ -136,6 +136,7 @@ class BaseMonitor:
         self.finished = False
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._round_candidate_mode = False
 
     def round_results(self) -> Tuple[SlotResult, ...]:
         """Return a stable view of results for the shared round lifecycle."""
@@ -149,16 +150,9 @@ class BaseMonitor:
             "round": self.round_timeout_seconds,
         }[kind]
 
-    def has_pending_review(self) -> bool:
-        """Whether captured source evidence is awaiting an existing UI decision."""
-        return False
-
-    def resolve_review(self, _choice: str) -> None:
-        """Resolve review evidence when this adapter supports that workflow."""
-        return
-
     def update_round_settings(self, settings: Dict[str, object]) -> None:
         self.session.update_settings(settings)
+        self._round_candidate_mode = bool(settings.get("round_candidate_mode", False))
 
     def publish_round_event(self, event: MonitorEvent) -> None:
         self.emit(event)
@@ -172,8 +166,19 @@ class BaseMonitor:
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
                    detail: Optional[Dict[str, str]] = None, lock_terminal: bool = False) -> None:
-        if self.finished:
+        if self._round_candidate_mode and status != "STOPPED":
+            candidate = MonitorEvent("result_candidate", "slot{} {} candidate".format(slot, status),
+                                     slot, sn or "", status, source, detail or {})
+            decision = self.callback(candidate) if self.callback else "accept"
+            if decision != "accept":
+                return
+            self.apply_round_result(slot, status, sn or "", source, detail, lock_terminal)
             return
+        self.apply_round_result(slot, status, sn or "", source, detail, lock_terminal)
+
+    def apply_round_result(self, slot: int, status: str, sn: str = "", source: str = "",
+                           detail: Optional[Dict[str, str]] = None,
+                           lock_terminal: bool = False) -> None:
         if slot in self._deadline_locked_slots:
             return
         result = self.results[slot]
@@ -229,22 +234,36 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
             if observation.kind == AtlasObservationKind.SOURCE_PREPARED:
                 self.emit(MonitorEvent("source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。"))
             elif observation.kind == AtlasObservationKind.SN_LOCKED:
-                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source,
+                                observation.detail)
                 self.emit(MonitorEvent(
                     "sn_locked", "slot{} 已鎖定可信 SN".format(observation.slot),
                     observation.slot, observation.sn, observation.status, observation.source,
+                    observation.detail or {},
                 ))
             elif observation.kind == AtlasObservationKind.ACTIVITY:
-                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source,
+                                observation.detail)
             elif observation.kind == AtlasObservationKind.SN_READ_FAILED:
                 self.set_result(observation.slot, observation.status, observation.sn)
             elif observation.kind in {AtlasObservationKind.COMPLETING, AtlasObservationKind.NOTEST}:
-                self.set_result(observation.slot, observation.status, observation.sn)
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source,
+                                observation.detail)
             elif observation.kind == AtlasObservationKind.FINAL:
-                self.set_result(observation.slot, observation.status, observation.sn, observation.source)
+                self.set_result(observation.slot, observation.status, observation.sn, observation.source,
+                                observation.detail)
                 self.emit(MonitorEvent(
                     "final", "slot{} 最終 {}".format(observation.slot, observation.status),
                     observation.slot, observation.sn, observation.status, observation.source,
+                    observation.detail or {},
+                ))
+            elif observation.kind == AtlasObservationKind.UNRESOLVED_CONFLICT:
+                self.emit(MonitorEvent(
+                    "unresolved_source_conflict",
+                    "Atlas slot{} 身分資料改變，但來源證據不足以確認同輪；保留證據且不提供採用選項。"
+                    .format(observation.slot),
+                    observation.slot, observation.sn, observation.status, observation.source,
+                    observation.detail or {},
                 ))
 
 
@@ -260,29 +279,6 @@ class BtLogMonitor(BaseMonitor):
             testdata_root, caseinfo_root, self.started, self.now, self.monotonic,
         )
         self.batch_stamp = ""
-        self.review_pending: Optional[Dict[str, object]] = None
-        self.review_decisions: Dict[str, str] = {}
-
-    def has_pending_review(self) -> bool:
-        return self.review_pending is not None
-
-    def resolve_review(self, choice: str) -> None:
-        """Apply a pending UI decision using its captured source candidate.
-
-        A batch acceptance intentionally starts a new BT batch and clears only
-        non-final rows.  A duplicate-thread acceptance replaces that thread's
-        result; rejection ignores just the offered file. This does not read
-        the source adapter, so it also works after collection has stopped.
-        """
-        if self.review_pending is None:
-            return
-        pending = self.review_pending
-        path = str(pending["path"])
-        self.review_decisions[path] = choice.lower()
-        self.emit(MonitorEvent("review_resolved", "BT 人工覆核：{}".format("接受" if choice.lower() == "accept" else "忽略"), source=path))
-        self.review_pending = None
-        if choice.lower() == "accept":
-            self._process_observation(pending["observation"])
 
     def poll_once(self) -> None:
         if self.finished or self._stop.is_set():
@@ -292,7 +288,7 @@ class BtLogMonitor(BaseMonitor):
 
     def _process_observation(self, observation) -> None:
         if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
-            if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
+            if observation.slot not in self.results:
                 return
             self.set_result(observation.slot, observation.status, observation.sn,
                             observation.source, observation.evidence())
@@ -300,50 +296,16 @@ class BtLogMonitor(BaseMonitor):
         if not self.batch_stamp:
             self.batch_stamp = observation.batch_id
             self.emit(MonitorEvent(
-                "batch", "BT 鎖定批次 {}".format(self.batch_stamp), source=observation.source,
+                "batch", "BT 觀察批次 {}".format(self.batch_stamp), source=observation.source,
                 detail=observation.evidence(),
             ))
-        if observation.batch_id != self.batch_stamp:
-            decision = self.review_decisions.get(observation.source)
-            if decision == "reject":
-                return
-            if decision == "accept":
-                self.batch_stamp = observation.batch_id
-                for result_slot, result in self.results.items():
-                    if result.status not in TERMINAL:
-                        self.set_result(result_slot, "WAITING", "")
-                self.emit(MonitorEvent(
-                    "batch", "BT 人工確認切換批次 {}".format(self.batch_stamp), source=observation.source,
-                    detail=observation.evidence(),
-                ))
-            else:
-                if self.review_pending is None:
-                    self.review_pending = {
-                        "kind": "batch", "path": observation.source, "stamp": observation.batch_id,
-                        "locked": self.batch_stamp, "observation": observation,
-                    }
-                    self.emit(MonitorEvent(
-                        "review", "BT 偵測批次衝突，等待人工覆核", source=observation.source,
-                        detail={"batch_id": observation.batch_id, "locked_batch_id": self.batch_stamp,
-                                "source_id": observation.source_id},
-                    ))
-                return
+        elif observation.batch_id != self.batch_stamp:
+            self.emit(MonitorEvent(
+                "batch_observed", "BT 觀察到不同批次證據，保留來源供共同輪次判定",
+                observation.slot, observation.sn, observation.status, observation.source,
+                observation.evidence(),
+            ))
         slot = observation.slot
-        if slot not in self.results:
-            return
-        current = self.results[slot]
-        if current.status in TERMINAL and current.source != observation.source:
-            decision = self.review_decisions.get(observation.source)
-            if decision == "reject":
-                return
-            if decision != "accept":
-                if self.review_pending is None:
-                    self.review_pending = {"kind": "duplicate", "path": observation.source, "slot": slot,
-                                           "old": current.source, "new": observation.source,
-                                           "observation": observation}
-                    self.emit(MonitorEvent(
-                        "review", "BT Thread{} 出現重複結果，等待人工覆核".format(slot - 1), slot,
-                        source=observation.source, detail=observation.evidence(),
-                    ))
-                return
-        self.set_result(slot, observation.status, observation.sn, observation.source, observation.evidence())
+        if slot in self.results:
+            self.set_result(slot, observation.status, observation.sn, observation.source,
+                            observation.evidence())

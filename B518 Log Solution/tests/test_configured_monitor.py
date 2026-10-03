@@ -80,7 +80,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
                         holder = {}
 
                         def deliver(event):
-                            holder["view"].deliver(event, callback)
+                            return holder["view"].deliver(event, callback)
 
                         monitor = AtlasActiveArchiveMonitor(
                             "FCT", active, final, sources, callback=deliver,
@@ -187,7 +187,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
             holder = {}
 
             def deliver(event):
-                holder["view"].deliver(event, callback)
+                return holder["view"].deliver(event, callback)
 
             monitor = FakeMonitor(deliver)
             configured = ConfiguredMonitor(monitor, {1: 2, 2: 1})
@@ -233,7 +233,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
                 holder = {}
 
                 def deliver(event):
-                    holder["view"].deliver(event, callback)
+                    return holder["view"].deliver(event, callback)
 
                 monitor = BtLogMonitor(
                     testdata, tuple(source for source, _display in profile.mapping),

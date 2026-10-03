@@ -117,6 +117,20 @@ class DeadlineMonitor:
         self.callback(MonitorEvent("result", "slot{} {}".format(slot, status), slot, status=status,
                                    detail=detail or {}))
 
+    def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
+        self.results[slot].sn = sn or self.results[slot].sn
+        self.results[slot].status = status
+        self.results[slot].source = source
+        self.results[slot].updated_at = "2026-10-02T10:00:00"
+        if lock_terminal:
+            self._locked.add(slot)
+        self.callback(MonitorEvent("result", "slot{} {}".format(slot, status), slot, sn, status,
+                                   source, detail or {}))
+
+    def offer_candidate(self, slot, status, sn, source, detail):
+        return self.callback(MonitorEvent("result_candidate", "candidate", slot, sn, status,
+                                           source, detail))
+
     def stop_collection(self):
         self.collection_stopped = True
 
@@ -136,19 +150,177 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_confirmed_same_round_conflict_is_captured_without_overwriting_original(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        evidence = {"round_evidence_id": "rswmt-run-20261002T100000"}
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "/logs/original.csv", evidence)
+        monitor.apply_round_result(2, "TESTING", "SERIAL000002", "/logs/active.csv", evidence)
+        monitor.offer_candidate(
+            1, "FAIL", "SERIAL000099", "/logs/correction.csv",
+            dict(evidence, source_id="correction.csv", source_time="2026-10-02T10:00:03"),
+        )
+
+        snapshot = rounds.snapshot()
+
+        self.assertEqual(snapshot.results[0].status, "PASS")
+        self.assertEqual(snapshot.results[0].sn, "SERIAL000001")
+        self.assertEqual(snapshot.state.value, "AWAITING_REVIEW")
+        self.assertFalse(snapshot.result_available)
+        self.assertFalse(snapshot.collection_stopped)
+        self.assertEqual(snapshot.results[1].status, "TESTING")
+        self.assertEqual(len(snapshot.pending_conflicts), 1)
+        conflict = snapshot.pending_conflicts[0]
+        self.assertEqual(conflict.slot, 1)
+        self.assertEqual(conflict.original.sn, "SERIAL000001")
+        self.assertEqual(conflict.candidate.sn, "SERIAL000099")
+        self.assertEqual(conflict.candidate.source_time, "2026-10-02T10:00:03")
+
+    def test_each_same_slot_candidate_is_resolved_independently_in_user_selected_order(self):
+        def run_choices(choices):
+            holder = {}
+
+            def factory(callback):
+                monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+                holder["monitor"] = monitor
+                return monitor
+
+            rounds = RoundCoordinator(monotonic=lambda: 0.0)
+            rounds.start("BT", factory, run_async=False)
+            monitor = holder["monitor"]
+            original = {"round_evidence_id": "b482:1:20261002100001:thread=0;config=cfg",
+                        "source_id": "original.csv", "source_time": "2026-10-02 10:00:01"}
+            monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", original)
+            monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-a.csv", dict(
+                original, source_id="candidate-a.csv", source_time="2026-10-02 10:00:02"))
+            monitor.offer_candidate(1, "FAIL", "SERIAL000003", "candidate-b.csv", dict(
+                original, source_id="candidate-b.csv", source_time="2026-10-02 10:00:03"))
+
+            first = rounds.snapshot()
+            self.assertEqual(len(first.pending_conflicts), 2)
+            conflict_ids = [item.conflict_id for item in first.pending_conflicts]
+            after_first = rounds.resolve_review(conflict_ids[choices[0][0]], choices[0][1])
+            self.assertEqual(len(after_first.pending_conflicts), 1)
+            after_second = rounds.resolve_review(conflict_ids[choices[1][0]], choices[1][1])
+            self.assertFalse(after_second.pending_conflicts)
+            resolved = [item.event for item in after_second.events if item.event.kind == "conflict_resolved"]
+            self.assertEqual([item.detail["conflict_id"] for item in resolved],
+                             [conflict_ids[choices[0][0]], conflict_ids[choices[1][0]]])
+            return after_second.results[0], [item.detail for item in resolved]
+
+        accepted_then_kept, accepted_then_kept_events = run_choices(
+            [(1, "accept_candidate"), (0, "keep_original")],
+        )
+        self.assertEqual((accepted_then_kept.sn, accepted_then_kept.status), ("SERIAL000001", "PASS"))
+        self.assertEqual(accepted_then_kept_events[-1]["chosen_sn"], "SERIAL000001")
+        self.assertEqual(accepted_then_kept_events[-1]["result_after_sn"], "SERIAL000001")
+
+        kept_then_accepted, kept_then_accepted_events = run_choices(
+            [(0, "keep_original"), (1, "accept_candidate")],
+        )
+        self.assertEqual((kept_then_accepted.sn, kept_then_accepted.status), ("SERIAL000003", "FAIL"))
+        self.assertEqual(kept_then_accepted_events[-1]["chosen_sn"], "SERIAL000003")
+        self.assertEqual(kept_then_accepted_events[-1]["result_after_sn"], "SERIAL000003")
+
+    def test_unconfirmed_round_evidence_is_retained_without_an_adoption_choice(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "first.csv", {
+            "source_id": "first.csv", "source_time": "unknown",
+        })
+        monitor.offer_candidate(1, "FAIL", "", "other.csv", {
+            "source_id": "other.csv", "source_time": "unknown",
+        })
+
+        snapshot = rounds.snapshot()
+        self.assertFalse(snapshot.pending_conflicts)
+        self.assertEqual(snapshot.results[0].sn, "SERIAL000001")
+        unresolved = [event.event for event in snapshot.events
+                      if event.event.kind == "unresolved_source_conflict"]
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0].detail["candidate_source_time"], "unknown")
+
+    def test_same_result_from_another_path_is_traceable_without_a_new_conflict(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        evidence = {"round_evidence_id": "rswmt:1:2026-10-02T10:00:00",
+                    "source_id": "first.csv", "source_time": "2026-10-02T10:00:01"}
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "first.csv", evidence)
+        monitor.offer_candidate(1, "PASS", "SERIAL000001", "copy.csv", dict(
+            evidence, source_id="copy.csv"))
+
+        snapshot = rounds.snapshot()
+        self.assertFalse(snapshot.pending_conflicts)
+        duplicates = [event.event for event in snapshot.events
+                      if event.event.kind == "duplicate_source"]
+        self.assertEqual(len(duplicates), 1)
+        self.assertEqual(duplicates[0].detail["source_id"], "copy.csv")
+
+    def test_repeated_conflicting_candidate_is_traced_without_a_second_review_item(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        evidence = {"round_evidence_id": "b482:1:20261002100001:thread=0;config=cfg",
+                    "source_id": "candidate-a.csv", "source_time": "2026-10-02T10:00:01"}
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", evidence)
+        monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-a.csv", evidence)
+        monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-copy.csv", dict(
+            evidence, source_id="candidate-copy.csv"))
+
+        snapshot = rounds.snapshot()
+        self.assertEqual(len(snapshot.pending_conflicts), 1)
+        duplicate = next(item.event for item in snapshot.events
+                         if item.event.kind == "duplicate_source")
+        self.assertEqual(duplicate.detail["source_id"], "candidate-copy.csv")
+
     def test_conflict_resolution_does_not_release_round_deadline_results(self):
         elapsed = [0.0]
         holder = {}
 
         def factory(callback):
             monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), round_limit=5)
-            monitor.review_pending = {"candidate": "captured"}
             holder["monitor"] = monitor
             return monitor
 
         coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
         coordinator.start("FCT", factory, run_async=False)
-        holder["monitor"].publish(1, "PASS")
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
+        holder["monitor"].offer_candidate(
+            1, "FAIL", "SERIAL000001", "final.csv", dict(evidence, source_id="final.csv"),
+        )
         coordinator.poll_once()
         elapsed[0] = 5.0
         expired = coordinator.poll_once()
@@ -156,7 +328,7 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(expired.state.value, "AWAITING_REVIEW")
         self.assertEqual(expired.completion_reason, "round_deadline")
         self.assertFalse(expired.result_available)
-        released = coordinator.resolve_review("accept")
+        released = coordinator.resolve_review(expired.pending_conflicts[0].conflict_id, "keep_original")
         self.assertEqual(released.state.value, "AWAITING_REVIEW")
         self.assertEqual(released.completion_reason, "round_deadline")
         self.assertFalse(released.result_available)
@@ -169,7 +341,7 @@ class MonitoringRoundTests(unittest.TestCase):
             root = Path(temporary) / "TestData"
             caseinfo = Path(temporary) / "CaseInfo"
             caseinfo.mkdir()
-            caseinfo_path = caseinfo / "thread1CaseInfo_2026-10-02.txt"
+            caseinfo_path = caseinfo / "thread2CaseInfo_2026-10-02.txt"
             caseinfo_path.write_text("", encoding="utf-8")
             sessions = Path(temporary) / "sessions"
             coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
@@ -203,35 +375,106 @@ class MonitoringRoundTests(unittest.TestCase):
                 "HK5HUX6STQ800003YV,NA,NA,NA,Passed,1.00\r\n",
                 encoding="utf-8",
             )
-            first = write_result(1, "HK5HUX6STQ900003YV", "20261002100001")
+            first = write_result(0, "HK5HUX6STQ900003YV", "20261002100001")
             coordinator.poll_once()
             elapsed[0] = 5.1
             coordinator.poll_once()
             self.assertEqual([result.status for result in coordinator.snapshot().results],
-                             ["TESTING", "PASS"])
+                             ["PASS", "TESTING"])
 
-            slot1 = write_result(0, "HK5HUX6STQ800003YV", "20261002100001")
-            second = write_result(1, "HK5HUX6STQ000003YV", "20261002100001")
+            second = write_result(0, "HK5HUX6STQ000003YV", "20261002100001")
             elapsed[0] = 6.0
             coordinator.poll_once()
             elapsed[0] = 11.1
             waiting = coordinator.poll_once()
             self.assertEqual(waiting.state.value, "AWAITING_REVIEW")
             self.assertFalse(waiting.result_available)
-            self.assertEqual(monitor.review_pending["path"], str(second))
-            self.assertEqual([result.status for result in waiting.results], ["PASS", "PASS"])
+            self.assertEqual([result.status for result in waiting.results], ["PASS", "TESTING"])
+            session_log = monitor.session.path / "events.log"
+            captured_log = session_log.read_text(encoding="utf-8")
+            self.assertIn("conflict_id", captured_log)
+            self.assertIn("candidate_source_time", captured_log)
+            session_metadata = (monitor.session.path / "session.json").read_text(encoding="utf-8")
+            self.assertIn(str(second), session_metadata)
 
-            released = coordinator.resolve_review("accept")
+            slot2 = write_result(1, "HK5HUX6STQ800003YV", "20261002100001")
+            elapsed[0] = 12.0
+            coordinator.poll_once()
+            elapsed[0] = 17.1
+            waiting = coordinator.poll_once()
+            self.assertTrue(waiting.collection_stopped)
+            self.assertFalse(waiting.result_available)
+            self.assertEqual(len(waiting.pending_conflicts), 1)
+            conflict_id = waiting.pending_conflicts[0].conflict_id
+
+            released = coordinator.resolve_review(conflict_id, "accept_candidate")
             self.assertEqual(released.state.value, "COMPLETED")
             self.assertTrue(released.result_available)
-            self.assertEqual(released.results[1].sn, "HK5HUX6STQ000003YV")
-            self.assertEqual(monitor.review_pending, None)
+            self.assertEqual(released.results[0].sn, "HK5HUX6STQ000003YV")
+            resolved_log = session_log.read_text(encoding="utf-8")
+            self.assertIn("accept_candidate", resolved_log)
+            self.assertIn("selected_at", resolved_log)
             self.assertTrue(first.exists())
-            self.assertTrue(slot1.exists())
+            self.assertTrue(slot2.exists())
             third = write_result(0, "HK5HUX6STQ100003YV", "20261002100002")
             coordinator.poll_once()
-            self.assertEqual(coordinator.snapshot().results[1].sn, "HK5HUX6STQ000003YV")
+            self.assertEqual(coordinator.snapshot().results[0].sn, "HK5HUX6STQ000003YV")
             self.assertTrue(third.exists())
+
+    def test_terminal_bt_slot_retains_caseinfo_identity_as_unconfirmed_evidence(self):
+        elapsed = [0.0]
+        now = datetime(2026, 10, 2, 10, 0, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "TestData"
+            caseinfo = Path(temporary) / "CaseInfo"
+            caseinfo.mkdir()
+            caseinfo_path = caseinfo / "thread1CaseInfo_2026-10-02.txt"
+            caseinfo_path.write_text("", encoding="utf-8")
+            coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+
+            def factory(callback):
+                return BtLogMonitor(
+                    root, (1, 2), caseinfo_root=caseinfo, callback=callback, now=lambda: now,
+                    monotonic=lambda: elapsed[0], start_timeout_seconds=60,
+                    test_timeout_seconds=100, round_timeout_seconds=500,
+                    session_root=Path(temporary) / "sessions",
+                )
+
+            coordinator.start("BT", factory, run_async=False)
+            result_path = root / "2026-10-02" / "PASSED" / (
+                "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20261002100001].csv"
+            )
+            result_path.parent.mkdir(parents=True, exist_ok=True)
+            with result_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=[
+                    "SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime",
+                ])
+                writer.writeheader()
+                writer.writerow({"SerialNumber": "HK5HUX6STQ800003YV", "Unit Number": "0",
+                                 "Test Pass/Fail Status": "PASSED", "StartTime": "x", "EndTime": "y"})
+            coordinator.poll_once()
+            elapsed[0] = 5.1
+            active = coordinator.poll_once()
+            self.assertEqual(active.results[0].status, "PASS")
+            self.assertFalse(active.collection_stopped)
+
+            caseinfo_path.write_text(
+                "2026-10-02 10:00:02:000, 1,InitResource,SNRead,--,SNRead,"
+                "HK5HUX6STQ900003YV,NA,NA,NA,Passed,1.00\r\n",
+                encoding="utf-8",
+            )
+            observed = coordinator.poll_once()
+
+            self.assertEqual(observed.results[0].sn, "HK5HUX6STQ800003YV")
+            self.assertEqual(observed.results[0].status, "PASS")
+            self.assertFalse(observed.pending_conflicts)
+            unresolved = [item.event for item in observed.events
+                          if item.event.kind == "unresolved_source_conflict"]
+            self.assertEqual(len(unresolved), 1)
+            self.assertEqual(unresolved[0].detail["candidate_sn"], "HK5HUX6STQ900003YV")
+            self.assertEqual(unresolved[0].detail["candidate_source_id"], caseinfo_path.name)
+            self.assertEqual(unresolved[0].detail["candidate_source_time"], "2026-10-02 10:00:02.000")
+            self.assertNotIn("round_evidence_id", unresolved[0].detail)
 
     def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
         elapsed = [0.0]
@@ -488,7 +731,67 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(final.detail.get('source_time'), '2026-09-11T05:45:44')
             self.assertEqual(final.detail.get('batch_evidence'), '2026-09-11T05:44:16')
 
-            accepted_sequence = snapshot.event_sequence
+    def test_rswmt_adapter_sends_confirmed_same_run_conflicting_final_to_shared_review(self):
+        start = datetime(2026, 9, 11, 5, 44, 16)
+        elapsed = [0.0]
+        headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
+                   'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
+                   'tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None:pwr=None;']
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output'
+            output.mkdir()
+            rounds = RoundCoordinator()
+            rounds.start('BT', lambda callback: RsWmtLogMonitor(
+                output, slots=(1, 2), callback=callback,
+                now=lambda: start + timedelta(seconds=elapsed[0]), monotonic=lambda: elapsed[0],
+                start_timeout_seconds=240, test_timeout_seconds=480, round_timeout_seconds=7200,
+                session_root=root / 'sessions',
+            ), run_async=False)
+
+            def write_final(sn, result, stop_time, filename_time):
+                result_dir = output / filename_time
+                result_dir.mkdir(parents=True, exist_ok=True)
+                buffer = io.StringIO()
+                writer = csv.writer(buffer)
+                writer.writerow(['Overlay', 'SmtCal'] + [''] * 6)
+                writer.writerow(headers)
+                writer.writerow([sn, result, '[]', '', '2026/11/09 05:44:16',
+                                 '2026/11/09 ' + stop_time, 'B518', '1'])
+                path = result_dir / '{}_{}.csv'.format(sn, filename_time)
+                path.write_text(buffer.getvalue(), encoding='utf-8')
+                return path
+
+            first = write_final('SERIAL000001', 'Pass', '05:45:44', '2026-09-11_05-45-44')
+            elapsed[0] = 88.0
+            rounds.poll_once()
+            elapsed[0] = 93.0
+            rounds.poll_once()
+            self.assertEqual(rounds.snapshot().results[0].status, 'PASS')
+
+            second = write_final('SERIAL000099', 'Fail', '05:46:00', '2026-09-11_05-46-00')
+            elapsed[0] = 104.0
+            rounds.poll_once()
+            elapsed[0] = 109.0
+            snapshot = rounds.poll_once()
+
+            self.assertEqual(snapshot.results[0].status, 'PASS')
+            self.assertEqual(snapshot.state.value, 'AWAITING_REVIEW')
+            self.assertEqual([(item.original.sn, item.original.status, item.candidate.sn,
+                               item.candidate.status, item.candidate.source)
+                              for item in snapshot.pending_conflicts], [
+                ('SERIAL000001', 'PASS', 'SERIAL000099', 'FAIL', str(second)),
+            ])
+            conflict = snapshot.pending_conflicts[0]
+            self.assertEqual(conflict.candidate.sn, 'SERIAL000099')
+            self.assertEqual(conflict.original.source, str(first))
+            self.assertEqual(conflict.candidate.source, str(second))
+            self.assertEqual(dict(conflict.same_round_evidence)['round_evidence_id'],
+                             'rswmt:1:2026-09-11T05:44:16')
+            rounds.resolve_review(conflict.conflict_id, 'keep_original')
+            rounds.stop()
+
+            accepted_sequence = rounds.snapshot().event_sequence
             late_dir = output / '2026-09-11_05-46-44'
             late_dir.mkdir()
             (late_dir / 'LATE00000001_2026-09-11_05-46-44.csv').write_text('late data')
