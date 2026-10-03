@@ -407,6 +407,61 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(coordinator.snapshot().results[0].sn, "HK5HUX6STQ000003YV")
             self.assertTrue(third.exists())
 
+    def test_terminal_bt_slot_retains_caseinfo_identity_as_unconfirmed_evidence(self):
+        elapsed = [0.0]
+        now = datetime(2026, 10, 2, 10, 0, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "TestData"
+            caseinfo = Path(temporary) / "CaseInfo"
+            caseinfo.mkdir()
+            caseinfo_path = caseinfo / "thread1CaseInfo_2026-10-02.txt"
+            caseinfo_path.write_text("", encoding="utf-8")
+            coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+
+            def factory(callback):
+                return BtLogMonitor(
+                    root, (1, 2), caseinfo_root=caseinfo, callback=callback, now=lambda: now,
+                    monotonic=lambda: elapsed[0], start_timeout_seconds=60,
+                    test_timeout_seconds=100, round_timeout_seconds=500,
+                    session_root=Path(temporary) / "sessions",
+                )
+
+            coordinator.start("BT", factory, run_async=False)
+            result_path = root / "2026-10-02" / "PASSED" / (
+                "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20261002100001].csv"
+            )
+            result_path.parent.mkdir(parents=True, exist_ok=True)
+            with result_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=[
+                    "SerialNumber", "Unit Number", "Test Pass/Fail Status", "StartTime", "EndTime",
+                ])
+                writer.writeheader()
+                writer.writerow({"SerialNumber": "HK5HUX6STQ800003YV", "Unit Number": "0",
+                                 "Test Pass/Fail Status": "PASSED", "StartTime": "x", "EndTime": "y"})
+            coordinator.poll_once()
+            elapsed[0] = 5.1
+            active = coordinator.poll_once()
+            self.assertEqual(active.results[0].status, "PASS")
+            self.assertFalse(active.collection_stopped)
+
+            caseinfo_path.write_text(
+                "2026-10-02 10:00:02:000, 1,InitResource,SNRead,--,SNRead,"
+                "HK5HUX6STQ900003YV,NA,NA,NA,Passed,1.00\r\n",
+                encoding="utf-8",
+            )
+            observed = coordinator.poll_once()
+
+            self.assertEqual(observed.results[0].sn, "HK5HUX6STQ800003YV")
+            self.assertEqual(observed.results[0].status, "PASS")
+            self.assertFalse(observed.pending_conflicts)
+            unresolved = [item.event for item in observed.events
+                          if item.event.kind == "unresolved_source_conflict"]
+            self.assertEqual(len(unresolved), 1)
+            self.assertEqual(unresolved[0].detail["candidate_sn"], "HK5HUX6STQ900003YV")
+            self.assertEqual(unresolved[0].detail["candidate_source_id"], caseinfo_path.name)
+            self.assertEqual(unresolved[0].detail["candidate_source_time"], "2026-10-02 10:00:02.000")
+            self.assertNotIn("round_evidence_id", unresolved[0].detail)
+
     def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
         elapsed = [0.0]
         monitors = []

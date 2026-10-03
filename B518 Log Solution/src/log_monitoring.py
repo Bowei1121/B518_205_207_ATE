@@ -288,7 +288,7 @@ class BtLogMonitor(BaseMonitor):
 
     def _process_observation(self, observation) -> None:
         if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
-            if observation.slot not in self.results or self.results[observation.slot].status in TERMINAL:
+            if observation.slot not in self.results:
                 return
             self.set_result(observation.slot, observation.status, observation.sn,
                             observation.source, observation.evidence())
