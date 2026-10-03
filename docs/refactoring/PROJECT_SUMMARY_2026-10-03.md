@@ -16,11 +16,9 @@
 - Spec 複審再指出同位置多候選需定義雙向選擇順序。已明定每個衝突保存原／候選不可變快照；每次保留或採用都套用該項被選快照，最後一次操作決定該位置有效值，事件同時記錄選擇與 `result_after_*`。新測試覆蓋先採用後保留及先保留後採用；目標測試 22 項通過。固定基準完整差異的 Standards／Spec 最終複審均通過、無未解決發現。完整 `python3 scripts/run_tests.py` 在全部程式修正後通過 144 項。
 - 完整命令 `python3 scripts/run_tests.py`：144 項全通過，含修正後重跑；B482／共同輪次單檔 `python3 scripts/run_tests.py test_monitoring_round test_log_monitoring`：38 項通過。隔離實際 Tk 回放使用容量 2 與非恆等映射，確認另一位置持續收集、色帶／狀態可見、收集停止後保留候選、視窗關閉不作選擇，完成選擇後結果放行。Tk 環境：macOS 10.16（系統回報）、Python 3.8.10、Tk 8.6、螢幕 1440×900、scaling 約 1.0；專案沒有 mypy／pyright 等既有型別檢查設定。
 - Ticket 五項受控驗收已記於 `docs/refactoring/tickets/10-same-round-conflict-review.md`。真實治具／KVM、目標設備、發布 App、Ticket 05 實機時機及 Ticket 16 上位機共同驗收未執行；Ticket 03 既有驗收仍未完成，均不宣稱通過。
-- 已推送專用分支提交：`afe56a2`、`194f2c4`、`41627c6`、`67099e4`、`5c6bd8d`、`42e8c05`、`f81198f`、`f50e3fe`、`f3db688`、`e094879`、`41984fc`。固定基準 Standards／Spec 最終複審均通過，144 項完整套件通過。一般非快轉合併 commit `4ba5c897a5762226bf43f337d63db396fd49d633` 已推至 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 及 GitHub `git@github.com:Bowei1121/B518_205_207_ATE.git`；兩端 `B518-Log-Solution` ref 已確認相同 SHA。兩端專用分支仍為 `41984fcc1b843a2730bc5a4a8a5220c43b19e7da`，待清理。
+- 已推送專用分支提交：`afe56a2`、`194f2c4`、`41627c6`、`67099e4`、`5c6bd8d`、`42e8c05`、`f81198f`、`f50e3fe`、`f3db688`、`e094879`、`41984fc`。固定基準 Standards／Spec 最終複審均通過，144 項完整套件通過。一般非快轉合併 commit `4ba5c897a5762226bf43f337d63db396fd49d633` 及後續驗收紀錄 commit `7e9890184ac033690ee412080a7874fb008364ba` 已推至 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 及 GitHub `git@github.com:Bowei1121/B518_205_207_ATE.git`；兩端最新 `B518-Log-Solution` ref 已確認相同。
+- 清理已完成：本地 `codex/ticket-10` 已安全刪除；`origin` 的兩個 push 目的地及獨立 `github` remote 均以 `git ls-remote` 確認沒有該遠端分支，已清理失效追蹤引用。工作樹乾淨，最後位於 `B518-Log-Solution`，HEAD `7e9890184ac033690ee412080a7874fb008364ba`；非快轉 merge SHA 為 `4ba5c897a5762226bf43f337d63db396fd49d633`。
 
-## 下一步
+## 完成狀態
 
-1. 將更新的驗收記錄提交並推送兩端。
-2. 以固定基準重新執行 Standards／Spec 複審，直到沒有未解決問題。
-3. 完成後確認目標分支乾淨且遠端最新，作一般非快轉合併；合併後跑必要驗證並推送至 Gitea 與 GitHub。
-4. 完成合併／驗證紀錄提交推送後，逐一確認兩端專用分支刪除成功，安全刪除本地分支，最後停在乾淨的 `B518-Log-Solution`。
+Ticket 10 實作、五項受控驗收、完整測試、固定基準雙軸複審、一般非快轉合併、兩個 push 目的地同步與本地／遠端分支清理均已完成。真實治具／KVM、目標設備、發布 App、Ticket 05 即時實機時機、Ticket 03 既有驗收及 Ticket 16 上位機共同驗收仍維持未執行；Ticket 18 未知同輪來源政策未被本票取代。
