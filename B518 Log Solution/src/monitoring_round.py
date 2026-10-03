@@ -188,12 +188,13 @@ class MonitoringRound:
                 if choice not in {"keep_original", "accept_candidate"}:
                     raise ValueError("未知衝突選擇：{}".format(choice))
                 del self._pending_conflicts[conflict_id]
-            if choice == "accept_candidate":
-                candidate = conflict.candidate
-                monitor.apply_round_result(
-                    conflict.slot, candidate.status, candidate.sn, candidate.source,
-                    dict(candidate.evidence),
-                )
+            selected = conflict.candidate if choice == "accept_candidate" else conflict.original
+            monitor.apply_round_result(
+                conflict.slot, selected.status, selected.sn, selected.source,
+                dict(selected.evidence),
+            )
+            effective_result = next((item for item in monitor.round_results()
+                                     if item.slot == conflict.slot), None)
             event = MonitorEvent(
                 "conflict_resolved", "slot{} 衝突已{}".format(
                     conflict.slot, "採用新結果" if choice == "accept_candidate" else "保留原結果",
@@ -210,6 +211,9 @@ class MonitoringRound:
                                       else conflict.original.status),
                     "chosen_source": (conflict.candidate.source if choice == "accept_candidate"
                                       else conflict.original.source),
+                    "result_after_sn": (effective_result.sn if effective_result else "unknown"),
+                    "result_after_status": (effective_result.status if effective_result else "unknown"),
+                    "result_after_source": (effective_result.source if effective_result else "unknown"),
                     "original_sn": conflict.original.sn or "unknown",
                     "original_status": conflict.original.status,
                     "candidate_sn": conflict.candidate.sn or "unknown",

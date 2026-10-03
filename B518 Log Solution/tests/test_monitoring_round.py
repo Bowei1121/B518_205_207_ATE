@@ -186,36 +186,50 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(conflict.candidate.source_time, "2026-10-02T10:00:03")
 
     def test_each_same_slot_candidate_is_resolved_independently_in_user_selected_order(self):
-        holder = {}
+        def run_choices(choices):
+            holder = {}
 
-        def factory(callback):
-            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
-            holder["monitor"] = monitor
-            return monitor
+            def factory(callback):
+                monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+                holder["monitor"] = monitor
+                return monitor
 
-        rounds = RoundCoordinator(monotonic=lambda: 0.0)
-        rounds.start("BT", factory, run_async=False)
-        monitor = holder["monitor"]
-        original = {"round_evidence_id": "b482:1:20261002100001:thread=0;config=cfg",
-                    "source_id": "original.csv", "source_time": "2026-10-02 10:00:01"}
-        monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", original)
-        monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-a.csv", dict(
-            original, source_id="candidate-a.csv", source_time="2026-10-02 10:00:02"))
-        monitor.offer_candidate(1, "FAIL", "SERIAL000003", "candidate-b.csv", dict(
-            original, source_id="candidate-b.csv", source_time="2026-10-02 10:00:03"))
+            rounds = RoundCoordinator(monotonic=lambda: 0.0)
+            rounds.start("BT", factory, run_async=False)
+            monitor = holder["monitor"]
+            original = {"round_evidence_id": "b482:1:20261002100001:thread=0;config=cfg",
+                        "source_id": "original.csv", "source_time": "2026-10-02 10:00:01"}
+            monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", original)
+            monitor.offer_candidate(1, "FAIL", "SERIAL000002", "candidate-a.csv", dict(
+                original, source_id="candidate-a.csv", source_time="2026-10-02 10:00:02"))
+            monitor.offer_candidate(1, "FAIL", "SERIAL000003", "candidate-b.csv", dict(
+                original, source_id="candidate-b.csv", source_time="2026-10-02 10:00:03"))
 
-        first = rounds.snapshot()
-        self.assertEqual(len(first.pending_conflicts), 2)
-        first_id, second_id = [item.conflict_id for item in first.pending_conflicts]
-        kept = rounds.resolve_review(first_id, "keep_original")
-        self.assertEqual([item.conflict_id for item in kept.pending_conflicts], [second_id])
-        self.assertEqual(kept.results[0].sn, "SERIAL000001")
-        adopted = rounds.resolve_review(second_id, "accept_candidate")
-        self.assertEqual(adopted.results[0].sn, "SERIAL000003")
-        self.assertEqual(adopted.results[0].status, "FAIL")
-        self.assertFalse(adopted.pending_conflicts)
-        resolved = [item.event for item in adopted.events if item.event.kind == "conflict_resolved"]
-        self.assertEqual([item.detail["conflict_id"] for item in resolved], [first_id, second_id])
+            first = rounds.snapshot()
+            self.assertEqual(len(first.pending_conflicts), 2)
+            conflict_ids = [item.conflict_id for item in first.pending_conflicts]
+            after_first = rounds.resolve_review(conflict_ids[choices[0][0]], choices[0][1])
+            self.assertEqual(len(after_first.pending_conflicts), 1)
+            after_second = rounds.resolve_review(conflict_ids[choices[1][0]], choices[1][1])
+            self.assertFalse(after_second.pending_conflicts)
+            resolved = [item.event for item in after_second.events if item.event.kind == "conflict_resolved"]
+            self.assertEqual([item.detail["conflict_id"] for item in resolved],
+                             [conflict_ids[choices[0][0]], conflict_ids[choices[1][0]]])
+            return after_second.results[0], [item.detail for item in resolved]
+
+        accepted_then_kept, accepted_then_kept_events = run_choices(
+            [(1, "accept_candidate"), (0, "keep_original")],
+        )
+        self.assertEqual((accepted_then_kept.sn, accepted_then_kept.status), ("SERIAL000001", "PASS"))
+        self.assertEqual(accepted_then_kept_events[-1]["chosen_sn"], "SERIAL000001")
+        self.assertEqual(accepted_then_kept_events[-1]["result_after_sn"], "SERIAL000001")
+
+        kept_then_accepted, kept_then_accepted_events = run_choices(
+            [(0, "keep_original"), (1, "accept_candidate")],
+        )
+        self.assertEqual((kept_then_accepted.sn, kept_then_accepted.status), ("SERIAL000003", "FAIL"))
+        self.assertEqual(kept_then_accepted_events[-1]["chosen_sn"], "SERIAL000003")
+        self.assertEqual(kept_then_accepted_events[-1]["result_after_sn"], "SERIAL000003")
 
     def test_unconfirmed_round_evidence_is_retained_without_an_adoption_choice(self):
         holder = {}
