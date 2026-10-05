@@ -285,6 +285,8 @@ class LogSolutionUiTests(unittest.TestCase):
             finally:
                 if app._round_is_active():
                     app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
