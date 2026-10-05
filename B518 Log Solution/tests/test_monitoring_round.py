@@ -810,12 +810,12 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(waiting.state.value, "AWAITING_REVIEW")
             self.assertFalse(waiting.result_available)
             self.assertEqual([result.status for result in waiting.results], ["PASS", "TESTING"])
-            self.assertTrue(monitor.session.flush())
-            session_log = monitor.session.path / "events.log"
+            self.assertTrue(coordinator.flush_session())
+            session_log = coordinator.session_path / "events.log"
             captured_log = session_log.read_text(encoding="utf-8")
             self.assertIn("conflict_id", captured_log)
             self.assertIn("candidate_source_time", captured_log)
-            session_metadata = (monitor.session.path / "session.json").read_text(encoding="utf-8")
+            session_metadata = (coordinator.session_path / "session.json").read_text(encoding="utf-8")
             self.assertIn(str(second), session_metadata)
 
             slot2 = write_result(1, "HK5HUX6STQ800003YV", "20261002100001")
@@ -832,7 +832,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(released.state.value, "COMPLETED")
             self.assertTrue(released.result_available)
             self.assertEqual(released.results[0].sn, "HK5HUX6STQ000003YV")
-            self.assertTrue(monitor.session.flush())
+            self.assertTrue(coordinator.flush_session())
             resolved_log = session_log.read_text(encoding="utf-8")
             self.assertIn("accept_candidate", resolved_log)
             self.assertIn("selected_at", resolved_log)
