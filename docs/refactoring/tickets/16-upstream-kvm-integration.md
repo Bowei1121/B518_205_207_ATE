@@ -35,7 +35,7 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 
 - App 基準：`f2a7a014a9afb4fac8be1047d11c209aed68a1fe`；專用分支：`codex/ticket-16`。
 - 上位機基準：`be41a2e09af9156f87ec2cac575041b8dc6c0ac4`（`main`）；依其自身基準建立 `codex/ticket-16`，沒有沿用 App repo 的分支起點。
-- 上位機第一個已驗證交付 commit：`45258c9`（完整 SHA 待後續執行紀錄補錄）；此 commit 尚待兩軸審查與所有既有目的地推送。
+- 上位機提交：實作 `45258c9fccbdf39b32f7c069aa6fa4b6ae259a61`、PTS／輪次隔離與型別審查修正 `49e6378deccac2690c9118562d482dd7a80c4922`、假動作出口測試 `421e2b084a56ca227b0a48bda569be5b2209e0b8`、匿名化 replay 報告 `17a09c106b32adeb531561e9b0148f575bb9487a`。上位機分支 Gitea `origin` 與 GitHub 均核對為 `17a09c106b32adeb531561e9b0148f575bb9487a`；GitHub 原 HTTPS push 因未配置帳號憑證失敗，改以同一 repo 的 SSH URL 推送成功，既有 remote 設定未變更。
 - 實際上位機來源為 `B518_JetKVM_Log/host-app/`；JetKVM frame 由 `JetKVMClient` 的 WebRTC track 解碼為 BGR NumPy array。frame 接收新增遞增序號、單調接收時間、stream identity 與安全快照接口。
 - 上位機新增 `round_frame_consumer.py`：由兩個不對稱定位點估算 App frame 的平移與均勻比例，依顯示契約 1.0 解碼四種標記及 1–20 格色帶。Tk scaling、Quartz 像素與 JetKVM frame 尺寸分開記錄；目前僅量到 Tk／Quartz 受控畫面，沒有聲稱 JetKVM 實際像素相容。
 - 判讀契約：灰階黑白門檻 80／176；狀態 BGR palette 距離容差 20；定位候選比例 0.70–3.25，兩 locator 水平間距誤差容差 3.5%；只在同一序號遞增的新鮮 frame 間確認，畫面新鮮度及完成 frame 最大間距皆為 1 秒，需兩張狀態與結果相同的完整 frame。未知色、非連續容量、裁切、方向／定位不明或中間狀態不放行。
@@ -50,7 +50,7 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 - 上位機既有 Python 3.8.10 runner 沒有 Pillow／Quartz 等 GUI dependencies；因此本次沒有重新啟動 Tk smoke。改用已保存、具 run.json 同輪佐證的真實 Tk／Quartz 獨立畫面，直接餵入 prototype frame seam。上位機程式無型別檢查配置；未以 compileall／py_compile 宣稱型別檢查通過。
 - 已知未驗收：實際 JetKVM 串流取像／尺寸／H.264 壓縮／方向／縮放容差、現場設備動作、正式部署／發布 App；實際責任者與部署步驟未找到。Ticket 12 AC 1、Ticket 13 AC 4 維持原未勾選狀態。Ticket 17／18 不在本票結論範圍。
 - 尚待確認：外部 TCP consumer 對新的 `action_waiting`／`action_paused` 回覆以及 `slot::STATUS`（無 SN）格式的相容性；目前 repo 沒有該 consumer。不得直接推定現場會接受，也不得直接讓實機動作接到未確認格式。
-- 首批 prototype 實作 commit：`45258c9fccbdf39b32f7c069aa6fa4b6ae259a61`；審查修正及完整交付 commit 待補。App 驗收／摘要文件 commit：`278eb11e56a31d2f1c926a5d7c90876e48348bc9`，後續審查修正及最終記錄待補。App 非 GUI 149 項通過；完整套件在 Tk UI 測試建立視窗期間以 exit 134 中止，因此不宣稱完整 App 套件通過。
+- App 提交：驗收／摘要 `278eb11e56a31d2f1c926a5d7c90876e48348bc9`、審查修正紀錄 `4c22c8bfe48135295aedf56a88ff87e0482aaf88`、假動作證據 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。App Gitea `origin` 與 GitHub 兩端 `codex/ticket-16` 均核對為 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。兩 repo 固定基準 Standards／Spec 最終複審皆無未解發現。App 非 GUI 149 項通過；完整套件在 Tk UI 測試建立視窗期間以 exit 134 中止，因此不宣稱完整 App 套件通過。App/prototype 專用分支雖已同步，但本票不合併：AC 1 的上位機 maintainer、部署流程與同步安排是未解的非硬體前置，不在已批准的硬體延期範圍內；未知回覆 TCP 呼叫端對 `slot::STATUS` 格式的相容性亦保持待確認。實際 KVM／治具／目標設備／發布驗收保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。
 
 ## 執行與追蹤
 
