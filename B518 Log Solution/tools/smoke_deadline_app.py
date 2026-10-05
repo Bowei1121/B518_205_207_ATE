@@ -1,4 +1,4 @@
-"""Exercise Ticket 09 flows in the real Tk app with isolated controlled sources."""
+"""Exercise controlled deadline and round-alarm flows in the real Tk app."""
 
 import csv
 import io
@@ -160,6 +160,86 @@ def main():
                     if stopped.result_available or stopped.state != "STOPPED":
                         raise RuntimeError("Manual stop incorrectly released a normal completed round.")
 
+                    wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
+                             "restart button after manual stop")
+                    update_profile(app, "B518", "FCT", "atlas",
+                                   {"active": str(active), "final": str(archive)}, 2, 30, 100, 8)
+                    app.start_button.invoke()
+                    wait_for(root, lambda: app.monitor is not None, "round-alarm source preparation")
+                    alarm_monitor = app.monitor
+                    alarm_active = active / "group0-slot1" / "system" / "records.csv"
+                    write_atlas_record(alarm_active, "SMOKEALARM0001")
+                    wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
+                             "round-alarm trusted activity")
+                    alarm_stamp = (app.monitor.started + timedelta(seconds=1)).strftime(
+                        "%Y%m%d_%H-%M-%S.000-ticket11")
+                    alarm_final = archive / "SMOKEALARM0001" / alarm_stamp / "system" / "records.csv"
+                    write_atlas_record(alarm_final, "SMOKEALARM0001")
+                    shutil.rmtree(active / "group0-slot1")
+                    wait_for(root, lambda: app.rounds.snapshot().results[0].status == "PASS",
+                             "round-alarm preserved terminal result")
+                    wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None,
+                             "single round-alarm creation")
+                    expired_alarm = app.rounds.snapshot()
+                    if expired_alarm.state.value != "AWAITING_REVIEW" or expired_alarm.result_available:
+                        raise RuntimeError("Round deadline released results before alarm acknowledgement: {}".format(
+                            expired_alarm))
+                    if [item.status for item in expired_alarm.results] != ["PASS", "NOTEST"]:
+                        raise RuntimeError("Round deadline did not preserve PASS and infer NOTEST correctly.")
+                    timeout_events = [event for event in expired_alarm.events
+                                      if event.event.kind == "timeout" and
+                                      event.event.detail.get("kind") == "round"]
+                    if len(timeout_events) != 1:
+                        raise RuntimeError("Round deadline did not emit exactly one alarm event.")
+                    wait_for(root, lambda: app.round_alarm_window is not None
+                             and app.round_alarm_window.winfo_viewable(), "visible non-modal alarm window")
+                    alarm_geometry = app.round_alarm_window.geometry()
+                    app.round_alarm_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    wait_for(root, lambda: app.round_alarm_window.winfo_viewable(),
+                             "reopened round-alarm window")
+                    repeated_alarm = app.rounds.poll_once()
+                    if repeated_alarm.round_alarm.alarm_id != expired_alarm.round_alarm.alarm_id:
+                        raise RuntimeError("Repeated polling replaced the round alarm.")
+                    app.round_alarm_ack_button.invoke()
+                    released_alarm = app.rounds.snapshot()
+                    if not released_alarm.result_available or released_alarm.state.value != "COMPLETED":
+                        raise RuntimeError("Acknowledging the only round alarm did not release terminal results.")
+                    if not released_alarm.round_alarm.acknowledged_at:
+                        raise RuntimeError("Round-alarm acknowledgement time was not recorded.")
+                    session_events = [json.loads(line) for line in
+                                      (alarm_monitor.session.path / "events.log").read_text(
+                                          encoding="utf-8").splitlines()]
+                    session_metadata = json.loads(
+                        (alarm_monitor.session.path / "session.json").read_text(encoding="utf-8"))
+                    if not session_metadata["settings"].get("accepted_start_at") or not isinstance(
+                            session_metadata["settings"].get("accepted_start_monotonic"), (int, float)):
+                        raise RuntimeError("The accepted common start time was not persisted with the round profile.")
+                    persisted_round_alarm = next(
+                        item for item in session_events
+                        if item["detail"].get("kind") == "round" and
+                        item["detail"].get("alarm_id") == released_alarm.round_alarm.alarm_id
+                    )
+                    persisted_collection_stop = next(
+                        item for item in session_events
+                        if item["detail"].get("reason") == "round_deadline" and
+                        "collection_stopped_at" in item["detail"]
+                    )
+                    persisted_acknowledgement = next(
+                        item for item in session_events
+                        if item["detail"].get("alarm_id") == released_alarm.round_alarm.alarm_id and
+                        "acknowledged_at" in item["detail"]
+                    )
+                    persisted_release = next(
+                        item for item in session_events
+                        if "results_released_at" in item["detail"]
+                    )
+                    if not (session_events.index(persisted_round_alarm) <
+                            session_events.index(persisted_collection_stop) <
+                            session_events.index(persisted_acknowledgement) <
+                            session_events.index(persisted_release)):
+                        raise RuntimeError("The persisted alarm, collection stop, acknowledgement, and release order is invalid.")
+
                     rswmt_output = root_path / "rswmt" / "SmtCal"
                     rswmt_output.mkdir(parents=True)
                     update_profile(app, "B518", "BT", "rswmt",
@@ -196,6 +276,18 @@ def main():
                         "underfilled": [item.status for item in underfilled.results],
                         "all_empty": [item.status for item in empty.results],
                         "individual_timeout_and_manual_stop": [item.status for item in stopped.results],
+                        "round_deadline_alarm": {
+                            "results": [item.status for item in released_alarm.results],
+                            "alarm_id": released_alarm.round_alarm.alarm_id,
+                            "acknowledged_at": released_alarm.round_alarm.acknowledged_at,
+                            "dialog_geometry": alarm_geometry,
+                            "round_timeout_events": len(timeout_events),
+                            "accepted_start_persisted": True,
+                            "persisted_event_order": [
+                                "round_alarm", "collection_stopped", "acknowledged", "results_released",
+                            ],
+                            "result_available": released_alarm.result_available,
+                        },
                         "rswmt_final_only": [item.status for item in rswmt.results],
                     }, sort_keys=True))
                 finally:
