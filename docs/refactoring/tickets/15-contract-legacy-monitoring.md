@@ -10,7 +10,7 @@
 - [13：完成可追查的輪次紀錄](13-round-audit-records.md)
 - [14：以樣本 Adapter 驗證新格式擴充能力](14-sample-adapter-extensibility.md)
 
-**Status：**implemented; local validation complete; fixed-baseline Standards／Spec review pending
+**Status：**implemented; local validation complete; fixed-baseline Standards／Spec review passed; hardware／target bundle acceptance deferred
 
 ## 驗收條件
 
@@ -47,6 +47,7 @@
 - `python3 scripts/run_tests.py test_log_solution_ui test_platform_registry test_monitoring_round test_audit_records test_configured_monitor test_atlas_source_adapter test_rswmt_monitoring`：120 tests 通過。最後公開 Session API 遷移後，`python3 scripts/run_tests.py test_monitoring_round test_platform_registry`：42 tests 通過。
 - `python3 scripts/run_tests.py`：185 tests 通過（包含 Atlas／B482／RS-WMT／sample-json Adapter、配置映射、期限、候選／警報、KVM marker 與 bundle verifier）。
 - Spec 複審修正：完成／人工停止事件後保留已結束輪次的 profile snapshot，避免下一次 UI 重繪採用編輯中的新容量；擴充 Tk 行為測試至終態事件處理後。移除全庫無呼叫端的 `emit_display_event()` 舊別名；相關單檔測試與複審結果追加於下方。
+- 回歸先以紅燈重現：profile 容量由 3 編輯成 12、目前輪次 STOPPED 事件處理後，UI 曾回退顯示 12；修正後終態仍保留容量 3。`python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_running_round_keeps_its_capacity_and_mapping_after_profile_update test_configured_monitor`：6 tests 通過。Atlas 衝突 Tk 測試 teardown 增加有界 Session/audit flush；隔離重跑該案例與容量快照案例 2 tests 通過。修正後完整 `python3 scripts/run_tests.py`：185 tests 通過。第一次全套測試遇到該 Tk 測試暫存 Session 目錄清理競態，單獨重跑通過；補 flush 後再跑完整套件全綠。
 - 受控資料回放：`python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/anonymized-baseline` 通過，Atlas DFU／FCT PASS、B482 TestData 4 槽平台結果、RS-WMT 4 槽 PASS；`python3 tools/replay_rswmt.py 'testdata/anonymized-baseline/B518 BT/2026-09-11_05-45-44'` 通過。工具將輸入複製至暫存目錄，原始匿名化 fixtures 保持唯讀。
 - Tk 受控回放：`python3 tools/smoke_deadline_app.py` 通過全空／未放滿／個別 timeout／人工停止、round alarm 及兩種 alarm／conflict 選擇順序；Session audit 證明 alarm → collection stop → acknowledgement → release。
 - Tk 受控回放：`python3 tools/smoke_atlas_app.py` 通過 DFU／FCT；`python3 tools/smoke_b482_app.py` 通過四個 B482 NOTEST；`python3 tools/smoke_audit_records_app.py` 通過 Atlas PASS 與獨立磁碟重建、背景 Session 延遲及 App close flush；`B518_SMOKE_EVIDENCE_DIR='docs/refactoring/evidence/ticket-15' python3 tools/smoke_state_marker_app.py` 與 `... python3 tools/smoke_sample_adapter_app.py` 產生 Ticket 15 專用截圖及 JSON 驗證報告。
@@ -54,7 +55,8 @@
 - 打包／資源檢查：source entry import 成功；registry 發現 Atlas、B482、RS-WMT、sample-json 四個已註冊 Adapter；`assets/` 及目前存在的 `logo_foxlink_b.png` 可用，正式 `foxlink_logo.png` 是 README 已說明的選配，公司圖標缺少時 App 使用文字 fallback；三個既有 zsh build script `zsh -n` 通過；`scripts/verify_macos_bundle.py` 的完整 bundle 契約測試包含於 185 tests。未實際建立新 bundle。
 - `python3 scripts/check_macos_build_python.py` 在本機依設計拒絕：本機為 Python 3.8.10／x86_64；build targets 要求 macOS 10.15 x86_64 + Python 3.12，或 Apple Silicon arm64 + Python 3.12 及 macOS 15／26。建置腳本會遞增 VERSION 並清除其 target build/dist，故不在不相容主機執行。目標系統／架構 bundle、正式發布 App、實機／KVM／治具驗收未執行，保持待確認；不以本機 source/Tk 結果代替。
 - Repository 無 mypy、pyright、pyproject type-check、setup.cfg 或 tox 型別檢查設定；沒有宣稱 `py_compile` 是型別檢查。實際 KVM 驗收仍按既有決策留在 Ticket 12 AC 1／Ticket 13 AC 4 未勾選；上位機共同整合留給 Ticket 16、發布留給 Ticket 17、未知同輪來源政策留給 Ticket 18。
-- 固定基準 Standards／Spec 雙軸審查及複審結果、最終合併與全部遠端清理狀態待 review 完成後補記。
+- 固定基準 `241dcdffb2e8b0450ff701977b9f4b862ffb43a4` 的 Standards／Spec 審查發現均已修正：保留終態 profile snapshot、移除無呼叫端舊別名、更新測試接口文字；雙軸複審無未解決問題。Standards 無硬性標準違規；Session path／flush 邊界轉接被確認為有理由的共同公開界面。Spec 確認容量快照及舊接口清理符合 Ticket。審查涵蓋此基準至 `493c4ee` 的完整變更。
+- Ticket 15 commits：`0d239e7`（遷移與清理）、`f16f313`（公開 Session API 測試）、`8f89d86`（交付／證據）、`07ee42d`（終態容量快照與舊別名清理）、`493c4ee`（Tk teardown flush 與測試接口紀錄更正）；各批均推送至 Gitea 與 GitHub。最終合併與遠端清理尚待完成後補記。
 
 ## 保留決策、待確認事項與限制
 

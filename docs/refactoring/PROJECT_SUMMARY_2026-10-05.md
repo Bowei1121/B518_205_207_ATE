@@ -2,6 +2,14 @@
 
 承接 [2026-10-03 摘要](PROJECT_SUMMARY_2026-10-03.md) 與本對話可查證的交付結果。
 
+## Ticket 15 執行紀錄｜2026-10-05
+
+- 以 `241dcdffb2e8b0450ff701977b9f4b862ffb43a4` 為固定審查基準，從乾淨且遠端同步的 `B518-Log-Solution` 建立 `codex/ticket-15`。核對 Ticket 07～14 的版本化 profile、Adapter registry、共同期限／快照、候選衝突、整輪警報、KVM marker、audit journal 與結果放行均已納入基準。使用者批准實際 KVM／治具／目標設備／發布 App 暫緩且不阻止合併；Ticket12 AC1、Ticket13 AC4 仍未驗收。Ticket16 上位機、Ticket17 發布、Ticket18 未知同輪來源政策依舊分工。
+- 收斂 App 為 MachineProfile＋PlatformRegistry 建立 Adapter，透過 RoundCoordinator 公開快照、輪詢、停止、衝突／警報操作及 Session 查閱／flush；移除 App 直讀 Adapter、monitor／finished 判斷、重複 paths/timeouts/BT-format／七格 fallback／舊監控設定分頁。Replay 與 Tk smoke 改走 registry/coordinator seam；修復 deadline smoke 對不存在 Atlas 建構器的舊引用。保留解析器測試、偏好遷移、DFU 7／FCT 6／B482 BT 4 合法預設、平台來源證據／穩定性、Session 與 audit 相容讀取。全庫未刪除 `B518_JetKVM_Log`、Arduino prototype、原始樣本及歷史證據。
+- 固定基準 Spec 審查發現完成／人工停止事件後 UI 清空 profile snapshot，設定容量在 3→12 更新後舊輪重繪會錯用 12；新增 Tk 行為回歸先紅燈重現，修正為保留已結束輪次 profile snapshot 至下一輪，並移除無呼叫端 `ConfiguredMonitor.emit_display_event()`。複審又更正 Ticket15 過時文字，明載沿用 Ticket01（2026-09-30）已確認的 `RoundCoordinator`／`MonitoringRound` 公開測試接口。Tk 衝突回歸曾遇到 Session 背景寫入與 TemporaryDirectory cleanup 競態，測試 teardown 加入有界 Session/audit flush 後隔離及全套重跑成功。
+- 驗證：profile freeze/configured monitor 6 tests 通過；flush 修正後衝突與 freeze Tk 測試 2 tests 通過；最終 `python3 scripts/run_tests.py` 185 tests 全通過。匿名化 Atlas／B482／RS-WMT baseline replay、RS-WMT replay 與 deadline、state marker、sample Adapter、audit、Atlas、B482 Tk 受控 smoke 均通過；證據位於 `B518 Log Solution/docs/refactoring/evidence/ticket-15/`，僅合成匿名化資料、非實際 KVM frame。Source import／四 Adapter registry、assets 及三個 macOS 腳本 `zsh -n`／bundle verifier 測試通過；主機 Python 3.8.10 x86_64 不符合任何正式 bundle target，未建置 bundle。repo 無型別檢查設定，未以語法編譯宣稱型別檢查。
+- 固定基準 Standards／Spec 雙軸 review 及複審最終無未解決問題。Ticket commits `0d239e7`、`f16f313`、`8f89d86`、`07ee42d`、`493c4ee` 已逐批推送 Gitea 與 GitHub。最新變更包含 Ticket 文件與本摘要，待提交推送；之後核對全部 push destinations、非快轉合併、合併後驗證及遠端／本地安全清理，再補上合併 SHA 與最終狀態。
+
 - Ticket 10 已完成共同衝突候選、逐項保留／採用、非模態 Tk 操作與放行隔離；五項受控驗收通過，完整測試及合併後測試均為 144 項通過，固定基準 Standards／Spec 複審無未解決發現。
 - Ticket 10 一般非快轉 merge SHA：`4ba5c897a5762226bf43f337d63db396fd49d633`。最後交付紀錄 SHA：`d253b02edaa75d93809ecf246c38574def8b49c8`。前次已逐端確認 Gitea／GitHub 同步，以及專用分支與已失效追蹤引用清理；本次讀取本地 Git，分支仍為 `B518-Log-Solution`、HEAD `d253b02`，新增本摘要前工作樹乾淨。本次未重新核對遠端狀態。
 - Ticket 03 既有實機／發布驗收、Ticket 05 即時實機資料時機，以及實際治具／KVM、目標設備、發布 App 等未執行項保持未驗收。前票受控回放不得自動豁免後票驗收。
