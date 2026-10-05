@@ -23,7 +23,7 @@
 
 ## Ticket 12 執行紀錄｜2026-10-05
 
-- 從 `B518-Log-Solution` 以固定基準 `b21a5b65b7e2fc049afba53e39bfaef8ce57cda5` 建立 `codex/ticket-12`。實作 commit `cbd17a08b8d0e57be25bbad63b3bfb86a8693433` 和審查修正 commit `0e1cd4c` 已推送 Gitea／GitHub。Ticket 08 新十格／兩排和 Ticket 11 同一輪次快照／獨立警報阻擋已在基準內。
+- 從 `B518-Log-Solution` 以固定基準 `b21a5b65b7e2fc049afba53e39bfaef8ce57cda5` 建立 `codex/ticket-12`。實作 commit `cbd17a08b8d0e57be25bbad63b3bfb86a8693433`、審查修正 `0e1cd4c03bdf44c1c384193ed79f0f934c9653fa`、驗收紀錄 `487e4c9e61ff816d3162ffa547ea76037a6e80a6`、PNG 證據 `d07d8393eaa59b77cae74e65117c3781ca605d31` 及本摘要補充均推送 Gitea／GitHub。兩端 `codex/ticket-12` refs 已核對一致為 d07d839，base 仍為 b21a5b6。Ticket 08 新十格／兩排和 Ticket 11 同一輪次快照／獨立警報阻擋已在基準內。
 - Ticket 12 版本化 KVM 顯示契約 1.0 定義四種 2×2 pattern、Tk logical geometry、兩個非對稱定位點、色帶間距與樣本黑白門檻。App 從同一 `RoundSnapshot` 在同一 UI 更新中繪製色帶與 marker；新輪快照不沿用上一輪完成圖樣。五項 Ticket 驗收均在本機 Tk 範圍有測試／回放證據；實際 KVM、目標設備及發布 App 未驗收，不能以本機截圖豁免。
 - 使用者補充的 `B518_JetKVM_Log` 僅作唯讀工程參考：該 README 說明 JetKVM 上位機 prototype 與本機 Log 專案獨立；原始 BGR frame 尺寸可供 Ticket 16 設計實際像素量測。沒有複製程式或歷史畫面，歷史圖片不算目前 KVM 證據。
 - Ticket 12 隔離 Tk 回放 `python3 -u tools/smoke_state_marker_app.py` 已通過；Quartz 擷取視窗 752×1420 physical pixels，Tk app 376×682 logical units，畫面 1440×900 Tk units，scaling 1.0。驗證 standby、monitoring、衝突與警報同時待確認、完成、20 筆明細捲動、新輪切換、人工停止，且衝突／警報窗口未遮住頂部定位區。資料只含合成匿名化 SN，臨時 HOME／偏好／輸出在回放結束後清理。

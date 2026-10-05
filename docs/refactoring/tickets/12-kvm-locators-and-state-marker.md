@@ -47,4 +47,4 @@ Tk 操作、受控畫面與狀態切換驗證；輸出供上位機共同使用�
 - `B518_JetKVM_Log` 僅作唯讀參考：其 README 明確指出上位機 JetKVM 專案與本機 Log 專案獨立；JetKVM 解碼 BGR frame 可供 Ticket 16 測量實際畫面尺寸的做法參考。其歷史圖片與模板工具未作本票 KVM 證據，也未複製程式或資產。
 - 環境：macOS 15.7.9、Intel x86_64、Python 3.8.10。`python3 scripts/run_tests.py test_kvm_display_contract`：7 項通過；完整 `python3 scripts/run_tests.py`：161 項通過。`python3 -m py_compile src/kvm_display_contract.py src/b518_log_solution.py tools/smoke_state_marker_app.py` 語法檢查通過。Repo 未設定 mypy／pyright 或其他型別檢查器；`py_compile` 不作型別檢查通過聲明。實際 KVM、目標設備、發布 App 與 Ticket 16 上位機共同取像／辨識未執行，不能以本機 Tk 截圖取代。
 - 驗收記錄：AC 2～5 的本機 Tk 契約／受控 App 驗證通過。AC 1 保持未勾選，因實際 KVM 畫面方向、物理像素、縮放及容差尚未驗證；發布部署也未執行。Ticket 16 上位機共同整合沿用使用者既定分工，但不代替本票 AC 1 的待驗。
-- commits: 基礎交付 `cbd17a08b8d0e57be25bbad63b3bfb86a8693433`；code-review 修正與新增方向辨識行為 `0e1cd4c`。執行紀錄、契約補充及匿名化 Tk 畫面證據另在同一專用分支後續文件 commit 提交。
+- commits: 基礎交付 `cbd17a08b8d0e57be25bbad63b3bfb86a8693433`；code-review 修正與新增方向辨識行為 `0e1cd4c03bdf44c1c384193ed79f0f934c9653fa`；執行紀錄、契約、回放工具與 metadata `487e4c9e61ff816d3162ffa547ea76037a6e80a6`；匿名化 Tk PNG 證據 `d07d8393eaa59b77cae74e65117c3781ca605d31`。上述 commits 均已推送至 Gitea 與 GitHub 的 `codex/ticket-12`；遠端驗收記錄補充 commit 見本文件 Git 歷史。
