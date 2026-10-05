@@ -70,5 +70,6 @@
 - 固定審查基準：`d253b02edaa75d93809ecf246c38574def8b49c8`。依 repo `code-review` Standards／Spec 雙軸流程多輪複審，最後對全部差異及 stop 鎖定修正複審均 PASS，無未解決發現。
 - Ticket commit：`3eacb26299fe02f5cb8151e4e36cb8bf0f1ca6ee`（主要實作）、`76c8798d48f0e75e8e7b5095ee19f42da7d467d0`（準備期期限釋放）、`c1f308c6aa5978b8d66a0e53a6707ed9b6aa070d`（鎖順序修正、測試與驗收紀錄）。
 - 一般非快轉合併 commit：`fb3d653771723294224598c5d348ac667effd7d2`。合併後 `python3 scripts/run_tests.py` 再次 154 tests 通過；合併結果已推送至 Gitea 與 GitHub，兩端 `git ls-remote` 均核對 `B518-Log-Solution` 為 `fb3d653771723294224598c5d348ac667effd7d2`。專用分支遠端清理及本地安全刪除結果另於最終交付紀錄更新。
+- Gitea 與 GitHub 的 base 分支其後同步至本交付紀錄 HEAD `7bd55e2150001d4eef02160e0645e0910cfe4dc7`；兩端 `git ls-remote` 均確認本票遠端分支已刪除。確認合併祖先關係後，使用 `git branch -d codex/ticket-11` 安全刪除本地分支，並刪除兩個已確認失效的本地遠端追蹤引用 `origin/codex/ticket-11`、`github/codex/ticket-11`。最後工作分支為 `B518-Log-Solution`。
 
 受控 Tk 回放使用合成資料，原始實機資料唯讀且本次未作為輸入。實際治具時機、目標設備／發布 App、KVM 與上位機共同驗收均未執行，不能由本機回放替代；上位機驗收留在 Ticket 16。固定基準 Standards／Spec 審查提出準備工作可能阻塞期限、Tk 準備期畫面未同步、事件回呼鎖順序及 stop/poll/coordinator 互鎖等問題；均已修正並以屏障測試、舊輪 UI 回歸及真實 Tk 受控回放驗證。最終固定基準複審均 PASS。
