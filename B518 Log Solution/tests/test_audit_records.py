@@ -2,6 +2,7 @@ import tempfile
 import threading
 import csv
 import io
+import json
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -180,6 +181,38 @@ class RoundAuditRecordTests(unittest.TestCase):
         with self.assertRaises(AuditRecordError):
             read_round_audit(path)
 
+    def test_reader_reports_malformed_record_shapes_and_invalid_utf8(self):
+        started = self.start_round()
+        path = self.audit_path(started.round_id)
+        self.assertTrue(self.coordinator.flush_audit())
+        header = path.read_bytes().splitlines()[0]
+        malformed_event = json.dumps({
+            "record_type": "event", "schema_version": 1,
+            "round_id": started.round_id, "sequence": 1,
+        }).encode("utf-8")
+        for contents in (b"[]\n", header + b"\n" + malformed_event + b"\n", b"\xff\n"):
+            with self.subTest(contents=contents):
+                path.write_bytes(contents)
+                with self.assertRaises(AuditRecordError):
+                    read_round_audit(path)
+
+    def test_reader_rejects_incomplete_result_event_instead_of_rebuilding_silently(self):
+        started = self.start_round()
+        path = self.audit_path(started.round_id)
+        self.assertTrue(self.coordinator.flush_audit())
+        header = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        incomplete_result = {
+            "record_type": "event", "schema_version": 1,
+            "round_id": started.round_id, "sequence": 1, "kind": "result",
+            "observed_at": "2026-10-05T12:00:00", "elapsed_seconds": 1.0,
+            "detail": {},
+        }
+        path.write_text(json.dumps(header) + "\n" + json.dumps(incomplete_result) + "\n",
+                        encoding="utf-8")
+
+        with self.assertRaises(AuditRecordError):
+            read_round_audit(path)
+
     def test_audit_write_failure_is_visible_but_does_not_block_product_release(self):
         started = self.start_round()
         monitor = self.monitors[0]
@@ -226,6 +259,24 @@ class RoundAuditRecordTests(unittest.TestCase):
                 store.update_results([SlotResult(1, "SN-NEW", "FAIL")])
 
         self.assertEqual(path.read_bytes(), previous)
+
+    def test_session_writes_are_queued_off_the_calling_thread(self):
+        store = SessionStore("queued-session", {}, Path(self.temp.name) / "queued")
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_event(_message, _detail=None):
+            entered.set()
+            release.wait(2)
+
+        with patch.object(store, "event", side_effect=slow_event):
+            started_at = __import__("time").monotonic()
+            store.enqueue_event("queued event")
+            elapsed = __import__("time").monotonic() - started_at
+            self.assertLess(elapsed, 0.1)
+            self.assertTrue(entered.wait(1))
+            release.set()
+            self.assertTrue(store.flush())
 
     def test_parallel_round_events_keep_a_deterministic_persistent_order(self):
         started = self.start_round()

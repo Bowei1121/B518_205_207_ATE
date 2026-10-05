@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 import threading
 import queue
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Optional
 
 
 AUDIT_SCHEMA_VERSION = 1
@@ -18,6 +20,20 @@ _LOCKS_GUARD = threading.Lock()
 
 class AuditRecordError(ValueError):
     """A round audit log is missing, unsupported, or incomplete."""
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    """One shared-round event captured with the values needed for durable audit."""
+
+    sequence: int
+    kind: str
+    message: str
+    display_position: Optional[int]
+    sn: str = ""
+    status: str = ""
+    source: str = ""
+    detail: Dict[str, object] = field(default_factory=dict)
 
 
 def _lock_for(path: Path):
@@ -131,23 +147,23 @@ class RoundAuditStore:
             self.path = destination
             self._header = header
 
-    def append_event(self, sequence: int, kind: str, message: str, slot: Optional[int], sn: str,
-                     status: str, source: str, detail: dict, observed_at: str,
+    def append_event(self, event: AuditEvent, observed_at: str,
                      elapsed_seconds: float) -> None:
+        detail = dict(event.detail)
         record = {
             "record_type": "event",
             "schema_version": AUDIT_SCHEMA_VERSION,
             "round_id": self.round_id,
-            "sequence": sequence,
-            "kind": kind,
-            "message": message,
+            "sequence": event.sequence,
+            "kind": event.kind,
+            "message": event.message,
             "observed_at": observed_at,
             "elapsed_seconds": max(0.0, elapsed_seconds),
-            "display_position": slot,
+            "display_position": event.display_position,
             "source_position": _first(detail, "source_position", "source_slot", "thread", "slot"),
-            "sn": sn or None,
-            "status": status or None,
-            "source": source or None,
+            "sn": event.sn or None,
+            "status": event.status or None,
+            "source": event.source or None,
             "source_id": _first(detail, "source_id", "source_identifier"),
             "source_time": _first(detail, "source_time", "source_timestamp"),
             "operation_at": _first(detail, "selected_at", "acknowledged_at", "operator_at"),
@@ -157,9 +173,10 @@ class RoundAuditStore:
         }
         with self._condition:
             previous_sequence = self._last_enqueued_sequence
-            if sequence <= previous_sequence:
-                raise AuditRecordError("輪次事件序號未遞增：前筆 {}，收到 {}".format(previous_sequence, sequence))
-            self._last_enqueued_sequence = sequence
+            if event.sequence <= previous_sequence:
+                raise AuditRecordError("輪次事件序號未遞增：前筆 {}，收到 {}".format(
+                    previous_sequence, event.sequence))
+            self._last_enqueued_sequence = event.sequence
             self._pending += 1
             self._queue.put(record)
 
@@ -252,7 +269,7 @@ def read_round_audit(path: Path) -> dict:
     path = Path(path)
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise AuditRecordError("無法讀取輪次紀錄：{}".format(error))
     if not lines:
         raise AuditRecordError("輪次紀錄是空檔")
@@ -261,17 +278,40 @@ def read_round_audit(path: Path) -> dict:
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise AuditRecordError("輪次紀錄截斷或格式損壞：{}".format(error))
     header, events = records[0], records[1:]
+    if not isinstance(header, dict):
+        raise AuditRecordError("輪次紀錄標頭格式不正確")
     if header.get("record_type") != "round" or header.get("schema_version") != AUDIT_SCHEMA_VERSION:
         raise AuditRecordError("不支援的輪次紀錄格式")
-    if not header.get("round_id"):
-        raise AuditRecordError("輪次紀錄缺少 round_id")
+    if not isinstance(header.get("round_id"), str) or not header["round_id"]:
+        raise AuditRecordError("輪次紀錄缺少有效 round_id")
+    if not isinstance(header.get("config"), dict) or not isinstance(header.get("time_contract"), dict):
+        raise AuditRecordError("輪次紀錄缺少有效配置或時間契約")
     previous_sequence = 0
     for event in events:
+        if not isinstance(event, dict):
+            raise AuditRecordError("輪次事件記錄格式不正確")
         sequence = event.get("sequence")
         if (event.get("record_type") != "event" or event.get("schema_version") != AUDIT_SCHEMA_VERSION
                 or event.get("round_id") != header["round_id"]
-                or not isinstance(sequence, int) or sequence <= previous_sequence):
+                or not isinstance(sequence, int) or isinstance(sequence, bool)
+                or sequence <= previous_sequence
+                or not isinstance(event.get("kind"), str) or not event["kind"]
+                or not isinstance(event.get("message"), str)
+                or not isinstance(event.get("detail"), dict)
+                or not isinstance(event.get("observed_at"), str)
+                or not isinstance(event.get("elapsed_seconds"), (int, float))
+                or isinstance(event.get("elapsed_seconds"), bool)
+                or not math.isfinite(event["elapsed_seconds"])):
             raise AuditRecordError("輪次事件格式、識別或順序不正確")
+        display_position = event.get("display_position")
+        if (display_position is not None and
+                (not isinstance(display_position, int) or isinstance(display_position, bool)
+                 or display_position < 1)):
+            raise AuditRecordError("輪次事件顯示位置格式不正確")
+        if event["kind"] == "result" and (
+                display_position is None or not isinstance(event.get("status"), str)
+                or not event["status"] or "sn" not in event):
+            raise AuditRecordError("結果事件缺少有效顯示位置、狀態或 SN 欄位")
         previous_sequence = sequence
 
     results = {}

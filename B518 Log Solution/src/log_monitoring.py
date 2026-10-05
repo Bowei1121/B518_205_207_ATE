@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import queue
 import tempfile
 import threading
 import time
@@ -68,7 +69,8 @@ class SlotResult:
 
 
 class SessionStore:
-    def __init__(self, session_id: str, settings: Dict[str, str], root: Optional[Path] = None):
+    def __init__(self, session_id: str, settings: Dict[str, str], root: Optional[Path] = None,
+                 on_error: Optional[Callable[[str, OSError], None]] = None):
         root = root or (Path.home() / "Library" / "Application Support" / "B518LogSolution" / "sessions")
         self.path = root / session_id
         self.path.mkdir(parents=True, exist_ok=True)
@@ -77,7 +79,70 @@ class SessionStore:
         self.sources: Set[str] = set()
         self.finished_at = ""
         self._lock = threading.RLock()
+        self._write_queue = queue.Queue()
+        self._write_condition = threading.Condition()
+        self._write_pending = 0
+        self._write_thread = None
+        self._write_errors = []  # type: List[str]
+        self._on_write_error = on_error
         self._write_metadata()
+
+    def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
+        self._enqueue_write("event", (message, dict(detail or {})), "Session 事件保存失敗")
+
+    def enqueue_source(self, path: Path) -> None:
+        self._enqueue_write("source", (Path(path),), "Session 來源保存失敗")
+
+    def enqueue_results(self, results: Iterable[SlotResult]) -> None:
+        snapshot = tuple(replace(result) for result in results)
+        self._enqueue_write("update_results", (snapshot,), "Session 結果保存失敗")
+
+    def enqueue_finish(self) -> None:
+        self._enqueue_write("finish", (), "Session 完成時間保存失敗")
+
+    def _enqueue_write(self, operation: str, arguments: tuple, label: str) -> None:
+        with self._write_condition:
+            self._write_pending += 1
+            self._write_queue.put((operation, arguments, label))
+            if self._write_thread is None or not self._write_thread.is_alive():
+                self._write_thread = threading.Thread(target=self._write_worker,
+                                                      name="session-store-{}".format(self.path.name),
+                                                      daemon=True)
+                self._write_thread.start()
+
+    def _write_worker(self) -> None:
+        while True:
+            try:
+                operation, arguments, label = self._write_queue.get(timeout=0.2)
+            except queue.Empty:
+                with self._write_condition:
+                    if self._write_pending == 0:
+                        self._write_thread = None
+                        return
+                continue
+            try:
+                getattr(self, operation)(*arguments)
+            except OSError as error:
+                message = "{}：{}".format(label, error)
+                with self._write_condition:
+                    self._write_errors.append(message)
+                if self._on_write_error is not None:
+                    self._on_write_error(label, error)
+            finally:
+                with self._write_condition:
+                    self._write_pending -= 1
+                    self._write_condition.notify_all()
+                self._write_queue.task_done()
+
+    def flush(self, timeout: Optional[float] = 10.0) -> bool:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._write_condition:
+            while self._write_pending:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    return False
+                self._write_condition.wait(remaining)
+            return not self._write_errors
 
     @staticmethod
     def _atomic_write(path: Path, content: bytes) -> None:
@@ -163,7 +228,8 @@ class BaseMonitor:
         self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
-        self.session = SessionStore(session_id, settings, session_root)
+        self.session = SessionStore(session_id, settings, session_root,
+                                    on_error=self._report_session_write_failure)
         self.finished = False
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -192,20 +258,25 @@ class BaseMonitor:
         self.emit(event)
 
     def emit(self, event: MonitorEvent) -> None:
-        failures = []
         try:
-            self.session.event(event.message, event.detail)
+            enqueue = getattr(self.session, "enqueue_event", None)
+            if callable(enqueue):
+                enqueue(event.message, event.detail)
+            else:
+                self.session.event(event.message, event.detail)
         except OSError as error:
-            failures.append(error)
+            self._report_session_write_failure("Session 事件保存失敗", error)
         if event.source:
             try:
-                self.session.source(Path(event.source))
+                enqueue = getattr(self.session, "enqueue_source", None)
+                if callable(enqueue):
+                    enqueue(Path(event.source))
+                else:
+                    self.session.source(Path(event.source))
             except OSError as error:
-                failures.append(error)
+                self._report_session_write_failure("Session 來源保存失敗", error)
         if self.callback:
             self.callback(event)
-        for error in failures:
-            self._report_session_write_failure("Session 事件／來源保存失敗", error)
 
     def _report_session_write_failure(self, operation: str, error: OSError) -> None:
         if self.callback:
@@ -240,7 +311,11 @@ class BaseMonitor:
         result.status, result.source = status, source or result.source
         result.updated_at = self.now().isoformat(timespec="seconds")
         try:
-            self.session.update_results(self.results.values())
+            enqueue = getattr(self.session, "enqueue_results", None)
+            if callable(enqueue):
+                enqueue(self.results.values())
+            else:
+                self.session.update_results(self.results.values())
         except OSError as error:
             self._report_session_write_failure("Session 結果保存失敗", error)
         self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status,
@@ -261,7 +336,11 @@ class BaseMonitor:
         if not self.finished:
             self.finished = True
             try:
-                self.session.finish()
+                enqueue = getattr(self.session, "enqueue_finish", None)
+                if callable(enqueue):
+                    enqueue()
+                else:
+                    self.session.finish()
             except OSError as error:
                 self._report_session_write_failure("Session 完成時間保存失敗", error)
 

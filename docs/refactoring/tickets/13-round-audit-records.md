@@ -58,10 +58,10 @@
 
 | 驗證 | 命令／環境 | 結果 |
 | --- | --- | --- |
-| 行為測試及 Adapter／共同輪次／Session 回歸 | `python3 scripts/run_tests.py test_audit_records test_monitoring_round test_configured_monitor test_log_monitoring`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 64 tests 通過。包含正常／衝突／整輪逾時的磁碟新實例重建、三種 Adapter、非恆等映射、來源準備跨期限、併發順序、損壞紀錄、原子保存及背景寫入故障仍允許既有產品放行。 |
-| Tk UI 回歸 | `python3 scripts/run_tests.py test_log_solution_ui`；登入桌面 | 37 tests 通過。 |
-| 完整測試套件 | `python3 scripts/run_tests.py`；macOS 桌面工作階段 | 173 tests 通過。沙箱 Tk 初始化會 abort，故桌面 UI 與全套測試需在桌面工作階段執行。 |
-| 實際 Tk 受控輪次 | `python3 tools/smoke_audit_records_app.py`；隔離 HOME、偏好、Session、來源及輸出；合成匿名化 Atlas | 通過。視窗 `376x608`；共同輪次及磁碟重建皆為 PASS，結果已放行、稽核完整，Tk 狀態標記為 `complete`；稽核檔在既有 Session 目錄可查。 |
+| 行為測試及 Adapter／共同輪次／Session 回歸 | `python3 scripts/run_tests.py test_audit_records test_monitoring_round test_log_monitoring test_atlas_source_adapter test_rswmt_monitoring`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 84 tests 通過。包含正常／衝突／整輪逾時的磁碟新實例重建、三種 Adapter、非恆等映射、來源準備跨期限、併發順序、損壞／結構不完整紀錄、原子保存及背景寫入故障仍允許既有產品放行。 |
+| Tk UI 回歸 | `python3 scripts/run_tests.py test_log_solution_ui`；登入桌面 | 37 tests 通過（完整套件包含此組）。 |
+| 完整測試套件 | `python3 scripts/run_tests.py`；macOS 桌面工作階段 | 176 tests 通過。沙箱 Tk 初始化會 abort，故桌面 UI 與全套測試需在桌面工作階段執行。 |
+| 實際 Tk 受控輪次 | `python3 tools/smoke_audit_records_app.py`；隔離 HOME、偏好、Session、來源及輸出；合成匿名化 Atlas | 通過。視窗 `376x608+1052+32`；共同輪次及磁碟重建皆為 PASS，結果已放行、稽核完整，Tk 狀態標記為 `complete`；稽核檔在既有 Session 目錄可查。 |
 | 磁碟重建案例 | `python3 tools/generate_ticket13_evidence.py` | 三個匿名化完整紀錄案例均寫出；normal 6、conflict 9、round-timeout 10 個有序事件，皆重建為 `audit_complete=true`。 |
 | 語法／差異檢查 | `python3 -m py_compile src/audit_records.py src/monitoring_round.py src/log_monitoring.py src/configured_monitor.py src/b518_log_solution.py tools/rebuild_round_audit.py tools/generate_ticket13_evidence.py tools/smoke_audit_records_app.py`；`git diff --check` | 通過；py_compile 僅語法檢查，不代表型別檢查。 |
 | 型別檢查 | repo 設定盤點 | 沒有 pyproject、mypy、pyright、setup.cfg 或 tox 型別檢查配置；未宣稱型別檢查通過。 |
@@ -70,4 +70,5 @@
 
 - AC 1、2、3、5 由本機測試、離線重建及匿名化證據通過；AC 4 保持未勾選：本機已證明停止／放行分開記錄，Tk 標記使用同一共同快照，但實際 KVM 端取像及辨識尚未驗收。此實機待驗項依使用者明確批准暫緩，不阻止合併。
 - Ticket 12 AC 1 仍未驗收；Ticket 16 上位機共同整合、Ticket 18 未知同輪政策，以及目標設備／發布 App 驗收均未以本票結果宣稱通過。
-- 本票固定基準雙軸 `$code-review` 待執行；未完成審查前不宣稱 Ticket 13 交付完成。
+- 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Session 背景寫入不阻塞呼叫端；新增對應回歸測試。測試替身 handoff／臨時資料夾清理前均明確 flush。
+- 審查修正提交、各 push 目的地遠端驗證、合併及分支清理紀錄待最終 Git 步驟更新。

@@ -38,6 +38,7 @@
 - 本票新增 schema v1 `audit.jsonl`，以有序背景追加佇列保存共同輪次事件，不在 Tk 推進時重寫完整 journal；支援 flush 後移入原 Session 查閱資料夾、從磁碟新實例重建正常／衝突／整輪逾時流程。`session.json`／`results.csv` 使用鎖定下原子替換；保存失敗明確標示稽核不完整，不破壞既有完整檔案。
 - 2026-10-05 使用者決定：若磁碟滿或權限錯誤導致稽核紀錄不能完整保存，仍可取用符合既有放行條件的結果，並明確標示紀錄不完整。此決策已編碼及測試，不新增放行阻擋。
 - 新增離線重建 CLI 與匿名化證據產生器；[`normal.json`](evidence/ticket-13/normal.json)、[`conflict.json`](evidence/ticket-13/conflict.json)、[`round-timeout.json`](evidence/ticket-13/round-timeout.json) 各由磁碟 audit journal 重建，分別 6／9／10 個有序事件，皆完整。
-- 相關回歸 64 tests、Tk UI 模組 37 tests、完整套件 173 tests 均通過。測試替身 session handoff 防護與一次隔離重現的 Tk 事件佇列競態已修正／重新驗證。Tk 受控回放 `python3 tools/smoke_audit_records_app.py` 通過：Atlas PASS 與磁碟重建一致、marker `complete`、結果已放行且 audit complete；視窗 `376x608`。GUI 測試及回放需桌面權限，沙箱中的 Tk 初始化會 abort。
+- 初始回歸後，固定基準 Standards／Spec code-review 指出事件參數 data clump 及讀取損壞／缺欄位紀錄的錯誤處理問題。已改用 `AuditEvent` 值物件，拒絕損壞 JSON、無效 UTF-8 及缺少必要結果欄位；新增紅綠回歸測試。SessionStore 舊紀錄更新移至有序背景佇列，測試在磁碟查閱／清理前明確 flush，避免非同步寫入競態。
+- 修正後相關回歸 84 tests、Tk UI 模組 37 tests、完整套件 176 tests 均通過。Tk 受控回放 `python3 tools/smoke_audit_records_app.py` 通過：Atlas PASS 與磁碟重建一致、marker `complete`、結果已放行且 audit complete；視窗 `376x608+1052+32`。GUI 測試及回放需桌面權限，沙箱中的 Tk 初始化會 abort。
 - Ticket AC 1、2、3、5 的本機／磁碟驗收有證據；AC 4 保持未勾選，實際 KVM 取像及辨識待驗。使用者已批准該實機類驗收暫緩且不阻止合併；Ticket 12 AC 1 仍未驗收。Repo 未配置 pyproject、mypy、pyright、setup.cfg 或 tox 型別檢查；不得以 `compileall`／`py_compile` 宣稱型別檢查通過。
-- 固定基準 Standards／Spec 雙軸審查及最終複審、commit／push／merge 結果尚未完成；在全部完成前不得標記 Ticket 13 完成或合併。
+- 固定基準 Standards／Spec 雙軸審查及最終複審均無未解決問題。review-fix commit／push、逐一驗證雙 push 目的地、合併與清理結果待最終 Git 步驟補記；實際 KVM 驗收仍依決策維持 AC 4 未勾選。

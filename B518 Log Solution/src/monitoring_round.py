@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
-from audit_records import AuditRecordError, RoundAuditStore
+from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
 
 
 class RoundMonitor(Protocol):
@@ -717,10 +717,12 @@ class MonitoringRound:
             while round_event.sequence != self._audit_next_sequence:
                 self._audit_condition.wait()
             try:
-                store.append_event(round_event.sequence, event.kind, event.message, event.slot, event.sn,
-                                   event.status, event.source, dict(event.detail),
-                                   self._wall_clock().isoformat(timespec="seconds"),
-                                   self._monotonic() - self._started_monotonic)
+                store.append_event(
+                    AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
+                               event.sn, event.status, event.source, dict(event.detail)),
+                    self._wall_clock().isoformat(timespec="seconds"),
+                    self._monotonic() - self._started_monotonic,
+                )
             except (OSError, AuditRecordError, TypeError, ValueError) as error:
                 failure_message = "輪次稽核紀錄保存失敗：{}".format(error)
                 if failure_message not in self._audit_errors:

@@ -111,6 +111,7 @@ class ConfiguredMonitorTests(unittest.TestCase):
                                       if event.event.kind == "sn_locked"],
                                      list(range(capacity, 0, -1)))
                     rounds.stop()
+                    self.assertTrue(rounds.monitor.session.flush())
 
     def test_out_of_order_native_positions_map_to_configured_displays_in_round(self):
         class FourPositionMonitor:
