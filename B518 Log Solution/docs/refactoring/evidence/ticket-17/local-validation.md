@@ -20,7 +20,7 @@ Ticket 執行分支：`codex/ticket-17`；驗證包含該分支的 build-check �
 | 驗證層 | 命令 | 結果 |
 | --- | --- | --- |
 | 聚焦打包驗證測試 | `python3 scripts/run_tests.py test_verify_macos_bundle` | 20 tests 通過。涵蓋 arm64／x86_64、Info.plist 最低版本、Mach-O load command、相依路徑、外部／缺失依賴及 Python/Tk 前置函式；bundle 是測試 fixture，非發行產物。 |
-| 完整本機測試 | `python3 scripts/run_tests.py`，桌面 Tk 可用 | 188 tests 通過，20.420 秒。sandbox 執行遇 Tk 初始化 exit 134；桌面環境同命令成功，只有桌面結果計為通過。 |
+| 完整本機測試 | `python3 scripts/run_tests.py`，桌面 Tk 可用 | 最後一次完整重跑為 188 tests 通過，22.621 秒。sandbox 執行遇 Tk 初始化 exit 134；桌面環境同命令成功，只有桌面結果計為通過。 |
 | deadline 來源 Tk 回放 | `python3 -u tools/smoke_deadline_app.py` | 通過。包含正常／未放滿／全空輪次、individual TIMEOUT／STOPPED、round alarm、alarm 與 conflict 的兩種操作次序及 final-only RS-WMT。結果由隔離合成來源產生。 |
 | KVM 標記來源 Tk 回放 | `B518_SMOKE_TICKET=17 B518_SMOKE_EVIDENCE_DIR=/private/tmp/ticket17-tk-evidence python3 -u tools/smoke_state_marker_app.py` | 通過。Contract 1.1 的 standby／monitoring／review／complete／new round／manual stop；視窗 `376 × 682` Tk units、縮放約 1.0、capture `752 × 1420` pixels；衝突及警報視窗均沒有覆蓋固定辨識區；容量 20 捲動後定位列仍可見。截圖為隔離來源 App 視窗。 |
 | build 腳本語法 | `zsh -n scripts/build_macos10_14_log_solution.sh scripts/build_macos15_arm64_log_solution.sh scripts/build_macos26_arm64_log_solution.sh` | 通過。 |
@@ -39,3 +39,8 @@ Ticket 執行分支：`codex/ticket-17`；驗證包含該分支的 build-check �
 ## 型別檢查
 
 本 repository 沒有已配置的 mypy、pyright 或其他型別檢查命令。Python 語法檢查、打包 verifier 測試與完整行為測試均不標示為型別檢查通過。
+
+## 審查修正
+
+- 固定基準 Standards 審查指出 10.14／26 build scripts 在 verifier 後又重複 `lipo` 架構檢查。已移除重複 shell loops，統一由 `verify_macos_bundle.py` 檢查全部 Mach-O；聚焦 20 tests、完整 188 tests 與三個 zsh 語法檢查修正後均通過。
+- Spec 審查指出各目標 macOS 實機驗收尚未執行，因此即使驗收紀錄已明確分層，ticket AC 4 仍須保持未勾選。現已取消勾選；AC 2、3、4 未完成時維持 blocked。

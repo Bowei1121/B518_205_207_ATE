@@ -32,10 +32,6 @@ for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LS
   /usr/libexec/PlistBuddy -c "Set :$key $value" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$key string $value" "$PLIST"
 done
 "$VENV/bin/python" scripts/verify_macos_bundle.py "$APP" --target 10.14 --architecture x86_64
-while IFS= read -r -d '' binary; do
-  file "$binary" | grep -q 'Mach-O' || continue
-  lipo -archs "$binary" | grep -qw x86_64 || { print -u2 "Not x86_64: $binary"; exit 1; }
-done < <(find "$APP" -type f -print0)
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 ZIP="$DIST/B518-Log-Solution-V${VERSION}-macOS10.14-x86_64.zip"

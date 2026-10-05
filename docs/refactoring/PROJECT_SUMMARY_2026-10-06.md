@@ -33,5 +33,6 @@
 - Ticket 分支 `codex/ticket-17` 的第一批 build-check 程式提交為 `f8595872017ac0c5010c1cefa07cac9b86d47d48`；當日摘要合併提交為 `0853dd5`。已推送 Gitea `origin` 及 GitHub `github`；該次推送後兩處 Ticket refs 都為 0853dd5。
 - 完成離線部署及 macOS 現場驗收指引：`B518 Log Solution/docs/TICKET17_MACOS_RELEASE_AND_FIELD_ACCEPTANCE.md`；更新 `B518 Log Solution/README.md`、本 ticket 和本摘要。架構、最低系統版本、Python/Tk、依賴、ad-hoc 簽章及 SHA-256 流程均有區分，沒有把 ad-hoc 說成 Developer ID／notarization。
 - 真實 Tk source App 受控回放 `smoke_deadline_app.py` 與 `smoke_state_marker_app.py` 通過。證據 `B518 Log Solution/docs/refactoring/evidence/ticket-17/source-tk-replay/run.json` 及 PNG 為隔離的合成畫面；明記 physical KVM unavailable，不能當成發行 App 或現場驗收。
-- 桌面執行完整 `python3 scripts/run_tests.py`：188 tests 通過、20.420 秒。三個 zsh build 腳本語法檢查通過；本機 Python 3.8 preflight 正確拒絕正式 Python 3.12 build target。沒有符合條件的 Catalina Intel／原生 Apple Silicon builder，因此無實際 bundle、codesign、checksum 或目標機驗收結果。
-- Ticket 18 未決政策，以及 Intel／Apple Silicon/macOS 各目標機、KVM／ATE、RS-WMT 現場資料、實際發布 bundle 與簽章條件分別列為待驗。Ticket 17 AC 2、3 未勾選，分支保留；不合併、不刪除分支。詳細測試、環境與限制見 `B518 Log Solution/docs/refactoring/evidence/ticket-17/local-validation.md`。
+- 桌面執行完整 `python3 scripts/run_tests.py`：最後一次重跑為 188 tests 通過、22.621 秒。三個 zsh build 腳本語法檢查通過；本機 Python 3.8 preflight 正確拒絕正式 Python 3.12 build target。沒有符合條件的 Catalina Intel／原生 Apple Silicon builder，因此無實際 bundle、codesign、checksum 或目標機驗收結果。
+- 固定基準雙軸審查：Standards 無硬性違規，指出 build scripts 重複做 `lipo` 架構檢查；已移除 Intel／26 shell 重複迴圈，由 bundle verifier 單一負責。Spec 無未要求功能或錯誤實作，指出各目標實機未執行時 AC 4 不應勾選；已取消。修正後再跑聚焦 20 tests、完整 188 tests 及 zsh 語法檢查均通過。
+- Ticket 18 未決政策，以及 Intel／Apple Silicon/macOS 各目標機、KVM／ATE、RS-WMT 現場資料、實際發布 bundle 與簽章條件分別列為待驗。Ticket 17 AC 2、3、4 未勾選，分支保留；不合併、不刪除分支。詳細測試、環境與限制見 `B518 Log Solution/docs/refactoring/evidence/ticket-17/local-validation.md`。

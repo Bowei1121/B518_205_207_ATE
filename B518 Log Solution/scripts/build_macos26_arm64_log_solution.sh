@@ -48,11 +48,6 @@ done
 
 "$VENV/bin/python" scripts/verify_macos_bundle.py "$APP" --target 26.0 --architecture arm64
 
-while IFS= read -r -d '' binary; do
-  file "$binary" | grep -q 'Mach-O' || continue
-  lipo -archs "$binary" | grep -qw arm64 || { print -u2 "Not arm64: $binary"; exit 1; }
-done < <(find "$APP" -type f -print0)
-
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 
