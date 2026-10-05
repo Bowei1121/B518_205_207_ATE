@@ -81,6 +81,12 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 - FCT：選擇 `active` 及 `unit-archive`；舊偏好遷移的預設容量為 6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。Atlas Adapter 的 parser 上限不表示真實設備具有相同通道容量。
 - BT／B482 TestData 格式：選擇配置的平台與機型，CaseInfo 根路徑可選。Adapter 將原始 Thread0～3 正規化為來源位置 1～4，再依 profile mapping 顯示在配置位置；CaseInfo 支援既有 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
+### Ticket 14 controlled sample Adapter
+
+工程師配置中可建立 `SAMPLE` 專案／`FCT` 機型並選擇 `sample-json`。操作員仍只選專案與機型。這是受控 JSON Lines 格式，用來驗證新格式經平台註冊、共同輪次、既有人工確認、Tk 畫面及稽核紀錄完成一輪；來源位置 1～20 是樣本解析能力，不代表任何真實設備容量。格式欄位、匿名化樣本、設定與回放步驟見 [受控樣本 Adapter 指南](docs/refactoring/SAMPLE_ADAPTER_GUIDE.md)。
+
+受控來源使用完整 UTF-8 JSON Lines；每筆需以換行結尾才會被讀取，啟動前已有的內容會被快照排除。`batch_id` 只有在來源明確提供時才形成同輪比較證據；未知來源時間或 SN 保持未知。Adapter 使用既有 `ConfiguredMonitor` 映射與 `RoundCoordinator` 期限、衝突、警報、停止及放行流程，不新增樣本專屬畫面或逾時規則。此功能不宣稱新硬體、實際 KVM、目標設備或發布 App 已驗收，也不實作動態載入外掛。
+
 每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含既有的 `session.json`、`events.log`、`results.csv`，以及版本化的 `audit.jsonl`。稽核檔從接受開始時記錄輪次識別、配置快照與有序事件；來源時間、App 觀察時間、操作時間及單調經過時間分欄保存。`round_id` 僅用於追查與隔離，不證明來源屬於同一測試輪次。
 
 在「設定 → 事件與 Session → 開啟 Session 紀錄」可找到目前 Session。維護工程師可用本機工具從磁碟重建輪次，不依賴仍執行中的 App：

@@ -9,20 +9,16 @@ from pathlib import Path
 import tempfile
 from typing import Dict, Iterable, Mapping, Tuple
 
-from atlas_source_adapter import MAX_SOURCE_POSITION as ATLAS_MAX_SOURCE_POSITION
-from b482_source_adapter import MAX_SOURCE_POSITION as B482_MAX_SOURCE_POSITION
-from rswmt_source_adapter import MAX_SOURCE_POSITION as RSWMT_MAX_SOURCE_POSITION
+from platform_registry import DEFAULT_PLATFORM_REGISTRY
 
 
 PROFILE_SCHEMA_VERSION = 1
 SUPPORTED_MACHINES = ("DFU", "FCT", "BT")
-SUPPORTED_PLATFORMS = ("atlas", "b482", "rswmt")
+SUPPORTED_PLATFORMS = DEFAULT_PLATFORM_REGISTRY.names
 MAX_CAPACITY = 20
 TIMEOUT_FIELDS = ("start", "test", "round")
 PLATFORM_SOURCE_POSITIONS = {
-    "atlas": tuple(range(1, ATLAS_MAX_SOURCE_POSITION + 1)),
-    "b482": tuple(range(1, B482_MAX_SOURCE_POSITION + 1)),
-    "rswmt": tuple(range(1, RSWMT_MAX_SOURCE_POSITION + 1)),
+    name: DEFAULT_PLATFORM_REGISTRY.get(name).source_positions for name in SUPPORTED_PLATFORMS
 }
 
 
@@ -282,20 +278,19 @@ def validate_profile(profile: MachineProfile) -> None:
         raise ProfileError("project 不可空白。")
     if profile.machine not in SUPPORTED_MACHINES:
         raise ProfileError("未知機型：{}。".format(profile.machine))
-    if profile.platform not in SUPPORTED_PLATFORMS:
-        raise ProfileError("未知平台：{}。".format(profile.platform))
-    if profile.platform == "atlas" and profile.machine not in {"DFU", "FCT"}:
-        raise ProfileError("Atlas 僅支援 DFU／FCT 機型。")
-    if profile.platform in {"b482", "rswmt"} and profile.machine != "BT":
-        raise ProfileError("{} 平台僅支援 BT 機型。".format(profile.platform))
+    try:
+        platform = DEFAULT_PLATFORM_REGISTRY.get(profile.platform)
+    except ValueError as error:
+        raise ProfileError(str(error))
+    if profile.machine not in platform.machines:
+        raise ProfileError("{} 平台不支援 {} 機型。".format(profile.platform, profile.machine))
     if type(profile.capacity) is not int or not 1 <= profile.capacity <= MAX_CAPACITY:
         raise ProfileError("capacity 必須是 1 至 {} 的整數。".format(MAX_CAPACITY))
-    source_positions = PLATFORM_SOURCE_POSITIONS[profile.platform]
+    source_positions = platform.source_positions
     if profile.capacity > len(source_positions):
         raise ProfileError("{} 平台解析器目前支援最多 {} 個來源位置，配置容量不可超出。".format(
             profile.platform, len(source_positions)))
-    required_paths = {"atlas": {"active", "final"}, "b482": {"final"},
-                      "rswmt": {"final"}}[profile.platform]
+    required_paths = set(platform.required_paths)
     if not isinstance(profile.paths, Mapping) or not required_paths.issubset(profile.paths):
         raise ProfileError("paths 缺少平台必要路徑：{}。".format(", ".join(sorted(required_paths))))
     if any(not isinstance(value, str) for value in profile.paths.values()):

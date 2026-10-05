@@ -1,0 +1,3 @@
+{"kind":"activity","position":20,"sn":"SAMPLE000020","source_time":"2026-10-05T09:00:00","batch_id":"fixture-run-7"}
+{"kind":"final","position":20,"sn":"SAMPLE000020","status":"PASS","source_time":"2026-10-05T09:00:03","batch_id":"fixture-run-7"}
+{"kind":"final","position":4,"sn":"SAMPLE000004","status":"FAIL","source_time":"2026-10-05T09:00:04","batch_id":"fixture-run-7"}
