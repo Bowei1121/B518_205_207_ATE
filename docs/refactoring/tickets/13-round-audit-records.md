@@ -71,4 +71,5 @@
 - AC 1、2、3、5 由本機測試、離線重建及匿名化證據通過；AC 4 保持未勾選：本機已證明停止／放行分開記錄，Tk 標記使用同一共同快照，但實際 KVM 端取像及辨識尚未驗收。此實機待驗項依使用者明確批准暫緩，不阻止合併。
 - Ticket 12 AC 1 仍未驗收；Ticket 16 上位機共同整合、Ticket 18 未知同輪政策，以及目標設備／發布 App 驗收均未以本票結果宣稱通過。
 - 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Session 背景寫入不阻塞呼叫端；新增對應回歸測試。測試替身 handoff／臨時資料夾清理前均明確 flush。
-- 審查修正提交、各 push 目的地遠端驗證、合併及分支清理紀錄待最終 Git 步驟更新。
+- 實作 commit `ff7a5e9`；審查修正及最終驗證 commit `1b5e4251957289b69f3d531e70b972d16af66955`。`codex/ticket-13` 已推送並以 `git ls-remote` 確認 Gitea 與 GitHub 兩個實際 push URL 均指向該 SHA；同名 `github` fetch/push remote 是 GitHub 同一目的地，不重複計算。
+- 合併 commit 與合併後同步／分支清理狀態待最終 Git 步驟更新。
