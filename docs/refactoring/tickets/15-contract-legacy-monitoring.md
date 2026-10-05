@@ -56,7 +56,7 @@
 - `python3 scripts/check_macos_build_python.py` 在本機依設計拒絕：本機為 Python 3.8.10／x86_64；build targets 要求 macOS 10.15 x86_64 + Python 3.12，或 Apple Silicon arm64 + Python 3.12 及 macOS 15／26。建置腳本會遞增 VERSION 並清除其 target build/dist，故不在不相容主機執行。目標系統／架構 bundle、正式發布 App、實機／KVM／治具驗收未執行，保持待確認；不以本機 source/Tk 結果代替。
 - Repository 無 mypy、pyright、pyproject type-check、setup.cfg 或 tox 型別檢查設定；沒有宣稱 `py_compile` 是型別檢查。實際 KVM 驗收仍按既有決策留在 Ticket 12 AC 1／Ticket 13 AC 4 未勾選；上位機共同整合留給 Ticket 16、發布留給 Ticket 17、未知同輪來源政策留給 Ticket 18。
 - 固定基準 `241dcdffb2e8b0450ff701977b9f4b862ffb43a4` 的 Standards／Spec 審查發現均已修正：保留終態 profile snapshot、移除無呼叫端舊別名、更新測試接口文字；雙軸複審無未解決問題。Standards 無硬性標準違規；Session path／flush 邊界轉接被確認為有理由的共同公開界面。Spec 確認容量快照及舊接口清理符合 Ticket。審查涵蓋此基準至 `493c4ee` 的完整變更。
-- Ticket 15 commits：`0d239e7`（遷移與清理）、`f16f313`（公開 Session API 測試）、`8f89d86`（交付／證據）、`07ee42d`（終態容量快照與舊別名清理）、`493c4ee`（Tk teardown flush 與測試接口紀錄更正）、`12e2ee3`（最終驗收／審查紀錄）；各批均推送至 Gitea 與 GitHub。一般 `--no-ff` 合併 commit：`77471f67a607a73ffcde8adcce617112f80117d7`；合併後完整 `python3 scripts/run_tests.py` 185 tests 通過。Gitea 與 GitHub 的 `B518-Log-Solution` 均已推送至該 SHA；本票遠端／本地分支安全清理結果於專案摘要及最終回報記錄。
+- Ticket 15 commits：`0d239e7`（遷移與清理）、`f16f313`（公開 Session API 測試）、`8f89d86`（交付／證據）、`07ee42d`（終態容量快照與舊別名清理）、`493c4ee`（Tk teardown flush 與測試接口紀錄更正）、`12e2ee3`（最終驗收／審查紀錄）；各批均推送至 Gitea 與 GitHub。一般 `--no-ff` 合併 commit：`77471f67a607a73ffcde8adcce617112f80117d7`；合併後完整 `python3 scripts/run_tests.py` 185 tests 通過。Gitea 與 GitHub 的 `B518-Log-Solution` 均已同步，後續驗收紀錄亦已提交推送；兩端 `codex/ticket-15` refs 查無，本地專用分支以 `git branch -d` 安全刪除，最終狀態及同步 SHA 記錄於 2026-10-05 專案摘要。
 
 ## 保留決策、待確認事項與限制
 
