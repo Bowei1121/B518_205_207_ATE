@@ -27,3 +27,11 @@
 - 打包檢查器已以 TDD 擴充 Intel／arm64 架構參數；10.14 Intel 與 26 arm64 build 腳本現在也呼叫 Python/Tk preflight 及架構／最低 macOS 版本／依賴靜態檢查。紅燈案例先重現缺少參數與行為，再實作修正。
 - 第一批程式驗證：`python3 scripts/run_tests.py test_verify_macos_bundle` 共 20 tests 通過；三個 build 腳本 `zsh -n` 通過；Intel 本機 preflight 因 Python 3.8 而依預期拒絕。未建置任何 bundle，未執行簽章、產物校驗或目標機驗收。
 - 專案無 mypy／pyright 或其他既有型別檢查設定；需在完整驗收紀錄說明。後續逐批補記實際命令、證據、commit／push 及外部待驗項目。
+
+## Ticket 17 本機交付更新
+
+- Ticket 分支 `codex/ticket-17` 的第一批 build-check 程式提交為 `f8595872017ac0c5010c1cefa07cac9b86d47d48`；當日摘要合併提交為 `0853dd5`。已推送 Gitea `origin` 及 GitHub `github`；該次推送後兩處 Ticket refs 都為 0853dd5。
+- 完成離線部署及 macOS 現場驗收指引：`B518 Log Solution/docs/TICKET17_MACOS_RELEASE_AND_FIELD_ACCEPTANCE.md`；更新 `B518 Log Solution/README.md`、本 ticket 和本摘要。架構、最低系統版本、Python/Tk、依賴、ad-hoc 簽章及 SHA-256 流程均有區分，沒有把 ad-hoc 說成 Developer ID／notarization。
+- 真實 Tk source App 受控回放 `smoke_deadline_app.py` 與 `smoke_state_marker_app.py` 通過。證據 `B518 Log Solution/docs/refactoring/evidence/ticket-17/source-tk-replay/run.json` 及 PNG 為隔離的合成畫面；明記 physical KVM unavailable，不能當成發行 App 或現場驗收。
+- 桌面執行完整 `python3 scripts/run_tests.py`：188 tests 通過、20.420 秒。三個 zsh build 腳本語法檢查通過；本機 Python 3.8 preflight 正確拒絕正式 Python 3.12 build target。沒有符合條件的 Catalina Intel／原生 Apple Silicon builder，因此無實際 bundle、codesign、checksum 或目標機驗收結果。
+- Ticket 18 未決政策，以及 Intel／Apple Silicon/macOS 各目標機、KVM／ATE、RS-WMT 現場資料、實際發布 bundle 與簽章條件分別列為待驗。Ticket 17 AC 2、3 未勾選，分支保留；不合併、不刪除分支。詳細測試、環境與限制見 `B518 Log Solution/docs/refactoring/evidence/ticket-17/local-validation.md`。
