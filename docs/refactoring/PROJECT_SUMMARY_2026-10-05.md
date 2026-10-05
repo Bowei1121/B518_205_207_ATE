@@ -31,3 +31,13 @@
 - `python3 scripts/run_tests.py test_kvm_display_contract` 通過 7 項，完整 `python3 scripts/run_tests.py` 通過 161 項；`py_compile` 僅語法檢查通過。repo 無型別檢查工具設定，未宣稱型別檢查通過。實際 KVM 傳輸、縮放、壓縮與目標／發布設備尚未驗收。
 - Ticket 12 AC 2～5 本機 Tk 範圍通過。AC 1 保持未勾選：雖已定義與測試本機 Tk 邏輯幾何及合成 locators／marker samples，但目前無可用的實際 KVM frame，仍缺物理方向、畫面座標／scale／壓縮及 KVM 調校容差證據。使用者於 2026-10-05 明確決定所有實機類測試可先略過並接受本票先合併；因此 AC 1 是已記錄的後續待驗項，不代表通過。Ticket 16 上位機共同整合仍按先前分工處理，不以本機畫面替代。
 - 固定基準雙軸 code-review 已最終通過；2026-10-05 使用者補充允許略過實機類驗收並合併，AC 1 保持未勾選。一般非快轉 merge commit `7bfe62b1f74abfd536919dfda1f42cb226a0afbf` 已在 `B518-Log-Solution` 建立；合併後完整測試 161 項通過。Gitea 與 GitHub 的 `B518-Log-Solution` 均已同步至 `cfcd3facbc4433a2bb4be44df3e147e01ac14395`；兩端 `codex/ticket-12` refs 均查無，local feature branch 及已確認失效的 `origin/codex/ticket-12` tracking ref 已清除。本地最後留在 `B518-Log-Solution`，工作樹清潔；最終分支／工作樹檢查待此摘要提交後再記錄於回覆。
+
+## Ticket 13 執行紀錄｜2026-10-05
+
+- 以固定基準 `371d94b54c5d4061153ab9cac13de6d7c8c5248b` 從乾淨 `B518-Log-Solution` 建立 `codex/ticket-13`。核對基準已含 Ticket 06～12 的版本化配置、共同輪次期限／快照、候選與警報確認、結果放行及 UI 狀態標記；Ticket 12 AC 1 實機缺口及 Ticket 03／05 未完成驗收均未當作豁免。Ticket 16 上位機整合及 Ticket 18 未知同輪來源政策仍依先前決策保留。
+- 本票新增 schema v1 `audit.jsonl`，以有序背景追加佇列保存共同輪次事件，不在 Tk 推進時重寫完整 journal；支援 flush 後移入原 Session 查閱資料夾、從磁碟新實例重建正常／衝突／整輪逾時流程。`session.json`／`results.csv` 使用鎖定下原子替換；保存失敗明確標示稽核不完整，不破壞既有完整檔案。
+- 2026-10-05 使用者決定：若磁碟滿或權限錯誤導致稽核紀錄不能完整保存，仍可取用符合既有放行條件的結果，並明確標示紀錄不完整。此決策已編碼及測試，不新增放行阻擋。
+- 新增離線重建 CLI 與匿名化證據產生器；[`normal.json`](evidence/ticket-13/normal.json)、[`conflict.json`](evidence/ticket-13/conflict.json)、[`round-timeout.json`](evidence/ticket-13/round-timeout.json) 各由磁碟 audit journal 重建，分別 6／9／10 個有序事件，皆完整。
+- 相關回歸 64 tests、Tk UI 模組 37 tests、完整套件 173 tests 均通過。測試替身 session handoff 防護與一次隔離重現的 Tk 事件佇列競態已修正／重新驗證。Tk 受控回放 `python3 tools/smoke_audit_records_app.py` 通過：Atlas PASS 與磁碟重建一致、marker `complete`、結果已放行且 audit complete；視窗 `376x608`。GUI 測試及回放需桌面權限，沙箱中的 Tk 初始化會 abort。
+- Ticket AC 1、2、3、5 的本機／磁碟驗收有證據；AC 4 保持未勾選，實際 KVM 取像及辨識待驗。使用者已批准該實機類驗收暫緩且不阻止合併；Ticket 12 AC 1 仍未驗收。Repo 未配置 pyproject、mypy、pyright、setup.cfg 或 tox 型別檢查；不得以 `compileall`／`py_compile` 宣稱型別檢查通過。
+- 固定基準 Standards／Spec 雙軸審查及最終複審、commit／push／merge 結果尚未完成；在全部完成前不得標記 Ticket 13 完成或合併。

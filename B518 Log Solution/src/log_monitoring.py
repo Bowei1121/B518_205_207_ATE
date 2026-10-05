@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass, field, replace
@@ -74,38 +76,67 @@ class SessionStore:
         self.started_at = datetime.now().isoformat(timespec="seconds")
         self.sources: Set[str] = set()
         self.finished_at = ""
+        self._lock = threading.RLock()
         self._write_metadata()
 
+    @staticmethod
+    def _atomic_write(path: Path, content: bytes) -> None:
+        descriptor, temporary = tempfile.mkstemp(prefix=".{}-".format(path.name), dir=str(path.parent))
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, str(path))
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise
+
     def _write_metadata(self) -> None:
-        payload = {"settings": self.settings, "started_at": self.started_at,
+        payload = {"schema_version": 1, "settings": self.settings, "started_at": self.started_at,
                    "finished_at": self.finished_at, "sources": sorted(self.sources)}
-        (self.path / "session.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        with self._lock:
+            self._atomic_write(self.path / "session.json", encoded)
 
     def event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
-        with (self.path / "events.log").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "message": message,
-                "detail": detail or {},
-            }, ensure_ascii=False) + "\n")
+        record = json.dumps({
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "message": message,
+            "detail": detail or {},
+        }, ensure_ascii=False) + "\n"
+        with self._lock:
+            with (self.path / "events.log").open("a", encoding="utf-8") as handle:
+                handle.write(record)
+                handle.flush()
 
     def update_results(self, results: Iterable[SlotResult]) -> None:
-        with (self.path / "results.csv").open("w", encoding="utf-8", newline="") as handle:
+        temporary = self.path / ".results.csv.tmp"
+        with self._lock, temporary.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=["slot", "sn", "status", "source", "updated_at"])
             writer.writeheader()
             writer.writerows(asdict(result) for result in sorted(results, key=lambda result: result.slot))
+            handle.flush()
+            os.fsync(handle.fileno())
+            os.replace(str(temporary), str(self.path / "results.csv"))
 
     def source(self, path: Path) -> None:
-        self.sources.add(str(path))
-        self._write_metadata()
+        with self._lock:
+            self.sources.add(str(path))
+            self._write_metadata()
 
     def update_settings(self, settings: Dict[str, object]) -> None:
-        self.settings.update(settings)
-        self._write_metadata()
+        with self._lock:
+            self.settings.update(settings)
+            self._write_metadata()
 
     def finish(self) -> None:
-        self.finished_at = datetime.now().isoformat(timespec="seconds")
-        self._write_metadata()
+        with self._lock:
+            self.finished_at = datetime.now().isoformat(timespec="seconds")
+            self._write_metadata()
 
 
 class BaseMonitor:
@@ -151,18 +182,38 @@ class BaseMonitor:
         }[kind]
 
     def update_round_settings(self, settings: Dict[str, object]) -> None:
-        self.session.update_settings(settings)
+        try:
+            self.session.update_settings(settings)
+        except OSError as error:
+            self._report_session_write_failure("Session 設定保存失敗", error)
         self._round_candidate_mode = bool(settings.get("round_candidate_mode", False))
 
     def publish_round_event(self, event: MonitorEvent) -> None:
         self.emit(event)
 
     def emit(self, event: MonitorEvent) -> None:
-        self.session.event(event.message, event.detail)
+        failures = []
+        try:
+            self.session.event(event.message, event.detail)
+        except OSError as error:
+            failures.append(error)
         if event.source:
-            self.session.source(Path(event.source))
+            try:
+                self.session.source(Path(event.source))
+            except OSError as error:
+                failures.append(error)
         if self.callback:
             self.callback(event)
+        for error in failures:
+            self._report_session_write_failure("Session 事件／來源保存失敗", error)
+
+    def _report_session_write_failure(self, operation: str, error: OSError) -> None:
+        if self.callback:
+            self.callback(MonitorEvent(
+                "session_write_failed", "{}；本輪仍依既有狀態流程繼續".format(operation),
+                detail={"error_type": type(error).__name__, "error": str(error),
+                        "round_id": self.settings.get("round_id", "unknown")},
+            ))
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
                    detail: Optional[Dict[str, str]] = None, lock_terminal: bool = False) -> None:
@@ -188,7 +239,10 @@ class BaseMonitor:
             result.sn = sn
         result.status, result.source = status, source or result.source
         result.updated_at = self.now().isoformat(timespec="seconds")
-        self.session.update_results(self.results.values())
+        try:
+            self.session.update_results(self.results.values())
+        except OSError as error:
+            self._report_session_write_failure("Session 結果保存失敗", error)
         self.emit(MonitorEvent("result", "slot{} {}".format(slot, status), slot, result.sn, status,
                                source, detail or {}))
         if lock_terminal:
@@ -206,7 +260,10 @@ class BaseMonitor:
         self.stop_collection()
         if not self.finished:
             self.finished = True
-            self.session.finish()
+            try:
+                self.session.finish()
+            except OSError as error:
+                self._report_session_write_failure("Session 完成時間保存失敗", error)
 
     def stop(self) -> None:
         self._stop.set()

@@ -29,12 +29,20 @@ class ConfiguredMonitor:
     def deliver(self, event, callback: Callable):
         display = self._source_to_display.get(event.slot) if event.slot is not None else None
         if event.slot is not None and display is None:
-            if event.kind == "warning":
+            if event.kind in {"warning", "result", "result_candidate", "final", "unresolved_source_conflict"}:
                 detail = dict(event.detail)
                 detail["source_slot"] = str(event.slot)
+                detail.setdefault("source_position", str(event.slot))
+                if event.kind != "warning":
+                    event = replace(event, kind="unmapped_source",
+                                    message="未映射來源位置 {}：證據已保留，未套用至顯示位置".format(event.slot))
                 callback(replace(event, slot=None, detail=detail))
             return "ignore"
-        return callback(replace(event, slot=display) if event.slot is not None else event)
+        if event.slot is None:
+            return callback(event)
+        detail = dict(event.detail)
+        detail.setdefault("source_position", str(event.slot))
+        return callback(replace(event, slot=display, detail=detail))
 
     def round_results(self):
         return tuple(
@@ -56,7 +64,9 @@ class ConfiguredMonitor:
             return
         source_slot = self._source_slot(event.slot)
         if source_slot is not None:
-            self._monitor.publish_round_event(replace(event, slot=source_slot))
+            detail = dict(event.detail)
+            detail.setdefault("source_position", str(source_slot))
+            self._monitor.publish_round_event(replace(event, slot=source_slot, detail=detail))
 
     def poll_once(self):
         self._monitor.poll_once()
@@ -78,13 +88,17 @@ class ConfiguredMonitor:
         source_slot = self._source_slot(slot)
         if source_slot is None:
             return
-        self._monitor.set_result(source_slot, status, sn, source, detail, lock_terminal)
+        evidence = dict(detail or {})
+        evidence.setdefault("source_position", str(source_slot))
+        self._monitor.set_result(source_slot, status, sn, source, evidence, lock_terminal)
 
     def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
         source_slot = self._source_slot(slot)
         if source_slot is None:
             return
-        self._monitor.apply_round_result(source_slot, status, sn, source, detail, lock_terminal)
+        evidence = dict(detail or {})
+        evidence.setdefault("source_position", str(source_slot))
+        self._monitor.apply_round_result(source_slot, status, sn, source, evidence, lock_terminal)
 
     def emit_display_event(self, event) -> None:
         """Compatibility alias for older callers of the round event seam."""

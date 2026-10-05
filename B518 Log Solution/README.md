@@ -81,7 +81,15 @@ App 會固定使用高對比淺色介面，不跟隨 macOS 深色模式改變文
 - FCT：選擇 `active` 及 `unit-archive`；舊偏好遷移的預設容量為 6。第一次讀到的可信 SN 會鎖定，active 消失後轉為 `COMPLETING` 並讀取最終 `records.csv`；全程無可信 SN 則顯示 `SN 讀取失敗 / FAIL`。Atlas Adapter 的 parser 上限不表示真實設備具有相同通道容量。
 - BT／B482 TestData 格式：選擇配置的平台與機型，CaseInfo 根路徑可選。Adapter 將原始 Thread0～3 正規化為來源位置 1～4，再依 profile mapping 顯示在配置位置；CaseInfo 支援既有 CSV 記錄格式。只有 `狀態,--,SNRead,物料條碼` 中第二個 `SNRead` 後的第 6 欄會被當成物料條碼，例如 `4,InitResource,SNRead,--,SNRead,HK5HVH6ZSB300003YV,...`；會在最終 CSV 到達前顯示 `TESTING` 與條碼。檔案可用 CR、LF 或無換行的時間戳切分，且分次寫入的未完成記錄會等待完整後才讀取；空 SN 的 FAILED CSV 顯示 `NOTEST`。
 
-每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含事件、結果、設定、時間與來源檔案。
+每輪紀錄保存在 `~/Library/Application Support/B518LogSolution/sessions/`，包含既有的 `session.json`、`events.log`、`results.csv`，以及版本化的 `audit.jsonl`。稽核檔從接受開始時記錄輪次識別、配置快照與有序事件；來源時間、App 觀察時間、操作時間及單調經過時間分欄保存。`round_id` 僅用於追查與隔離，不證明來源屬於同一測試輪次。
+
+在「設定 → 事件與 Session → 開啟 Session 紀錄」可找到目前 Session。維護工程師可用本機工具從磁碟重建輪次，不依賴仍執行中的 App：
+
+```zsh
+python3 tools/rebuild_round_audit.py "/完整路徑/audit.jsonl"
+```
+
+預設輸出完整配置、來源證據、結果、候選與操作時間；若只需狀態摘要，加入 `--summary`。舊 Session 仍可用原有檔案查看，未含 `audit.jsonl` 的舊紀錄不會被補造本輪快照。若紀錄寫入失敗，App 會在事件與輪次狀態中標示稽核不完整；依已確認產品決策，這不改變輪次既有的結果放行條件。截斷、損壞或不支援版本會被讀取工具明確拒絕，原有完整檔案不會以半份內容覆蓋。
 
 ## 美國 B518 BT／RS-WMT 試用流程
 
