@@ -8,7 +8,7 @@
 
 - [12：固定定位點與四種黑白程式標記](12-kvm-locators-and-state-marker.md)
 
-**Status：**受控整合已實作；外部責任／部署資料與實際 KVM 驗收待補
+**Status：**受控整合與審查通過；維護／部署分工已確認，實際 KVM 驗收待補
 
 ## 驗收條件
 
@@ -27,7 +27,7 @@
 
 ## 保留決策、待確認事項與限制
 
-外部前置：本次已依使用者明確指示授權 `B518_JetKVM_Log` 作為受控整合目標。repo 與 JetKVM frame 接收程式已定位，但現行文件未指明維護／部署負責者、正式部署步驟、現場 KVM 身分及 App／上位機同步部署窗口；AC 1 因此保持未勾選。使用者已批准暫緩實際 KVM、治具、目標設備及發布 App 驗收；本機 App／上位機 frame seam 的受控組合測試照常完成，且不冒充 JetKVM 串流。
+外部前置：使用者明確授權 `B518_JetKVM_Log` 作為本票上位機受控整合目標，並確認現場上位機將執行此專案。2026-10-05 使用者補充確認：程式維護及提供更新由使用者負責，更新部署由當地 TE 工程師協助。ATE 設備僅連接 SFC 網路、沒有其他對外網路，Log App 更新採 TE 人工搬入與部署；上位機能否連接工廠內網尚未確認，自動更新只列為未來可能性。雙端版本配對、暫停現場流程、人工安裝與查核步驟見上位機 repo `docs/TICKET16_DEPLOYMENT.md`。實際 KVM、部署日期及 TE 執行紀錄待現場補齊，沒有宣稱已部署。AC 1 保持未勾選，剩餘實際 KVM 驗收屬使用者已批准暫緩項；已確認的責任分工、部署方式與技術步驟不再視為缺失。本機 App／上位機 frame seam 的受控組合測試已完成，且不冒充 JetKVM 串流。
 
 Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准；本票更正舊文字對此的暗示。未知同輪來源能否人工採用仍由 18 決定，任何本票已完成部分都不能抵銷該未決分支。
 
@@ -48,12 +48,19 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 - 驗證：上位機 `python3 -m unittest discover -s tests -v`，32 項通過；`python3 -m unittest tests.test_round_frame_consumer -v`，15 項通過；App repo 非 GUI 測試 `python3 "B518 Log Solution/scripts/run_tests.py" test_anonymize_baseline_samples test_atlas_source_adapter test_audit_records test_b482_source_adapter test_configured_monitor test_kvm_display_contract test_log_monitoring test_machine_profiles test_monitoring_round test_platform_registry test_replay_baseline_samples test_rswmt_monitoring test_verify_macos_bundle`，149 項通過；App 畫面／上位機 frame 組合工具以 5 張圖通過。
 - App 完整測試入口 `python3 "B518 Log Solution/scripts/run_tests.py"` 在一般沙箱執行時於 `test_log_solution_ui` 建立 Tk 視窗期間 exit 134；取得桌面 GUI 權限後重跑同一完整入口，185 tests 全部通過（22.843 秒）。本票在 App repo 的程式碼沒有變更；Tk 畫面證據為既有 Ticket 12 實際 Quartz 擷取，並由上位機辨識器重新讀取原始像素驗證。Prototype 無型別檢查配置；App repo 亦未在本次執行型別檢查。
 - 上位機既有 Python 3.8.10 runner 沒有 Pillow／Quartz 等 GUI dependencies；因此本次沒有重新啟動 Tk smoke。改用已保存、具 run.json 同輪佐證的真實 Tk／Quartz 獨立畫面，直接餵入 prototype frame seam。上位機程式無型別檢查配置；未以 compileall／py_compile 宣稱型別檢查通過。
-- 已知未驗收：實際 JetKVM 串流取像／尺寸／H.264 壓縮／方向／縮放容差、現場設備動作、正式部署／發布 App；實際責任者與部署步驟未找到。Ticket 12 AC 1、Ticket 13 AC 4 維持原未勾選狀態。Ticket 17／18 不在本票結論範圍。
+- 已知未驗收：實際 JetKVM 串流取像／尺寸／H.264 壓縮／方向／縮放容差、現場設備動作、正式部署／發布 App。維護與提供更新由使用者負責，當地 TE 人工協助設備部署；現場實際執行與查核紀錄仍待補。Ticket 12 AC 1、Ticket 13 AC 4 維持原未勾選狀態。Ticket 17／18 不在本票結論範圍。
 - 尚待確認：外部 TCP consumer 對新的 `action_waiting`／`action_paused` 回覆以及 `slot::STATUS`（無 SN）格式的相容性；目前 repo 沒有該 consumer。不得直接推定現場會接受，也不得直接讓實機動作接到未確認格式。
-- App 提交：驗收／摘要 `278eb11e56a31d2f1c926a5d7c90876e48348bc9`、審查修正紀錄 `4c22c8bfe48135295aedf56a88ff87e0482aaf88`、假動作證據 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。`6c7c0ca` 是驗收／回放同步檢查點；最後狀態紀錄提交後，App Gitea `origin` 與 GitHub 兩端 `codex/ticket-16` 已再次核對至本 ticket 的最新提交。兩 repo 固定基準 Standards／Spec 最終複審皆無未解發現。App 非 GUI 149 項通過，桌面 GUI 權限下完整 185 tests 通過。App/prototype 專用分支雖已同步，但本票不合併：AC 1 的上位機 maintainer、部署流程與同步安排是未解的非硬體前置，不在已批准的硬體延期範圍內；未知回覆 TCP 呼叫端對 `slot::STATUS` 格式的相容性亦保持待確認。實際 KVM／治具／目標設備／發布驗收保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。
+- App 提交：驗收／摘要 `278eb11e56a31d2f1c926a5d7c90876e48348bc9`、審查修正紀錄 `4c22c8bfe48135295aedf56a88ff87e0482aaf88`、假動作證據 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。`6c7c0ca` 是驗收／回放同步檢查點；最後狀態紀錄提交後，App Gitea `origin` 與 GitHub 兩端 `codex/ticket-16` 已再次核對至本 ticket 的最新提交。兩 repo 固定基準 Standards／Spec 最終複審皆無未解發現。App 非 GUI 149 項通過，桌面 GUI 權限下完整 185 tests 通過。這是補充權責前的同步檢查點；當時因 AC 1 的 maintainer 與部署方式未知而保留專用分支。使用者隨後確認維護與當地 TE 人工部署分工，技術配對部署步驟已補齊；依原授權重新檢查合併條件。外部 TCP 呼叫端對 `slot::STATUS` 格式的相容性仍依使用者決策保持待確認，現場接設備前須查核，不能以此宣稱已部署。實際 KVM／治具／目標設備／發布驗收保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。
 
 ## 執行與追蹤
 
 依 2026-09-30 使用者確認的任務清單建立。以 REFACTOR_SPEC、CONTEXT 與 ADR 0001～0005 為基準，沿用測試配置、平台資料來源、監控輪次、桌面介面四模組與 Python／Tk／既有 macOS 打包方式。只在前置完成且本票關鍵待決及外部條件已滿足時轉為 ready-for-agent；需要人類決策的任務不得逕自轉為可直接實作。
 
 執行時逐項記錄實際交付、驗證環境與結果、仍未決／待驗範圍及相關提交。未執行的驗收維持未勾選；本文件建立不代表 App 已完成重構。
+
+## 2026-10-05 維護／部署權責補充
+
+- 使用者維護 App／上位機並提供更新版本；當地 TE 工程師人工協助設備部署。ATE 僅連接 SFC 網路、沒有其他對外網路，不能要求設備端 Git pull 或在線安裝套件。上位機執行 `B518_JetKVM_Log`，工廠內網可用性未知；自動更新不在本票實作。
+- 上位機 repo `docs/TICKET16_DEPLOYMENT.md` 記錄顯示契約 1.0 的雙端配對、隔離候選、人工搬入、暫停流程後更新與現場查核。這是待執行的技術步驟，不是已完成部署的證據；具體現場日期、設備及 TE 執行紀錄於部署時補充。
+- AC 1／2 的實際 KVM 部分保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。已批准暫緩項不阻止本機受控整合合併；TCP 狀態列相容性仍待現場查核。
+- 本次只更新權責與部署文件，程式未變更，沿用已通過的完整本機測試與固定基準雙軸審查。合併、合併後驗證、推送及分支清理須另依實際結果記錄。
