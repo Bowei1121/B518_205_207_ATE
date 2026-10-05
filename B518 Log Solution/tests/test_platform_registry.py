@@ -141,6 +141,86 @@ class PlatformRegistryTests(unittest.TestCase):
             self.assertEqual([(slot, value["status"]) for slot, value in sorted(rebuilt["results"].items())],
                              [(1, "PASS"), (2, "PASS")])
 
+    def test_final_only_sample_reaches_shared_round_without_invented_activity(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            evidence_file = source / "events.jsonl"
+            evidence_file.write_text("", encoding="utf-8")
+            rounds = RoundCoordinator(audit_root=root / "sessions")
+
+            def monitor_factory(callback):
+                monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                    "sample-json", station="FCT", paths={"active": source},
+                    source_slots=(1,), callback=callback,
+                    timeouts={"start": 30, "test": 60, "round": 600},
+                    session_root=root / "sessions", async_session_writes=False,
+                )
+                return ConfiguredMonitor(monitor, {1: 1})
+
+            rounds.start("FCT", monitor_factory, run_async=False, capacity=1,
+                         round_timeout_seconds=600,
+                         audit_context={"project": "SAMPLE", "machine": "FCT",
+                                        "platform": "sample-json", "profile_version": 1})
+            evidence_file.write_text(
+                '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"PASS"}\n',
+                encoding="utf-8",
+            )
+            rounds.poll_once()
+
+            snapshot = rounds.snapshot()
+            self.assertEqual([(item.slot, item.sn, item.status) for item in snapshot.results],
+                             [(1, "SAMPLE000001", "PASS")])
+            self.assertTrue(snapshot.result_available)
+            self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
+            final_event = next(event.event for event in snapshot.events
+                               if event.event.status == "PASS")
+            self.assertEqual(final_event.detail["source_time"], "unknown")
+            self.assertNotIn("round_evidence_id", final_event.detail)
+            self.assertTrue(rounds.flush_audit())
+
+            from audit_records import read_round_audit
+            rebuilt = read_round_audit(rounds.monitor.session.path / "audit.jsonl")
+            self.assertTrue(rebuilt["result_available"])
+            self.assertEqual(rebuilt["results"][1]["status"], "PASS")
+
+    def test_activity_observed_after_final_cannot_downgrade_terminal_result(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            evidence_file = source / "events.jsonl"
+            evidence_file.write_text("", encoding="utf-8")
+            rounds = RoundCoordinator(audit_root=root / "sessions")
+
+            def monitor_factory(callback):
+                monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                    "sample-json", station="FCT", paths={"active": source},
+                    source_slots=(1,), callback=callback,
+                    timeouts={"start": 30, "test": 60, "round": 600},
+                    session_root=root / "sessions", async_session_writes=False,
+                )
+                return ConfiguredMonitor(monitor, {1: 1})
+
+            rounds.start("FCT", monitor_factory, run_async=False, capacity=1,
+                         round_timeout_seconds=600,
+                         audit_context={"project": "SAMPLE", "machine": "FCT",
+                                        "platform": "sample-json", "profile_version": 1})
+            evidence_file.write_text(
+                '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"PASS"}\n'
+                '{"kind":"activity","position":1,"sn":"SAMPLE000001",'
+                '"source_time":"2026-10-05T09:00:10"}\n',
+                encoding="utf-8",
+            )
+            rounds.poll_once()
+
+            snapshot = rounds.snapshot()
+            self.assertEqual(snapshot.results[0].status, "PASS")
+            self.assertTrue(snapshot.result_available)
+            self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
+            self.assertFalse(any(event.event.kind == "result_candidate" for event in snapshot.events))
+
     def test_registry_rejects_duplicate_names_and_builds_registered_adapter(self):
         registry = PlatformRegistry()
         factory = lambda **context: context

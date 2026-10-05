@@ -87,7 +87,7 @@ class SampleJsonLinesSource:
             self._line_numbers[path] = self._line_numbers.get(path, 0) + len(complete.splitlines())
         order = {"warning": -1, "activity": 0, "final": 1}
         return tuple(sorted(observations, key=lambda item: (
-            item.source_time or "~", item.position, order[item.kind], item.batch_id,
+            item.source_time or "", item.position, order[item.kind], item.batch_id,
             item.sn, item.status, item.source_id,
         )))
 
@@ -144,6 +144,8 @@ class SampleJsonLogMonitor(BaseMonitor):
                     self.callback(candidate)
                 continue
             current = self.results[observation.position]
+            if observation.kind == "activity" and current.status in TERMINAL:
+                continue
             if observation.kind == "final" and current.status in TERMINAL:
                 candidate = MonitorEvent(
                     "result_candidate", "受控樣本提供新的最終結果候選",

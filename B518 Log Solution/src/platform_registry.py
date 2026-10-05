@@ -124,4 +124,3 @@ def _built_in_registry() -> PlatformRegistry:
 
 
 DEFAULT_PLATFORM_REGISTRY = _built_in_registry()
-
