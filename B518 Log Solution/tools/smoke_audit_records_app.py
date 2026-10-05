@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import sys
+import threading
 import tempfile
 import time
 import tkinter as tk
@@ -38,6 +39,7 @@ def main():
                 root = tk.Tk()
                 app = B518LogSolutionApp(root, hotkey_factory=LocalHotkey,
                                          session_root=application_support / "sessions")
+                closed = False
                 root.deiconify()
                 root.update()
                 try:
@@ -54,8 +56,22 @@ def main():
                     app.start_button.invoke()
                     wait_for(root, lambda: app.monitor is not None, "Atlas source preparation")
                     session_path = app.monitor.session.path
-                    if not app.monitor.session._async_writes:
-                        raise RuntimeError("Tk Session 紀錄未使用非阻塞寫入")
+                    write_started, release_write = threading.Event(), threading.Event()
+
+                    def slow_session_event(_message, _detail=None):
+                        write_started.set()
+                        release_write.wait(3)
+
+                    with patch.object(app.monitor.session, "event", side_effect=slow_session_event):
+                        enqueue_at = time.monotonic()
+                        app.monitor.session.enqueue_event("controlled delayed write")
+                        enqueue_duration = time.monotonic() - enqueue_at
+                        if enqueue_duration >= 0.1 or not write_started.wait(2):
+                            raise RuntimeError("Session 磁碟延遲阻塞了 Tk 呼叫端")
+                        root.update()
+                        release_write.set()
+                        if not app.monitor.session.flush(timeout=3):
+                            raise RuntimeError("受控延遲 Session 紀錄未完成")
 
                     serial = "SMOKEATLAS0001"
                     active_record = active / "group0-slot1" / "system" / "records.csv"
@@ -84,6 +100,14 @@ def main():
                     marker_state = app._rendered_marker_state
                     if marker_state != MarkerState.COMPLETE:
                         raise RuntimeError("Tk 狀態標記與同一輪次快照不一致")
+                    window_geometry = root.geometry()
+                    shutdown_warnings = []
+                    with patch("b518_log_solution.messagebox.showwarning",
+                               side_effect=lambda *args, **kwargs: shutdown_warnings.append(args)):
+                        app.close()
+                    closed = True
+                    if shutdown_warnings:
+                        raise RuntimeError("App 關閉時未能完整 flush Session／稽核紀錄")
                     print(json.dumps({
                         "round_id": snapshot.round_id,
                         "round_state": snapshot.state.value,
@@ -93,13 +117,13 @@ def main():
                         "audit_complete": rebuilt["audit_complete"],
                         "marker_state": marker_state.value,
                         "result_available": rebuilt["result_available"],
-                        "window_geometry": root.geometry(),
+                        "window_geometry": window_geometry,
                         "session_contains_audit": audit_path.is_file(),
+                        "delayed_session_write_blocked_ui": False,
                     }, ensure_ascii=False, sort_keys=True))
                 finally:
-                    if app.monitor is not None:
-                        app.monitor.session.flush()
-                    root.destroy()
+                    if not closed:
+                        app.close()
     finally:
         if previous_home is None:
             os.environ.pop("HOME", None)

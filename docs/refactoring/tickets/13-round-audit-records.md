@@ -58,10 +58,10 @@
 
 | 驗證 | 命令／環境 | 結果 |
 | --- | --- | --- |
-| 行為測試及 Adapter／共同輪次／Session 回歸 | `python3 scripts/run_tests.py test_audit_records test_monitoring_round test_log_monitoring test_atlas_source_adapter test_rswmt_monitoring`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 84 tests 通過。包含正常／衝突／整輪逾時的磁碟新實例重建、三種 Adapter、非恆等映射、來源準備跨期限、併發順序、損壞／結構不完整紀錄、原子保存及背景寫入故障仍允許既有產品放行。 |
-| Tk UI 回歸 | `python3 scripts/run_tests.py test_log_solution_ui`；登入桌面 | 37 tests 通過（完整套件包含此組）。 |
-| 完整測試套件 | `python3 scripts/run_tests.py`；macOS 桌面工作階段 | 176 tests 通過。沙箱 Tk 初始化會 abort，故桌面 UI 與全套測試需在桌面工作階段執行。 |
-| 實際 Tk 受控輪次 | `python3 tools/smoke_audit_records_app.py`；隔離 HOME、偏好、Session、來源及輸出；合成匿名化 Atlas | 通過。視窗 `376x608+1052+32`；共同輪次及磁碟重建皆為 PASS，結果已放行、稽核完整，Tk 狀態標記為 `complete`；稽核檔在既有 Session 目錄可查。 |
+| 行為測試及 Adapter／共同輪次／Session 回歸 | `python3 scripts/run_tests.py test_audit_records test_monitoring_round test_log_monitoring test_atlas_source_adapter test_rswmt_monitoring test_configured_monitor`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 89 tests 通過。包含正常／衝突／整輪逾時的磁碟新實例重建、三種 Adapter、非恆等映射、來源準備跨期限、併發順序、損壞／結構不完整紀錄、原子保存及背景寫入故障仍允許既有產品放行。 |
+| Tk UI 回歸 | `python3 scripts/run_tests.py test_log_solution_ui`；登入桌面 | 40 tests 通過，包含關閉時 Session → audit 有界 flush 順序及失敗提示。 |
+| 完整測試套件 | `python3 scripts/run_tests.py`；macOS 桌面工作階段 | 179 tests 通過。沙箱 Tk 初始化會 abort，故桌面 UI 與全套測試需在桌面工作階段執行。 |
+| 實際 Tk 受控輪次 | `python3 tools/smoke_audit_records_app.py`；隔離 HOME、偏好、Session、來源及輸出；合成匿名化 Atlas | 通過。視窗 `376x608+1052+32`；刻意延遲 Session 寫入時 Tk 仍可更新；關閉經正式 `app.close()` 且無保存失敗提示。共同輪次及磁碟重建皆為 PASS，結果已放行、稽核完整，Tk 狀態標記為 `complete`；稽核檔在既有 Session 目錄可查。 |
 | 磁碟重建案例 | `python3 tools/generate_ticket13_evidence.py` | 三個匿名化完整紀錄案例均寫出；normal 6、conflict 9、round-timeout 10 個有序事件，皆重建為 `audit_complete=true`。 |
 | 語法／差異檢查 | `python3 -m py_compile src/audit_records.py src/monitoring_round.py src/log_monitoring.py src/configured_monitor.py src/b518_log_solution.py tools/rebuild_round_audit.py tools/generate_ticket13_evidence.py tools/smoke_audit_records_app.py`；`git diff --check` | 通過；py_compile 僅語法檢查，不代表型別檢查。 |
 | 型別檢查 | repo 設定盤點 | 沒有 pyproject、mypy、pyright、setup.cfg 或 tox 型別檢查配置；未宣稱型別檢查通過。 |
@@ -71,5 +71,4 @@
 - AC 1、2、3、5 由本機測試、離線重建及匿名化證據通過；AC 4 保持未勾選：本機已證明停止／放行分開記錄，Tk 標記使用同一共同快照，但實際 KVM 端取像及辨識尚未驗收。此實機待驗項依使用者明確批准暫緩，不阻止合併。
 - Ticket 12 AC 1 仍未驗收；Ticket 16 上位機共同整合、Ticket 18 未知同輪政策，以及目標設備／發布 App 驗收均未以本票結果宣稱通過。
 - 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Tk App 專用的非阻塞 Session 背景寫入；新增對應回歸測試。非同步測試與受控回放於查閱／清理前明確 flush。
-- 實作 commit `ff7a5e9`；審查修正及最終驗證 commit `1b5e4251957289b69f3d531e70b972d16af66955`。`codex/ticket-13` 已推送並以 `git ls-remote` 確認 Gitea 與 GitHub 兩個實際 push URL 均指向該 SHA；同名 `github` fetch/push remote 是 GitHub 同一目的地，不重複計算。
-- 合併 commit 與合併後同步／分支清理狀態待最終 Git 步驟更新。
+- 實作 commit `ff7a5e9`、審查修正 `1b5e4251957289b69f3d531e70b972d16af66955` 及分支交付紀錄 commit `5326cef23025e2e0bcb3dae977da792d231d7c8c` 均已納入本票歷史。一般非快轉合併 commit 為 `a1e712a3f2ffdfd2f4070b715223309255d4edb1`。合併後另有 Session 寫入／關閉修正；最終 follow-up commit、雙遠端同步及分支清理結果待最後 Git 步驟補入。

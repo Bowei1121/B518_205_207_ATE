@@ -180,8 +180,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 second_active = active / "group0-slot2" / "system" / "records.csv"
                 write_records(first_active, first_sn)
                 write_records(second_active, second_sn)
-                wait_ui(lambda: all(result.status == "TESTING"
-                                    for result in app.rounds.snapshot().results))
+                wait_ui(lambda: len(app.rounds.snapshot().results) == 2 and all(
+                    result.status == "TESTING" for result in app.rounds.snapshot().results))
 
                 stamp = (app.monitor.started + timedelta(seconds=1)).strftime("%Y%m%d_%H-%M-%S.000-run")
                 first_archive = final / first_sn / stamp / "system" / "records.csv"
@@ -189,8 +189,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 first_active.parent.rmdir()
                 (active / "group0-slot1").rmdir()
                 write_records(first_archive, first_sn)
-                wait_ui(lambda: next(result for result in app.rounds.snapshot().results
-                                      if result.slot == 2).status == "PASS", timeout=5)
+                wait_ui(lambda: any(result.slot == 2 and result.status == "PASS"
+                                    for result in app.rounds.snapshot().results), timeout=5)
                 write_records(first_archive, first_sn, "FAIL")
                 wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 1, timeout=5)
                 wait_ui(lambda: app.conflict_window is not None, timeout=5)
@@ -1116,12 +1116,67 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root = MagicMock()
         app.hotkey = MagicMock()
         app.monitor = None
+        app.rounds = MagicMock()
+        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
         app._save_preferences = MagicMock()
 
         app.close()
 
         app.root.attributes.assert_not_called()
         app.root.destroy.assert_called_once()
+
+    def test_close_flushes_session_then_audit_before_destroying_tk(self):
+        calls = []
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.hotkey = MagicMock()
+        app.rounds = MagicMock()
+        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
+        app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
+        app.monitor = SimpleNamespace(session=SimpleNamespace(
+            flush=lambda timeout: calls.append("session") or True))
+        app._save_preferences = MagicMock()
+        app.root.destroy.side_effect = lambda: calls.append("destroy")
+
+        app.close()
+
+        self.assertEqual(calls, ["session", "audit", "destroy"])
+        app.rounds.flush_audit.assert_called_once_with(timeout=2.0)
+
+    def test_close_surfaces_incomplete_session_or_audit_flush(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.hotkey = MagicMock()
+        app.rounds = MagicMock()
+        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
+        app.rounds.flush_audit.return_value = False
+        app.monitor = None
+        app._save_preferences = MagicMock()
+
+        with patch("b518_log_solution.messagebox.showwarning") as warning:
+            app.close()
+
+        warning.assert_called_once()
+        self.assertIn("稽核紀錄不完整", warning.call_args.args[0])
+        app.root.destroy.assert_called_once()
+
+    def test_close_flushes_completed_round_session_after_ui_monitor_was_cleared(self):
+        calls = []
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.hotkey = MagicMock()
+        app.rounds = MagicMock()
+        app.rounds.snapshot.return_value = SimpleNamespace(state="COMPLETED")
+        app.rounds.monitor = SimpleNamespace(session=SimpleNamespace(
+            flush=lambda timeout: calls.append("session") or True))
+        app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
+        app.monitor = None
+        app._save_preferences = MagicMock()
+        app.root.destroy.side_effect = lambda: calls.append("destroy")
+
+        app.close()
+
+        self.assertEqual(calls, ["session", "audit", "destroy"])
 
 
 if __name__ == "__main__":

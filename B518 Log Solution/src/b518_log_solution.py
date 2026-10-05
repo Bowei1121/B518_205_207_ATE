@@ -1459,6 +1459,18 @@ class B518LogSolutionApp:
         snapshot = rounds.snapshot() if rounds is not None else None
         if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
             rounds.stop()
+        monitor = getattr(self, "monitor", None)
+        if monitor is None and rounds is not None:
+            monitor = rounds.monitor
+        session = getattr(monitor, "session", None)
+        session_saved = session.flush(timeout=2.0) if session is not None else True
+        audit_saved = rounds.flush_audit(timeout=2.0) if rounds is not None else True
+        if not session_saved or not audit_saved:
+            messagebox.showwarning(
+                "稽核紀錄不完整",
+                "關閉前仍有稽核或 Session 紀錄未能完整保存；既有結果放行狀態不變。",
+                parent=self.root,
+            )
         try:
             self._save_preferences()
         except (OSError, ProfileError) as error:
