@@ -61,6 +61,16 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 ## 2026-10-05 維護／部署權責補充
 
 - 使用者維護 App／上位機並提供更新版本；當地 TE 工程師人工協助設備部署。ATE 僅連接 SFC 網路、沒有其他對外網路，不能要求設備端 Git pull 或在線安裝套件。上位機執行 `B518_JetKVM_Log`，工廠內網可用性未知；自動更新不在本票實作。
-- 上位機 repo `docs/TICKET16_DEPLOYMENT.md` 記錄顯示契約 1.0 的雙端配對、隔離候選、人工搬入、暫停流程後更新與現場查核。這是待執行的技術步驟，不是已完成部署的證據；具體現場日期、設備及 TE 執行紀錄於部署時補充。
+- 上位機 repo `docs/TICKET16_DEPLOYMENT.md` 記錄顯示契約 1.1 的雙端配對、隔離候選、人工搬入、暫停流程後更新與現場查核。這是待執行的技術步驟，不是已完成部署的證據；具體現場日期、設備及 TE 執行紀錄於部署時補充。
 - AC 1／2 的實際 KVM 部分保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。已批准暫緩項不阻止本機受控整合合併；TCP 狀態列相容性仍待現場查核。
 - 本次只更新權責與部署文件，程式未變更，沿用已通過的完整本機測試與固定基準雙軸審查。合併、合併後驗證、推送及分支清理須另依實際結果記錄。
+
+## 2026-10-05 單排實際畫面修正與契約 1.1
+
+- 權責補充後的固定基準 Spec 複審發現上位機一直取樣二十格，但實際 App 在容量 1～10 隱藏第二排；原合成格式卻畫出二十格，掩蓋 `result_cell_unknown_11`。先加入公開 raw-frame／RoundFrameGate 紅燈案例重現，再修正兩端。
+- 將現行顯示契約升為 1.1，於 header `(130,2)` 新增 26×14 的獨立排數標記：黑白為單排、白黑為雙排。它與本輪固定容量及色帶同步，四種程式狀態語意不變。上位機依排數讀取十／二十格；舊 1.0、排數低對比／未知、雙排第二排遮擋或裁切，以及雙排卻僅有十個有效位置均拒判，不以未知第二排推定單排完成。兩端必須配對更新。
+- `tools/smoke_ticket16_layout_app.py` 以隔離設定／來源／輸出，經工程師配置、操作員選擇、真實 sample-json Adapter 與公開共同輪次產生容量 1／4／6／10／11／12／20 的獨立 Tk／Quartz PNG；來源映射反向排列，結果與磁碟重新讀取 audit 一致。每輪擷取監控中、完成、完成後捲動三張圖。上位機 `verify_ticket16_layout_frames.py` 從這 21 張原始像素驗證 7 輪，每輪恰好一筆假動作請求。實際硬體動作未執行。
+- 另重新執行真 Tk 四狀態／衝突與警報／新輪／人工停止 smoke，並由上位機 `verify_ticket16_app_frames.py` 重新讀取五張 1.1 原始畫面，得到等待→等待→暫停→等待→一次取用。原 1.0 回放報告保留歷史用途，不能視為新版驗收。
+- 新證據：App `B518 Log Solution/docs/refactoring/evidence/ticket-16/contract-1.1/`；上位機 `docs/evidence/ticket-16/contract-1.1/`。frame 回放使用合成排序時間而非實際 JetKVM PTS；仍不代表實機 KVM／部署／發布驗收。
+
+- 契約 1.1 最新驗證命令與結果：App `python3 "B518 Log Solution/scripts/run_tests.py"`，185 tests 通過（23.484 秒）；上位機 `python3 -m unittest discover -s tests -v`，35 tests 通過（3.264 秒）；`python3 -m unittest tests.test_round_frame_consumer -v`，18 tests 通過。Tk source 入口 `python3 "B518 Log Solution/tools/smoke_ticket16_layout_app.py" --output <isolated-evidence>` 與四狀態 smoke 均通過；兩個上位機 frame replay 命令依部署文件／工具 `--help` 使用新版證據目錄。未配置型別檢查，未以編譯宣稱型別檢查通過。

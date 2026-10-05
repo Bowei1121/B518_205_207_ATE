@@ -1,0 +1,211 @@
+{
+  "ticket": "16",
+  "smoke_origin_ticket": "12",
+  "contract_version": "1.1",
+  "environment": {
+    "macOS": "15.7.9",
+    "architecture": "x86_64",
+    "python": "3.8.10"
+  },
+  "capture_source": "Quartz CGWindowListCreateImage of isolated Tk windows",
+  "physical_kvm_available": false,
+  "upper_computer_integration": "raw captures prepared for separate Ticket 16 frame replay",
+  "screens": [
+    {
+      "state": "standby",
+      "round_id": null,
+      "result_available": false,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "standby.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    },
+    {
+      "state": "monitoring",
+      "round_id": "08cf2e13ca274783898f5ffcb9d9a2bb",
+      "result_available": false,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "monitoring.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    },
+    {
+      "state": "review",
+      "round_id": "08cf2e13ca274783898f5ffcb9d9a2bb",
+      "result_available": false,
+      "pending_conflicts": 1,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "review.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ],
+      "dialogs": {
+        "file": "conflict-window.png",
+        "window_title": "同輪結果衝突確認",
+        "physical_pixels": [
+          1640,
+          916
+        ],
+        "geometry_check": {
+          "dialog_tk_rect": [
+            220,
+            88,
+            1040,
+            518
+          ],
+          "protected_top_band_tk_rect": [
+            1134,
+            60,
+            1394,
+            148
+          ],
+          "overlaps_top_band": false
+        },
+        "alarm_window": {
+          "file": "alarm-window.png",
+          "window_title": "整輪監控逾時",
+          "physical_pixels": [
+            920,
+            496
+          ],
+          "geometry_check": {
+            "dialog_tk_rect": [
+              131,
+              145,
+              591,
+              365
+            ],
+            "protected_top_band_tk_rect": [
+              1134,
+              60,
+              1394,
+              148
+            ],
+            "overlaps_top_band": false
+          }
+        }
+      }
+    },
+    {
+      "state": "complete",
+      "round_id": "08cf2e13ca274783898f5ffcb9d9a2bb",
+      "result_available": true,
+      "conflict_choice": "keep_original",
+      "alarm_id": "35ab5d0e9ef24074ad40f04d278d1ca1",
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "complete.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    },
+    {
+      "state": "complete",
+      "capacity": 20,
+      "detail_scroll_position": [
+        0.65,
+        1.0
+      ],
+      "marker_screen_y": 133,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "details-scrolled.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    },
+    {
+      "state": "monitoring",
+      "round_id": "fee5af34376c41efa1a85ee0038d0e9e",
+      "previous_round_id": "08cf2e13ca274783898f5ffcb9d9a2bb",
+      "result_available": false,
+      "old_complete_with_new_waiting_band": false,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "new-round.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    },
+    {
+      "state": "standby",
+      "round_id": "fee5af34376c41efa1a85ee0038d0e9e",
+      "completion_reason": "manual_stop",
+      "result_available": false,
+      "tk_scaling": 0.9999999999999999,
+      "screen_tk_units": [
+        1440,
+        900
+      ],
+      "app_window_tk_units": [
+        376,
+        682
+      ],
+      "file": "manual-stop.png",
+      "window_title": "B518 Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1420
+      ]
+    }
+  ]
+}
