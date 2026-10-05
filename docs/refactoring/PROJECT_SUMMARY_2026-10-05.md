@@ -43,7 +43,7 @@
 - 受控整合用 Ticket 12 真實 Tk 視窗 Quartz captures（752×1420 capture pixels；當時 Tk scaling 約1.0；window 376×682 Tk units），非實際 JetKVM。5 張獨立截圖經上位機 raw frame seam，包含 review pause、容量20及同輪兩張 complete frame 一次取用。prototype 30 項測試和 `verify_ticket16_app_frames.py` 通過。prototype Python runner 缺 Pillow、Quartz、aiortc 等 GUI/KVM dependencies，故本次未重新啟動 Tk app 或實際 KVM；沒有將 Quartz captures 冒充 KVM。
 - 使用者答覆接受新 TCP `slot::STATUS` 狀態列，並要求保留相容性待確認；目前 repo 內找不到外部 TCP consumer，且畫面契約不含 SN，故相容性尚不能聲稱已驗收。上位機維護／部署責任者及正式部署步驟也仍未定位；這些 AC 1 非硬體待驗欄位保持未勾選。真實 KVM、現場設備／動作及發布 App 暫緩項分別記錄；Ticket 12 AC 1、Ticket 13 AC 4 不因本票改勾。
 - 上位機和 App 的改動需分 repo 審查、推送與同步。因 owner/deploy 聯絡資訊及外部 TCP consumer 未確認，需完成兩 repo 完整本機行為／受控驗收及雙軸 code review 後，回報這些非硬體前置缺口；未依硬體延期擴大豁免範圍。
-- 上位機 commit `45258c9` 已建立（固定 prototype 基準 `be41a2e`）；prototype 單元／整套 30 tests 通過、App 149 項非 GUI 測試通過。App 完整套件在 Tk UI 測試建立原生視窗時 exit 134，故完整套件尚未通過。上位機和 App 的固定基準雙軸審查、各目的地推送及合併仍待完成；缺少 maintainer／部署責任資訊是 AC 1 的阻擋，不屬已批准實機延期。
+- 上位機實作起始 commit `45258c9`（固定 prototype 基準 `be41a2e`）；prototype 全套 32 tests 通過，App 非 GUI 子集 149 tests 通過，桌面 GUI 權限下 App 完整 185 tests 通過。兩 repo 固定基準 Standards／Spec 審查及文件複審無未解發現，各目的地的 Ticket 分支 refs 已核對同步。仍不合併：maintainer／部署責任及同步安排未知是 AC 1 的非硬體前置，不屬已批准實機延期；實際 KVM／設備驗收保持未勾選。
 - Ticket 12 隔離 Tk 回放 `python3 -u tools/smoke_state_marker_app.py` 已通過；Quartz 擷取視窗 752×1420 physical pixels，Tk app 376×682 logical units，畫面 1440×900 Tk units，scaling 1.0。驗證 standby、monitoring、衝突與警報同時待確認、完成、20 筆明細捲動、新輪切換、人工停止，且衝突／警報窗口未遮住頂部定位區。資料只含合成匿名化 SN，臨時 HOME／偏好／輸出在回放結束後清理。
 - 固定基準 Standards／Spec 審查及複審均無未解發現。兩項 P3 維護性意見（快照參數型別、共享格距）與一項完成狀態優先級規格問題已修正並有測試；複審確認方向拒判及文件狀態順序清楚。
 - `python3 scripts/run_tests.py test_kvm_display_contract` 通過 7 項，完整 `python3 scripts/run_tests.py` 通過 161 項；`py_compile` 僅語法檢查通過。repo 無型別檢查工具設定，未宣稱型別檢查通過。實際 KVM 傳輸、縮放、壓縮與目標／發布設備尚未驗收。
