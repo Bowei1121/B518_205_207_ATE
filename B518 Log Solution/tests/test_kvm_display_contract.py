@@ -65,7 +65,7 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
 
     def test_four_fixed_black_white_patterns_are_unique_and_decodable(self):
-        self.assertEqual(CONTRACT_VERSION, "1.0")
+        self.assertEqual(CONTRACT_VERSION, "1.1")
         self.assertEqual(len(set(MARKER_PATTERNS.values())), 4)
         self.assertEqual(MARKER_SIZE, 26)
         for state, pattern in MARKER_PATTERNS.items():

@@ -27,6 +27,7 @@ from kvm_display_contract import (
     LOCATOR_SIZE, LOCATOR_WHITE_SIZE, MARKER_CELL_GAP, MARKER_CELL_SIZE,
     MARKER_PATTERNS, MARKER_QUIET_ZONE, MARKER_SIZE, MarkerState,
     STATE_MARKER_ORIGIN, state_for_round_snapshot,
+    LAYOUT_MARKER_ORIGIN, LAYOUT_MARKER_SIZE, LAYOUT_MARKER_PATTERNS,
 )
 
 
@@ -225,6 +226,12 @@ class B518LogSolutionApp:
         self.kvm_state_marker.place(x=STATE_MARKER_ORIGIN[0], y=STATE_MARKER_ORIGIN[1],
                                     width=MARKER_SIZE, height=MARKER_SIZE)
         self._render_state_marker(None)
+        self.kvm_layout_marker = tk.Canvas(
+            self.kvm_results, width=LAYOUT_MARKER_SIZE[0], height=LAYOUT_MARKER_SIZE[1],
+            background="#ffffff", highlightthickness=0, borderwidth=0,
+        )
+        self.kvm_layout_marker.place(x=LAYOUT_MARKER_ORIGIN[0], y=LAYOUT_MARKER_ORIGIN[1],
+                                     width=LAYOUT_MARKER_SIZE[0], height=LAYOUT_MARKER_SIZE[1])
         for slot in range(1, KVM_BLOCK_COUNT + 1):
             block = tk.Label(self.kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
             row = (slot - 1) // KVM_COLUMN_COUNT
@@ -322,6 +329,20 @@ class B518LogSolutionApp:
         self._rendered_marker_state = state
         return state
 
+    def _render_layout_marker(self, capacity: int) -> None:
+        rows = 2 if capacity > KVM_COLUMN_COUNT else 1
+        marker = getattr(self, "kvm_layout_marker", None)
+        if marker is None or rows == getattr(self, "_rendered_layout_rows", None):
+            return
+        marker.delete("layout-cell")
+        for column, black in enumerate(LAYOUT_MARKER_PATTERNS[rows]):
+            x = MARKER_QUIET_ZONE + column * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
+            y = MARKER_QUIET_ZONE
+            colour = "#000000" if black else "#ffffff"
+            marker.create_rectangle(x, y, x + MARKER_CELL_SIZE, y + MARKER_CELL_SIZE,
+                                    fill=colour, outline=colour, tags=("layout-cell",))
+        self._rendered_layout_rows = rows
+
     def _apply_round_snapshot(self, snapshot) -> None:
         """Atomically render one current-round snapshot to cells and marker."""
         if snapshot is None or snapshot.round_id != self.active_round_id:
@@ -335,6 +356,7 @@ class B518LogSolutionApp:
             self._reported_audit_errors = reported
         for result in snapshot.results:
             self._set_row(result.slot, result.sn, result.status)
+        self._render_layout_marker(self._display_capacity())
         self._render_state_marker(snapshot)
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
@@ -396,6 +418,7 @@ class B518LogSolutionApp:
                 block.place(x=column * KVM_CELL_STEP, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
                             width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self._set_kvm_result_block(slot, "WAITING")
+        self._render_layout_marker(row_count)
         self._position_window()
 
     def _position_window(self) -> None:

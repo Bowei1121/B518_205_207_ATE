@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from monitoring_round import RoundSnapshot, RoundState
 
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.1"
 MARKER_CELL_SIZE = 10
 MARKER_CELL_GAP = 2
 MARKER_QUIET_ZONE = 2
@@ -20,6 +20,10 @@ LOCATOR_FAR_INSET = 11
 LOCATOR_LEFT = (82, 2)
 LOCATOR_RIGHT = (320, 2)
 STATE_MARKER_ORIGIN = (278, 0)
+LAYOUT_MARKER_ORIGIN = (130, 2)
+LAYOUT_MARKER_SIZE = (MARKER_SIZE, MARKER_CELL_SIZE + MARKER_QUIET_ZONE * 2)
+# The independent two-cell rail encodes visible rows, not result availability.
+LAYOUT_MARKER_PATTERNS = {1: (True, False), 2: (False, True)}
 KVM_FIRST_ROW_Y = 34
 KVM_ROW_STEP = 27
 KVM_CELL_WIDTH = 34

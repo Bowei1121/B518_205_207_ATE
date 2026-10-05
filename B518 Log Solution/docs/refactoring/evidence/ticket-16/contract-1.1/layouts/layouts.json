@@ -1,0 +1,642 @@
+{
+  "contract_version": "1.1",
+  "source": "real Tk/Quartz capture",
+  "is_jetkvm_frame": false,
+  "rounds": [
+    {
+      "capacity": 1,
+      "mapping": [
+        [
+          1,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS"
+      ],
+      "round_id": "5492fa77dafd4d0193310bcd8f419681",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            802
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            802
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            802
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        373
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 4,
+      "mapping": [
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS"
+      ],
+      "round_id": "d639728449ee481e8bc136d1cfa9801e",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1084
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1084
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1084
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        514
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 6,
+      "mapping": [
+        [
+          1,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          6,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST"
+      ],
+      "round_id": "8b3f7cac8eb340ac8761a39bfa2aba8a",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1272
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1272
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1272
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        608
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 10,
+      "mapping": [
+        [
+          1,
+          10
+        ],
+        [
+          2,
+          9
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          4
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          9,
+          2
+        ],
+        [
+          10,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS"
+      ],
+      "round_id": "fa7966881c554a4c9da42047a146fb8a",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1366
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1366
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1366
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        655
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 11,
+      "mapping": [
+        [
+          1,
+          11
+        ],
+        [
+          2,
+          10
+        ],
+        [
+          3,
+          9
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          9,
+          3
+        ],
+        [
+          10,
+          2
+        ],
+        [
+          11,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL"
+      ],
+      "round_id": "f06fb004735d43049db87b0d8e5a3fd6",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        682
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 12,
+      "mapping": [
+        [
+          1,
+          12
+        ],
+        [
+          2,
+          11
+        ],
+        [
+          3,
+          10
+        ],
+        [
+          4,
+          9
+        ],
+        [
+          5,
+          8
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          5
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          10,
+          3
+        ],
+        [
+          11,
+          2
+        ],
+        [
+          12,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST"
+      ],
+      "round_id": "5f9b5f92ce7b4e419a44eda62a81ab13",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        682
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    },
+    {
+      "capacity": 20,
+      "mapping": [
+        [
+          1,
+          20
+        ],
+        [
+          2,
+          19
+        ],
+        [
+          3,
+          18
+        ],
+        [
+          4,
+          17
+        ],
+        [
+          5,
+          16
+        ],
+        [
+          6,
+          15
+        ],
+        [
+          7,
+          14
+        ],
+        [
+          8,
+          13
+        ],
+        [
+          9,
+          12
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          11,
+          10
+        ],
+        [
+          12,
+          9
+        ],
+        [
+          13,
+          8
+        ],
+        [
+          14,
+          7
+        ],
+        [
+          15,
+          6
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          17,
+          4
+        ],
+        [
+          18,
+          3
+        ],
+        [
+          19,
+          2
+        ],
+        [
+          20,
+          1
+        ]
+      ],
+      "statuses": [
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL",
+        "NOTEST",
+        "PASS",
+        "FAIL"
+      ],
+      "round_id": "dd0ad856ca384677b63c3083250962cd",
+      "result_available": true,
+      "audit_complete": true,
+      "frames": [
+        {
+          "file": "monitoring.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        },
+        {
+          "file": "complete-scrolled.png",
+          "physical_pixels": [
+            752,
+            1420
+          ],
+          "window_title": "B518 Log Solution-V0.1.0"
+        }
+      ],
+      "tk_scaling": 0.9999999999999999,
+      "window_tk_units": [
+        376,
+        682
+      ],
+      "screen_tk_units": [
+        1440,
+        900
+      ]
+    }
+  ]
+}

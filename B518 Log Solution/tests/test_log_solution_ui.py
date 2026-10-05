@@ -307,6 +307,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertTrue(app.kvm_result_blocks[10].winfo_ismapped())
                 self.assertFalse(app.kvm_result_blocks[11].winfo_ismapped())
+                self.assertEqual([app.kvm_layout_marker.itemcget(cell, "fill") for cell in
+                                  app.kvm_layout_marker.find_withtag("layout-cell")],
+                                 ["#000000", "#ffffff"])
                 self.assertEqual(root.winfo_height(), window_height(10, root.winfo_screenheight()))
 
                 app.profile_editor_capacity.set("11")
@@ -315,6 +318,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._apply_profile_editor()
                 root.update()
                 self.assertTrue(app.kvm_result_blocks[11].winfo_ismapped())
+                self.assertEqual([app.kvm_layout_marker.itemcget(cell, "fill") for cell in
+                                  app.kvm_layout_marker.find_withtag("layout-cell")],
+                                 ["#ffffff", "#000000"])
                 self.assertGreater(app.kvm_result_blocks[11].winfo_y(),
                                    app.kvm_result_blocks[10].winfo_y())
                 self.assertEqual(root.winfo_height(), window_height(11, root.winfo_screenheight()))

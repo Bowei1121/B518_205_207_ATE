@@ -109,15 +109,13 @@ def main():
     ))
     evidence_root.mkdir(parents=True, exist_ok=True)
     run_root = Path(tempfile.mkdtemp(prefix="ticket12-isolated-"))
-    previous_home = os.environ.get("HOME")
     output = []
     try:
-        os.environ["HOME"] = str(run_root)
         import b518_log_solution as app_module
         from b518_log_solution import B518LogSolutionApp
         from log_monitoring import MonitorEvent
         from monitoring_round import RoundState
-        from kvm_display_contract import state_for_round_snapshot
+        from kvm_display_contract import CONTRACT_VERSION, state_for_round_snapshot
 
         app_root = run_root / "Application Support"
         active = run_root / "sources" / "active"
@@ -271,19 +269,19 @@ def main():
                                    tk_scaling=scale, screen_tk_units=screen,
                                    app_window_tk_units=window, **capture_meta))
             finally:
-                app._close_settings()
-                app.hotkey.close()
-                root.destroy()
+                app.close()
         details = {
-            "ticket": "15" if "B518_SMOKE_EVIDENCE_DIR" in os.environ else "12",
+            "ticket": os.environ.get("B518_SMOKE_TICKET",
+                                     "15" if "B518_SMOKE_EVIDENCE_DIR" in os.environ else "12"),
             "smoke_origin_ticket": "12",
+            "contract_version": CONTRACT_VERSION,
             "environment": {"macOS": subprocess.check_output(
                                 ["/usr/bin/sw_vers", "-productVersion"], text=True).strip(),
                             "architecture": platform.machine(),
                             "python": platform.python_version()},
             "capture_source": "Quartz CGWindowListCreateImage of isolated Tk windows",
             "physical_kvm_available": False,
-            "upper_computer_integration": "deferred to Ticket 16 by user decision",
+            "upper_computer_integration": "raw captures prepared for separate Ticket 16 frame replay",
             "screens": output,
         }
         (evidence_root / "run.json").write_text(
@@ -292,10 +290,6 @@ def main():
         print("Isolated source, preference, and session tree (removed after capture):", run_root)
     finally:
         shutil.rmtree(run_root, ignore_errors=True)
-        if previous_home is None:
-            os.environ.pop("HOME", None)
-        else:
-            os.environ["HOME"] = previous_home
 
 
 if __name__ == "__main__":
