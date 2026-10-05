@@ -71,4 +71,4 @@
 - AC 1、2、3、5 由本機測試、離線重建及匿名化證據通過；AC 4 保持未勾選：本機已證明停止／放行分開記錄，Tk 標記使用同一共同快照，但實際 KVM 端取像及辨識尚未驗收。此實機待驗項依使用者明確批准暫緩，不阻止合併。
 - Ticket 12 AC 1 仍未驗收；Ticket 16 上位機共同整合、Ticket 18 未知同輪政策，以及目標設備／發布 App 驗收均未以本票結果宣稱通過。
 - 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Tk App 專用的非阻塞 Session 背景寫入；新增對應回歸測試。非同步測試與受控回放於查閱／清理前明確 flush。
-- 實作 commit `ff7a5e9`、審查修正 `1b5e4251957289b69f3d531e70b972d16af66955` 及分支交付紀錄 commit `5326cef23025e2e0bcb3dae977da792d231d7c8c` 均已納入本票歷史。一般非快轉合併 commit 為 `a1e712a3f2ffdfd2f4070b715223309255d4edb1`。合併後另有 Session 寫入／關閉修正；最終 follow-up commit、雙遠端同步及分支清理結果待最後 Git 步驟補入。
+- 實作 commit `ff7a5e9`、審查修正 `1b5e4251957289b69f3d531e70b972d16af66955` 及分支交付紀錄 commit `5326cef23025e2e0bcb3dae977da792d231d7c8c` 均已納入本票歷史。一般非快轉合併 commit 為 `a1e712a3f2ffdfd2f4070b715223309255d4edb1`；合併後非阻塞 Session 寫入與關閉 flush 修正為 `2b241c8`、`53984d60ff273156e23ace3e824119d484dbc209`。Gitea 與 GitHub 兩個目標分支目前均驗證至 `53984d60ff273156e23ace3e824119d484dbc209`；Ticket branch 最終同步及清理結果待最後 Git 步驟補入。
