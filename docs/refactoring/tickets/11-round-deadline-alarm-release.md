@@ -9,7 +9,7 @@
 - [07：工程師畫面編輯、匯出及部署配置](07-profile-editor-import-export.md)
 - [10：共同處理已確定同輪的結果衝突](10-same-round-conflict-review.md)
 
-**Status：**in progress（五項本機受控驗收、全套測試及雙軸複審通過；提交與合併流程待完成）
+**Status：**完成（本票五項驗收、全套測試、Tk 受控回放及雙軸複審通過；實機治具時機、目標設備／發布 App、KVM 與上位機共同驗收未執行且未宣稱通過）
 
 ## 驗收條件
 
@@ -65,4 +65,10 @@
 | 型別檢查 | 檢查 repo 設定 | Repo 沒有 mypy、pyright、pyproject、setup.cfg 或 tox 型別檢查配置；未宣稱型別檢查通過。 |
 | 語法編譯 | `python3 -m py_compile src/monitoring_round.py src/b518_log_solution.py tools/smoke_deadline_app.py tests/test_monitoring_round.py` | 通過；此項只驗證語法，不當作型別檢查。 |
 
-受控 Tk 回放使用合成資料，原始實機資料唯讀且本次未作為輸入。實際治具時機、目標設備／發布 App、KVM 與上位機共同驗收均未執行，不能由本機回放替代；上位機驗收留在 Ticket 16。固定基準 Standards／Spec 審查提出準備工作可能阻塞期限、Tk 準備期畫面未同步、事件回呼鎖順序及 stop/poll/coordinator 互鎖等問題；均已修正並以屏障測試、舊輪 UI 回歸及真實 Tk 受控回放驗證。最終固定基準複審均 PASS，尚待提交與 Git 同步流程。
+### 審查及 Git 交付
+
+- 固定審查基準：`d253b02edaa75d93809ecf246c38574def8b49c8`。依 repo `code-review` Standards／Spec 雙軸流程多輪複審，最後對全部差異及 stop 鎖定修正複審均 PASS，無未解決發現。
+- Ticket commit：`3eacb26299fe02f5cb8151e4e36cb8bf0f1ca6ee`（主要實作）、`76c8798d48f0e75e8e7b5095ee19f42da7d467d0`（準備期期限釋放）、`c1f308c6aa5978b8d66a0e53a6707ed9b6aa070d`（鎖順序修正、測試與驗收紀錄）。
+- Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 與 GitHub `git@github.com:Bowei1121/B518_205_207_ATE.git` 的 `codex/ticket-11` 均已推送並以 `git ls-remote` 確認指向 `c1f308c6aa5978b8d66a0e53a6707ed9b6aa070d`。本文件最終交付紀錄提交及目標分支合併 SHA 將另列於專案摘要／最終回報。
+
+受控 Tk 回放使用合成資料，原始實機資料唯讀且本次未作為輸入。實際治具時機、目標設備／發布 App、KVM 與上位機共同驗收均未執行，不能由本機回放替代；上位機驗收留在 Ticket 16。固定基準 Standards／Spec 審查提出準備工作可能阻塞期限、Tk 準備期畫面未同步、事件回呼鎖順序及 stop/poll/coordinator 互鎖等問題；均已修正並以屏障測試、舊輪 UI 回歸及真實 Tk 受控回放驗證。最終固定基準複審均 PASS。
