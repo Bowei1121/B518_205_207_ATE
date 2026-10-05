@@ -54,6 +54,8 @@ def main():
                     app.start_button.invoke()
                     wait_for(root, lambda: app.monitor is not None, "Atlas source preparation")
                     session_path = app.monitor.session.path
+                    if not app.monitor.session._async_writes:
+                        raise RuntimeError("Tk Session 紀錄未使用非阻塞寫入")
 
                     serial = "SMOKEATLAS0001"
                     active_record = active / "group0-slot1" / "system" / "records.csv"
@@ -95,6 +97,8 @@ def main():
                         "session_contains_audit": audit_path.is_file(),
                     }, ensure_ascii=False, sort_keys=True))
                 finally:
+                    if app.monitor is not None:
+                        app.monitor.session.flush()
                     root.destroy()
     finally:
         if previous_home is None:

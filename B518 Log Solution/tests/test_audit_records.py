@@ -261,7 +261,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), previous)
 
     def test_session_writes_are_queued_off_the_calling_thread(self):
-        store = SessionStore("queued-session", {}, Path(self.temp.name) / "queued")
+        store = SessionStore("queued-session", {}, Path(self.temp.name) / "queued", async_writes=True)
         entered = threading.Event()
         release = threading.Event()
 

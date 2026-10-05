@@ -626,6 +626,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
+                        async_session_writes=True,
                     )
                 elif platform == "b482":
                     monitor = BtLogMonitor(
@@ -633,6 +634,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
+                        async_session_writes=True,
                     )
                 elif platform == "atlas":
                     monitor = AtlasActiveArchiveMonitor(
@@ -640,6 +642,7 @@ class B518LogSolutionApp:
                         start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
                         round_timeout_seconds=timeouts["round"],
                         session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
+                        async_session_writes=True,
                     )
                 else:
                     raise ValueError("未知平台：{}。".format(platform))

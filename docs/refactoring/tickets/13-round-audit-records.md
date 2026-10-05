@@ -49,7 +49,7 @@
 
 - 新增 `audit.jsonl` schema v1，保存輪次 ID、專案／機型／平台、配置版本及容量／映射／路徑／期限快照；事件包含單調經過時間、App 觀察時間、來源時間、操作時間、顯示／來源位置、來源識別及可取得的 SN／結果／日期／批次證據。round ID 僅供追查，不代表來源確屬同輪。
 - 共同輪次事件依序列進入單一背景追加寫入佇列，不在 Tk 輪詢中重寫整份紀錄；`flush_audit()` 提供明確的磁碟讀取／Session handoff 邊界。寫入以單行追加、fsync 及失敗回退避免留下半行；讀取器拒絕截斷、損壞、不支援版本或序號缺口，並從新讀取的磁碟檔重建有效結果、候選、警報、停止及放行。
-- 原 `session.json`／`results.csv` 改為鎖定下原子替換，保存失敗保留前一份完整檔案；既有 `events.log` 與 Session 查閱流程保留。保存失敗向共同快照及 App 事件顯示稽核不完整；依已確認決策不改變結果可取用條件。
+- 原 `session.json`／`results.csv` 改為鎖定下原子替換，保存失敗保留前一份完整檔案；既有 `events.log` 與 Session 查閱流程保留。正式 Tk App 將傳統 Session 更新與事件寫入背景佇列，避免輪詢阻塞畫面；直接建立的 monitor 維持同步預設。保存失敗向共同快照及 App 事件顯示稽核不完整；依已確認決策不改變結果可取用條件。
 - 保存 Adapter handoff 前的期限／停止事實；Adapter 延遲返回後接續原輪次紀錄，不恢復已停止的讀取。衝突候選快照、逐項人工選擇及整輪警報建立／確認時間均可分別追查；final-only RS-WMT 不補造測試活動時間。
 - 新增離線讀取工具 `tools/rebuild_round_audit.py`（預設完整重建；`--summary` 遮蔽配置與來源細節）及合成資料證據產生器 `tools/generate_ticket13_evidence.py`。匿名化案例為 normal／conflict／round-timeout，無真實序號或實機來源。
 - README 增補 Session 查閱、時間欄位、紀錄版本、重建命令及保存失敗行為。未新增原始 Log 備份、雲端或帳號功能。
@@ -70,6 +70,6 @@
 
 - AC 1、2、3、5 由本機測試、離線重建及匿名化證據通過；AC 4 保持未勾選：本機已證明停止／放行分開記錄，Tk 標記使用同一共同快照，但實際 KVM 端取像及辨識尚未驗收。此實機待驗項依使用者明確批准暫緩，不阻止合併。
 - Ticket 12 AC 1 仍未驗收；Ticket 16 上位機共同整合、Ticket 18 未知同輪政策，以及目標設備／發布 App 驗收均未以本票結果宣稱通過。
-- 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Session 背景寫入不阻塞呼叫端；新增對應回歸測試。測試替身 handoff／臨時資料夾清理前均明確 flush。
+- 固定基準 `$code-review` Standards／Spec 初審及複審均完成，無未解決問題。審查修正包含事件值物件、損壞／缺欄位／無效 UTF-8 紀錄拒絕，以及 Tk App 專用的非阻塞 Session 背景寫入；新增對應回歸測試。非同步測試與受控回放於查閱／清理前明確 flush。
 - 實作 commit `ff7a5e9`；審查修正及最終驗證 commit `1b5e4251957289b69f3d531e70b972d16af66955`。`codex/ticket-13` 已推送並以 `git ls-remote` 確認 Gitea 與 GitHub 兩個實際 push URL 均指向該 SHA；同名 `github` fetch/push remote 是 GitHub 同一目的地，不重複計算。
 - 合併 commit 與合併後同步／分支清理狀態待最終 Git 步驟更新。

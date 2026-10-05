@@ -70,7 +70,8 @@ class SlotResult:
 
 class SessionStore:
     def __init__(self, session_id: str, settings: Dict[str, str], root: Optional[Path] = None,
-                 on_error: Optional[Callable[[str, OSError], None]] = None):
+                 on_error: Optional[Callable[[str, OSError], None]] = None,
+                 async_writes: bool = False):
         root = root or (Path.home() / "Library" / "Application Support" / "B518LogSolution" / "sessions")
         self.path = root / session_id
         self.path.mkdir(parents=True, exist_ok=True)
@@ -85,6 +86,7 @@ class SessionStore:
         self._write_thread = None
         self._write_errors = []  # type: List[str]
         self._on_write_error = on_error
+        self._async_writes = async_writes
         self._write_metadata()
 
     def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
@@ -101,6 +103,9 @@ class SessionStore:
         self._enqueue_write("finish", (), "Session 完成時間保存失敗")
 
     def _enqueue_write(self, operation: str, arguments: tuple, label: str) -> None:
+        if not self._async_writes:
+            getattr(self, operation)(*arguments)
+            return
         with self._write_condition:
             self._write_pending += 1
             self._write_queue.put((operation, arguments, label))
@@ -212,7 +217,8 @@ class BaseMonitor:
                  monotonic: Callable[[], float] = time.monotonic,
                  start_timeout_seconds: Optional[int] = None,
                  test_timeout_seconds: Optional[int] = None,
-                 round_timeout_seconds: Optional[int] = None):
+                 round_timeout_seconds: Optional[int] = None,
+                 async_session_writes: bool = False):
         self.station, self.settings, self.slots = station, settings, tuple(sorted(slots))
         defaults = DEFAULT_TIMEOUTS.get(station.upper(), DEFAULT_TIMEOUTS["FCT"])
         self.start_timeout_seconds = int(start_timeout_seconds or defaults["start"])
@@ -229,7 +235,8 @@ class BaseMonitor:
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
         session_id = "{}-{}".format(station.lower(), self.started.strftime("%Y%m%d-%H%M%S-%f"))
         self.session = SessionStore(session_id, settings, session_root,
-                                    on_error=self._report_session_write_failure)
+                                    on_error=self._report_session_write_failure,
+                                    async_writes=async_session_writes)
         self.finished = False
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
