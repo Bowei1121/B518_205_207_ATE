@@ -162,6 +162,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.status_rows[3]["status"].cget("text"), "PASS")
                 self.assertEqual(app.kvm_result_blocks[3].cget("background"), STATUS_COLOURS["PASS"])
                 self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
+
+                app.stop_monitor()
+                stop_deadline = time.monotonic() + 2
+                while time.monotonic() < stop_deadline:
+                    root.update()
+                    if app.rounds.snapshot().state == "STOPPED":
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(app.rounds.snapshot().state, "STOPPED")
+                app._drain_events()
+                root.update_idletasks()
+                self.assertEqual(app._display_capacity(), 3)
+                self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
             finally:
                 if app._round_is_active():
                     app.rounds.stop()

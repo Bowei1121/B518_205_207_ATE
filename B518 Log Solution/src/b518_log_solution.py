@@ -660,7 +660,6 @@ class B518LogSolutionApp:
             self._set_monitor_controls(False, "啟動失敗")
             messagebox.showerror("監控啟動失敗", event.message, parent=self.root)
         if event.kind in {"finished", "stopped"}:
-            self.active_profile_snapshot = None
             self._set_monitor_controls(False)
 
     def _open_conflict_review(self) -> None:
