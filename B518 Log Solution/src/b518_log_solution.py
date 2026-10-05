@@ -20,6 +20,13 @@ from configured_monitor import ConfiguredMonitor
 from machine_profiles import (
     MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
+from kvm_display_contract import (
+    KVM_CELL_HEIGHT, KVM_CELL_WIDTH, KVM_FIRST_ROW_Y, KVM_ROW_STEP,
+    LOCATOR_FAR_INSET, LOCATOR_LEFT, LOCATOR_NEAR_INSET, LOCATOR_RIGHT,
+    LOCATOR_SIZE, LOCATOR_WHITE_SIZE, MARKER_CELL_GAP, MARKER_CELL_SIZE,
+    MARKER_PATTERNS, MARKER_QUIET_ZONE, MARKER_SIZE, MarkerState,
+    STATE_MARKER_ORIGIN, state_for_round_snapshot,
+)
 from rswmt_monitoring import RsWmtLogMonitor
 
 
@@ -37,12 +44,12 @@ MAIN_FONT_SIZE = 14
 ROW_HEIGHT = 46
 ROW_GAP = 1
 ROW_WIDTH = 342
-KVM_BAND_HEIGHT = 76
-KVM_SINGLE_ROW_HEIGHT = 49
+KVM_BAND_HEIGHT = 88
+KVM_SINGLE_ROW_HEIGHT = 61
 KVM_COLUMN_COUNT = 10
 KVM_BLOCK_WIDTH = 34
 DETAIL_ROWS_VISIBLE = 7
-WINDOW_FIXED_HEIGHT = 341
+WINDOW_FIXED_HEIGHT = 353
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -122,6 +129,7 @@ class B518LogSolutionApp:
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
         self.template_labels: Dict[str, tk.Label] = {}
         self.kvm_result_blocks: Dict[int, tk.Label] = {}
+        self._rendered_marker_state: Optional[MarkerState] = None
         self.company_logo: Optional[tk.PhotoImage] = None
         self.event_lines: list[str] = []
         self.settings_window: Optional[tk.Toplevel] = None
@@ -226,14 +234,21 @@ class B518LogSolutionApp:
         self.kvm_results.pack_propagate(False)
         tk.Label(self.kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                  font=("Helvetica", 10, "bold"), anchor="w").place(x=0, y=0, width=80, height=16)
-        self._build_kvm_locator(self.kvm_results, 82, 2, mirrored=False)
-        self._build_kvm_locator(self.kvm_results, 320, 2, mirrored=True)
+        self._build_kvm_locator(self.kvm_results, *LOCATOR_LEFT, mirrored=False)
+        self._build_kvm_locator(self.kvm_results, *LOCATOR_RIGHT, mirrored=True)
+        self.kvm_state_marker = tk.Canvas(
+            self.kvm_results, width=MARKER_SIZE, height=MARKER_SIZE,
+            background="#ffffff", highlightthickness=0, borderwidth=0,
+        )
+        self.kvm_state_marker.place(x=STATE_MARKER_ORIGIN[0], y=STATE_MARKER_ORIGIN[1],
+                                    width=MARKER_SIZE, height=MARKER_SIZE)
+        self._render_state_marker(None)
         for slot in range(1, KVM_BLOCK_COUNT + 1):
             block = tk.Label(self.kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
             row = (slot - 1) // KVM_COLUMN_COUNT
             column = (slot - 1) % KVM_COLUMN_COUNT
-            block.place(x=column * KVM_BLOCK_WIDTH, y=20 + row * 27,
-                        width=KVM_BLOCK_WIDTH, height=26)
+            block.place(x=column * KVM_BLOCK_WIDTH, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
+                        width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self.kvm_result_blocks[slot] = block
 
         legend = tk.Frame(body, background=LIGHT_BACKGROUND, height=58)
@@ -295,11 +310,43 @@ class B518LogSolutionApp:
     @staticmethod
     def _build_kvm_locator(parent: tk.Widget, x: int, y: int, mirrored: bool) -> None:
         """Two asymmetric black/white marks let image analysis lock orientation and scale."""
-        marker = tk.Frame(parent, background="#000000", width=14, height=14)
-        marker.place(x=x, y=y, width=14, height=14)
-        inset_x = 2 if not mirrored else 6
-        inset_y = 2 if not mirrored else 6
-        tk.Frame(marker, background="#ffffff", width=6, height=6).place(x=inset_x, y=inset_y, width=6, height=6)
+        marker = tk.Frame(parent, background="#000000", width=LOCATOR_SIZE, height=LOCATOR_SIZE)
+        marker.place(x=x, y=y, width=LOCATOR_SIZE, height=LOCATOR_SIZE)
+        inset = LOCATOR_FAR_INSET if mirrored else LOCATOR_NEAR_INSET
+        tk.Frame(marker, background="#ffffff", width=LOCATOR_WHITE_SIZE,
+                 height=LOCATOR_WHITE_SIZE).place(
+            x=inset, y=inset, width=LOCATOR_WHITE_SIZE, height=LOCATOR_WHITE_SIZE)
+
+    def _render_state_marker(self, snapshot) -> MarkerState:
+        """Draw the machine marker and product band from the same round snapshot."""
+        state = state_for_round_snapshot(snapshot)
+        if state == getattr(self, "_rendered_marker_state", None):
+            return state
+        marker = getattr(self, "kvm_state_marker", None)
+        if marker is None:
+            self._rendered_marker_state = state
+            return state
+        pattern = MARKER_PATTERNS[state]
+        marker.delete("marker")
+        for row in range(2):
+            for column in range(2):
+                x = MARKER_QUIET_ZONE + column * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
+                y = MARKER_QUIET_ZONE + row * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
+                colour = "#000000" if pattern[row][column] else "#ffffff"
+                marker.create_rectangle(
+                    x, y, x + MARKER_CELL_SIZE, y + MARKER_CELL_SIZE,
+                    fill=colour, outline=colour, tags=("marker", "marker-cell"),
+                )
+        self._rendered_marker_state = state
+        return state
+
+    def _apply_round_snapshot(self, snapshot) -> None:
+        """Atomically render one current-round snapshot to cells and marker."""
+        if snapshot is None or snapshot.round_id != self.active_round_id:
+            return
+        for result in snapshot.results:
+            self._set_row(result.slot, result.sn, result.status)
+        self._render_state_marker(snapshot)
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)
@@ -360,8 +407,8 @@ class B518LogSolutionApp:
             else:
                 row = (slot - 1) // KVM_COLUMN_COUNT
                 column = (slot - 1) % KVM_COLUMN_COUNT
-                block.place(x=column * KVM_BLOCK_WIDTH, y=20 + row * 27,
-                            width=KVM_BLOCK_WIDTH, height=26)
+                block.place(x=column * KVM_BLOCK_WIDTH, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
+                            width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self._set_kvm_result_block(slot, "WAITING")
         self._position_window()
 
@@ -602,14 +649,16 @@ class B518LogSolutionApp:
                 return configured
 
             self._save_preferences()
-            self._reset_rows()
             snapshot = self.rounds.start(station, monitor_factory, round_timeout_seconds=timeouts["round"],
                                          capacity=profile.capacity if profile else slot_count(station))
             self.active_round_id = snapshot.round_id
             self.monitor = self.rounds.monitor
+            self._reset_rows()
+            self._apply_round_snapshot(snapshot)
         except Exception as error:
             self.monitor = None
             self.active_profile_snapshot = None
+            self._render_state_marker(None)
             self._set_monitor_controls(False)
             message = "無法開始監控：{}".format(error)
             self._log(message)
@@ -650,9 +699,7 @@ class B518LogSolutionApp:
         except queue.Empty:
             pass
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
-        if snapshot and snapshot.round_id == self.active_round_id:
-            for result in snapshot.results:
-                self._set_row(result.slot, result.sn, result.status)
+        self._apply_round_snapshot(snapshot)
         self._refresh_conflict_review()
         self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
@@ -675,6 +722,7 @@ class B518LogSolutionApp:
             self.monitor = self.rounds.monitor
         self._log(event.message)
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        self._apply_round_snapshot(snapshot)
         if event.slot and snapshot:
             result = next((item for item in snapshot.results if item.slot == event.slot), None)
             if result is not None:
