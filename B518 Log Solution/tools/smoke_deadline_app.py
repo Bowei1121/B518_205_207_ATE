@@ -133,16 +133,21 @@ def main():
                     delayed_monitor = {}
 
                     def blocked_atlas_constructor(*args, **kwargs):
-                        preparation_entered.set()
-                        preparation_release.wait(10)
                         monitor = original_atlas_monitor(*args, **kwargs)
                         original_start = monitor.start
+                        original_update_settings = monitor.update_round_settings
+
+                        def block_settings_handoff(settings):
+                            preparation_entered.set()
+                            preparation_release.wait(10)
+                            return original_update_settings(settings)
 
                         def track_start():
                             adapter_started.set()
                             original_start()
 
                         monitor.start = track_start
+                        monitor.update_round_settings = block_settings_handoff
                         delayed_monitor["value"] = monitor
                         return monitor
 
@@ -153,7 +158,7 @@ def main():
                     with patch.object(app_module, "AtlasActiveArchiveMonitor", blocked_atlas_constructor):
                         app.start_button.invoke()
                         if not preparation_entered.wait(2):
-                            raise RuntimeError("The controlled source constructor did not block as expected.")
+                            raise RuntimeError("The controlled adapter settings handoff did not block as expected.")
                         wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None
                                  and app.rounds.snapshot().collection_stopped,
                                  "deadline progress during blocked source preparation", timeout=4)
@@ -185,11 +190,17 @@ def main():
 
                     wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
                              "restart button after Atlas completion")
+                    update_profile(app, "B518", "FCT", "atlas",
+                                   {"active": str(active), "final": str(archive)}, 2, 3, 10, 90)
                     app.start_button.invoke()
                     wait_for(root, lambda: app.monitor is not None, "empty-round source preparation")
-                    wait_for(root, lambda: app.rounds.snapshot().state == "COMPLETED"
-                             and all(item.status == "NOTEST" for item in app.rounds.snapshot().results),
-                             "all-empty start deadline")
+                    try:
+                        wait_for(root, lambda: app.rounds.snapshot().state == "COMPLETED"
+                                 and all(item.status == "NOTEST" for item in app.rounds.snapshot().results),
+                                 "all-empty start deadline")
+                    except RuntimeError as error:
+                        print("all-empty diagnostic:", app.rounds.snapshot(), app.rounds.monitor)
+                        raise error
                     empty = app.rounds.snapshot()
 
                     wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
@@ -414,7 +425,7 @@ def main():
                         "all_empty": [item.status for item in empty.results],
                         "individual_timeout_and_manual_stop": [item.status for item in stopped.results],
                         "blocked_source_preparation": {
-                            "deadline_visible_before_factory_return": True,
+                            "deadline_visible_before_settings_handoff_return": True,
                             "late_adapter_started": adapter_started.is_set(),
                             "results_released_after_ack": preparation_timeout.result_available,
                         },

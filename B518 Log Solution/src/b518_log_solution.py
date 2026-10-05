@@ -633,7 +633,8 @@ class B518LogSolutionApp:
             self.settings_log.configure(state="disabled")
 
     def _drain_events(self) -> None:
-        if hasattr(self, "rounds") and self.rounds.monitor is None:
+        round_snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        if round_snapshot and (self.rounds.monitor is None or round_snapshot.source_preparation_pending):
             self.rounds.poll_once()
             if self.monitor is None:
                 self.monitor = self.rounds.monitor

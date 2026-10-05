@@ -630,6 +630,95 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
         self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
 
+    def test_preparation_alarm_is_persisted_across_monitor_handoff(self):
+        elapsed = [0.0]
+        settings_entered = threading.Event()
+        settings_release = threading.Event()
+        holder = {}
+
+        class HandoffMonitor(DeadlineMonitor):
+            def __init__(self, callback):
+                super().__init__(callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+                self.persisted_events = []
+                self.start_count = 0
+
+            def update_round_settings(self, _settings):
+                settings_entered.set()
+                settings_release.wait(3)
+
+            def publish_round_event(self, event):
+                self.persisted_events.append(event)
+                super().publish_round_event(event)
+
+            def start(self):
+                self.start_count += 1
+
+        def factory(callback):
+            holder["monitor"] = HandoffMonitor(callback)
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
+        self.assertTrue(settings_entered.wait(1))
+        elapsed[0] = 5.0
+        expired = coordinator.poll_once()
+        self.assertIsNotNone(expired.round_alarm)
+        self.assertFalse(expired.round_alarm_ready)
+        self.assertEqual(expired.results[0].status, "NOTEST")
+        settings_release.set()
+        for _ in range(200):
+            snapshot = coordinator.snapshot()
+            if snapshot.round_alarm_ready:
+                break
+            time.sleep(0.01)
+
+        monitor = holder["monitor"]
+        self.assertTrue(snapshot.round_alarm_ready)
+        self.assertTrue(monitor.collection_stopped)
+        self.assertEqual(monitor.start_count, 0)
+        persisted_round_timeouts = [event for event in monitor.persisted_events
+                                    if event.kind == "timeout" and event.detail.get("kind") == "round"]
+        self.assertEqual(len(persisted_round_timeouts), 1)
+        self.assertEqual(snapshot.round_id, started.round_id)
+
+    def test_round_event_callback_does_not_hold_round_lock_against_repeated_start(self):
+        callback_finished = threading.Event()
+        callback_errors = []
+        coordinator_holder = {}
+        monitor_holder = {}
+
+        def factory(callback):
+            monitor_holder["monitor"] = DeadlineMonitor(callback, time.monotonic, slots=(1,))
+            return monitor_holder["monitor"]
+
+        def on_event(event):
+            if event.event.kind != "round_alarm_acknowledgement_ignored":
+                return
+
+            def repeated_start():
+                try:
+                    coordinator_holder["coordinator"].start(
+                        "FCT", factory, run_async=False, round_timeout_seconds=30, capacity=1)
+                    callback_finished.set()
+                except Exception as error:
+                    callback_errors.append(error)
+
+            thread = threading.Thread(target=repeated_start)
+            thread.start()
+            if not callback_finished.wait(1):
+                callback_errors.append(AssertionError("Repeated start deadlocked against event delivery."))
+
+        coordinator = RoundCoordinator(on_event=on_event)
+        coordinator_holder["coordinator"] = coordinator
+        started = coordinator.start("FCT", factory, run_async=False,
+                                    round_timeout_seconds=30, capacity=1)
+        ignored = coordinator.acknowledge_round_alarm(started.round_id, "stale-alarm")
+        self.assertEqual(ignored.events[-1].event.kind, "round_alarm_acknowledgement_ignored")
+        self.assertTrue(callback_finished.is_set())
+        self.assertFalse(callback_errors)
+        self.assertEqual(coordinator.snapshot().round_id, started.round_id)
+
     def test_manual_stop_during_source_preparation_cannot_resume_when_factory_returns(self):
         entered = threading.Event()
         release = threading.Event()
