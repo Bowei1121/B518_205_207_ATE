@@ -1,9 +1,11 @@
 import csv
+import log_monitoring
 import shutil
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
 from b482_source_adapter import B482SourceAdapter, B482ObservationKind
@@ -32,8 +34,22 @@ class LogMonitoringTests(unittest.TestCase):
     def setUp(self):
         self.temp = Path(tempfile.mkdtemp())
         self.now = datetime(2022, 6, 18, 2, 29, 0)
+        self.sessions = []
+        original_store = log_monitoring.SessionStore
+
+        def track_session(*args, **kwargs):
+            store = original_store(*args, **kwargs)
+            self.sessions.append(store)
+            return store
+
+        self.session_store_patch = patch.object(
+            log_monitoring, "SessionStore", side_effect=track_session)
+        self.session_store_patch.start()
 
     def tearDown(self):
+        for store in self.sessions:
+            self.assertTrue(store.flush())
+        self.session_store_patch.stop()
         shutil.rmtree(self.temp)
 
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):

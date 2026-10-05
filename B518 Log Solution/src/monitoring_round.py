@@ -8,9 +8,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
+from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
 
 
 class RoundMonitor(Protocol):
@@ -98,6 +100,9 @@ class RoundSnapshot:
     round_alarm: Optional[RoundAlarm] = None
     round_alarm_ready: bool = True
     source_preparation_pending: bool = False
+    audit_complete: bool = True
+    audit_errors: Tuple[str, ...] = ()
+    audit_pending: bool = False
 
 
 class MonitoringRound:
@@ -105,13 +110,16 @@ class MonitoringRound:
 
     def __init__(self, station: str, monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
                  on_event: Callable[[RoundEvent], None], monotonic: Callable[[], float],
-                 round_timeout_seconds: Optional[int] = None, capacity: Optional[int] = None):
+                 round_timeout_seconds: Optional[int] = None, capacity: Optional[int] = None,
+                 audit_root: Optional[Path] = None, audit_context: Optional[dict] = None,
+                 wall_clock: Callable[[], datetime] = datetime.now):
         self.round_id = uuid.uuid4().hex
         self.station = station
         self._monotonic = monotonic
         # Capture the accepted start before a monitor snapshots or prepares sources.
         self._started_monotonic = monotonic()
-        self._accepted_start_at = datetime.now().isoformat(timespec="seconds")
+        self._accepted_start_at = wall_clock().isoformat(timespec="seconds")
+        self._wall_clock = wall_clock
         self._lock = threading.RLock()
         self._event_lock = threading.RLock()
         self._poll_lock = threading.Lock()
@@ -141,6 +149,18 @@ class MonitoringRound:
         self._monitor_factory = monitor_factory
         self._monitor: Optional[RoundMonitor] = None
         self._monitor_persistence_ready = False
+        self._audit_errors = []  # type: list[str]
+        self._audit_store = None
+        self._audit_condition = threading.Condition()
+        self._audit_next_sequence = 1
+        if audit_root is not None:
+            try:
+                self._audit_store = RoundAuditStore(
+                    Path(audit_root), self.round_id, station, self._accepted_start_at,
+                    self._started_monotonic, audit_context, on_error=self._audit_write_failed,
+                )
+            except (OSError, AuditRecordError, TypeError, ValueError) as error:
+                self._audit_errors.append(str(error))
 
     @property
     def monitor(self):
@@ -153,6 +173,11 @@ class MonitoringRound:
                 return self.snapshot()
             self._started = True
             self._state = RoundState.RUNNING
+            self._publish_round_event(MonitorEvent(
+                "round_started", "{} 本輪已接受開始".format(self.station),
+                detail={"round_id": self.round_id, "accepted_start_at": self._accepted_start_at,
+                        "accepted_start_monotonic": str(self._started_monotonic)},
+            ))
             if run_async:
                 self._run_thread = threading.Thread(target=self._prepare_and_run, daemon=True)
                 self._run_thread.start()
@@ -195,6 +220,7 @@ class MonitoringRound:
                     self._state = RoundState.STOPPED
                     self._collection_stopped = True
                     self._completion_reason = "manual_stop"
+                    self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
             if monitor is not None:
                 # Adapter callbacks can re-enter the round and coordinator. Do
                 # not call them while holding the round state lock.
@@ -205,6 +231,16 @@ class MonitoringRound:
                         self._state = RoundState.STOPPED
                         self._collection_stopped = True
                         self._completion_reason = "manual_stop"
+            else:
+                self._append_event(MonitorEvent(
+                    "collection_stopped", "{} 已停止讀取本輪來源（manual_stop）".format(self.station),
+                    detail={"round_id": self.round_id, "reason": "manual_stop",
+                            "collection_stopped_at": self._collection_stopped_at},
+                ))
+                self._append_event(MonitorEvent(
+                    "stopped", "{} 監控已由人員停止".format(self.station),
+                    detail={"round_id": self.round_id, "reason": "manual_stop"},
+                ))
             return self.snapshot()
 
     def resolve_review(self, conflict_id: str, choice: str) -> RoundSnapshot:
@@ -245,13 +281,14 @@ class MonitoringRound:
                     "result_after_sn": (effective_result.sn if effective_result else "unknown"),
                     "result_after_status": (effective_result.status if effective_result else "unknown"),
                     "result_after_source": (effective_result.source if effective_result else "unknown"),
+                    "chosen_source_position": dict(selected.evidence).get("source_position", "unknown"),
                     "original_sn": conflict.original.sn or "unknown",
                     "original_status": conflict.original.status,
                     "candidate_sn": conflict.candidate.sn or "unknown",
                     "candidate_status": conflict.candidate.status,
                     "candidate_source_id": conflict.candidate.source_id or "unknown",
                     "candidate_source_time": conflict.candidate.source_time or "unknown",
-                    "selected_at": datetime.now().isoformat(timespec="seconds"),
+                    "selected_at": self._wall_clock().isoformat(timespec="seconds"),
                 },
             )
             self._publish_round_event(event)
@@ -280,7 +317,7 @@ class MonitoringRound:
                 else:
                     reason = ""
                     alarm = RoundAlarm(alarm.alarm_id, alarm.round_id, alarm.created_at,
-                                       datetime.now().isoformat(timespec="seconds"))
+                                       self._wall_clock().isoformat(timespec="seconds"))
                     self._round_alarm = alarm
             if reason:
                 self._append_event(MonitorEvent(
@@ -310,7 +347,30 @@ class MonitoringRound:
                 tuple(self._events), self._collection_stopped, self._completion_reason,
                 tuple(self._pending_conflicts.values()), self._round_alarm, self._round_alarm_ready,
                 not self._monitor_persistence_ready,
+                self._audit_store is not None and not self._audit_errors and
+                self._audit_store.error is None and not self._audit_store.pending,
+                tuple(self._audit_errors),
+                self._audit_store.pending if self._audit_store is not None else False,
             )
+
+    def flush_audit(self, timeout: Optional[float] = 10.0) -> bool:
+        """Wait for the ordered audit writer at explicit read/close boundaries."""
+        store = self._audit_store
+        return store.flush(timeout) if store is not None else not self._audit_errors
+
+    def _audit_write_failed(self, record: dict, message: str) -> None:
+        with self._lock:
+            if message not in self._audit_errors:
+                self._audit_errors.append(message)
+            failure = RoundEvent(
+                self.round_id, len(self._events) + 1,
+                MonitorEvent("audit_write_failed", message,
+                             detail={"round_id": self.round_id,
+                                     "failed_event_sequence": str(record.get("sequence", "unknown")),
+                                     "audit_complete": "false"}),
+            )
+            self._events.append(failure)
+        self._on_event(failure)
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
         with self._lock:
@@ -324,6 +384,12 @@ class MonitoringRound:
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
+                self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
+            self._append_event(MonitorEvent(
+                "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
+                detail={"round_id": self.round_id, "reason": "start_failed",
+                        "collection_stopped_at": self._collection_stopped_at},
+            ))
             self._receive_monitor_event(
                 MonitorEvent("start_failed", "無法準備監控來源：{}".format(error))
             )
@@ -336,8 +402,16 @@ class MonitoringRound:
             self._monitor = monitor
             self._monitor_persistence_ready = False
             stop_requested = self._stop_requested
+        session_path = getattr(getattr(monitor, "session", None), "path", None)
+        if self._audit_store is not None and isinstance(session_path, (str, Path)):
+            try:
+                self._audit_store.attach_session(Path(session_path))
+            except (OSError, AuditRecordError) as error:
+                self._audit_errors.append("無法關聯傳統 Session 紀錄：{}".format(error))
         monitor.update_round_settings({"accepted_start_at": self._accepted_start_at,
                                        "accepted_start_monotonic": self._started_monotonic,
+                                       "round_id": self.round_id,
+                                       "round_audit_schema_version": 1,
                                        "round_candidate_mode": True})
         self._flush_deferred_events(monitor)
         with self._poll_lock:
@@ -381,9 +455,18 @@ class MonitoringRound:
                 if self._round_alarm is None:
                     self._round_alarm = RoundAlarm(
                         uuid.uuid4().hex, self.round_id,
-                        datetime.now().isoformat(timespec="seconds"),
+                        self._wall_clock().isoformat(timespec="seconds"),
                     )
+                    alarm_created = True
+                else:
+                    alarm_created = False
                 alarm = self._round_alarm
+            if alarm_created:
+                self._publish_round_event(MonitorEvent(
+                    "round_alarm_created", "{} 整輪逾時警報已建立".format(self.station),
+                    detail={"round_id": self.round_id, "alarm_id": alarm.alarm_id,
+                            "created_at": alarm.created_at, "reason": "round_deadline"},
+                ))
             self._emit_timeout("round", None, round_limit, elapsed, alarm, at)
             self._stop_collection("round_deadline")
             with self._lock:
@@ -422,7 +505,7 @@ class MonitoringRound:
         elapsed = max(0.0, at - self._started_monotonic)
         if elapsed < self._configured_round_timeout:
             return
-        created_at = datetime.now().isoformat(timespec="seconds")
+        created_at = self._wall_clock().isoformat(timespec="seconds")
         with self._lock:
             if self._state != RoundState.RUNNING or (self._monitor is not None and
                                                        self._monitor_persistence_ready):
@@ -438,6 +521,11 @@ class MonitoringRound:
             self._preparation_results = tuple(
                 RoundResult(slot, "", "NOTEST", "", created_at) for slot in range(1, capacity + 1)
             )
+        self._publish_round_event(MonitorEvent(
+            "round_alarm_created", "{} 整輪逾時警報已建立".format(self.station),
+            detail={"round_id": self.round_id, "alarm_id": self._round_alarm.alarm_id,
+                    "created_at": created_at, "reason": "round_deadline"},
+        ))
         self._emit_timeout("round", None, self._configured_round_timeout, elapsed,
                            self._round_alarm, at)
 
@@ -456,7 +544,7 @@ class MonitoringRound:
         monitor.stop_collection()
         detail = {"round_id": self.round_id, "reason": "round_deadline",
                   "collection_stopped_at": self._collection_stopped_at or
-                  (alarm.created_at if alarm else datetime.now().isoformat(timespec="seconds"))}
+                  (alarm.created_at if alarm else self._wall_clock().isoformat(timespec="seconds"))}
         if alarm:
             detail["alarm_id"] = alarm.alarm_id
         self._publish_round_event(MonitorEvent(
@@ -536,7 +624,7 @@ class MonitoringRound:
                 return
             self._collection_stopped = True
             self._completion_reason = reason
-            self._collection_stopped_at = datetime.now().isoformat(timespec="seconds")
+            self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
             monitor = self._monitor
         monitor.stop_collection()
         detail = {
@@ -581,7 +669,7 @@ class MonitoringRound:
             "finished", "{} 本輪完成".format(self.station),
             detail={"completion_reason": self._completion_reason or "results_terminal",
                     "round_id": self.round_id,
-                    "results_released_at": datetime.now().isoformat(timespec="seconds")},
+                    "results_released_at": self._wall_clock().isoformat(timespec="seconds")},
         ))
 
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
@@ -590,6 +678,10 @@ class MonitoringRound:
             return
         if event.kind == "result_candidate":
             return self._consider_result_candidate(event)
+        if event.kind == "session_write_failed":
+            message = event.message
+            if message not in self._audit_errors:
+                self._audit_errors.append(message)
         with self._lock:
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()
@@ -612,7 +704,46 @@ class MonitoringRound:
                 self._completion_reason = "manual_stop"
             round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
             self._events.append(round_event)
+        self._persist_audit_event(round_event)
         self._on_event(round_event)
+
+    def _persist_audit_event(self, round_event: RoundEvent) -> None:
+        store = self._audit_store
+        if store is None:
+            return
+        event = round_event.event
+        failure_message = None
+        with self._audit_condition:
+            while round_event.sequence != self._audit_next_sequence:
+                self._audit_condition.wait()
+            try:
+                store.append_event(
+                    AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
+                               event.sn, event.status, event.source, dict(event.detail)),
+                    self._wall_clock().isoformat(timespec="seconds"),
+                    self._monotonic() - self._started_monotonic,
+                )
+            except (OSError, AuditRecordError, TypeError, ValueError) as error:
+                failure_message = "輪次稽核紀錄保存失敗：{}".format(error)
+                if failure_message not in self._audit_errors:
+                    self._audit_errors.append(failure_message)
+            # Actual I/O errors are reported by the writer callback, outside Tk.
+            self._audit_next_sequence = round_event.sequence + (2 if failure_message else 1)
+            self._audit_condition.notify_all()
+        if failure_message:
+            self._publish_audit_failure(round_event, failure_message)
+
+    def _publish_audit_failure(self, failed_event: RoundEvent, message: str) -> None:
+        with self._lock:
+            failure = RoundEvent(
+                self.round_id, len(self._events) + 1,
+                MonitorEvent("audit_write_failed", message,
+                             detail={"round_id": self.round_id,
+                                     "failed_event_sequence": str(failed_event.sequence),
+                                     "audit_complete": "false"}),
+            )
+            self._events.append(failure)
+        self._on_event(failure)
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:
         """Admit source facts, queue confirmed contradictions, and retain uncertainty."""
@@ -678,7 +809,7 @@ class MonitoringRound:
                             uuid.uuid4().hex, self.round_id, event.slot or 0, original, candidate,
                             tuple(sorted((key, value) for key, value in candidate_detail.items()
                                          if key.endswith("evidence") or key == "round_evidence_id")),
-                            datetime.now().isoformat(timespec="seconds"),
+                            self._wall_clock().isoformat(timespec="seconds"),
                         )
                         self._pending_conflicts[conflict.conflict_id] = conflict
                         self._state = RoundState.AWAITING_REVIEW
@@ -689,9 +820,22 @@ class MonitoringRound:
                              "original_sn": original.sn or "unknown", "original_status": original.status,
                              "original_source_id": original.source_id or "unknown",
                              "original_source_time": original.source_time or "unknown",
+                             "original_source_position": dict(original.evidence).get("source_position", "unknown"),
                              "candidate_sn": candidate.sn or "unknown", "candidate_status": candidate.status,
                              "candidate_source_id": candidate.source_id or "unknown",
                              "candidate_source_time": candidate.source_time or "unknown",
+                             "candidate_source_position": dict(candidate.evidence).get("source_position", "unknown"),
+                             "source_position": dict(candidate.evidence).get("source_position", "unknown"),
+                             "original": {"sn": original.sn or None, "status": original.status,
+                                          "source": original.source or None,
+                                          "source_id": original.source_id or None,
+                                          "source_time": original.source_time or None,
+                                          "evidence": dict(original.evidence)},
+                             "candidate": {"sn": candidate.sn or None, "status": candidate.status,
+                                           "source": candidate.source or None,
+                                           "source_id": candidate.source_id or None,
+                                           "source_time": candidate.source_time or None,
+                                           "evidence": dict(candidate.evidence)},
                              "same_round_evidence_id": evidence_id or "unknown"},
                         )
                         decision = "defer"
@@ -715,23 +859,28 @@ class RoundCoordinator:
     """Provide the application entry point for one profile-backed round."""
 
     def __init__(self, on_event: Optional[Callable[[RoundEvent], None]] = None,
-                 monotonic: Callable[[], float] = time.monotonic):
+                 monotonic: Callable[[], float] = time.monotonic,
+                 audit_root: Optional[Path] = None,
+                 wall_clock: Callable[[], datetime] = datetime.now):
         self._lock = threading.RLock()
         self._current: Optional[MonitoringRound] = None
         self._events = []  # type: list[RoundEvent]
         self._on_event = on_event
         self._monotonic = monotonic
+        self._audit_root = Path(audit_root) if audit_root is not None else None
+        self._wall_clock = wall_clock
 
     def start(self, station: str,
               monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
               run_async: bool = True, round_timeout_seconds: Optional[int] = None,
-              capacity: Optional[int] = None) -> RoundSnapshot:
+              capacity: Optional[int] = None, audit_context: Optional[dict] = None) -> RoundSnapshot:
         with self._lock:
             if self._current is not None and self._current.snapshot().state in {
                     RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return self._current.snapshot()
             session = MonitoringRound(station, monitor_factory, self._record_current_event, self._monotonic,
-                                      round_timeout_seconds, capacity)
+                                      round_timeout_seconds, capacity, self._audit_root, audit_context,
+                                      self._wall_clock)
             self._current = session
             self._events = []
             try:
@@ -744,6 +893,12 @@ class RoundCoordinator:
         with self._lock:
             current = self._current
         return current.poll_once() if current is not None else None
+
+    def flush_audit(self, timeout: Optional[float] = 10.0) -> bool:
+        """Wait for the current round's append-only journal to become durable."""
+        with self._lock:
+            current = self._current
+        return current.flush_audit(timeout) if current is not None else True
 
     def stop(self) -> Optional[RoundSnapshot]:
         with self._lock:

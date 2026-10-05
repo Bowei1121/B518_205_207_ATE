@@ -100,6 +100,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
                 sum(event.event.kind == "final" for event in after_later_progress.events),
                 1,
             )
+            self.assertTrue(rounds.monitor.session.flush())
 
     def test_atlas_same_active_slot_and_trusted_sn_capture_changed_final_as_common_conflict(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -137,6 +138,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             self.assertEqual(dict(conflict.same_round_evidence)["round_evidence_id"],
                              "atlas:1:SAMPLE123456")
             rounds.stop()
+            self.assertTrue(rounds.monitor.session.flush())
 
     def test_atlas_active_identity_change_is_retained_as_unconfirmed_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -159,6 +161,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             self.assertEqual(unresolved[0].detail["candidate_sn"], "OTHER1234567")
             self.assertEqual(unresolved[0].detail["source_time"], "unknown")
             rounds.stop()
+            self.assertTrue(rounds.monitor.session.flush())
 
     def test_unchanged_record_in_existing_active_directory_is_still_active(self):
         with tempfile.TemporaryDirectory() as temporary:

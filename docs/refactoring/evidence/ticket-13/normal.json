@@ -1,0 +1,220 @@
+{
+  "alarms": {},
+  "audit_complete": true,
+  "case": "normal",
+  "collection_stopped": true,
+  "conflicts": {},
+  "events": [
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {
+        "accepted_start_at": "2026-10-05T12:00:00",
+        "accepted_start_monotonic": "0.0",
+        "round_id": "59105e725591468fad5b7f347fdcf7b6"
+      },
+      "display_position": null,
+      "elapsed_seconds": 0.0,
+      "kind": "round_started",
+      "message": "FCT 本輪已接受開始",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 1,
+      "sn": null,
+      "source": null,
+      "source_id": null,
+      "source_position": null,
+      "source_time": null,
+      "status": null
+    },
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {},
+      "display_position": null,
+      "elapsed_seconds": 0.0,
+      "kind": "round_ready",
+      "message": "FCT 監控來源準備就緒",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 2,
+      "sn": null,
+      "source": null,
+      "source_id": null,
+      "source_position": null,
+      "source_time": null,
+      "status": null
+    },
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {
+        "source_position": 2,
+        "source_time": "2026-10-05T11:59:00"
+      },
+      "display_position": 1,
+      "elapsed_seconds": 0.0,
+      "kind": "result",
+      "message": "slot1 PASS",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 3,
+      "sn": "SYNTHETIC-001",
+      "source": "fixture/A",
+      "source_id": null,
+      "source_position": 2,
+      "source_time": "2026-10-05T11:59:00",
+      "status": "PASS"
+    },
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {
+        "source_position": 4,
+        "source_time": "2026-10-05T11:59:01"
+      },
+      "display_position": 2,
+      "elapsed_seconds": 0.0,
+      "kind": "result",
+      "message": "slot2 FAIL",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 4,
+      "sn": "SYNTHETIC-002",
+      "source": "fixture/B",
+      "source_id": null,
+      "source_position": 4,
+      "source_time": "2026-10-05T11:59:01",
+      "status": "FAIL"
+    },
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {
+        "collection_stopped_at": "2026-10-05T12:00:00",
+        "reason": "results_terminal",
+        "round_id": "59105e725591468fad5b7f347fdcf7b6"
+      },
+      "display_position": null,
+      "elapsed_seconds": 0.0,
+      "kind": "collection_stopped",
+      "message": "FCT 已停止讀取本輪來源（results_terminal）",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 5,
+      "sn": null,
+      "source": null,
+      "source_id": null,
+      "source_position": null,
+      "source_time": null,
+      "status": null
+    },
+    {
+      "batch_evidence": null,
+      "date_evidence": null,
+      "detail": {
+        "completion_reason": "results_terminal",
+        "results_released_at": "2026-10-05T12:00:00",
+        "round_id": "59105e725591468fad5b7f347fdcf7b6"
+      },
+      "display_position": null,
+      "elapsed_seconds": 0.0,
+      "kind": "finished",
+      "message": "FCT 本輪完成",
+      "observed_at": "2026-10-05T12:00:00",
+      "operation_at": null,
+      "record_type": "event",
+      "round_id": "59105e725591468fad5b7f347fdcf7b6",
+      "schema_version": 1,
+      "sequence": 6,
+      "sn": null,
+      "source": null,
+      "source_id": null,
+      "source_position": null,
+      "source_time": null,
+      "status": null
+    }
+  ],
+  "evidence_kind": "synthetic_anonymized",
+  "manual_stop": false,
+  "result_available": true,
+  "results": {
+    "1": {
+      "detail": {
+        "source_position": 2,
+        "source_time": "2026-10-05T11:59:00"
+      },
+      "display_position": 1,
+      "sn": "SYNTHETIC-001",
+      "source": "fixture/A",
+      "source_position": 2,
+      "source_time": "2026-10-05T11:59:00",
+      "status": "PASS"
+    },
+    "2": {
+      "detail": {
+        "source_position": 4,
+        "source_time": "2026-10-05T11:59:01"
+      },
+      "display_position": 2,
+      "sn": "SYNTHETIC-002",
+      "source": "fixture/B",
+      "source_position": 4,
+      "source_time": "2026-10-05T11:59:01",
+      "status": "FAIL"
+    }
+  },
+  "round": {
+    "accepted_start_at": "2026-10-05T12:00:00",
+    "accepted_start_monotonic": 0.0,
+    "config": {
+      "capacity": 2,
+      "machine": "FCT",
+      "mapping": [
+        {
+          "display": 1,
+          "source": 2
+        },
+        {
+          "display": 2,
+          "source": 4
+        }
+      ],
+      "platform": "atlas",
+      "profile_version": 1,
+      "project": "SYNTHETIC",
+      "timeouts": {
+        "round": 30,
+        "start": 10,
+        "test": 20
+      }
+    },
+    "legacy_session_path": null,
+    "record_type": "round",
+    "round_id": "59105e725591468fad5b7f347fdcf7b6",
+    "schema_version": 1,
+    "station": "FCT",
+    "time_contract": {
+      "accepted_start_at": "app wall-clock observation time",
+      "elapsed_seconds": "monotonic elapsed time from accepted start",
+      "observed_at": "app wall-clock observation time",
+      "operation_at": "operator action wall-clock time",
+      "source_time": "platform-provided source time; null when unavailable"
+    }
+  }
+}

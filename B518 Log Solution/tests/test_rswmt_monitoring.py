@@ -46,11 +46,18 @@ class RsWmtTests(unittest.TestCase):
         self.output.mkdir(parents=True)
         self.seconds = 0
         self.events = []
+        self.monitors = []
+
+    def tearDown(self):
+        for monitor in self.monitors:
+            self.assertTrue(monitor.session.flush())
 
     def monitor(self, **kwargs):
-        return RsWmtLogMonitor(self.output, now=lambda: START + timedelta(seconds=self.seconds),
-                              monotonic=lambda: self.seconds, session_root=self.root / 'sessions',
-                              callback=self.events.append, **kwargs)
+        monitor = RsWmtLogMonitor(self.output, now=lambda: START + timedelta(seconds=self.seconds),
+                                   monotonic=lambda: self.seconds, session_root=self.root / 'sessions',
+                                   callback=self.events.append, **kwargs)
+        self.monitors.append(monitor)
+        return monitor
 
     def write_result(self, slot=1, sn=None, **kwargs):
         sn = 'TESTSERIAL000{}'.format(slot) if sn is None else sn

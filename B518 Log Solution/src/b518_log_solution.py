@@ -107,7 +107,7 @@ class B518LogSolutionApp:
         self.root.resizable(False, False)
         self.events: queue.Queue[RoundEvent] = queue.Queue()
         self.hotkey_events: queue.Queue[bool] = queue.Queue()
-        self.rounds = RoundCoordinator(self.events.put)
+        self.rounds = RoundCoordinator(self.events.put, audit_root=self.session_root)
         self.active_round_id: Optional[str] = None
         self.monitor = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
@@ -343,6 +343,13 @@ class B518LogSolutionApp:
         """Atomically render one current-round snapshot to cells and marker."""
         if snapshot is None or snapshot.round_id != self.active_round_id:
             return
+        if not snapshot.audit_complete and snapshot.audit_errors:
+            reported = getattr(self, "_reported_audit_errors", set())
+            for error in snapshot.audit_errors:
+                if error not in reported:
+                    self._log("稽核紀錄不完整：{}".format(error))
+                    reported.add(error)
+            self._reported_audit_errors = reported
         for result in snapshot.results:
             self._set_row(result.slot, result.sn, result.status)
         self._render_state_marker(snapshot)
@@ -648,8 +655,28 @@ class B518LogSolutionApp:
                 return configured
 
             self._save_preferences()
-            snapshot = self.rounds.start(station, monitor_factory, round_timeout_seconds=timeouts["round"],
-                                         capacity=profile.capacity if profile else slot_count(station))
+            snapshot = self.rounds.start(station, monitor_factory, run_async=True,
+                                         round_timeout_seconds=timeouts["round"],
+                                         capacity=profile.capacity if profile else slot_count(station),
+                                         audit_context={
+                                             "project": profile.project if profile else (
+                                                 self.project.get() if hasattr(self, "project") else "unknown"),
+                                             "machine": profile.machine if profile else station,
+                                             "platform": platform,
+                                             "profile_version": 1 if profile else None,
+                                             "config_snapshot": profile.to_dict() if profile else {
+                                                 "capacity": slot_count(station),
+                                                 "paths": {key: str(value) for key, value in values.items()},
+                                                 "timeouts": timeouts,
+                                             },
+                                             "capacity": profile.capacity if profile else slot_count(station),
+                                             "mapping": ([{"source": source, "display": display}
+                                                          for source, display in profile.mapping]
+                                                         if profile else []),
+                                             "paths": ({key: value for key, value in profile.paths.items()}
+                                                       if profile else {key: str(value) for key, value in values.items()}),
+                                             "timeouts": dict(timeouts),
+                                         })
             self.active_round_id = snapshot.round_id
             self.monitor = self.rounds.monitor
             self._reset_rows()
