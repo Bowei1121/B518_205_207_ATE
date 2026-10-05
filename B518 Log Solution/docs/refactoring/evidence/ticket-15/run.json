@@ -1,5 +1,6 @@
 {
-  "ticket": "12",
+  "ticket": "15",
+  "smoke_origin_ticket": "12",
   "environment": {
     "macOS": "15.7.9",
     "architecture": "x86_64",
@@ -31,7 +32,7 @@
     },
     {
       "state": "monitoring",
-      "round_id": "a89b43089bb04fb59fff5c16e2207323",
+      "round_id": "952ac10db9e4403f904bbb5eb31ba158",
       "result_available": false,
       "tk_scaling": 0.9999999999999999,
       "screen_tk_units": [
@@ -51,7 +52,7 @@
     },
     {
       "state": "review",
-      "round_id": "a89b43089bb04fb59fff5c16e2207323",
+      "round_id": "952ac10db9e4403f904bbb5eb31ba158",
       "result_available": false,
       "pending_conflicts": 1,
       "tk_scaling": 0.9999999999999999,
@@ -118,10 +119,10 @@
     },
     {
       "state": "complete",
-      "round_id": "a89b43089bb04fb59fff5c16e2207323",
+      "round_id": "952ac10db9e4403f904bbb5eb31ba158",
       "result_available": true,
       "conflict_choice": "keep_original",
-      "alarm_id": "74e1d288061d43719899b8b3d2437fbe",
+      "alarm_id": "5ff022b626a54e9ca9c1270ec6d3d888",
       "tk_scaling": 0.9999999999999999,
       "screen_tk_units": [
         1440,
@@ -164,8 +165,8 @@
     },
     {
       "state": "monitoring",
-      "round_id": "b81d1edafd65492fbfae91941bd8c69c",
-      "previous_round_id": "a89b43089bb04fb59fff5c16e2207323",
+      "round_id": "ca1c3be1824a416ab57d07ecce53f433",
+      "previous_round_id": "952ac10db9e4403f904bbb5eb31ba158",
       "result_available": false,
       "old_complete_with_new_waiting_band": false,
       "tk_scaling": 0.9999999999999999,
@@ -186,7 +187,7 @@
     },
     {
       "state": "standby",
-      "round_id": "b81d1edafd65492fbfae91941bd8c69c",
+      "round_id": "ca1c3be1824a416ab57d07ecce53f433",
       "completion_reason": "manual_stop",
       "result_available": false,
       "tk_scaling": 0.9999999999999999,

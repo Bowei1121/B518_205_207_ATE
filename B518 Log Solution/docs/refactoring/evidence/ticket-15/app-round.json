@@ -1,4 +1,6 @@
 {
+  "ticket": "15",
+  "smoke_origin_ticket": "14",
   "project_machine": "SAMPLE / FCT",
   "platform": "sample-json",
   "engineer_profile_saved": true,
