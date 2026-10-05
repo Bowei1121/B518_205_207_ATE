@@ -130,6 +130,10 @@ class B518LogSolutionApp:
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_details: Optional[tk.Text] = None
         self._conflict_ids: list[str] = []
+        self.round_alarm_window: Optional[tk.Toplevel] = None
+        self.round_alarm_message: Optional[ttk.Label] = None
+        self.round_alarm_ack_button: Optional[ttk.Button] = None
+        self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._configure_appearance()
         self._build()
         self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
@@ -199,6 +203,9 @@ class B518LogSolutionApp:
         self.review_button = ttk.Button(header, text="待確認", command=self._open_conflict_review,
                                         state="disabled")
         self.review_button.pack(side="right", padx=(0, 10))
+        self.round_alarm_button = ttk.Button(header, text="整輪警報", command=self._open_round_alarm,
+                                             state="disabled")
+        self.round_alarm_button.pack(side="right", padx=(0, 10))
         self.monitor_state.pack(side="right")
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
@@ -596,7 +603,8 @@ class B518LogSolutionApp:
 
             self._save_preferences()
             self._reset_rows()
-            snapshot = self.rounds.start(station, monitor_factory)
+            snapshot = self.rounds.start(station, monitor_factory, round_timeout_seconds=timeouts["round"],
+                                         capacity=profile.capacity if profile else slot_count(station))
             self.active_round_id = snapshot.round_id
             self.monitor = self.rounds.monitor
         except Exception as error:
@@ -625,6 +633,11 @@ class B518LogSolutionApp:
             self.settings_log.configure(state="disabled")
 
     def _drain_events(self) -> None:
+        round_snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        if round_snapshot and (self.rounds.monitor is None or round_snapshot.source_preparation_pending):
+            self.rounds.poll_once()
+            if self.monitor is None:
+                self.monitor = self.rounds.monitor
         try:
             while True:
                 self._handle_event(self.events.get_nowait())
@@ -636,7 +649,12 @@ class B518LogSolutionApp:
                 self._start_from_hotkey()
         except queue.Empty:
             pass
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        if snapshot and snapshot.round_id == self.active_round_id:
+            for result in snapshot.results:
+                self._set_row(result.slot, result.sn, result.status)
         self._refresh_conflict_review()
+        self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
 
     def _bring_dashboard_to_front(self) -> None:
@@ -674,8 +692,7 @@ class B518LogSolutionApp:
         if event.kind == "timeout" and event.detail.get("kind") == "round":
             self.monitor = None
             self._set_monitor_controls(False, "逾時停止")
-            messagebox.showwarning("整輪監控逾時", event.message + "\n\n已停止讀取來源並保留本輪結果。",
-                                   parent=self.root)
+            self._open_round_alarm()
         if event.kind == "start_failed":
             self.monitor = None
             self.active_profile_snapshot = None
@@ -733,8 +750,19 @@ class B518LogSolutionApp:
             text="待確認 ({})".format(len(conflicts)),
             state="normal" if conflicts else "disabled",
         )
-        if conflicts:
-            self.monitor_state.configure(text="待確認 {} 項".format(len(conflicts)))
+        alarm = snapshot.round_alarm if snapshot else None
+        alarm_pending = alarm is not None and not alarm.acknowledged_at
+        if alarm_pending or conflicts:
+            reasons = []
+            if alarm_pending:
+                reasons.append("整輪警報")
+            if conflicts:
+                reasons.append("衝突 {} 項".format(len(conflicts)))
+            self.monitor_state.configure(text="待確認：" + "、".join(reasons))
+        elif snapshot and snapshot.state.value == "COMPLETED":
+            self.monitor_state.configure(text="本輪完成")
+        elif snapshot and snapshot.state.value == "STOPPED" and snapshot.completion_reason == "manual_stop":
+            self.monitor_state.configure(text="已停止")
         if self.conflict_window and self.conflict_window.winfo_exists():
             if self.conflict_list is None:
                 return
@@ -797,6 +825,85 @@ class B518LogSolutionApp:
         if not selected or selected[0] >= len(self._conflict_ids):
             return
         self.rounds.resolve_review(self._conflict_ids[selected[0]], choice)
+        self._refresh_conflict_review()
+
+    def _refresh_round_alarm(self) -> None:
+        if not hasattr(self, "round_alarm_button"):
+            return
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        alarm = snapshot.round_alarm if snapshot else None
+        if alarm is None:
+            self.round_alarm_button.configure(text="整輪警報", state="disabled")
+            if (snapshot and self._round_alarm_window_identity and
+                    self._round_alarm_window_identity[0] != snapshot.round_id and
+                    self.round_alarm_window and self.round_alarm_window.winfo_exists()):
+                self.round_alarm_window.withdraw()
+            return
+        pending = not alarm.acknowledged_at
+        self.round_alarm_button.configure(
+            text="整輪警報（待確認）" if pending else "整輪警報已確認",
+            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
+        )
+        identity = (alarm.round_id, alarm.alarm_id)
+        if identity != getattr(self, "_shown_round_alarm_identity", None):
+            self._open_round_alarm()
+        if self.round_alarm_window and self.round_alarm_window.winfo_exists():
+            self._render_round_alarm(alarm)
+
+    def _open_round_alarm(self) -> None:
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        alarm = snapshot.round_alarm if snapshot else None
+        if alarm is None:
+            return
+        if not self.round_alarm_window or not self.round_alarm_window.winfo_exists():
+            window = tk.Toplevel(self.root)
+            self.round_alarm_window = window
+            window.title("整輪監控逾時")
+            window.geometry("460x220")
+            window.minsize(420, 190)
+            window.transient(self.root)
+            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            self.round_alarm_message = ttk.Label(window, wraplength=420, justify="left")
+            self.round_alarm_message.pack(fill="both", expand=True, padx=16, pady=(18, 10))
+            actions = ttk.Frame(window)
+            actions.pack(fill="x", padx=16, pady=(0, 14))
+            self.round_alarm_ack_button = ttk.Button(
+                actions, text="確認整輪警報",
+            )
+            self.round_alarm_ack_button.pack(side="left")
+            ttk.Button(actions, text="關閉", command=window.withdraw).pack(side="right")
+        self._render_round_alarm(alarm)
+        self._round_alarm_window_identity = (alarm.round_id, alarm.alarm_id)
+        self.round_alarm_ack_button.configure(
+            command=lambda round_id=alarm.round_id, alarm_id=alarm.alarm_id:
+            self._acknowledge_round_alarm(round_id, alarm_id),
+        )
+        self._shown_round_alarm_identity = (alarm.round_id, alarm.alarm_id)
+        self.round_alarm_window.deiconify()
+        self.round_alarm_window.lift()
+
+    def _render_round_alarm(self, alarm) -> None:
+        if self.round_alarm_message and self.round_alarm_message.winfo_exists():
+            self.round_alarm_message.configure(text=(
+                "整輪監控已到達設定上限。新的來源讀取已停止，既有終態已保留，未完成位置已依活動證據裁決。\n\n"
+                "輪次：{}\n警報：{}\n建立時間：{}\n{}"
+            ).format(alarm.round_id, alarm.alarm_id, alarm.created_at,
+                     "此警報已確認；其他待確認事項仍須逐項處理。"
+                     if alarm.acknowledged_at else (
+                         "來源準備尚未結束；位置裁決完成前不能確認。" if not self.rounds.snapshot().round_alarm_ready
+                         else "確認此警報不會接受或清除結果衝突。")))
+        if self.round_alarm_ack_button and self.round_alarm_ack_button.winfo_exists():
+            self.round_alarm_ack_button.configure(
+                state="disabled" if alarm.acknowledged_at or not self.rounds.snapshot().round_alarm_ready else "normal",
+                text="警報已確認" if alarm.acknowledged_at else "確認整輪警報",
+            )
+
+    def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
+        snapshot = self.rounds.snapshot()
+        if snapshot is None:
+            return
+        self.rounds.acknowledge_round_alarm(round_id, alarm_id)
+        self._refresh_round_alarm()
         self._refresh_conflict_review()
 
     def open_settings(self) -> None:

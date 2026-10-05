@@ -1,6 +1,8 @@
 import csv
 import io
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,6 +18,7 @@ class FakeMonitor:
         self.results = {1: SlotResult(1), 2: SlotResult(2)}
         self.started = 0
         self.stopped = 0
+        self.collection_stopped = False
         self.finished = False
         self.start_timeout_seconds = 30
         self.test_timeout_seconds = 480
@@ -43,6 +46,9 @@ class FakeMonitor:
 
     def start(self):
         self.started += 1
+
+    def stop_collection(self):
+        self.collection_stopped = True
 
     def stop(self):
         self.stopped += 1
@@ -333,6 +339,417 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(released.completion_reason, "round_deadline")
         self.assertFalse(released.result_available)
         self.assertFalse(holder["monitor"].finished)
+
+        alarm_id = released.round_alarm.alarm_id
+        stale = coordinator.acknowledge_round_alarm("old-round", alarm_id)
+        self.assertFalse(stale.round_alarm.acknowledged_at)
+        self.assertEqual(stale.state.value, "AWAITING_REVIEW")
+        self.assertEqual(stale.events[-1].event.kind, "round_alarm_acknowledgement_ignored")
+
+        acknowledged = coordinator.acknowledge_round_alarm(released.round_id, alarm_id)
+        self.assertTrue(acknowledged.result_available)
+        self.assertTrue(holder["monitor"].finished)
+
+    def test_round_deadline_alarm_is_created_once_and_acknowledgement_releases_results(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), round_limit=5)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=False)
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "final.csv")
+        elapsed[0] = 5.0
+
+        expired = coordinator.poll_once()
+        alarm = expired.round_alarm
+        self.assertEqual(expired.state.value, "AWAITING_REVIEW")
+        self.assertIsNotNone(alarm)
+        self.assertEqual(alarm.round_id, started.round_id)
+        self.assertFalse(alarm.acknowledged_at)
+        self.assertEqual(expired.results[0].status, "PASS")
+        self.assertEqual(expired.results[1].status, "NOTEST")
+        self.assertFalse(expired.result_available)
+        alarm_event = next(event.event for event in expired.events
+                           if event.event.kind == "timeout" and
+                           event.event.detail.get("kind") == "round")
+        collection_event = next(event.event for event in expired.events
+                                if event.event.kind == "collection_stopped")
+        self.assertEqual(alarm_event.detail["alarm_id"], alarm.alarm_id)
+        self.assertEqual(alarm_event.detail["alarm_created_at"], alarm.created_at)
+        self.assertEqual(collection_event.detail["reason"], "round_deadline")
+        self.assertTrue(collection_event.detail["collection_stopped_at"])
+
+        repeated = coordinator.poll_once()
+        self.assertEqual(repeated.round_alarm.alarm_id, alarm.alarm_id)
+        self.assertEqual(len([event for event in repeated.events
+                              if event.event.kind == "timeout" and
+                              event.event.detail.get("kind") == "round"]), 1)
+
+        released = coordinator.acknowledge_round_alarm(started.round_id, alarm.alarm_id)
+        self.assertEqual(released.state.value, "COMPLETED")
+        self.assertTrue(released.result_available)
+        self.assertTrue(released.round_alarm.acknowledged_at)
+        acknowledged = next(event.event for event in released.events
+                            if event.event.kind == "round_alarm_acknowledged")
+        finished = next(event.event for event in released.events
+                        if event.event.kind == "finished")
+        self.assertEqual(acknowledged.detail["alarm_id"], alarm.alarm_id)
+        self.assertEqual(acknowledged.detail["acknowledged_at"], released.round_alarm.acknowledged_at)
+        self.assertTrue(finished.detail["results_released_at"])
+        self.assertEqual(len([event for event in released.events
+                              if event.event.kind == "finished"]), 1)
+
+        duplicate = coordinator.acknowledge_round_alarm(started.round_id, alarm.alarm_id)
+        self.assertEqual(duplicate.state.value, "COMPLETED")
+        self.assertEqual(len([event for event in duplicate.events
+                              if event.event.kind == "round_alarm_acknowledgement_ignored"]), 1)
+
+    def test_round_deadline_preserves_terminals_and_times_out_started_incomplete_positions(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2, 3, 4), round_limit=5)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        coordinator.start("FCT", factory, run_async=False)
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "slot1.csv")
+        holder["monitor"].apply_round_result(2, "FAIL", "SERIAL000002", "slot2.csv")
+        holder["monitor"].apply_round_result(3, "TESTING", "SERIAL000003", "slot3.csv")
+        holder["monitor"].apply_round_result(4, "COMPLETING", "SERIAL000004", "slot4.csv")
+        elapsed[0] = 5.0
+
+        expired = coordinator.poll_once()
+
+        self.assertEqual([item.status for item in expired.results], ["PASS", "FAIL", "TIMEOUT", "TIMEOUT"])
+        deadline_events = [event.event for event in expired.events if event.event.kind == "timeout"]
+        self.assertEqual([(event.slot, event.status, event.detail["reason"])
+                          for event in deadline_events if event.slot is not None], [
+                              (3, "TIMEOUT", "round_deadline"),
+                              (4, "TIMEOUT", "round_deadline"),
+                          ])
+        self.assertEqual(len([event for event in deadline_events
+                              if event.detail.get("kind") == "round"]), 1)
+
+    def test_round_deadline_does_not_alarm_when_all_positions_are_already_terminal(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), round_limit=5)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        coordinator.start("DFU", factory, run_async=False)
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "slot1.csv")
+        holder["monitor"].apply_round_result(2, "FAIL", "SERIAL000002", "slot2.csv")
+        elapsed[0] = 5.0
+
+        completed = coordinator.poll_once()
+
+        self.assertEqual(completed.state.value, "COMPLETED")
+        self.assertTrue(completed.result_available)
+        self.assertIsNone(completed.round_alarm)
+        self.assertFalse([event for event in completed.events
+                          if event.event.kind == "timeout" and
+                          event.event.detail.get("kind") == "round"])
+
+    def test_round_deadline_is_not_a_confirmation_countdown_after_collection_stops(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        coordinator.start("FCT", factory, run_async=False)
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
+        holder["monitor"].offer_candidate(
+            1, "FAIL", "SERIAL000001", "final.csv", dict(evidence, source_id="final.csv"),
+        )
+        elapsed[0] = 5.0
+
+        waiting_for_choice = coordinator.poll_once()
+
+        self.assertTrue(waiting_for_choice.collection_stopped)
+        self.assertEqual(waiting_for_choice.state.value, "AWAITING_REVIEW")
+        self.assertFalse(waiting_for_choice.result_available)
+        self.assertIsNone(waiting_for_choice.round_alarm)
+        self.assertFalse([event for event in waiting_for_choice.events
+                          if event.event.kind == "timeout" and
+                          event.event.detail.get("kind") == "round"])
+
+    def test_round_alarm_and_conflict_are_independent_release_blockers(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), round_limit=5)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=False)
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
+        holder["monitor"].apply_round_result(2, "TESTING", "SERIAL000002", "active.csv")
+        holder["monitor"].offer_candidate(
+            1, "FAIL", "SERIAL000001", "final.csv", dict(evidence, source_id="final.csv"),
+        )
+        elapsed[0] = 5.0
+        expired = coordinator.poll_once()
+        conflict_id = expired.pending_conflicts[0].conflict_id
+        alarm_id = expired.round_alarm.alarm_id
+
+        alarm_acknowledged = coordinator.acknowledge_round_alarm(started.round_id, alarm_id)
+        self.assertFalse(alarm_acknowledged.result_available)
+        self.assertEqual(len(alarm_acknowledged.pending_conflicts), 1)
+        self.assertEqual(alarm_acknowledged.state.value, "AWAITING_REVIEW")
+
+        released = coordinator.resolve_review(conflict_id, "keep_original")
+        self.assertTrue(released.result_available)
+        self.assertEqual(released.state.value, "COMPLETED")
+        self.assertEqual(released.completion_reason, "round_deadline")
+
+    def test_source_preparation_time_counts_toward_round_deadline_without_blocking_ui_caller(self):
+        elapsed = [0.0]
+        entered = threading.Event()
+        release = threading.Event()
+        monitor_created = threading.Event()
+        deadline_seen = threading.Event()
+        holder = {}
+
+        def factory(callback):
+            entered.set()
+            release.wait(3)
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+            holder["monitor"] = monitor
+            monitor_created.set()
+            return monitor
+
+        def on_event(event):
+            if event.event.kind == "timeout" and event.event.detail.get("kind") == "round":
+                deadline_seen.set()
+
+        coordinator = RoundCoordinator(on_event, monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
+        self.assertTrue(entered.wait(1))
+        elapsed[0] = 5.0
+        expired_during_preparation = coordinator.poll_once()
+        self.assertIsNotNone(expired_during_preparation.round_alarm)
+        self.assertTrue(expired_during_preparation.collection_stopped)
+        self.assertFalse(expired_during_preparation.round_alarm_ready)
+        self.assertFalse(expired_during_preparation.result_available)
+        self.assertEqual(expired_during_preparation.results[0].status, "NOTEST")
+        self.assertTrue(deadline_seen.wait(1))
+        self.assertEqual(sum(event.event.kind == "timeout" and
+                             event.event.detail.get("kind") == "round"
+                             for event in expired_during_preparation.events), 1)
+        self.assertFalse(release.is_set())
+        ignored = coordinator.acknowledge_round_alarm(
+            started.round_id, expired_during_preparation.round_alarm.alarm_id)
+        self.assertFalse(ignored.round_alarm.acknowledged_at)
+        self.assertEqual(ignored.events[-1].event.detail.get("reason"), "source_preparation_pending")
+        release.set()
+        self.assertTrue(monitor_created.wait(3))
+        self.assertTrue(deadline_seen.wait(3))
+
+        expired = coordinator.snapshot()
+        self.assertEqual(expired.round_id, started.round_id)
+        self.assertTrue(expired.collection_stopped)
+        self.assertEqual(expired.results[0].status, "NOTEST")
+        self.assertFalse(expired.result_available)
+        self.assertEqual(holder["monitor"].poll_count, 0)
+
+    def test_acknowledgement_waits_for_delayed_preparation_adjudication_and_stop(self):
+        elapsed = [0.0]
+        factory_entered = threading.Event()
+        factory_release = threading.Event()
+        adjudication_entered = threading.Event()
+        adjudication_release = threading.Event()
+        ack_started = threading.Event()
+        ack_finished = threading.Event()
+        holder = {}
+        acknowledgement = {}
+
+        class BlockingAdjudicationMonitor(DeadlineMonitor):
+            def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
+                adjudication_entered.set()
+                adjudication_release.wait(3)
+                super().apply_round_result(slot, status, sn, source, detail, lock_terminal)
+
+        def factory(callback):
+            factory_entered.set()
+            factory_release.wait(3)
+            holder["monitor"] = BlockingAdjudicationMonitor(
+                callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
+        self.assertTrue(factory_entered.wait(1))
+        elapsed[0] = 5.0
+        pending = coordinator.poll_once()
+        alarm_id = pending.round_alarm.alarm_id
+        factory_release.set()
+        self.assertTrue(adjudication_entered.wait(2))
+
+        def acknowledge():
+            ack_started.set()
+            acknowledgement["snapshot"] = coordinator.acknowledge_round_alarm(started.round_id, alarm_id)
+            ack_finished.set()
+
+        ack_thread = threading.Thread(target=acknowledge)
+        ack_thread.start()
+        self.assertTrue(ack_started.wait(1))
+        self.assertFalse(ack_finished.wait(0.1))
+        during = coordinator.snapshot()
+        self.assertFalse(during.round_alarm_ready)
+        self.assertFalse(during.result_available)
+        self.assertFalse(any(event.event.kind == "collection_stopped" for event in during.events))
+
+        adjudication_release.set()
+        self.assertTrue(ack_finished.wait(2))
+        ack_thread.join(1)
+        released = coordinator.snapshot()
+        self.assertTrue(released.result_available)
+        self.assertEqual(released.results[0].status, "NOTEST")
+        kinds = [event.event.kind for event in released.events]
+        self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
+        self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
+
+    def test_preparation_alarm_is_persisted_across_monitor_handoff(self):
+        elapsed = [0.0]
+        settings_entered = threading.Event()
+        settings_release = threading.Event()
+        holder = {}
+
+        class HandoffMonitor(DeadlineMonitor):
+            def __init__(self, callback):
+                super().__init__(callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+                self.persisted_events = []
+                self.start_count = 0
+
+            def update_round_settings(self, _settings):
+                settings_entered.set()
+                settings_release.wait(3)
+
+            def publish_round_event(self, event):
+                self.persisted_events.append(event)
+                super().publish_round_event(event)
+
+            def start(self):
+                self.start_count += 1
+
+        def factory(callback):
+            holder["monitor"] = HandoffMonitor(callback)
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
+        self.assertTrue(settings_entered.wait(1))
+        elapsed[0] = 5.0
+        expired = coordinator.poll_once()
+        self.assertIsNotNone(expired.round_alarm)
+        self.assertFalse(expired.round_alarm_ready)
+        self.assertEqual(expired.results[0].status, "NOTEST")
+        settings_release.set()
+        for _ in range(200):
+            snapshot = coordinator.snapshot()
+            if snapshot.round_alarm_ready:
+                break
+            time.sleep(0.01)
+
+        monitor = holder["monitor"]
+        self.assertTrue(snapshot.round_alarm_ready)
+        self.assertTrue(monitor.collection_stopped)
+        self.assertEqual(monitor.start_count, 0)
+        persisted_round_timeouts = [event for event in monitor.persisted_events
+                                    if event.kind == "timeout" and event.detail.get("kind") == "round"]
+        self.assertEqual(len(persisted_round_timeouts), 1)
+        self.assertEqual(snapshot.round_id, started.round_id)
+
+    def test_round_event_callback_does_not_hold_round_lock_against_repeated_start(self):
+        callback_finished = threading.Event()
+        callback_errors = []
+        coordinator_holder = {}
+        monitor_holder = {}
+
+        def factory(callback):
+            monitor_holder["monitor"] = DeadlineMonitor(callback, time.monotonic, slots=(1,))
+            return monitor_holder["monitor"]
+
+        def on_event(event):
+            if event.event.kind != "round_alarm_acknowledgement_ignored":
+                return
+
+            def repeated_start():
+                try:
+                    coordinator_holder["coordinator"].start(
+                        "FCT", factory, run_async=False, round_timeout_seconds=30, capacity=1)
+                    callback_finished.set()
+                except Exception as error:
+                    callback_errors.append(error)
+
+            thread = threading.Thread(target=repeated_start)
+            thread.start()
+            if not callback_finished.wait(1):
+                callback_errors.append(AssertionError("Repeated start deadlocked against event delivery."))
+
+        coordinator = RoundCoordinator(on_event=on_event)
+        coordinator_holder["coordinator"] = coordinator
+        started = coordinator.start("FCT", factory, run_async=False,
+                                    round_timeout_seconds=30, capacity=1)
+        ignored = coordinator.acknowledge_round_alarm(started.round_id, "stale-alarm")
+        self.assertEqual(ignored.events[-1].event.kind, "round_alarm_acknowledgement_ignored")
+        self.assertTrue(callback_finished.is_set())
+        self.assertFalse(callback_errors)
+        self.assertEqual(coordinator.snapshot().round_id, started.round_id)
+
+    def test_manual_stop_during_source_preparation_cannot_resume_when_factory_returns(self):
+        entered = threading.Event()
+        release = threading.Event()
+        returned = threading.Event()
+        holder = {}
+
+        def factory(callback):
+            entered.set()
+            release.wait(3)
+            holder["monitor"] = DeadlineMonitor(callback, time.monotonic, slots=(1,))
+            returned.set()
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator()
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=30, capacity=1)
+        self.assertTrue(entered.wait(1))
+        stopped = coordinator.stop()
+        self.assertEqual(stopped.state.value, "STOPPED")
+        self.assertFalse(stopped.result_available)
+        release.set()
+        self.assertTrue(returned.wait(3))
+        for _ in range(100):
+            if coordinator.monitor is not None:
+                break
+            time.sleep(0.01)
+        snapshot = coordinator.snapshot()
+        self.assertEqual(snapshot.round_id, started.round_id)
+        self.assertEqual(snapshot.state.value, "STOPPED")
+        self.assertFalse(snapshot.result_available)
+        self.assertEqual(holder["monitor"].poll_count, 0)
 
     def test_pending_bt_candidate_can_be_resolved_after_collection_stops(self):
         elapsed = [0.0]

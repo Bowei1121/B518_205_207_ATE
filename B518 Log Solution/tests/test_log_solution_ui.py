@@ -986,6 +986,7 @@ class LogSolutionUiTests(unittest.TestCase):
             first_round_id = app.active_round_id
             self.wait_for(lambda: factory.called)
             app.start_monitor()
+            self.wait_for(lambda: factory.return_value.start.called)
 
         self.assertEqual(app.active_round_id, first_round_id)
         self.assertEqual(app.rounds.snapshot().state, "RUNNING")
