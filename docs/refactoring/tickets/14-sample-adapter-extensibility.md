@@ -52,7 +52,7 @@
 - 單檔／回歸命令：`python3 scripts/run_tests.py test_platform_registry test_machine_profiles test_configured_monitor`；27 tests，全數通過。平台回歸及 UI 測試亦納入下列完整套件。
 - 全套命令：`python3 scripts/run_tests.py`；187 tests，全數通過（macOS 桌面環境，約 22 秒）。
 - 語法檢查：`python3 -m py_compile src/platform_registry.py src/sample_json_monitor.py src/machine_profiles.py src/b518_log_solution.py tests/test_platform_registry.py tools/smoke_sample_adapter_app.py`。專案沒有 mypy／pyright／其他型別檢查設定；此命令只驗證 Python 語法，不作型別檢查通過宣稱。
-- 補充：`git diff --check` 通過。固定基準雙軸初審：Standards 無規範違反或可操作異味；Spec 發現未知時間排序鍵不符交付說明，及需驗證輸入順序不影響共同衝突裁決。以公開輪次測試重現缺時間 final 被較晚 activity 影響的順序，再將未知時間排前並略過已終態位置後續 activity；另以正序／反序寫入兩筆同批次 final，確認共同快照均保留同一原始 PASS 與 FAIL 候選。修正後 Adapter 8 tests、相關 27 tests、全套 187 tests 通過。檔案末尾空白行亦已移除；最終複審結果待確認。
+- 補充：`git diff --check` 通過。固定基準 `8f6c8497e58eb1865d9c85f42df2d4a532575a15` 的 Standards／Spec 雙軸複審至 `89202a2` 均無未解決問題。Standards 未發現規範違反或可操作異味。Spec 初審所提缺時間排序及 final 後活動處理已以公開輪次測試修正；反序寫入兩筆同批次 final 的回歸確認共同快照維持原始 PASS 與 FAIL 候選。Adapter 8 tests、相關 27 tests、全套 187 tests 通過。複審確認範圍、 Ticket16／17／18 分工及暫緩驗收紀錄符合要求。
 
 ## 尚未執行／限制
 
@@ -62,4 +62,4 @@
 
 ## 提交與同步
 
-- 實作提交 `2c293c4` 與 Spec／格式修正提交 `533b016` 已推送 Gitea 與 GitHub。輸入順序回歸與測試紀錄提交、最終複審、合併 commit SHA、合併後驗證、雙端同步及分支清理結果：完成後補記。
+- 實作提交 `2c293c4`、Spec／格式修正提交 `533b016` 與輸入順序回歸提交 `89202a2` 已推送 Gitea 與 GitHub。合併 commit SHA、合併後驗證、雙端同步及分支清理結果：完成後補記。
