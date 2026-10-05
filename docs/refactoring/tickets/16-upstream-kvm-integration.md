@@ -8,7 +8,7 @@
 
 - [12：固定定位點與四種黑白程式標記](12-kvm-locators-and-state-marker.md)
 
-**Status：**受控整合與審查通過；維護／部署分工已確認，實際 KVM 驗收待補
+**Status：**受控整合已合併並完成分支清理；實際 KVM／現場部署驗收依使用者批准暫緩
 
 ## 驗收條件
 
@@ -74,3 +74,12 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 - 新證據：App `B518 Log Solution/docs/refactoring/evidence/ticket-16/contract-1.1/`；上位機 `docs/evidence/ticket-16/contract-1.1/`。frame 回放使用合成排序時間而非實際 JetKVM PTS；仍不代表實機 KVM／部署／發布驗收。
 
 - 契約 1.1 最新驗證命令與結果：App `python3 "B518 Log Solution/scripts/run_tests.py"`，185 tests 通過（23.484 秒）；上位機 `python3 -m unittest discover -s tests -v`，35 tests 通過（3.264 秒）；`python3 -m unittest tests.test_round_frame_consumer -v`，18 tests 通過。Tk source 入口 `python3 "B518 Log Solution/tools/smoke_ticket16_layout_app.py" --output <isolated-evidence>` 與四狀態 smoke 均通過；兩個上位機 frame replay 命令依部署文件／工具 `--help` 使用新版證據目錄。未配置型別檢查，未以編譯宣稱型別檢查通過。
+
+## 2026-10-05 最終審查、合併與清理結果
+
+- 原固定基準雙軸完整複審，App `fbe2ee27672caa8ea45d443b4fd4b2a9f3b95785`／上位機 `5a65655b2afdd3fc9d53cf29a60d6856565a85d7`：Standards 0 項、Spec 0 項未解發現；單排 P1 已修正。
+- 配對為顯示契約 1.1。App 一般非快轉合併 SHA `c4cbffa1d9b9223fc753138df8d3be96837e7044`，目標 `B518-Log-Solution`；上位機一般非快轉合併 SHA `316f72e80afcb8a0e941e565e0d8209d9783b3ed`，目標為其自身 `main`。合併前工作樹乾淨，App Gitea／GitHub 目標基準一致，上位機 Gitea main 亦無新提交；GitHub 當時尚無 main，發布同一合併結果並將暫時的預設 Ticket 分支改為 main。
+- 合併後 App 完整 185 tests 通過（25.422 秒）、上位機完整 35 tests 通過（3.328 秒）；七輪容量 frame 回放與五張四狀態 frame 回放再次通過，輸出使用隔離 `/tmp` 路徑，沒有變更已提交證據。
+- 逐端核對：App Gitea／GitHub `B518-Log-Solution` 都為 `c4cbffa...`；上位機 Gitea／GitHub main 都為 `316f72e...`。全部合併同步成功後，四個實際目的地的 `codex/ticket-16` 都已刪除且以遠端 refs 查核不存在。
+- 兩 repo 本地 `codex/ticket-16` 都以 `git branch -d` 安全刪除；僅刪除已確認失效的本票 origin tracking ref，沒有清理其他分支。App 最後在 `B518-Log-Solution`，上位機在 `main`，清理核對時兩端工作樹乾淨。最終狀態文件隨既有提交／推送流程同步，SHA 由 Git 查閱以避免文件自我引用。
+- AC 1／2 保持未勾選：非硬體維護／人工部署分工及技術流程已確認，剩餘實際 KVM／現場部署沒有執行；依使用者明確批准暫緩而允許合併，不代表驗收通過。AC 3～6 的本機受控範圍通過。Ticket 12 AC 1、Ticket 13 AC 4、正式發布與未知同輪來源政策均未改判；TCP `slot::STATUS` 外部相容性仍由 TE 現場查核。

@@ -79,3 +79,10 @@
 - 後續 Spec 複審找到真實單排畫面卻被上位機當作二十格讀取的 P1 缺陷。已經 raw-frame gate 紅綠測試修正，App／上位機配對更新為顯示契約 1.1，增加獨立排數標記，保留四種狀態語意並拒絕舊 1.0／遮擋或裁切第二排。新 Tk／Quartz 21 張容量畫面與新版五張四狀態回放均通過；七個正常輪次由 sample-json 配置反向映射，磁碟 audit 重建與公開快照一致，上位機每輪恰好一筆假動作。原 1.0 證據保留歷史，不冒充新版本或實際 KVM。新證據於兩 repo `evidence/ticket-16/contract-1.1/`。
 
 - 契約 1.1 修正後完整驗證：App 185 tests 通過（23.484 秒），上位機 35 tests 通過（3.264 秒）；18 個 frame focused tests 與七輪／五張新 Tk 圖的 raw-frame 回放通過。未配置型別檢查，不以語法檢查替代。待本次固定基準雙軸複審結果後進行合併。
+
+## Ticket 16 最終合併與清理（2026-10-05）
+
+- 固定原基準 Standards／Spec 完整複審，App fbe2ee2／上位機 5a65655 均無未解問題。權責與手動部署方式由使用者確認；修復真實單排辨識的配對契約 1.1，已有七容量真 Tk／Quartz 與公開來源／共同輪次／磁碟 audit 證據，非實際 JetKVM 或設備動作。
+- App 非快轉 merge `c4cbffa1d9b9223fc753138df8d3be96837e7044` 合入 `B518-Log-Solution`；上位機非快轉 merge `316f72e80afcb8a0e941e565e0d8209d9783b3ed` 合入其自身 main。合併後 App 185／上位機 35 tests 通過，七輪與五張 frame replay 再次通過。
+- App Gitea／GitHub 的 base refs 與上位機 Gitea／GitHub main 均已核對同步至各自 merge SHA。上位機 GitHub 初始沒有 main，已發布配對合併並將 default branch 從暫時的 Ticket 分支改為 main，以完成安全清理。四個實際目的地的 Ticket 16 分支均已刪除並查無；兩個本地 feature 分支安全刪除，只移除確認失效的本票 tracking refs。
+- App 留在 `B518-Log-Solution`、上位機留在 `main`，清理後工作樹乾淨；最終文件亦走既有提交／推送流程。AC 1／2 的硬體部分保持未勾選／已批准延期，Ticket 12 AC 1 與 Ticket 13 AC 4 不變；人工現場部署、TCP state-only 相容性及自動更新可能性均未冒稱通過或已實作。
