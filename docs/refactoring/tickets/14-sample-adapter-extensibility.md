@@ -62,4 +62,4 @@
 
 ## 提交與同步
 
-- 實作提交 `2c293c4`、Spec／格式修正提交 `533b016` 與輸入順序回歸提交 `89202a2` 已推送 Gitea 與 GitHub。合併 commit SHA、合併後驗證、雙端同步及分支清理結果：完成後補記。
+- Ticket 分支提交 `2c293c4`、`533b016`、`89202a2`、驗收／審查紀錄 `ea08bad` 均已推送 Gitea 與 GitHub。一般非快轉合併 commit `a5d2b53a19d7b864f10694fd70ae7540e140b39c`；合併後 `python3 scripts/run_tests.py` 187 tests 全通過。推送後逐一查詢兩個實際目的地，目標分支均為 `a5d2b53`、Ticket 分支均為 `ea08bad`；最終追蹤紀錄及分支安全清理結果完成後補記。
