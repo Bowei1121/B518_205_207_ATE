@@ -29,5 +29,5 @@
 - Ticket 12 隔離 Tk 回放 `python3 -u tools/smoke_state_marker_app.py` 已通過；Quartz 擷取視窗 752×1420 physical pixels，Tk app 376×682 logical units，畫面 1440×900 Tk units，scaling 1.0。驗證 standby、monitoring、衝突與警報同時待確認、完成、20 筆明細捲動、新輪切換、人工停止，且衝突／警報窗口未遮住頂部定位區。資料只含合成匿名化 SN，臨時 HOME／偏好／輸出在回放結束後清理。
 - 固定基準 Standards／Spec 審查及複審均無未解發現。兩項 P3 維護性意見（快照參數型別、共享格距）與一項完成狀態優先級規格問題已修正並有測試；複審確認方向拒判及文件狀態順序清楚。
 - `python3 scripts/run_tests.py test_kvm_display_contract` 通過 7 項，完整 `python3 scripts/run_tests.py` 通過 161 項；`py_compile` 僅語法檢查通過。repo 無型別檢查工具設定，未宣稱型別檢查通過。實際 KVM 傳輸、縮放、壓縮與目標／發布設備尚未驗收。
-- Ticket 12 AC 2～5 本機 Tk 範圍通過。AC 1 保持未勾選：雖已定義與測試本機 Tk 邏輯幾何及合成 locators／marker samples，但目前無可用的實際 KVM frame，仍缺物理方向、畫面座標／scale／壓縮及 KVM 調校容差證據。上位機共同整合依使用者先前決策留 Ticket 16，但這不豁免本票 AC 1。專用 `codex/ticket-12` 分支因此須保留，不能合併或刪除，直到實際 KVM 驗收完成。
-- 固定基準雙軸 code-review 已最終通過；最終交付 commit 及 Gitea／GitHub push 狀態待補入。硬體 AC1 是已知必要驗收阻擋，依 Ticket 指示不合併／清理專用分支。
+- Ticket 12 AC 2～5 本機 Tk 範圍通過。AC 1 保持未勾選：雖已定義與測試本機 Tk 邏輯幾何及合成 locators／marker samples，但目前無可用的實際 KVM frame，仍缺物理方向、畫面座標／scale／壓縮及 KVM 調校容差證據。使用者於 2026-10-05 明確決定所有實機類測試可先略過並接受本票先合併；因此 AC 1 是已記錄的後續待驗項，不代表通過。Ticket 16 上位機共同整合仍按先前分工處理，不以本機畫面替代。
+- 固定基準雙軸 code-review 已最終通過；2026-10-05 使用者補充允許略過實機類驗收並合併，AC 1 保持未勾選。合併後 commit、驗證、Gitea／GitHub 同步及分支清理結果待本次續辦後補入。
