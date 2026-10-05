@@ -6,7 +6,7 @@ import tkinter as tk
 import time
 import unittest
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from tkinter import ttk
@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 from b518_log_solution import (
     B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
-    slot_count, sn_font_size, visible_detail_rows, window_height,
+    sn_font_size, visible_detail_rows, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -34,6 +34,35 @@ class FakeHotkey:
 
     def close(self):
         self.closed = True
+
+
+def install_test_profile(app, station, platform, active=".", final=".", caseinfo=""):
+    """Give a lightweight App fixture the same required profile seam as production."""
+    project = "B482" if platform == "b482" else "B518"
+    defaults, _project, _machine, _error = MachineProfileStore(
+        Path("/tmp/b518-ticket15-test-preferences.json"),
+    ).load()
+    profile = defaults.get(project, station)
+    profile = replace(profile, platform=platform, paths={
+        "active": active, "final": final, "caseinfo": caseinfo,
+    })
+    app.profiles = defaults.with_profile(profile)
+    app.profile_error = None
+    app.project = SimpleNamespace(get=lambda: project, set=lambda _value: None)
+    app.station = SimpleNamespace(get=lambda: station)
+    app.active_profile_snapshot = None
+    return profile
+
+
+def install_snapshot_results(app, results):
+    snapshot = SimpleNamespace(
+        round_id="round-under-test", results=tuple(results), audit_complete=True,
+        audit_errors=(), state=SimpleNamespace(value="RUNNING"),
+    )
+    app.active_round_id = snapshot.round_id
+    app.rounds = MagicMock()
+    app.rounds.snapshot.return_value = snapshot
+    app._apply_round_snapshot = MagicMock()
 
 
 class LogSolutionUiTests(unittest.TestCase):
@@ -66,14 +95,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.start_monitor()
 
                 preparation_deadline = time.monotonic() + 3
-                while app.monitor is None and time.monotonic() < preparation_deadline:
+                while app.rounds.session_path is None and time.monotonic() < preparation_deadline:
                     root.update()
                     time.sleep(0.01)
 
-                self.assertIsNotNone(app.monitor)
+                self.assertIsNotNone(app.rounds.session_path)
                 self.assertEqual(app.active_profile_snapshot.capacity, 3)
                 self.assertEqual(len(app.status_rows), 3)
-                self.assertEqual(app.monitor.session.settings["profile_snapshot"]["profile"]["mapping"], [
+                session_metadata = json.loads((app.rounds.session_path / "session.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(session_metadata["settings"]["profile_snapshot"]["profile"]["mapping"], [
                     {"source": 1, "display": 3},
                     {"source": 2, "display": 2},
                     {"source": 3, "display": 1},
@@ -104,7 +135,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual((result.sn, result.status), ("SERIAL00000001", "TESTING"))
                 self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
 
-                archive_stamp = app.monitor.started.strftime("%Y%m%d_%H-%M-%S")
+                archive_stamp = (datetime.now() + timedelta(seconds=1)).strftime("%Y%m%d_%H-%M-%S")
                 archive = final / "SERIAL00000001" / archive_stamp / "system" / "records.csv"
                 archive.parent.mkdir(parents=True)
                 archive.write_text("MLB_SN,status\nSERIAL00000001,Pass\n", encoding="utf-8")
@@ -131,12 +162,23 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.status_rows[3]["status"].cget("text"), "PASS")
                 self.assertEqual(app.kvm_result_blocks[3].cget("background"), STATUS_COLOURS["PASS"])
                 self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
+
+                app.stop_monitor()
+                stop_deadline = time.monotonic() + 2
+                while time.monotonic() < stop_deadline:
+                    root.update()
+                    if app.rounds.snapshot().state == "STOPPED":
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(app.rounds.snapshot().state, "STOPPED")
+                app._drain_events()
+                root.update_idletasks()
+                self.assertEqual(app._display_capacity(), 3)
+                self.assertEqual(app.kvm_result_blocks[4].cget("background"), UNAVAILABLE_COLOUR)
             finally:
-                if app.monitor:
+                if app._round_is_active():
                     app.rounds.stop()
-                monitor = app.rounds.monitor
-                if monitor is not None:
-                    monitor.session.flush(timeout=3)
+                app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
@@ -173,7 +215,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._apply_profile_editor()
                 app._close_settings()
                 app.start_monitor()
-                wait_ui(lambda: app.monitor is not None)
+                wait_ui(lambda: app.rounds.session_path is not None)
 
                 def write_records(path, serial, status="Pass"):
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +229,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 wait_ui(lambda: len(app.rounds.snapshot().results) == 2 and all(
                     result.status == "TESTING" for result in app.rounds.snapshot().results))
 
-                stamp = (app.monitor.started + timedelta(seconds=1)).strftime("%Y%m%d_%H-%M-%S.000-run")
+                stamp = (datetime.now() + timedelta(seconds=1)).strftime("%Y%m%d_%H-%M-%S.000-run")
                 first_archive = final / first_sn / stamp / "system" / "records.csv"
                 first_active.unlink()
                 first_active.parent.rmdir()
@@ -215,7 +257,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(conflict.original.status, "PASS")
                 self.assertEqual(conflict.candidate.status, "FAIL")
 
-                second_stamp = (app.monitor.started + timedelta(seconds=2)).strftime("%Y%m%d_%H-%M-%S.000-run")
+                second_stamp = (datetime.now() + timedelta(seconds=2)).strftime("%Y%m%d_%H-%M-%S.000-run")
                 second_archive = final / second_sn / second_stamp / "system" / "records.csv"
                 second_active.unlink()
                 second_active.parent.rmdir()
@@ -241,8 +283,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
                 self.assertEqual(app.status_rows[2]["status"].cget("text"), "PASS")
             finally:
-                if app.monitor:
+                if app._round_is_active():
                     app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
@@ -403,28 +447,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
-    def test_legacy_settings_save_cannot_overwrite_a_newly_applied_profile(self):
-        with TemporaryDirectory() as temporary, \
-                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
-            root = tk.Tk()
-            root.withdraw()
-            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
-            try:
-                app.open_settings()
-                app.profile_editor_project.set("B518")
-                app.profile_editor_machine.set("FCT")
-                app._load_profile_editor_selection()
-                app.profile_editor_paths["active"].set("/deployment/new-active")
-                app.profile_editor_paths["final"].set("/deployment/new-final")
-                app._apply_profile_editor()
-                app._save_settings()
-
-                saved = app.profiles.get("B518", "FCT")
-                self.assertEqual(saved.paths["active"], "/deployment/new-active")
-                self.assertEqual(saved.paths["final"], "/deployment/new-final")
-            finally:
-                app.hotkey.close()
-                root.destroy()
 
     def test_engineer_import_export_and_reload_preserve_a_deployable_catalog(self):
         with TemporaryDirectory() as temporary:
@@ -487,13 +509,11 @@ class LogSolutionUiTests(unittest.TestCase):
                     deployed.project.set("Demo")
                     deployed.station.set("DFU")
                     deployed.profile_store.save(replacement, "Demo", "DFU")
-                    deployed.settings_paths["DFU"]["active"].set("/stale/active")
                     deployed._reload_profiles()
 
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/updated/active")
                     self.assertEqual(deployed.profile_editor_project.get(), "Demo")
-                    deployed._save_settings()
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/updated/active")
                 finally:
@@ -510,18 +530,12 @@ class LogSolutionUiTests(unittest.TestCase):
             app.events = queue.Queue()
             app.rounds = RoundCoordinator(app.events.put)
             app.active_round_id = None
-            app.monitor = None
-            app.station = SimpleNamespace(get=lambda: "BT")
-            app.bt_format = SimpleNamespace(get=lambda: "B518 RS-WMT")
-            app.paths = {name: {
-                "active": SimpleNamespace(get=lambda: ""),
-                "final": SimpleNamespace(get=lambda: str(output)),
-                "caseinfo": SimpleNamespace(get=lambda: ""),
-            } for name in ("DFU", "FCT", "BT")}
-            app.timeouts = {name: {
-                "start": SimpleNamespace(get=lambda: "240"),
-                "test": SimpleNamespace(get=lambda: "480"),
-            } for name in ("DFU", "FCT", "BT")}
+            install_test_profile(app, "BT", "rswmt", final=str(output))
+            profile = app.profiles.get("B518", "BT")
+            app.profiles = app.profiles.with_profile(replace(
+                profile, paths=dict(profile.paths, final=str(output)),
+                timeouts=dict(profile.timeouts, start=240),
+            ))
             app.start_button = MagicMock()
             app.monitor_state = MagicMock()
             app.event_lines = []
@@ -533,11 +547,10 @@ class LogSolutionUiTests(unittest.TestCase):
             with patch("log_monitoring.SessionStore"):
                 app.start_monitor()
                 prepare_deadline = time.monotonic() + 3
-                while app.rounds.monitor is None and time.monotonic() < prepare_deadline:
+                while app.rounds.session_path is None and time.monotonic() < prepare_deadline:
                     time.sleep(0.01)
-                monitor = app.rounds.monitor
-                self.assertIsNotNone(monitor)
-                start = monitor.started.replace(microsecond=0)
+                self.assertIsNotNone(app.rounds.session_path)
+                start = datetime.now().replace(microsecond=0)
                 stop = start + timedelta(seconds=5)
                 headers = ['Serial Number', 'Test Pass/Fail Status', 'List of Failing Tests',
                            'Error Description', 'Test Start Time', 'Test Stop Time', 'PRODUCT',
@@ -572,11 +585,11 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
             self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
 
-    def test_station_specific_slot_counts_and_heights(self):
-        # Existing migrated profiles retain their configured capacities.
-        self.assertEqual(slot_count("DFU"), 7)
-        self.assertEqual(slot_count("FCT"), 6)
-        self.assertEqual(slot_count("BT"), 4)
+    def test_legacy_profile_migration_preserves_valid_default_capacities(self):
+        profiles, _project, _machine = migrate_legacy_preferences({})
+        self.assertEqual(profiles.get("B518", "DFU").capacity, 7)
+        self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
+        self.assertEqual(profiles.get("B482", "BT").capacity, 4)
         self.assertEqual(window_height(4), 514)
         self.assertEqual(window_height(6), 608)
         self.assertEqual(window_height(7), 655)
@@ -655,15 +668,15 @@ class LogSolutionUiTests(unittest.TestCase):
         root.withdraw()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         app.station.set("DFU")
-        app.paths["DFU"]["active"].set("")
-        app.paths["DFU"]["final"].set("")
+        profile = app.profiles.get("B518", "DFU")
+        app.profiles = app.profiles.with_profile(replace(profile, paths={"active": "", "final": ""}))
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
                     patch("b518_log_solution.messagebox.showerror") as show_error:
                 app.start_monitor()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
-            self.assertIsNone(app.monitor)
+            self.assertIsNone(app.rounds.snapshot())
         finally:
             app.hotkey.close()
             root.destroy()
@@ -700,8 +713,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.profiles = app.profiles.with_profile(
                         replace(profile, paths=profile_paths, timeouts=profile_timeouts),
                     )
-                    app._load_selected_profile_values()
-                    self.assertEqual(app._timeout_seconds("BT")["round"], 6300)
+                    self.assertEqual(app.profiles.get("B482", "BT").timeouts["round"], 6300)
                     app._save_preferences()
                 finally:
                     app.hotkey.close()
@@ -712,7 +724,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 restarted = B518LogSolutionApp(restarted_root, hotkey_factory=FakeHotkey)
                 try:
                     self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
-                    self.assertEqual(restarted._timeout_seconds("BT")["round"], 6300)
+                    self.assertEqual(restarted.profiles.get("B482", "BT").timeouts["round"], 6300)
                     with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_factory:
                         restarted.start_monitor()
                     self.assertEqual(monitor_factory.call_args.args[0], "b482")
@@ -726,8 +738,6 @@ class LogSolutionUiTests(unittest.TestCase):
         root.withdraw()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         app.station.set("DFU")
-        app.paths["DFU"]["active"].set(".")
-        app.paths["DFU"]["final"].set(".")
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                        side_effect=PermissionError("denied")), \
@@ -737,11 +747,25 @@ class LogSolutionUiTests(unittest.TestCase):
                 while not show_error.called and time.monotonic() < deadline:
                     root.update()
                     time.sleep(0.01)
-            self.assertIsNone(app.monitor)
+            self.assertFalse(app._round_is_active())
             self.assertEqual(app.monitor_state.cget("text"), "啟動失敗")
             self.assertIn("denied", app.event_lines[-1])
             show_error.assert_called_once()
         finally:
+            app.hotkey.close()
+            root.destroy()
+
+    def test_settings_expose_profile_editor_and_session_log_without_legacy_monitor_tab(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        try:
+            app.open_settings()
+            tabs = tuple(app.settings_notebook.tab(tab, "text")
+                         for tab in app.settings_notebook.tabs())
+            self.assertEqual(tabs, ("工程師配置", "事件與 Session"))
+        finally:
+            app._close_settings()
             app.hotkey.close()
             root.destroy()
 
@@ -775,116 +799,9 @@ class LogSolutionUiTests(unittest.TestCase):
             app.hotkey.close()
             root.destroy()
 
-    def test_save_settings_persists_selected_project_machine_profile(self):
-        saved_paths = {
-            "DFU": {"active": "/logs/dfu/active", "final": "/logs/dfu/final", "caseinfo": ""},
-            "FCT": {"active": "/logs/fct/active", "final": "/logs/fct/final", "caseinfo": ""},
-            "BT": {"active": "", "final": "/logs/bt/testdata", "caseinfo": "/logs/bt/caseinfo"},
-        }
-        saved_timeouts = {
-            "DFU": {"start": "30", "test": "480", "round": "7200"},
-            "FCT": {"start": "30", "test": "480", "round": "7200"},
-            "BT": {"start": "30", "test": "240", "round": "6300"},
-        }
-        with TemporaryDirectory() as temporary_directory:
-            app_root = Path(temporary_directory) / "B518LogSolution"
-            prefs_path = app_root / "preferences.json"
-            with patch("b518_log_solution.APP_ROOT", app_root), patch("b518_log_solution.PREFS_PATH", prefs_path):
-                interpreter = tk.Tcl()
-                app = object.__new__(B518LogSolutionApp)
-                app.station = tk.StringVar(master=interpreter, value="DFU")
-                app.project = tk.StringVar(master=interpreter, value="B518")
-                app.bt_format = tk.StringVar(master=interpreter, value="B482 TestData")
-                app.settings_bt_format = tk.StringVar(master=interpreter, value="B518 RS-WMT")
-                app.settings_project = tk.StringVar(master=interpreter, value="B518")
-                app.profiles, _project, _machine = migrate_legacy_preferences({})
-                app.profile_store = MachineProfileStore(prefs_path)
-                app.profile_error = None
-                app.paths = {station: {field: tk.StringVar(master=interpreter, value="")
-                                       for field in ("active", "final", "caseinfo")}
-                             for station in ("DFU", "FCT", "BT")}
-                app.timeouts = {station: {field: tk.StringVar(master=interpreter, value="")
-                                          for field in ("start", "test", "round")}
-                                for station in ("DFU", "FCT", "BT")}
-                app.settings_station = tk.StringVar(master=interpreter, value="BT")
-                app.settings_paths = {
-                    station: {field: tk.StringVar(master=interpreter, value=value)
-                              for field, value in fields.items()}
-                    for station, fields in saved_paths.items()
-                }
-                app.settings_timeouts = {
-                    station: {field: tk.StringVar(master=interpreter, value=value)
-                              for field, value in fields.items()}
-                    for station, fields in saved_timeouts.items()
-                }
-                app._render_rows = lambda: None
-                app._close_settings = lambda: None
-                app._refresh_machine_choices = lambda: None
 
-                app._save_settings()
-                self.assertEqual(app.station.get(), "BT")
-                self.assertEqual(app.project.get(), "B518")
-                for field, value in saved_paths["BT"].items():
-                    self.assertEqual(app.paths["BT"][field].get(), value)
-                saved = json.loads(prefs_path.read_text(encoding="utf-8"))
-                self.assertEqual(saved["schema_version"], 1)
-                self.assertEqual((saved["project"], saved["machine"]), ("B518", "BT"))
-                restored = MachineProfileStore(prefs_path).load()
-                self.assertEqual((restored[1], restored[2]), ("B518", "BT"))
-                self.assertEqual(restored[0].get("B518", "BT").platform, "rswmt")
-                self.assertEqual(restored[0].get("B518", "BT").paths["final"], saved_paths["BT"]["final"])
-                self.assertEqual(restored[0].get("B518", "BT").timeouts["round"], 6300)
 
-    def test_timeout_values_require_positive_integers(self):
-        interpreter = tk.Tcl()
-        app = object.__new__(B518LogSolutionApp)
-        app.timeouts = {"BT": {
-            "start": tk.StringVar(master=interpreter, value="30"),
-            "test": tk.StringVar(master=interpreter, value="0"),
-        }}
-        with self.assertRaisesRegex(ValueError, "正整數"):
-            app._timeout_seconds("BT")
 
-    def test_cancel_settings_does_not_change_saved_path_values(self):
-        interpreter = tk.Tcl()
-        app = object.__new__(B518LogSolutionApp)
-        app.paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/before")}}
-        app.settings_paths = {"DFU": {"active": tk.StringVar(master=interpreter, value="/after")}}
-        app.bt_format = tk.StringVar(master=interpreter, value="B482 TestData")
-        app.settings_bt_format = tk.StringVar(master=interpreter, value="B518 RS-WMT")
-        app.settings_window = None
-        app.settings_log = None
-        app._close_settings()
-        self.assertEqual(app.paths["DFU"]["active"].get(), "/before")
-        self.assertEqual(app.bt_format.get(), "B482 TestData")
-
-    def test_rswmt_selection_updates_draft_timeout_and_routes_monitor(self):
-        root = tk.Tk()
-        root.withdraw()
-        with TemporaryDirectory() as folder, patch("b518_log_solution.PREFS_PATH", Path(folder) / 'prefs.json'):
-            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
-            try:
-                app.open_settings()
-                app.settings_station.set('BT')
-                app.settings_bt_format.set('B518 RS-WMT')
-                app._bt_format_changed()
-                self.assertEqual(app.settings_timeouts['BT']['start'].get(), '240')
-                self.assertEqual(app.bt_format.get(), 'B482 TestData')
-                app.settings_paths['BT']['final'].set(folder)
-                with patch.object(app, '_save_preferences'):
-                    app._save_settings()
-                    with patch('b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor') as factory:
-                        app.start_monitor()
-                        self.wait_for(lambda: factory.called)
-                        factory.assert_called_once()
-                        self.assertEqual(factory.call_args.args[0], 'rswmt')
-                        self.assertEqual(factory.call_args.kwargs['timeouts']['start'], 240)
-                        factory.return_value.start.assert_called_once()
-                        app.rounds.stop()
-            finally:
-                app._close_settings()
-                app.hotkey.close()
-                root.destroy()
 
     def test_monitor_lifecycle_never_changes_window_topmost_attribute(self):
         monitor = MagicMock()
@@ -893,16 +810,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.events = queue.Queue()
         app.rounds = RoundCoordinator(app.events.put)
         app.active_round_id = None
-        app.monitor = None
-        app.station = SimpleNamespace(get=lambda: "DFU")
-        app.paths = {"DFU": {
-            "active": SimpleNamespace(get=lambda: "."),
-            "final": SimpleNamespace(get=lambda: "."),
-        }}
-        app.timeouts = {"DFU": {
-            "start": SimpleNamespace(get=lambda: "30"),
-            "test": SimpleNamespace(get=lambda: "480"),
-        }}
+        install_test_profile(app, "DFU", "atlas")
         app.start_button = MagicMock()
         app.monitor_state = MagicMock()
         app.event_lines = []
@@ -922,34 +830,17 @@ class LogSolutionUiTests(unittest.TestCase):
         app._handle_event(MonitorEvent("finished", "monitor ended"))
         app.root.attributes.assert_not_called()
         app.rounds.stop()
-        self.assertIsNone(app.monitor)
 
     def test_existing_monitor_sources_start_through_the_shared_round_entry(self):
-        scenarios = (
-            ("DFU", "B482 TestData", "atlas"),
-            ("FCT", "B482 TestData", "atlas"),
-            ("BT", "B482 TestData", "b482"),
-            ("BT", "B518 RS-WMT", "rswmt"),
-        )
-        for station, bt_format, expected_platform in scenarios:
-            with self.subTest(station=station, bt_format=bt_format):
+        scenarios = (("DFU", "atlas"), ("FCT", "atlas"), ("BT", "b482"), ("BT", "rswmt"))
+        for station, expected_platform in scenarios:
+            with self.subTest(station=station, platform=expected_platform):
                 app = object.__new__(B518LogSolutionApp)
                 app.root = MagicMock()
                 app.events = queue.Queue()
                 app.rounds = RoundCoordinator(app.events.put)
                 app.active_round_id = None
-                app.monitor = None
-                app.station = SimpleNamespace(get=lambda: station)
-                app.bt_format = SimpleNamespace(get=lambda: bt_format)
-                app.paths = {name: {
-                    "active": SimpleNamespace(get=lambda: "."),
-                    "final": SimpleNamespace(get=lambda: "."),
-                    "caseinfo": SimpleNamespace(get=lambda: ""),
-                } for name in ("DFU", "FCT", "BT")}
-                app.timeouts = {name: {
-                    "start": SimpleNamespace(get=lambda: "30"),
-                    "test": SimpleNamespace(get=lambda: "480"),
-                } for name in ("DFU", "FCT", "BT")}
+                install_test_profile(app, station, expected_platform)
                 app.start_button = MagicMock()
                 app.monitor_state = MagicMock()
                 app.event_lines = []
@@ -976,17 +867,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.events = queue.Queue()
         app.rounds = RoundCoordinator(app.events.put)
         app.active_round_id = None
-        app.monitor = None
-        app.station = SimpleNamespace(get=lambda: "DFU")
-        app.paths = {"DFU": {
-            "active": SimpleNamespace(get=lambda: "."),
-            "final": SimpleNamespace(get=lambda: "."),
-            "caseinfo": SimpleNamespace(get=lambda: ""),
-        }}
-        app.timeouts = {"DFU": {
-            "start": SimpleNamespace(get=lambda: "30"),
-            "test": SimpleNamespace(get=lambda: "480"),
-        }}
+        install_test_profile(app, "DFU", "atlas")
         app.start_button = MagicMock()
         app.monitor_state = MagicMock()
         app.event_lines = []
@@ -1014,17 +895,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.events = queue.Queue()
         app.rounds = RoundCoordinator(app.events.put)
         app.active_round_id = None
-        app.monitor = None
-        app.station = SimpleNamespace(get=lambda: "DFU")
-        app.paths = {"DFU": {
-            "active": SimpleNamespace(get=lambda: "."),
-            "final": SimpleNamespace(get=lambda: "."),
-            "caseinfo": SimpleNamespace(get=lambda: ""),
-        }}
-        app.timeouts = {"DFU": {
-            "start": SimpleNamespace(get=lambda: "30"),
-            "test": SimpleNamespace(get=lambda: "480"),
-        }}
+        install_test_profile(app, "DFU", "atlas")
         app.start_button = MagicMock()
         app.monitor_state = MagicMock()
         app.event_lines = []
@@ -1058,7 +929,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
-        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="PASS")})
+        install_snapshot_results(app, (SimpleNamespace(slot=1, sn="SN123", status="PASS"),))
         app.event_lines = []
         app.settings_log = None
         app._set_row = MagicMock()
@@ -1075,7 +946,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_timeout_event_returns_dashboard_to_timeout_stopped_state(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
-        app.monitor = SimpleNamespace(results={1: SimpleNamespace(sn="SN123", status="TIMEOUT")})
+        install_snapshot_results(app, (SimpleNamespace(slot=1, sn="SN123", status="TIMEOUT"),))
         app.event_lines = []
         app.settings_log = None
         app._set_row = MagicMock()
@@ -1085,14 +956,12 @@ class LogSolutionUiTests(unittest.TestCase):
                                        detail={"kind": "start"}))
 
         app._set_row.assert_not_called()
-        self.assertIsNone(app.monitor)
         app._set_monitor_controls.assert_called_once_with(False, "逾時停止")
 
     def test_test_timeout_keeps_monitoring_other_slots(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
-        monitor = SimpleNamespace(results={2: SimpleNamespace(sn="SN123", status="TIMEOUT")})
-        app.monitor = monitor
+        install_snapshot_results(app, (SimpleNamespace(slot=2, sn="SN123", status="TIMEOUT"),))
         app.event_lines = []
         app.settings_log = None
         app._set_row = MagicMock()
@@ -1102,13 +971,11 @@ class LogSolutionUiTests(unittest.TestCase):
                                        detail={"kind": "test"}))
 
         app._set_row.assert_called_once_with(2, "SN123", "TIMEOUT")
-        self.assertIs(app.monitor, monitor)
         app._set_monitor_controls.assert_not_called()
 
     def test_stopped_event_does_not_change_window_topmost_attribute(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
-        app.monitor = MagicMock()
         app.event_lines = []
         app.settings_log = None
         app._set_monitor_controls = MagicMock()
@@ -1116,14 +983,12 @@ class LogSolutionUiTests(unittest.TestCase):
         app._handle_event(MonitorEvent("stopped", "monitor ended"))
 
         app.root.attributes.assert_not_called()
-        self.assertIsNone(app.monitor)
         app._set_monitor_controls.assert_called_once_with(False)
 
     def test_close_does_not_change_window_topmost_attribute(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
         app.hotkey = MagicMock()
-        app.monitor = None
         app.rounds = MagicMock()
         app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
         app._save_preferences = MagicMock()
@@ -1140,9 +1005,8 @@ class LogSolutionUiTests(unittest.TestCase):
         app.hotkey = MagicMock()
         app.rounds = MagicMock()
         app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
+        app.rounds.flush_session.side_effect = lambda timeout: calls.append("session") or True
         app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
-        app.monitor = SimpleNamespace(session=SimpleNamespace(
-            flush=lambda timeout: calls.append("session") or True))
         app._save_preferences = MagicMock()
         app.root.destroy.side_effect = lambda: calls.append("destroy")
 
@@ -1158,7 +1022,6 @@ class LogSolutionUiTests(unittest.TestCase):
         app.rounds = MagicMock()
         app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
         app.rounds.flush_audit.return_value = False
-        app.monitor = None
         app._save_preferences = MagicMock()
 
         with patch("b518_log_solution.messagebox.showwarning") as warning:
@@ -1175,10 +1038,8 @@ class LogSolutionUiTests(unittest.TestCase):
         app.hotkey = MagicMock()
         app.rounds = MagicMock()
         app.rounds.snapshot.return_value = SimpleNamespace(state="COMPLETED")
-        app.rounds.monitor = SimpleNamespace(session=SimpleNamespace(
-            flush=lambda timeout: calls.append("session") or True))
+        app.rounds.flush_session.side_effect = lambda timeout: calls.append("session") or True
         app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
-        app.monitor = None
         app._save_preferences = MagicMock()
         app.root.destroy.side_effect = lambda: calls.append("destroy")
 

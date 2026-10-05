@@ -16,7 +16,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from monitoring_round import RoundCoordinator
-from rswmt_monitoring import RsWmtLogMonitor, parse_rswmt_csv
+from platform_registry import DEFAULT_PLATFORM_REGISTRY
+from rswmt_monitoring import parse_rswmt_csv
 
 
 def replay(source):
@@ -34,21 +35,22 @@ def replay(source):
         output = root / 'output/SmtCal'
         output.mkdir(parents=True)
         rounds = RoundCoordinator()
-        rounds.start('BT', lambda callback: RsWmtLogMonitor(
-            output, callback=callback, now=lambda: start + timedelta(seconds=elapsed),
-            monotonic=lambda: elapsed, session_root=root / 'sessions',
-            start_timeout_seconds=240,
+        rounds.start('BT', lambda callback: DEFAULT_PLATFORM_REGISTRY.create_monitor(
+            'rswmt', station='BT', paths={'final': output}, source_slots=tuple(
+                sorted(record.slot for record in records)), callback=callback,
+            now=lambda: start + timedelta(seconds=elapsed), monotonic=lambda: elapsed,
+            session_root=root / 'sessions', async_session_writes=False,
+            timeouts={'start': 240, 'test': 480, 'round': 7200},
         ), run_async=False)
-        monitor = rounds.monitor
         elapsed = max((record.stopped - start).total_seconds() for record in records)
         for path in files:
             shutil.copyfile(path, output / path.name)
             log = path.with_suffix('.log')
             if log.is_file():
                 shutil.copyfile(log, output / log.name)
-        monitor.poll_once()
+        rounds.poll_once()
         elapsed += 5.0
-        monitor.poll_once()
+        rounds.poll_once()
         snapshot = rounds.snapshot()
         for record in records:
             observed = next(result for result in snapshot.results if result.slot == record.slot)

@@ -372,7 +372,7 @@ class RoundAuditRecordTests(unittest.TestCase):
 
         self.assertTrue(completed.result_available)
         self.assertTrue(coordinator.flush_audit())
-        rebuilt = read_round_audit(coordinator.monitor.session.path / "audit.jsonl")
+        rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
         result = rebuilt["results"][1]
         self.assertEqual((result["source_position"], result["sn"], result["status"]),
                          ("2", "ATLASAUDIT0001", "PASS"))
@@ -416,7 +416,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         completed = coordinator.poll_once()
 
         self.assertTrue(coordinator.flush_audit())
-        rebuilt = read_round_audit(coordinator.monitor.session.path / "audit.jsonl")
+        rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
         self.assertTrue(completed.result_available)
         self.assertEqual(rebuilt["results"][1]["status"], "PASS")
         self.assertEqual(rebuilt["results"][1]["source_position"], "1")
@@ -462,7 +462,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         completed = coordinator.poll_once()
 
         self.assertTrue(coordinator.flush_audit())
-        rebuilt = read_round_audit(coordinator.monitor.session.path / "audit.jsonl")
+        rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
         self.assertTrue(completed.result_available)
         self.assertEqual(rebuilt["results"][1]["status"], "PASS")
         self.assertEqual(rebuilt["results"][1]["source_time"], "2026-09-11T05:45:44")

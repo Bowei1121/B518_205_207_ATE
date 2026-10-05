@@ -742,7 +742,7 @@ class MonitoringRoundTests(unittest.TestCase):
         release.set()
         self.assertTrue(returned.wait(3))
         for _ in range(100):
-            if coordinator.monitor is not None:
+            if not coordinator.snapshot().source_preparation_pending:
                 break
             time.sleep(0.01)
         snapshot = coordinator.snapshot()
@@ -762,14 +762,17 @@ class MonitoringRoundTests(unittest.TestCase):
             caseinfo_path.write_text("", encoding="utf-8")
             sessions = Path(temporary) / "sessions"
             coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+            holder = {}
 
             def factory(callback):
-                return BtLogMonitor(
+                monitor = BtLogMonitor(
                     root, (1, 2), caseinfo_root=caseinfo, callback=callback, now=lambda: now,
                     monotonic=lambda: elapsed[0], start_timeout_seconds=60,
                     test_timeout_seconds=100, round_timeout_seconds=500,
                     session_root=sessions,
                 )
+                holder["monitor"] = monitor
+                return monitor
 
             def write_result(thread, serial, stamp):
                 path = root / "2026-10-02" / "PASSED" / (
@@ -786,7 +789,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 return path
 
             coordinator.start("BT", factory, run_async=False)
-            monitor = coordinator.monitor
+            monitor = holder["monitor"]
             caseinfo_path.write_text(
                 "2026-10-02 10:00:00:000, 1,InitResource,SNRead,--,SNRead,"
                 "HK5HUX6STQ800003YV,NA,NA,NA,Passed,1.00\r\n",
@@ -807,12 +810,12 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(waiting.state.value, "AWAITING_REVIEW")
             self.assertFalse(waiting.result_available)
             self.assertEqual([result.status for result in waiting.results], ["PASS", "TESTING"])
-            self.assertTrue(monitor.session.flush())
-            session_log = monitor.session.path / "events.log"
+            self.assertTrue(coordinator.flush_session())
+            session_log = coordinator.session_path / "events.log"
             captured_log = session_log.read_text(encoding="utf-8")
             self.assertIn("conflict_id", captured_log)
             self.assertIn("candidate_source_time", captured_log)
-            session_metadata = (monitor.session.path / "session.json").read_text(encoding="utf-8")
+            session_metadata = (coordinator.session_path / "session.json").read_text(encoding="utf-8")
             self.assertIn(str(second), session_metadata)
 
             slot2 = write_result(1, "HK5HUX6STQ800003YV", "20261002100001")
@@ -829,7 +832,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(released.state.value, "COMPLETED")
             self.assertTrue(released.result_available)
             self.assertEqual(released.results[0].sn, "HK5HUX6STQ000003YV")
-            self.assertTrue(monitor.session.flush())
+            self.assertTrue(coordinator.flush_session())
             resolved_log = session_log.read_text(encoding="utf-8")
             self.assertIn("accept_candidate", resolved_log)
             self.assertIn("selected_at", resolved_log)
@@ -894,7 +897,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(unresolved[0].detail["candidate_source_id"], caseinfo_path.name)
             self.assertEqual(unresolved[0].detail["candidate_source_time"], "2026-10-02 10:00:02.000")
             self.assertNotIn("round_evidence_id", unresolved[0].detail)
-            self.assertTrue(coordinator.monitor.session.flush())
+            self.assertTrue(coordinator.flush_session())
 
     def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
         elapsed = [0.0]
@@ -1134,7 +1137,6 @@ class MonitoringRoundTests(unittest.TestCase):
             source = result_dir / 'SERIAL000001_2026-09-11_05-45-44.csv'
             source.write_text(result.getvalue(), encoding='utf-8')
 
-            monitor = rounds.monitor
             elapsed[0] = 88.0
             rounds.poll_once()
             self.assertEqual(rounds.snapshot().results[0].status, 'COMPLETING')
@@ -1210,7 +1212,7 @@ class MonitoringRoundTests(unittest.TestCase):
                              'rswmt:1:2026-09-11T05:44:16')
             rounds.resolve_review(conflict.conflict_id, 'keep_original')
             rounds.stop()
-            self.assertTrue(rounds.monitor.session.flush())
+            self.assertTrue(rounds.flush_session())
 
             accepted_sequence = rounds.snapshot().event_sequence
             late_dir = output / '2026-09-11_05-46-44'
@@ -1272,7 +1274,7 @@ class MonitoringRoundTests(unittest.TestCase):
             rounds.poll_once()
             self.assertEqual(rounds.snapshot().results[0].status, 'TIMEOUT')
             rounds.stop()
-            self.assertTrue(rounds.monitor.session.flush())
+            self.assertTrue(rounds.flush_session())
 
     def test_repeated_start_while_running_keeps_the_same_round(self):
         monitors = []

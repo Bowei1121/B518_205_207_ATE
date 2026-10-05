@@ -59,12 +59,11 @@ def main():
             paths = dict(profile.paths)
             paths["final"] = str(testdata)
             app.profiles = app.profiles.with_profile(replace(profile, paths=paths))
-            app._load_selected_profile_values()
             root.deiconify()
             root.update()
             try:
                 app.start_button.invoke()
-                wait_for(root, lambda: app.monitor is not None, "BT source preparation")
+                wait_for(root, lambda: app.rounds.session_path is not None, "BT source preparation")
 
                 stamp = (datetime.now() + timedelta(seconds=2)).strftime("%Y%m%d%H%M%S")
                 for sample in samples:

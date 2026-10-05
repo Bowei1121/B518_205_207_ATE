@@ -41,6 +41,11 @@ def wait_for(root, condition, description, timeout=20):
     raise RuntimeError("Timed out while waiting for {}.".format(description))
 
 
+def source_prepared(app):
+    snapshot = app.rounds.snapshot()
+    return snapshot is not None and not snapshot.source_preparation_pending
+
+
 def update_profile(app, project, machine, platform, paths, capacity, start, test, round_limit):
     current = app.profiles.get(project, machine)
     profile_paths = dict(current.paths)
@@ -55,9 +60,6 @@ def update_profile(app, project, machine, platform, paths, capacity, start, test
     app.profiles = app.profiles.with_profile(profile)
     app.project.set(project)
     app.station.set(machine)
-    app._load_selected_profile_values()
-    for field, value in ("start", start), ("test", test), ("round", round_limit):
-        app.timeouts[machine][field].set(str(value))
 
 
 def write_atlas_record(path, serial, status="Pass"):
@@ -107,8 +109,7 @@ def main():
                                    {"active": str(active), "final": str(archive)}, 2, 3, 10, 90)
 
                     app.start_button.invoke()
-                    wait_for(root, lambda: app.monitor is not None, "Atlas source preparation")
-                    running_monitor = app.monitor
+                    wait_for(root, lambda: source_prepared(app), "Atlas source preparation")
                     serial = "SMOKEATLAS0001"
                     active_record = active / "group0-slot1" / "system" / "records.csv"
                     write_atlas_record(active_record, serial)
@@ -129,11 +130,16 @@ def main():
                     preparation_entered = threading.Event()
                     preparation_release = threading.Event()
                     adapter_started = threading.Event()
-                    original_atlas_monitor = app_module.AtlasActiveArchiveMonitor
                     delayed_monitor = {}
+                    block_settings_handoff = True
+                    original_create_monitor = app_module.DEFAULT_PLATFORM_REGISTRY.create_monitor
 
-                    def blocked_atlas_constructor(*args, **kwargs):
-                        monitor = original_atlas_monitor(*args, **kwargs)
+                    def controlled_create_monitor(platform, **context):
+                        nonlocal block_settings_handoff
+                        monitor = original_create_monitor(platform, **context)
+                        if platform != "atlas" or not block_settings_handoff:
+                            return monitor
+                        block_settings_handoff = False
                         original_start = monitor.start
                         original_update_settings = monitor.update_round_settings
 
@@ -155,7 +161,8 @@ def main():
                              "restart before blocked source preparation")
                     update_profile(app, "B518", "FCT", "atlas",
                                    {"active": str(active), "final": str(archive)}, 2, 30, 100, 1)
-                    with patch.object(app_module, "AtlasActiveArchiveMonitor", blocked_atlas_constructor):
+                    with patch.object(app_module.DEFAULT_PLATFORM_REGISTRY, "create_monitor",
+                                      controlled_create_monitor):
                         app.start_button.invoke()
                         if not preparation_entered.wait(2):
                             raise RuntimeError("The controlled adapter settings handoff did not block as expected.")
@@ -193,13 +200,13 @@ def main():
                     update_profile(app, "B518", "FCT", "atlas",
                                    {"active": str(active), "final": str(archive)}, 2, 3, 10, 90)
                     app.start_button.invoke()
-                    wait_for(root, lambda: app.monitor is not None, "empty-round source preparation")
+                    wait_for(root, lambda: source_prepared(app), "empty-round source preparation")
                     try:
                         wait_for(root, lambda: app.rounds.snapshot().state == "COMPLETED"
                                  and all(item.status == "NOTEST" for item in app.rounds.snapshot().results),
                                  "all-empty start deadline")
                     except RuntimeError as error:
-                        print("all-empty diagnostic:", app.rounds.snapshot(), app.rounds.monitor)
+                        print("all-empty diagnostic:", app.rounds.snapshot())
                         raise error
                     empty = app.rounds.snapshot()
 
@@ -210,7 +217,7 @@ def main():
                     previous_round_id = app.rounds.snapshot().round_id
                     app.start_button.invoke()
                     wait_for(root, lambda: app.rounds.snapshot().round_id != previous_round_id
-                             and app.monitor is not None, "timeout-round source preparation")
+                             and source_prepared(app), "timeout-round source preparation")
                     write_atlas_record(active / "group0-slot1" / "system" / "records.csv", "SMOKEATLAS0002")
                     try:
                         wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
@@ -235,13 +242,12 @@ def main():
                     update_profile(app, "B518", "FCT", "atlas",
                                    {"active": str(active), "final": str(archive)}, 2, 30, 100, 8)
                     app.start_button.invoke()
-                    wait_for(root, lambda: app.monitor is not None, "round-alarm source preparation")
-                    alarm_monitor = app.monitor
+                    wait_for(root, lambda: source_prepared(app), "round-alarm source preparation")
                     alarm_active = active / "group0-slot1" / "system" / "records.csv"
                     write_atlas_record(alarm_active, "SMOKEALARM0001")
                     wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
                              "round-alarm trusted activity")
-                    alarm_stamp = (app.monitor.started + timedelta(seconds=1)).strftime(
+                    alarm_stamp = (datetime.now() + timedelta(seconds=1)).strftime(
                         "%Y%m%d_%H-%M-%S.000-ticket11")
                     alarm_final = archive / "SMOKEALARM0001" / alarm_stamp / "system" / "records.csv"
                     write_atlas_record(alarm_final, "SMOKEALARM0001")
@@ -279,11 +285,13 @@ def main():
                         raise RuntimeError("Acknowledging the only round alarm did not release terminal results.")
                     if not released_alarm.round_alarm.acknowledged_at:
                         raise RuntimeError("Round-alarm acknowledgement time was not recorded.")
-                    session_events = [json.loads(line) for line in
-                                      (alarm_monitor.session.path / "events.log").read_text(
-                                          encoding="utf-8").splitlines()]
+                    from audit_records import read_round_audit
+                    if not app.rounds.flush_audit(timeout=5):
+                        raise RuntimeError("The round audit did not flush before reconstruction.")
+                    session_events = read_round_audit(
+                        app.rounds.session_path / "audit.jsonl")['events']
                     session_metadata = json.loads(
-                        (alarm_monitor.session.path / "session.json").read_text(encoding="utf-8"))
+                        (app.rounds.session_path / "session.json").read_text(encoding="utf-8"))
                     if not session_metadata["settings"].get("accepted_start_at") or not isinstance(
                             session_metadata["settings"].get("accepted_start_monotonic"), (int, float)):
                         raise RuntimeError("The accepted common start time was not persisted with the round profile.")
@@ -319,15 +327,14 @@ def main():
                         update_profile(app, "B518", "FCT", "atlas",
                                        {"active": str(active), "final": str(archive)}, 2, 30, 100, 6)
                         app.start_button.invoke()
-                        wait_for(root, lambda: app.monitor is not None,
+                        wait_for(root, lambda: source_prepared(app),
                                  "{} Atlas preparation".format(order))
-                        conflict_monitor = app.monitor
                         serial = "SMOKECONFLICT{:04d}".format(index)
                         live = active / "group0-slot1" / "system" / "records.csv"
                         write_atlas_record(live, serial)
                         wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
                                  "{} Atlas activity".format(order))
-                        stamp = (conflict_monitor.started + timedelta(seconds=1)).strftime(
+                        stamp = (datetime.now() + timedelta(seconds=1)).strftime(
                             "%Y%m%d_%H-%M-%S.000-ticket11-{}".format(index))
                         final_record = archive / serial / stamp / "system" / "records.csv"
                         write_atlas_record(final_record, serial, "Pass")
@@ -397,7 +404,7 @@ def main():
                     wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
                              "restart button after manual stop")
                     app.start_button.invoke()
-                    wait_for(root, lambda: app.monitor is not None, "RS-WMT source preparation")
+                    wait_for(root, lambda: source_prepared(app), "RS-WMT source preparation")
                     source_start = datetime.now()
                     folder_stamp = (source_start + timedelta(seconds=1)).strftime("%Y-%m-%d_%H-%M-%S")
                     file_stamp = folder_stamp
@@ -410,7 +417,7 @@ def main():
                                  "RS-WMT final-only result", timeout=20)
                     except RuntimeError as error:
                         print("RS-WMT diagnostic:", app.rounds.snapshot(), result,
-                              result.exists(), app.monitor.settings if app.monitor else None)
+                              result.exists())
                         raise error
                     rswmt = app.rounds.snapshot()
                     if any(item.event.status == "TESTING" for item in rswmt.events):

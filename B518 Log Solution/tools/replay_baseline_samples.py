@@ -19,8 +19,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from log_monitoring import (
-    AtlasActiveArchiveMonitor,
-    BtLogMonitor,
     CASEINFO_FILE,
     CASEINFO_TIMESTAMP,
     parse_archive_timestamp,
@@ -30,6 +28,7 @@ from log_monitoring import (
     trusted_sn_from_records,
 )
 from monitoring_round import RoundCoordinator, RoundState
+from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from replay_rswmt import replay as replay_rswmt
 
 
@@ -67,18 +66,20 @@ def replay_atlas_archive_sample(sample, source_root, station):
         active_record.parent.mkdir(parents=True)
         clock = {"now": archive_time, "elapsed": 0.0}
         rounds = RoundCoordinator()
-        rounds.start(station, lambda callback: AtlasActiveArchiveMonitor(
-            station, active_root, final_root, (1,), callback=callback,
-            now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
-            session_root=root / "sessions",
+        rounds.start(station, lambda callback: DEFAULT_PLATFORM_REGISTRY.create_monitor(
+            "atlas", station=station,
+            paths={"active": active_root, "final": final_root}, source_slots=(1,),
+            callback=callback, now=lambda: clock["now"],
+            monotonic=lambda: clock["elapsed"], session_root=root / "sessions",
+            async_session_writes=False,
+            timeouts={"start": 30, "test": 480, "round": 7200},
         ), run_async=False)
-        monitor = rounds.monitor
 
         # These supplied directories contain archive records, not active trees.
         # Reuse the sample as an active observation, then feed the original
         # archive record to verify the real final-result parser and transition.
         shutil.copyfile(sample, active_record)
-        monitor.poll_once()
+        rounds.poll_once()
         if rounds.snapshot().results[0].status != "TESTING":
             raise ReplayError("Atlas active observation did not produce TESTING.")
 
@@ -88,10 +89,10 @@ def replay_atlas_archive_sample(sample, source_root, station):
         shutil.copyfile(sample, final_record)
         clock["now"] += timedelta(seconds=1)
         clock["elapsed"] = 1.0
-        monitor.poll_once()
+        rounds.poll_once()
         # Atlas archives are only accepted after their file signature remains
         # unchanged across consecutive polls.
-        monitor.poll_once()
+        rounds.poll_once()
 
         expected = records_status(sample)
         observed = rounds.snapshot().results[0].status
@@ -99,7 +100,7 @@ def replay_atlas_archive_sample(sample, source_root, station):
             raise ReplayError("Atlas archive result did not match the source sample.")
         clock["now"] += timedelta(seconds=3)
         clock["elapsed"] = 4.0
-        monitor.poll_once()
+        rounds.poll_once()
         finished = rounds.snapshot().state == RoundState.COMPLETED
         rounds.stop()
 
@@ -141,12 +142,13 @@ def replay_b482_run(samples):
         root = Path(temporary)
         testdata = root / "TestData"
         rounds = RoundCoordinator()
-        rounds.start("BT", lambda callback: BtLogMonitor(
-            testdata, tuple(sorted(expected)), callback=callback,
+        rounds.start("BT", lambda callback: DEFAULT_PLATFORM_REGISTRY.create_monitor(
+            "b482", station="BT", paths={"final": testdata},
+            source_slots=tuple(sorted(expected)), callback=callback,
             now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
-            session_root=root / "sessions",
+            session_root=root / "sessions", async_session_writes=False,
+            timeouts={"start": 30, "test": 480, "round": 7200},
         ), run_async=False)
-        monitor = rounds.monitor
         copied = []
         for sample, parsed, filename in parsed_samples:
             before = source_signature(sample)
@@ -157,16 +159,16 @@ def replay_b482_run(samples):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(sample, target)
             copied.append((sample, before))
-        monitor.poll_once()
+        rounds.poll_once()
         clock["elapsed"] = 5.1
         clock["now"] += timedelta(seconds=5)
-        monitor.poll_once()
+        rounds.poll_once()
         observed = {result.slot: result.status for result in rounds.snapshot().results}
         if observed != expected:
             raise ValueError("B482 TestData results did not match the source samples.")
         clock["elapsed"] += 3.0
         clock["now"] += timedelta(seconds=3)
-        monitor.poll_once()
+        rounds.poll_once()
         finished = rounds.snapshot().state == RoundState.COMPLETED
         rounds.stop()
 
@@ -247,16 +249,18 @@ def replay_b482_caseinfo(source_root, selected_date=None):
         root = Path(temporary)
         caseinfo_root = root / "CaseInfo"
         rounds = RoundCoordinator()
-        rounds.start("BT", lambda callback: BtLogMonitor(
-            root / "TestData", (1, 2, 3, 4), caseinfo_root=caseinfo_root,
-            callback=callback, now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
-            session_root=root / "sessions",
+        rounds.start("BT", lambda callback: DEFAULT_PLATFORM_REGISTRY.create_monitor(
+            "b482", station="BT", paths={"final": root / "TestData",
+                                            "caseinfo": caseinfo_root},
+            source_slots=(1, 2, 3, 4), callback=callback,
+            now=lambda: clock["now"], monotonic=lambda: clock["elapsed"],
+            session_root=root / "sessions", async_session_writes=False,
+            timeouts={"start": 30, "test": 480, "round": 7200},
         ), run_async=False)
-        monitor = rounds.monitor
         caseinfo_root.mkdir(parents=True)
         for sample in samples.values():
             shutil.copyfile(sample, caseinfo_root / sample.name)
-        monitor.poll_once()
+        rounds.poll_once()
         observed = [result for result in rounds.snapshot().results if result.status != "WAITING"]
         serials = sum(bool(result.sn) for result in observed)
         states = Counter(result.status for result in observed)

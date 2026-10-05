@@ -100,9 +100,5 @@ class ConfiguredMonitor:
         evidence.setdefault("source_position", str(source_slot))
         self._monitor.apply_round_result(source_slot, status, sn, source, evidence, lock_terminal)
 
-    def emit_display_event(self, event) -> None:
-        """Compatibility alias for older callers of the round event seam."""
-        self.publish_round_event(event)
-
     def _source_slot(self, display_slot):
         return self._display_to_source.get(display_slot)
