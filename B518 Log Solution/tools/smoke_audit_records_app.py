@@ -9,7 +9,7 @@ import tempfile
 import time
 import tkinter as tk
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +20,7 @@ sys.path.insert(0, str(APP_ROOT / "tools"))
 from audit_records import read_round_audit
 from kvm_display_contract import MarkerState
 from smoke_deadline_app import LocalHotkey, wait_for, write_atlas_record
+import b518_log_solution as app_module
 from b518_log_solution import B518LogSolutionApp
 
 
@@ -52,33 +53,45 @@ def main():
                     ))
                     app.project.set("B518")
                     app.station.set("FCT")
-                    app._load_selected_profile_values()
-                    app.start_button.invoke()
-                    wait_for(root, lambda: app.monitor is not None, "Atlas source preparation")
-                    session_path = app.monitor.session.path
+                    adapter = {}
+                    registry = app_module.DEFAULT_PLATFORM_REGISTRY
+                    create_monitor = registry.create_monitor
+
+                    def capture_registered_adapter(platform_name, **context):
+                        adapter["value"] = create_monitor(platform_name, **context)
+                        return adapter["value"]
+
+                    with patch.object(registry, "create_monitor", capture_registered_adapter):
+                        app.start_button.invoke()
+                        wait_for(root, lambda: app.rounds.session_path is not None,
+                                 "Atlas source preparation")
+                    monitor = adapter["value"]
+                    session_path = app.rounds.session_path
                     write_started, release_write = threading.Event(), threading.Event()
 
                     def slow_session_event(_message, _detail=None):
                         write_started.set()
                         release_write.wait(3)
 
-                    with patch.object(app.monitor.session, "event", side_effect=slow_session_event):
+                    with patch.object(monitor.session, "event", side_effect=slow_session_event):
                         enqueue_at = time.monotonic()
-                        app.monitor.session.enqueue_event("controlled delayed write")
+                        monitor.session.enqueue_event("controlled delayed write")
                         enqueue_duration = time.monotonic() - enqueue_at
                         if enqueue_duration >= 0.1 or not write_started.wait(2):
                             raise RuntimeError("Session 磁碟延遲阻塞了 Tk 呼叫端")
                         root.update()
                         release_write.set()
-                        if not app.monitor.session.flush(timeout=3):
+                        if not app.rounds.flush_session(timeout=3):
                             raise RuntimeError("受控延遲 Session 紀錄未完成")
 
                     serial = "SMOKEATLAS0001"
                     active_record = active / "group0-slot1" / "system" / "records.csv"
                     write_atlas_record(active_record, serial)
-                    wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
+                    wait_for(root, lambda: bool(
+                        app.rounds.snapshot() and app.rounds.snapshot().results
+                        and app.rounds.snapshot().results[0].status == "TESTING"),
                              "Atlas activity")
-                    stamp = (app.monitor.started + timedelta(seconds=1)).strftime(
+                    stamp = (datetime.now() + timedelta(seconds=1)).strftime(
                         "%Y%m%d_%H-%M-%S.000-ticket13")
                     write_atlas_record(archive / serial / stamp / "system" / "records.csv", serial)
                     import shutil

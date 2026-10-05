@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,6 +11,49 @@ from sample_json_monitor import SampleJsonLinesSource
 
 
 class PlatformRegistryTests(unittest.TestCase):
+    def test_registry_preserves_injected_replay_clocks_for_registered_adapters(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = lambda: datetime(2026, 10, 5, 9, 0, 0)
+            elapsed = lambda: 12.5
+            monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                "rswmt", station="BT", paths={"final": root / "output"},
+                source_slots=(1,), callback=lambda _event: None,
+                timeouts={"start": 240, "test": 480, "round": 7200},
+                session_root=root / "sessions", async_session_writes=False,
+                now=now, monotonic=elapsed,
+            )
+
+            self.assertEqual(monitor.started, now())
+            self.assertIs(monitor.now, now)
+            self.assertIs(monitor.monotonic, elapsed)
+
+    def test_round_coordinator_exposes_session_lookup_and_flush_at_public_boundary(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "events.jsonl").write_text("", encoding="utf-8")
+            rounds = RoundCoordinator(audit_root=root / "sessions")
+
+            def monitor_factory(callback):
+                monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                    "sample-json", station="FCT", paths={"active": source},
+                    source_slots=(1,), callback=callback,
+                    timeouts={"start": 30, "test": 60, "round": 600},
+                    session_root=root / "sessions", async_session_writes=True,
+                )
+                return ConfiguredMonitor(monitor, {1: 1})
+
+            rounds.start("FCT", monitor_factory, run_async=False, capacity=1,
+                         round_timeout_seconds=600)
+
+            session_path = rounds.session_path
+            self.assertIsNotNone(session_path)
+            self.assertTrue((session_path / "session.json").is_file())
+            self.assertTrue(rounds.flush_session(timeout=2))
+            self.assertTrue(rounds.flush_audit(timeout=2))
+
     def test_json_lines_source_ignores_startup_history_and_waits_for_complete_records(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -136,7 +180,7 @@ class PlatformRegistryTests(unittest.TestCase):
             self.assertTrue(rounds.flush_audit())
 
             from audit_records import read_round_audit
-            rebuilt = read_round_audit(rounds.monitor.session.path / "audit.jsonl")
+            rebuilt = read_round_audit(rounds.session_path / "audit.jsonl")
             self.assertTrue(rebuilt["result_available"])
             self.assertEqual([(slot, value["status"]) for slot, value in sorted(rebuilt["results"].items())],
                              [(1, "PASS"), (2, "PASS")])
@@ -181,7 +225,7 @@ class PlatformRegistryTests(unittest.TestCase):
             self.assertTrue(rounds.flush_audit())
 
             from audit_records import read_round_audit
-            rebuilt = read_round_audit(rounds.monitor.session.path / "audit.jsonl")
+            rebuilt = read_round_audit(rounds.session_path / "audit.jsonl")
             self.assertTrue(rebuilt["result_available"])
             self.assertEqual(rebuilt["results"][1]["status"], "PASS")
 

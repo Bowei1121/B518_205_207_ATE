@@ -87,7 +87,10 @@ def main():
             support = home / "Application Support"
             source = home / "sources" / "round-1"
             source.mkdir(parents=True)
-            evidence = APP_ROOT / "docs" / "refactoring" / "evidence" / "ticket-14"
+            evidence = Path(os.environ.get(
+                "B518_SMOKE_EVIDENCE_DIR",
+                APP_ROOT / "docs" / "refactoring" / "evidence" / "ticket-14",
+            ))
             evidence.mkdir(parents=True, exist_ok=True)
             with patch("b518_log_solution.APP_ROOT", support), \
                     patch("b518_log_solution.PREFS_PATH", support / "preferences.json"):
@@ -132,10 +135,10 @@ def main():
                     app.start_button.invoke()
                     wait_for(root, lambda: app.rounds.snapshot() is not None
                              and app.rounds.snapshot().state == RoundState.RUNNING
-                             and app.rounds.monitor is not None, "registered sample Adapter preparation")
+                             and app.rounds.session_path is not None, "registered sample Adapter preparation")
                     screenshots["monitoring"] = capture_window(
                         "B518 Log Solution", evidence / "monitoring.png")
-                    session_path = app.rounds.monitor.session.path
+                    session_path = app.rounds.session_path
                     records = (
                         '{"kind":"activity","position":20,"sn":"SAMPLE000020",'
                         '"source_time":"2026-10-05T09:00:00","batch_id":"fixture-run-7"}\n'
@@ -200,6 +203,8 @@ def main():
                         raise RuntimeError("Disk reconstruction disagreed with the Tk snapshot.")
 
                     result = {
+                        "ticket": "15" if "B518_SMOKE_EVIDENCE_DIR" in os.environ else "14",
+                        "smoke_origin_ticket": "14",
                         "project_machine": "SAMPLE / FCT",
                         "platform": "sample-json",
                         "engineer_profile_saved": True,

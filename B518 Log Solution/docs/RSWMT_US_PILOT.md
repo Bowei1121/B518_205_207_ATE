@@ -10,16 +10,18 @@ source tests and sample replay do not prove packaged-app compatibility.
 1. Obtain the `macOS15.0-arm64.zip` candidate from the build owner. Extract it and
    open `B518 Log Solution.app`. No Python or Homebrew installation is required
    on the test station. Do not use the macOS 26-only package.
-2. Open **設定** (Settings), choose **BT**, then **B518 RS-WMT** under **BT 格式 / Format**.
-3. Set **RS-WMT output/SmtCal** to the actual fixed output directory, for example:
+2. Open **設定 → 工程師配置**. Select or create the `B518 / BT` profile and set its platform to `rswmt`.
+3. Set the profile's **RS-WMT output/SmtCal** path to the actual fixed output directory, for example:
    `~/Documents/rswmt_conducted_1.0.0-b518+42/output/SmtCal`.
    Do not select only an old timestamp subfolder.
-4. Leave **Live logs** blank initially. The monitor will also read `.log` files
+4. Leave the optional **Live logs** path blank initially. The monitor will also read `.log` files
    below the output directory. Only set another directory if its logs use the
    same per-DUT format as the supplied samples.
-5. Selecting RS-WMT changes an unchanged 30-second start timeout to 240 seconds.
-   This allows time for files that appear only after the test completes. Other
-   custom timeout values remain unchanged. **儲存** saves; **取消** cancels.
+5. Set the profile's start-wait deadline to 240 seconds when results appear only
+   after the test completes. Configure the test and round deadlines in the same
+   profile. **套用並保存** persists the complete profile; cancelling the draft
+   leaves the active profile unchanged. Operators continue to select only the
+   project and machine on the main screen.
 
 ## Run one test round
 
@@ -52,7 +54,7 @@ Record the app version, macOS version and the configured paths. Verify:
 - Multiple rounds without old or duplicate results entering a new round.
 
 For a mismatch, preserve the complete run directory containing paired CSV/log
-files, the application's Session directory (available from Settings), and an HMI
+files, the application's Session directory (available from 設定 → 事件與 Session), and an HMI
 screenshot from that same run. The current supplied files cover four PASS results;
 real FAIL and live-update samples are still needed for station acceptance.
 

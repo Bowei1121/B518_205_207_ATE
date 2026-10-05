@@ -52,7 +52,7 @@ class PlatformRegistry:
 
 def _base_context(context):
     timeouts = context["timeouts"]
-    return {
+    arguments = {
         "callback": context["callback"],
         "session_root": context["session_root"],
         "async_session_writes": context["async_session_writes"],
@@ -60,6 +60,10 @@ def _base_context(context):
         "test_timeout_seconds": timeouts["test"],
         "round_timeout_seconds": timeouts["round"],
     }
+    for clock_name in ("now", "monotonic"):
+        if clock_name in context:
+            arguments[clock_name] = context[clock_name]
+    return arguments
 
 
 def _atlas_monitor(**context):

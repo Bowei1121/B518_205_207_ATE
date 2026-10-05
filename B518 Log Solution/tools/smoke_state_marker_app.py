@@ -80,9 +80,6 @@ def update_profile(app, active, final, round_limit=5):
     app.profiles = app.profiles.with_profile(profile)
     app.project.set("B518")
     app.station.set("FCT")
-    app._load_selected_profile_values()
-    for name, value in (("start", 30), ("test", 30), ("round", round_limit)):
-        app.timeouts["FCT"][name].set(str(value))
 
 
 def window_rect(window):
@@ -106,7 +103,10 @@ def assert_dialog_clear_of_recognition_band(app, dialog):
 
 
 def main():
-    evidence_root = APP_ROOT / "docs" / "refactoring" / "evidence" / "ticket-12"
+    evidence_root = Path(os.environ.get(
+        "B518_SMOKE_EVIDENCE_DIR",
+        APP_ROOT / "docs" / "refactoring" / "evidence" / "ticket-12",
+    ))
     evidence_root.mkdir(parents=True, exist_ok=True)
     run_root = Path(tempfile.mkdtemp(prefix="ticket12-isolated-"))
     previous_home = os.environ.get("HOME")
@@ -144,9 +144,18 @@ def main():
                                    tk_scaling=scale, screen_tk_units=screen,
                                    app_window_tk_units=window, **capture_meta))
 
-                app.start_button.invoke()
-                wait_for(root, lambda: app.rounds.snapshot().state == RoundState.RUNNING
-                         and app.rounds.monitor is not None, "shared round preparation")
+                adapter = {}
+                registry = app_module.DEFAULT_PLATFORM_REGISTRY
+                create_monitor = registry.create_monitor
+
+                def capture_registered_adapter(platform_name, **context):
+                    adapter["value"] = create_monitor(platform_name, **context)
+                    return adapter["value"]
+
+                with patch.object(registry, "create_monitor", capture_registered_adapter):
+                    app.start_button.invoke()
+                    wait_for(root, lambda: app.rounds.snapshot().state == RoundState.RUNNING
+                             and app.rounds.session_path is not None, "shared round preparation")
                 snapshot = app.rounds.snapshot()
                 capture_meta = capture_window("B518 Log Solution", screenshots / "monitoring.png")
                 output.append(dict(state=state_for_round_snapshot(snapshot).value,
@@ -155,7 +164,7 @@ def main():
                                    tk_scaling=scale, screen_tk_units=screen,
                                    app_window_tk_units=window, **capture_meta))
 
-                monitor = app.rounds.monitor
+                monitor = adapter["value"]
                 evidence = {"round_evidence_id": "ticket12-controlled-round"}
                 monitor.apply_round_result(1, "PASS", "SAMPLE-T12-001", "controlled-source",
                                            evidence, lock_terminal=True)
@@ -266,7 +275,8 @@ def main():
                 app.hotkey.close()
                 root.destroy()
         details = {
-            "ticket": "12",
+            "ticket": "15" if "B518_SMOKE_EVIDENCE_DIR" in os.environ else "12",
+            "smoke_origin_ticket": "12",
             "environment": {"macOS": subprocess.check_output(
                                 ["/usr/bin/sw_vers", "-productVersion"], text=True).strip(),
                             "architecture": platform.machine(),

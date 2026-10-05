@@ -164,18 +164,21 @@ class RsWmtTests(unittest.TestCase):
 
     def test_timeout_latches_slot_and_late_csv_does_not_overwrite(self):
         rounds = RoundCoordinator(monotonic=lambda: self.seconds)
+        holder = {}
 
         def create(callback):
-            return RsWmtLogMonitor(
+            monitor = RsWmtLogMonitor(
                 self.output, callback=callback,
                 now=lambda: START + timedelta(seconds=self.seconds),
                 monotonic=lambda: self.seconds, start_timeout_seconds=30,
                 test_timeout_seconds=5, round_timeout_seconds=100,
                 session_root=self.root / 'sessions',
             )
+            holder["monitor"] = monitor
+            return monitor
 
         rounds.start('BT', create, run_async=False)
-        monitor = rounds.monitor
+        monitor = holder["monitor"]
         (self.output / 'live.log').write_text(log_text())
         rounds.poll_once()
         self.seconds = 5

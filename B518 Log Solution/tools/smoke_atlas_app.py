@@ -94,9 +94,8 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
     root.update()
     try:
         app.start_button.invoke()
-        wait_for(root, lambda: app.monitor is not None,
+        wait_for(root, lambda: app.rounds.session_path is not None,
                  "{} source preparation".format(station))
-        running_monitor = app.monitor
 
         running_profile = app.profiles.get("Demo", station)
         changed_mapping = ((1, 2), (2, 1)) + running_profile.mapping[2:]
@@ -108,7 +107,8 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
         shutil.copyfile(sample, record)
         wait_for(
             root,
-            lambda: app.rounds.snapshot().results[0].status == "TESTING",
+            lambda: bool(app.rounds.snapshot() and app.rounds.snapshot().results
+                         and app.rounds.snapshot().results[0].status == "TESTING"),
             "{} active evidence".format(station),
         )
         shutil.rmtree(active / "group0-slot1")
@@ -132,7 +132,7 @@ def exercise_station(station, sample, temporary_root, app_type, trusted_sn_from_
             raise RuntimeError("The {} completed round is not marked available.".format(station))
         if app.status_rows[1]["status"].cget("text") != expected:
             raise RuntimeError("The {} App row did not display the completed result.".format(station))
-        session = json.loads((running_monitor.session.path / "session.json").read_text(encoding="utf-8"))
+        session = json.loads((app.rounds.session_path / "session.json").read_text(encoding="utf-8"))
         snapshot_mapping = session["settings"]["profile_snapshot"]["profile"]["mapping"]
         if snapshot_mapping[0]["display"] != 1:
             raise RuntimeError("The {} round profile snapshot changed after start.".format(station))

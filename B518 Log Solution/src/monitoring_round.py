@@ -162,11 +162,6 @@ class MonitoringRound:
             except (OSError, AuditRecordError, TypeError, ValueError) as error:
                 self._audit_errors.append(str(error))
 
-    @property
-    def monitor(self):
-        """Compatibility access for existing platform-specific review actions."""
-        return self._monitor
-
     def start(self, run_async: bool = True) -> RoundSnapshot:
         with self._lock:
             if self._started or self._state != RoundState.READY:
@@ -357,6 +352,22 @@ class MonitoringRound:
         """Wait for the ordered audit writer at explicit read/close boundaries."""
         store = self._audit_store
         return store.flush(timeout) if store is not None else not self._audit_errors
+
+    @property
+    def session_path(self) -> Optional[Path]:
+        """Return the current round's durable Session directory, when prepared."""
+        with self._lock:
+            monitor = self._monitor
+        session = getattr(monitor, "session", None)
+        return getattr(session, "path", None)
+
+    def flush_session(self, timeout: Optional[float] = 10.0) -> bool:
+        """Wait for the current adapter Session writer at read/close boundaries."""
+        with self._lock:
+            monitor = self._monitor
+        session = getattr(monitor, "session", None)
+        flush = getattr(session, "flush", None)
+        return flush(timeout) if callable(flush) else True
 
     def _audit_write_failed(self, record: dict, message: str) -> None:
         with self._lock:
@@ -900,6 +911,19 @@ class RoundCoordinator:
             current = self._current
         return current.flush_audit(timeout) if current is not None else True
 
+    @property
+    def session_path(self) -> Optional[Path]:
+        """Return the current round's durable Session directory, when prepared."""
+        with self._lock:
+            current = self._current
+        return current.session_path if current is not None else None
+
+    def flush_session(self, timeout: Optional[float] = 10.0) -> bool:
+        """Wait for the current adapter Session writer without exposing its monitor."""
+        with self._lock:
+            current = self._current
+        return current.flush_session(timeout) if current is not None else True
+
     def stop(self) -> Optional[RoundSnapshot]:
         with self._lock:
             current = self._current
@@ -922,11 +946,6 @@ class RoundCoordinator:
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
         with self._lock:
             return tuple(event for event in self._events if event.sequence > sequence)
-
-    @property
-    def monitor(self):
-        with self._lock:
-            return self._current.monitor if self._current is not None else None
 
     @property
     def current_round_id(self) -> Optional[str]:

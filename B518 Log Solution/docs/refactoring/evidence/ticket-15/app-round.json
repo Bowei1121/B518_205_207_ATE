@@ -1,0 +1,101 @@
+{
+  "project_machine": "SAMPLE / FCT",
+  "platform": "sample-json",
+  "engineer_profile_saved": true,
+  "operator_selected_project_machine": [
+    "SAMPLE",
+    "FCT"
+  ],
+  "profile_capacity": 3,
+  "mapping": [
+    [
+      20,
+      1
+    ],
+    [
+      4,
+      2
+    ],
+    [
+      7,
+      3
+    ]
+  ],
+  "round_state": "COMPLETED",
+  "result_available": true,
+  "displayed_results": [
+    [
+      1,
+      "FAIL"
+    ],
+    [
+      2,
+      "FAIL"
+    ],
+    [
+      3,
+      "TIMEOUT"
+    ]
+  ],
+  "reconstructed_results": [
+    [
+      1,
+      "FAIL"
+    ],
+    [
+      2,
+      "FAIL"
+    ],
+    [
+      3,
+      "TIMEOUT"
+    ]
+  ],
+  "pending_conflicts_after_release": 0,
+  "alarm_acknowledged": true,
+  "audit_complete": true,
+  "tk_scaling": 0.9999999999999999,
+  "screen_tk_units": [
+    1440,
+    900
+  ],
+  "app_window_tk_units": [
+    376,
+    467
+  ],
+  "window_geometry": "376x467+1052+32",
+  "screenshots": {
+    "monitoring": {
+      "file": "monitoring.png",
+      "physical_pixels": [
+        752,
+        990
+      ],
+      "window_title": "B518 Log Solution-V0.1.0"
+    },
+    "conflict": {
+      "file": "conflict.png",
+      "physical_pixels": [
+        1640,
+        916
+      ],
+      "window_title": "同輪結果衝突確認"
+    },
+    "alarm": {
+      "file": "alarm.png",
+      "physical_pixels": [
+        920,
+        496
+      ],
+      "window_title": "整輪監控逾時"
+    },
+    "complete": {
+      "file": "complete.png",
+      "physical_pixels": [
+        752,
+        990
+      ],
+      "window_title": "B518 Log Solution-V0.1.0"
+    }
+  }
+}
