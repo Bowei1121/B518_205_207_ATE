@@ -284,6 +284,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertLessEqual(root.winfo_height(), root.winfo_screenheight())
                 self.assertEqual(len(app.status_rows), 20)
                 self.assertEqual(len(app.kvm_result_blocks), 20)
+                self.assertEqual(app.kvm_state_marker.winfo_x(), 278)
+                self.assertEqual(app.kvm_state_marker.winfo_y(), 0)
+                self.assertEqual(app.kvm_state_marker.winfo_width(), 26)
+                self.assertGreater(app.kvm_result_blocks[1].winfo_y(),
+                                   app.kvm_state_marker.winfo_y() + app.kvm_state_marker.winfo_height())
                 self.assertEqual(app.kvm_result_blocks[1].winfo_y(), app.kvm_result_blocks[10].winfo_y())
                 self.assertGreater(app.kvm_result_blocks[11].winfo_y(), app.kvm_result_blocks[10].winfo_y())
                 self.assertEqual(app.kvm_result_blocks[11].winfo_x(), app.kvm_result_blocks[1].winfo_x())
@@ -568,11 +573,11 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(slot_count("DFU"), 7)
         self.assertEqual(slot_count("FCT"), 6)
         self.assertEqual(slot_count("BT"), 4)
-        self.assertEqual(window_height(4), 502)
-        self.assertEqual(window_height(6), 596)
-        self.assertEqual(window_height(7), 643)
-        self.assertEqual(window_height(20), 670)
-        self.assertEqual(visible_detail_rows(20, 500), 2)
+        self.assertEqual(window_height(4), 514)
+        self.assertEqual(window_height(6), 608)
+        self.assertEqual(window_height(7), 655)
+        self.assertEqual(window_height(20), 682)
+        self.assertEqual(visible_detail_rows(20, 500), 1)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
     def test_all_display_statuses_have_explicit_colours(self):
