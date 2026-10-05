@@ -3,6 +3,8 @@
 from enum import Enum
 from typing import Optional, Tuple
 
+from monitoring_round import RoundSnapshot, RoundState
+
 
 CONTRACT_VERSION = "1.0"
 MARKER_CELL_SIZE = 10
@@ -22,6 +24,8 @@ KVM_FIRST_ROW_Y = 34
 KVM_ROW_STEP = 27
 KVM_CELL_WIDTH = 34
 KVM_CELL_HEIGHT = 26
+KVM_CELL_STEP = KVM_CELL_WIDTH
+KVM_COLUMN_COUNT = 10
 
 
 class MarkerState(str, Enum):
@@ -41,25 +45,24 @@ MARKER_PATTERNS = {
 }
 
 
-def state_for_round_snapshot(snapshot) -> MarkerState:
+def state_for_round_snapshot(snapshot: Optional[RoundSnapshot]) -> MarkerState:
     """Map one public round snapshot to the KVM state without UI-owned flags."""
     if snapshot is None:
         return MarkerState.STANDBY
-    if snapshot.result_available and snapshot.state.value == "COMPLETED":
-        return MarkerState.COMPLETE
     alarm = snapshot.round_alarm
     alarm_pending = alarm is not None and not alarm.acknowledged_at
-    if (snapshot.state.value == "AWAITING_REVIEW" or snapshot.pending_conflicts
+    if (snapshot.state == RoundState.AWAITING_REVIEW or snapshot.pending_conflicts
             or alarm_pending):
         return MarkerState.REVIEW
-    if snapshot.state.value == "RUNNING":
+    if snapshot.state == RoundState.COMPLETED and snapshot.result_available:
+        return MarkerState.COMPLETE
+    if snapshot.state == RoundState.RUNNING:
         return MarkerState.MONITORING
     return MarkerState.STANDBY
 
 
-def classify_marker_cells(samples: Tuple[int, ...], threshold: int = MARKER_SAMPLE_THRESHOLD,
-                          min_contrast: int = MARKER_MIN_CONTRAST) -> Optional[MarkerState]:
-    """Classify four grayscale cell averages; return None for weak/unknown input."""
+def _classify_marker_cells(samples: Tuple[int, ...], threshold: int,
+                           min_contrast: int) -> Optional[MarkerState]:
     if len(samples) != 4:
         return None
     bits = []
@@ -75,3 +78,24 @@ def classify_marker_cells(samples: Tuple[int, ...], threshold: int = MARKER_SAMP
     observed = ((bits[0], bits[1]), (bits[2], bits[3]))
     return next((state for state, pattern in MARKER_PATTERNS.items()
                  if pattern == observed), None)
+
+
+def classify_kvm_frame_samples(locator_samples: Tuple[int, ...],
+                               marker_samples: Tuple[int, ...],
+                               threshold: int = MARKER_SAMPLE_THRESHOLD,
+                               min_contrast: int = MARKER_MIN_CONTRAST) -> Optional[MarkerState]:
+    """Classify oriented samples only when both asymmetric locators confirm direction.
+
+    Locator values are sampled in this order: left locator's near white inset,
+    left far black area, right near black area, right locator's far white inset.
+    """
+    if len(locator_samples) != 4 or any(
+            sample < 0 or sample > 255 for sample in locator_samples):
+        return None
+    white_minimum = threshold + min_contrast // 2
+    black_maximum = threshold - min_contrast // 2
+    left_near, left_far, right_near, right_far = locator_samples
+    if not (left_near >= white_minimum and left_far <= black_maximum
+            and right_near <= black_maximum and right_far >= white_minimum):
+        return None
+    return _classify_marker_cells(marker_samples, threshold, min_contrast)

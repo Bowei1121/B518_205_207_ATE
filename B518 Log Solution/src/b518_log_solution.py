@@ -21,7 +21,8 @@ from machine_profiles import (
     MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
 from kvm_display_contract import (
-    KVM_CELL_HEIGHT, KVM_CELL_WIDTH, KVM_FIRST_ROW_Y, KVM_ROW_STEP,
+    KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
+    KVM_FIRST_ROW_Y, KVM_ROW_STEP,
     LOCATOR_FAR_INSET, LOCATOR_LEFT, LOCATOR_NEAR_INSET, LOCATOR_RIGHT,
     LOCATOR_SIZE, LOCATOR_WHITE_SIZE, MARKER_CELL_GAP, MARKER_CELL_SIZE,
     MARKER_PATTERNS, MARKER_QUIET_ZONE, MARKER_SIZE, MarkerState,
@@ -46,8 +47,6 @@ ROW_GAP = 1
 ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
-KVM_COLUMN_COUNT = 10
-KVM_BLOCK_WIDTH = 34
 DETAIL_ROWS_VISIBLE = 7
 WINDOW_FIXED_HEIGHT = 353
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
@@ -247,7 +246,7 @@ class B518LogSolutionApp:
             block = tk.Label(self.kvm_results, text="", background=STATUS_COLOURS["WAITING"], relief="solid", borderwidth=1)
             row = (slot - 1) // KVM_COLUMN_COUNT
             column = (slot - 1) % KVM_COLUMN_COUNT
-            block.place(x=column * KVM_BLOCK_WIDTH, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
+            block.place(x=column * KVM_CELL_STEP, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
                         width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self.kvm_result_blocks[slot] = block
 
@@ -407,7 +406,7 @@ class B518LogSolutionApp:
             else:
                 row = (slot - 1) // KVM_COLUMN_COUNT
                 column = (slot - 1) % KVM_COLUMN_COUNT
-                block.place(x=column * KVM_BLOCK_WIDTH, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
+                block.place(x=column * KVM_CELL_STEP, y=KVM_FIRST_ROW_Y + row * KVM_ROW_STEP,
                             width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self._set_kvm_result_block(slot, "WAITING")
         self._position_window()
