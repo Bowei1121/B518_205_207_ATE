@@ -62,4 +62,4 @@
 
 ## 提交與同步
 
-- Ticket 分支提交 `2c293c4`、`533b016`、`89202a2`、驗收／審查紀錄 `ea08bad` 均已推送 Gitea 與 GitHub。一般非快轉合併 commit `a5d2b53a19d7b864f10694fd70ae7540e140b39c`；合併後 `python3 scripts/run_tests.py` 187 tests 全通過。推送後逐一查詢兩個實際目的地，目標分支均為 `a5d2b53`、Ticket 分支均為 `ea08bad`；最終追蹤紀錄及分支安全清理結果完成後補記。
+- Ticket 分支提交 `2c293c4`、`533b016`、`89202a2`、驗收／審查紀錄 `ea08bad` 均已推送 Gitea 與 GitHub。一般非快轉合併 commit `a5d2b53a19d7b864f10694fd70ae7540e140b39c`；合併後 `python3 scripts/run_tests.py` 187 tests 全通過。推送後逐一查詢兩個實際目的地，最終交付紀錄前的目標分支均為 `05fbfd9`、Ticket 分支均為 `ea08bad`；兩端遠端 Ticket ref 已刪除。最終清理紀錄同步後，安全刪除本地分支並回到 `B518-Log-Solution`。
