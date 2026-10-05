@@ -2,6 +2,7 @@ import csv
 import io
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -524,6 +525,7 @@ class MonitoringRoundTests(unittest.TestCase):
         elapsed = [0.0]
         entered = threading.Event()
         release = threading.Event()
+        monitor_created = threading.Event()
         deadline_seen = threading.Event()
         holder = {}
 
@@ -532,6 +534,7 @@ class MonitoringRoundTests(unittest.TestCase):
             release.wait(3)
             monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,), round_limit=5)
             holder["monitor"] = monitor
+            monitor_created.set()
             return monitor
 
         def on_event(event):
@@ -539,10 +542,27 @@ class MonitoringRoundTests(unittest.TestCase):
                 deadline_seen.set()
 
         coordinator = RoundCoordinator(on_event, monotonic=lambda: elapsed[0])
-        started = coordinator.start("FCT", factory, run_async=True)
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
         self.assertTrue(entered.wait(1))
         elapsed[0] = 5.0
+        expired_during_preparation = coordinator.poll_once()
+        self.assertIsNotNone(expired_during_preparation.round_alarm)
+        self.assertTrue(expired_during_preparation.collection_stopped)
+        self.assertFalse(expired_during_preparation.round_alarm_ready)
+        self.assertFalse(expired_during_preparation.result_available)
+        self.assertEqual(expired_during_preparation.results[0].status, "NOTEST")
+        self.assertTrue(deadline_seen.wait(1))
+        self.assertEqual(sum(event.event.kind == "timeout" and
+                             event.event.detail.get("kind") == "round"
+                             for event in expired_during_preparation.events), 1)
+        self.assertFalse(release.is_set())
+        ignored = coordinator.acknowledge_round_alarm(
+            started.round_id, expired_during_preparation.round_alarm.alarm_id)
+        self.assertFalse(ignored.round_alarm.acknowledged_at)
+        self.assertEqual(ignored.events[-1].event.detail.get("reason"), "source_preparation_pending")
         release.set()
+        self.assertTrue(monitor_created.wait(3))
         self.assertTrue(deadline_seen.wait(3))
 
         expired = coordinator.snapshot()
@@ -550,6 +570,96 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertTrue(expired.collection_stopped)
         self.assertEqual(expired.results[0].status, "NOTEST")
         self.assertFalse(expired.result_available)
+        self.assertEqual(holder["monitor"].poll_count, 0)
+
+    def test_acknowledgement_waits_for_delayed_preparation_adjudication_and_stop(self):
+        elapsed = [0.0]
+        factory_entered = threading.Event()
+        factory_release = threading.Event()
+        adjudication_entered = threading.Event()
+        adjudication_release = threading.Event()
+        ack_started = threading.Event()
+        ack_finished = threading.Event()
+        holder = {}
+        acknowledgement = {}
+
+        class BlockingAdjudicationMonitor(DeadlineMonitor):
+            def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
+                adjudication_entered.set()
+                adjudication_release.wait(3)
+                super().apply_round_result(slot, status, sn, source, detail, lock_terminal)
+
+        def factory(callback):
+            factory_entered.set()
+            factory_release.wait(3)
+            holder["monitor"] = BlockingAdjudicationMonitor(
+                callback, lambda: elapsed[0], slots=(1,), round_limit=5)
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=5, capacity=1)
+        self.assertTrue(factory_entered.wait(1))
+        elapsed[0] = 5.0
+        pending = coordinator.poll_once()
+        alarm_id = pending.round_alarm.alarm_id
+        factory_release.set()
+        self.assertTrue(adjudication_entered.wait(2))
+
+        def acknowledge():
+            ack_started.set()
+            acknowledgement["snapshot"] = coordinator.acknowledge_round_alarm(started.round_id, alarm_id)
+            ack_finished.set()
+
+        ack_thread = threading.Thread(target=acknowledge)
+        ack_thread.start()
+        self.assertTrue(ack_started.wait(1))
+        self.assertFalse(ack_finished.wait(0.1))
+        during = coordinator.snapshot()
+        self.assertFalse(during.round_alarm_ready)
+        self.assertFalse(during.result_available)
+        self.assertFalse(any(event.event.kind == "collection_stopped" for event in during.events))
+
+        adjudication_release.set()
+        self.assertTrue(ack_finished.wait(2))
+        ack_thread.join(1)
+        released = coordinator.snapshot()
+        self.assertTrue(released.result_available)
+        self.assertEqual(released.results[0].status, "NOTEST")
+        kinds = [event.event.kind for event in released.events]
+        self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
+        self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
+
+    def test_manual_stop_during_source_preparation_cannot_resume_when_factory_returns(self):
+        entered = threading.Event()
+        release = threading.Event()
+        returned = threading.Event()
+        holder = {}
+
+        def factory(callback):
+            entered.set()
+            release.wait(3)
+            holder["monitor"] = DeadlineMonitor(callback, time.monotonic, slots=(1,))
+            returned.set()
+            return holder["monitor"]
+
+        coordinator = RoundCoordinator()
+        started = coordinator.start("FCT", factory, run_async=True,
+                                    round_timeout_seconds=30, capacity=1)
+        self.assertTrue(entered.wait(1))
+        stopped = coordinator.stop()
+        self.assertEqual(stopped.state.value, "STOPPED")
+        self.assertFalse(stopped.result_available)
+        release.set()
+        self.assertTrue(returned.wait(3))
+        for _ in range(100):
+            if coordinator.monitor is not None:
+                break
+            time.sleep(0.01)
+        snapshot = coordinator.snapshot()
+        self.assertEqual(snapshot.round_id, started.round_id)
+        self.assertEqual(snapshot.state.value, "STOPPED")
+        self.assertFalse(snapshot.result_available)
         self.assertEqual(holder["monitor"].poll_count, 0)
 
     def test_pending_bt_candidate_can_be_resolved_after_collection_stops(self):

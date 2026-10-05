@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import tkinter as tk
 from dataclasses import replace
@@ -84,6 +85,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="b518-ticket09-app-") as temporary:
             os.environ["HOME"] = temporary
+            import b518_log_solution as app_module
             from b518_log_solution import B518LogSolutionApp
 
             root_path = Path(temporary)
@@ -123,6 +125,63 @@ def main():
                                   for slot in range(1, 3)] == ["PASS", "NOTEST"],
                              "underfilled Atlas round")
                     underfilled = app.rounds.snapshot()
+
+                    preparation_entered = threading.Event()
+                    preparation_release = threading.Event()
+                    adapter_started = threading.Event()
+                    original_atlas_monitor = app_module.AtlasActiveArchiveMonitor
+                    delayed_monitor = {}
+
+                    def blocked_atlas_constructor(*args, **kwargs):
+                        preparation_entered.set()
+                        preparation_release.wait(10)
+                        monitor = original_atlas_monitor(*args, **kwargs)
+                        original_start = monitor.start
+
+                        def track_start():
+                            adapter_started.set()
+                            original_start()
+
+                        monitor.start = track_start
+                        delayed_monitor["value"] = monitor
+                        return monitor
+
+                    wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
+                             "restart before blocked source preparation")
+                    update_profile(app, "B518", "FCT", "atlas",
+                                   {"active": str(active), "final": str(archive)}, 2, 30, 100, 1)
+                    with patch.object(app_module, "AtlasActiveArchiveMonitor", blocked_atlas_constructor):
+                        app.start_button.invoke()
+                        if not preparation_entered.wait(2):
+                            raise RuntimeError("The controlled source constructor did not block as expected.")
+                        wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None
+                                 and app.rounds.snapshot().collection_stopped,
+                                 "deadline progress during blocked source preparation", timeout=4)
+                        preparing_alarm = app.rounds.snapshot()
+                        if preparing_alarm.round_alarm_ready or preparing_alarm.result_available:
+                            raise RuntimeError("A blocked source was prematurely acknowledged or released.")
+                        if [app.status_rows[slot]["status"].cget("text") for slot in (1, 2)] != [
+                                "NOTEST", "NOTEST"]:
+                            raise RuntimeError("The visible Tk rows did not match the blocked-preparation snapshot.")
+                        if [app.kvm_result_blocks[slot].cget("background") for slot in (1, 2)] != [
+                                app_module.STATUS_COLOURS["NOTEST"], app_module.STATUS_COLOURS["NOTEST"]]:
+                            raise RuntimeError("The KVM band did not show the same preparation-deadline snapshot.")
+                        if str(app.round_alarm_ack_button.cget("state")) != "disabled":
+                            raise RuntimeError("The alarm was acknowledgeable before position adjudication.")
+                        preparation_release.set()
+                        wait_for(root, lambda: app.rounds.snapshot().round_alarm_ready,
+                                 "late adapter return adjudication", timeout=5)
+                    if adapter_started.is_set():
+                        raise RuntimeError("A late adapter return restarted source collection after deadline.")
+                    if app.rounds.snapshot().result_available:
+                        raise RuntimeError("Late source preparation released results before alarm acknowledgement.")
+                    wait_for(root, lambda: str(app.round_alarm_ack_button.cget("state")) == "normal",
+                             "alarm acknowledgement enabled after adjudication")
+                    app.round_alarm_ack_button.invoke()
+                    preparation_timeout = app.rounds.snapshot()
+                    if not preparation_timeout.result_available or any(
+                            item.status != "NOTEST" for item in preparation_timeout.results):
+                        raise RuntimeError("The blocked-preparation deadline did not release its recorded NOTEST results.")
 
                     wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
                              "restart button after Atlas completion")
@@ -178,7 +237,9 @@ def main():
                     shutil.rmtree(active / "group0-slot1")
                     wait_for(root, lambda: app.rounds.snapshot().results[0].status == "PASS",
                              "round-alarm preserved terminal result")
-                    wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None,
+                    wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None
+                             and app.rounds.snapshot().collection_stopped
+                             and app.rounds.snapshot().state.value == "AWAITING_REVIEW",
                              "single round-alarm creation")
                     expired_alarm = app.rounds.snapshot()
                     if expired_alarm.state.value != "AWAITING_REVIEW" or expired_alarm.result_available:
@@ -240,6 +301,82 @@ def main():
                             session_events.index(persisted_release)):
                         raise RuntimeError("The persisted alarm, collection stop, acknowledgement, and release order is invalid.")
 
+                    confirmation_orders = []
+                    for index, order in enumerate(("alarm_first", "conflict_first"), start=1):
+                        wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
+                                 "restart before {} confirmation order".format(order))
+                        update_profile(app, "B518", "FCT", "atlas",
+                                       {"active": str(active), "final": str(archive)}, 2, 30, 100, 6)
+                        app.start_button.invoke()
+                        wait_for(root, lambda: app.monitor is not None,
+                                 "{} Atlas preparation".format(order))
+                        conflict_monitor = app.monitor
+                        serial = "SMOKECONFLICT{:04d}".format(index)
+                        live = active / "group0-slot1" / "system" / "records.csv"
+                        write_atlas_record(live, serial)
+                        wait_for(root, lambda: app.rounds.snapshot().results[0].status == "TESTING",
+                                 "{} Atlas activity".format(order))
+                        stamp = (conflict_monitor.started + timedelta(seconds=1)).strftime(
+                            "%Y%m%d_%H-%M-%S.000-ticket11-{}".format(index))
+                        final_record = archive / serial / stamp / "system" / "records.csv"
+                        write_atlas_record(final_record, serial, "Pass")
+                        shutil.rmtree(active / "group0-slot1")
+                        wait_for(root, lambda: app.rounds.snapshot().results[0].status == "PASS",
+                                 "{} Atlas initial final".format(order))
+                        write_atlas_record(final_record, serial, "Fail")
+                        wait_for(root, lambda: len(app.rounds.snapshot().pending_conflicts) == 1,
+                                 "{} visible same-round conflict".format(order))
+                        wait_for(root, lambda: app.conflict_window is not None and
+                                 app.conflict_window.winfo_viewable(), "{} conflict window".format(order))
+                        wait_for(root, lambda: app.rounds.snapshot().round_alarm is not None
+                                 and app.rounds.snapshot().collection_stopped
+                                 and app.rounds.snapshot().state.value == "AWAITING_REVIEW",
+                                 "{} round alarm".format(order), timeout=12)
+                        pending = app.rounds.snapshot()
+                        if pending.result_available or len(pending.pending_conflicts) != 1:
+                            raise RuntimeError("{} did not retain independent alarm and conflict blockers.".format(order))
+                        expected_alarm_identity = (pending.round_id, pending.round_alarm.alarm_id)
+                        wait_for(root, lambda: app.round_alarm_window is not None
+                                 and app.round_alarm_window.winfo_viewable()
+                                 and app._round_alarm_window_identity == expected_alarm_identity
+                                 and str(app.round_alarm_ack_button.cget("state")) == "normal",
+                                 "{} current alarm window and action".format(order))
+                        conflict_alarm_geometry = app.round_alarm_window.geometry()
+                        if order == "alarm_first":
+                            app.round_alarm_ack_button.invoke()
+                            if app.rounds.snapshot().result_available or len(
+                                    app.rounds.snapshot().pending_conflicts) != 1:
+                                raise RuntimeError("Alarm acknowledgement resolved the separate conflict.")
+                            app._open_conflict_review()
+                            app.conflict_list.selection_set(0)
+                            app._resolve_selected_conflict("keep_original")
+                        else:
+                            app._open_conflict_review()
+                            app.conflict_list.selection_set(0)
+                            app._resolve_selected_conflict("keep_original")
+                            if app.rounds.snapshot().result_available or app.rounds.snapshot().round_alarm.acknowledged_at:
+                                raise RuntimeError("Conflict selection acknowledged the separate alarm.")
+                            root.update()
+                            if str(app.round_alarm_ack_button.cget("state")) != "normal":
+                                raise RuntimeError("Alarm button was not enabled after conflict resolution: {} {}".format(
+                                    app.rounds.snapshot(), app.round_alarm_ack_button.cget("state")))
+                            app.round_alarm_ack_button.invoke()
+                        released = app.rounds.snapshot()
+                        if not released.result_available or released.state.value != "COMPLETED":
+                            raise RuntimeError("{} confirmations did not release the completed round: {}".format(
+                                order, released))
+                        if [item.status for item in released.results] != ["PASS", "NOTEST"]:
+                            raise RuntimeError("{} changed the selected original result or deadline result.".format(order))
+                        confirmation_orders.append({
+                            "order": order,
+                            "conflict_choices": len([event for event in released.events
+                                                      if event.event.kind == "conflict_resolved"]),
+                            "alarm_acknowledged": bool(released.round_alarm.acknowledged_at),
+                            "result_available": released.result_available,
+                            "dialog_geometry": conflict_alarm_geometry,
+                            "results": [item.status for item in released.results],
+                        })
+
                     rswmt_output = root_path / "rswmt" / "SmtCal"
                     rswmt_output.mkdir(parents=True)
                     update_profile(app, "B518", "BT", "rswmt",
@@ -276,6 +413,11 @@ def main():
                         "underfilled": [item.status for item in underfilled.results],
                         "all_empty": [item.status for item in empty.results],
                         "individual_timeout_and_manual_stop": [item.status for item in stopped.results],
+                        "blocked_source_preparation": {
+                            "deadline_visible_before_factory_return": True,
+                            "late_adapter_started": adapter_started.is_set(),
+                            "results_released_after_ack": preparation_timeout.result_available,
+                        },
                         "round_deadline_alarm": {
                             "results": [item.status for item in released_alarm.results],
                             "alarm_id": released_alarm.round_alarm.alarm_id,
@@ -288,6 +430,7 @@ def main():
                             ],
                             "result_available": released_alarm.result_available,
                         },
+                        "alarm_conflict_confirmation_orders": confirmation_orders,
                         "rswmt_final_only": [item.status for item in rswmt.results],
                     }, sort_keys=True))
                 finally:

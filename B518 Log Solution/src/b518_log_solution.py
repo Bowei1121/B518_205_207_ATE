@@ -603,7 +603,8 @@ class B518LogSolutionApp:
 
             self._save_preferences()
             self._reset_rows()
-            snapshot = self.rounds.start(station, monitor_factory)
+            snapshot = self.rounds.start(station, monitor_factory, round_timeout_seconds=timeouts["round"],
+                                         capacity=profile.capacity if profile else slot_count(station))
             self.active_round_id = snapshot.round_id
             self.monitor = self.rounds.monitor
         except Exception as error:
@@ -632,6 +633,10 @@ class B518LogSolutionApp:
             self.settings_log.configure(state="disabled")
 
     def _drain_events(self) -> None:
+        if hasattr(self, "rounds") and self.rounds.monitor is None:
+            self.rounds.poll_once()
+            if self.monitor is None:
+                self.monitor = self.rounds.monitor
         try:
             while True:
                 self._handle_event(self.events.get_nowait())
@@ -643,6 +648,10 @@ class B518LogSolutionApp:
                 self._start_from_hotkey()
         except queue.Empty:
             pass
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        if snapshot and snapshot.round_id == self.active_round_id:
+            for result in snapshot.results:
+                self._set_row(result.slot, result.sn, result.status)
         self._refresh_conflict_review()
         self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
@@ -832,8 +841,11 @@ class B518LogSolutionApp:
         pending = not alarm.acknowledged_at
         self.round_alarm_button.configure(
             text="整輪警報（待確認）" if pending else "整輪警報已確認",
-            state="normal" if pending else "disabled",
+            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
         )
+        identity = (alarm.round_id, alarm.alarm_id)
+        if identity != getattr(self, "_shown_round_alarm_identity", None):
+            self._open_round_alarm()
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
             self._render_round_alarm(alarm)
 
@@ -865,6 +877,7 @@ class B518LogSolutionApp:
             command=lambda round_id=alarm.round_id, alarm_id=alarm.alarm_id:
             self._acknowledge_round_alarm(round_id, alarm_id),
         )
+        self._shown_round_alarm_identity = (alarm.round_id, alarm.alarm_id)
         self.round_alarm_window.deiconify()
         self.round_alarm_window.lift()
 
@@ -875,10 +888,12 @@ class B518LogSolutionApp:
                 "輪次：{}\n警報：{}\n建立時間：{}\n{}"
             ).format(alarm.round_id, alarm.alarm_id, alarm.created_at,
                      "此警報已確認；其他待確認事項仍須逐項處理。"
-                     if alarm.acknowledged_at else "確認此警報不會接受或清除結果衝突。"))
+                     if alarm.acknowledged_at else (
+                         "來源準備尚未結束；位置裁決完成前不能確認。" if not self.rounds.snapshot().round_alarm_ready
+                         else "確認此警報不會接受或清除結果衝突。")))
         if self.round_alarm_ack_button and self.round_alarm_ack_button.winfo_exists():
             self.round_alarm_ack_button.configure(
-                state="disabled" if alarm.acknowledged_at else "normal",
+                state="disabled" if alarm.acknowledged_at or not self.rounds.snapshot().round_alarm_ready else "normal",
                 text="警報已確認" if alarm.acknowledged_at else "確認整輪警報",
             )
 

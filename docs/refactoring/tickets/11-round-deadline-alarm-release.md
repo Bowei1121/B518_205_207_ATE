@@ -9,7 +9,7 @@
 - [07：工程師畫面編輯、匯出及部署配置](07-profile-editor-import-export.md)
 - [10：共同處理已確定同輪的結果衝突](10-same-round-conflict-review.md)
 
-**Status：**in progress（本機受控驗收與測試通過；固定基準雙軸審查及提交紀錄待完成）
+**Status：**in progress（本機受控驗收、測試與首次雙軸審查發現修正完成；固定基準複審、提交紀錄待完成）
 
 ## 驗收條件
 
@@ -51,15 +51,18 @@
 - `MonitoringRound`／`RoundCoordinator` 新增不可變整輪警報快照及公開 `acknowledge_round_alarm(round_id, alarm_id)`。警報只建立一次並包含輪次、識別碼、期限、到期時間與共同起點；確認寫入確認時間及事件。重複或過期確認留下可觀察的忽略事件，不改變狀態或結果。
 - 整輪到期保留既有終態；未觀察可信活動的位置記為期限推定 `NOTEST`，已有 `TESTING`／`COMPLETING` 的未完成位置記為 `TIMEOUT`。到期立即停止收集，並以獨立事件記錄停止原因與時間。只有位置全部終態、警報已確認、所有衝突逐項處理且沒有其他阻擋時才放行一次；完結事件記錄放行時間，輪次完成原因保留為 `round_deadline`。
 - Tk 以非阻塞整輪警報視窗呈現輪次及警報識別、建立時間和確認動作。關閉只隱藏視窗；主畫面仍顯示待確認按鈕以便重開。警報確認不修改衝突佇列；衝突選擇也不確認警報。新輪不會沿用前輪視窗的操作識別。
+- 整輪上限設定會在 App 開始時傳入共同輪次。Tk 事件迴圈可在 Adapter 建構／來源準備尚未返回時推進期限；期限已到時先固定待確認警報與有效位置 `NOTEST` 快照，確認按鈕保持停用。Adapter 晚返回後才持久化各位置裁決並停止它，不呼叫 `start()`，也不恢復來源讀取。人工停止後才返回的準備工作同樣不會啟動監控。
 - README 已補上整輪到期、通道裁決、非阻塞確認、關閉／重開、警報與衝突獨立處理及不設人工確認倒數的操作說明。
 
 ### 驗收與測試證據
 
 | 項目 | 命令／環境 | 結果 |
 | --- | --- | --- |
-| 共同輪次期限、警報、確認、候選阻擋與準備期間跨期限 | `python3 scripts/run_tests.py test_monitoring_round`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 最近一次執行 28 tests 通過。覆蓋來源準備不阻塞開始呼叫且準備時間計入 t0、整輪到期裁決、原終態保留、未開始 `NOTEST`、`TESTING`／`COMPLETING` `TIMEOUT`、一次警報、錯誤／重複確認、警報與衝突兩種先後順序、全終態候選不新增確認倒數。 |
-| 完整測試與平台回歸 | `python3 scripts/run_tests.py`；同上 | 150 tests 通過，包含 Atlas、B482、RS-WMT Adapter、共同輪次、Tk 與 bundle 檢查回歸。 |
-| Tk 端到端受控回放 | `python3 tools/smoke_deadline_app.py`；登入桌面、隔離暫存偏好／來源／Session／輸出、合成 Atlas／RS-WMT | 通過。主看板 `376x596`、Tk scaling 約 `1.0`；整輪警報視窗 `460x220`。驗證 `PASS / NOTEST` 保留、唯一 round timeout 事件、關閉後重開、確認後結果可取用，並由 Session `events.log` 驗證警報、停止收集、警報確認及放行事件順序。 |
+| 共同輪次期限、警報、確認、候選阻擋與準備期間跨期限 | `python3 scripts/run_tests.py test_monitoring_round`；macOS 15.7.9、Intel x86_64、Python 3.8.10 | 30 tests 通過。覆蓋來源準備仍阻塞時公開 `poll_once()` 已裁決整輪期限、警報不可提前確認、延遲裁決與確認競態、Adapter 晚返回不啟動，及人工停止後晚返回不恢復；另涵蓋原終態、未開始 `NOTEST`、活動位置 `TIMEOUT`、一次警報、重複／過期確認、警報與衝突兩種次序及無確認倒數。 |
+| Tk UI 回歸 | `python3 scripts/run_tests.py test_log_solution_ui`；同上，登入桌面 | 37 tests 通過，含實際 Tk 視窗回歸。 |
+| 完整測試與平台回歸 | `python3 scripts/run_tests.py`；同上 | 本批修正後 152 tests 通過，包含 Atlas、B482、RS-WMT Adapter、共同輪次、Tk 與 bundle 檢查回歸。 |
+| Tk 端到端受控回放 | `python3 tools/smoke_deadline_app.py`；登入桌面、隔離暫存偏好／來源／Session／輸出、合成 Atlas／RS-WMT | 通過。主看板 `376x596`、Tk scaling 約 `1.0`；警報視窗 `460x220`。驗證 Adapter 建構阻塞期間期限可見，色帶及兩筆明細同步顯示 `NOTEST`，確認按鈕停用；晚返回後未呼叫 `start()`。警報先確認及衝突先選擇兩種實際按鈕操作各只處理一項；仍有阻擋時不可取用，全部確認後才放行。另驗證關閉／重開、唯一整輪 timeout、`PASS / NOTEST`、Session 共同起點及警報→停止收集→確認→放行的持久化事件順序。 |
 | 型別檢查 | 檢查 repo 設定 | Repo 沒有 mypy、pyright、pyproject、setup.cfg 或 tox 型別檢查配置；未宣稱型別檢查通過。 |
+| 語法編譯 | `python3 -m py_compile src/monitoring_round.py src/b518_log_solution.py tools/smoke_deadline_app.py tests/test_monitoring_round.py` | 通過；此項只驗證語法，不當作型別檢查。 |
 
-受控 Tk 回放使用合成資料，原始實機資料唯讀且本次未作為輸入。實際治具時機、目標設備／發布 App、KVM 與上位機共同驗收均未執行，不能由本機回放替代；上位機驗收留在 Ticket 16。五項功能驗收已由本機受控案例通過；固定基準 Standards／Spec 審查、修正（若有）及複審完成前，票據維持 in progress，不進行合併。
+受控 Tk 回放使用合成資料，原始實機資料唯讀且本次未作為輸入。實際治具時機、目標設備／發布 App、KVM 與上位機共同驗收均未執行，不能由本機回放替代；上位機驗收留在 Ticket 16。固定基準首次 Standards／Spec 審查曾指出準備工作可能阻塞期限、Tk 回放未包含兩種確認順序；本批已補上準備期公開期限推進及兩種實際 Tk 操作，須待固定基準複審無未解決發現後才可更新最終狀態並考慮合併。
