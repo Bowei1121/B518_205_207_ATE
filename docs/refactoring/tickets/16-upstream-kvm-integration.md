@@ -50,7 +50,7 @@ Ticket 01 公開輪次測試接口已於 2026-09-30 確認，不需重新批准�
 - 上位機既有 Python 3.8.10 runner 沒有 Pillow／Quartz 等 GUI dependencies；因此本次沒有重新啟動 Tk smoke。改用已保存、具 run.json 同輪佐證的真實 Tk／Quartz 獨立畫面，直接餵入 prototype frame seam。上位機程式無型別檢查配置；未以 compileall／py_compile 宣稱型別檢查通過。
 - 已知未驗收：實際 JetKVM 串流取像／尺寸／H.264 壓縮／方向／縮放容差、現場設備動作、正式部署／發布 App；實際責任者與部署步驟未找到。Ticket 12 AC 1、Ticket 13 AC 4 維持原未勾選狀態。Ticket 17／18 不在本票結論範圍。
 - 尚待確認：外部 TCP consumer 對新的 `action_waiting`／`action_paused` 回覆以及 `slot::STATUS`（無 SN）格式的相容性；目前 repo 沒有該 consumer。不得直接推定現場會接受，也不得直接讓實機動作接到未確認格式。
-- App 提交：驗收／摘要 `278eb11e56a31d2f1c926a5d7c90876e48348bc9`、審查修正紀錄 `4c22c8bfe48135295aedf56a88ff87e0482aaf88`、假動作證據 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。App Gitea `origin` 與 GitHub 兩端 `codex/ticket-16` 均核對為 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。兩 repo 固定基準 Standards／Spec 最終複審皆無未解發現。App 非 GUI 149 項通過；完整套件在 Tk UI 測試建立視窗期間以 exit 134 中止，因此不宣稱完整 App 套件通過。App/prototype 專用分支雖已同步，但本票不合併：AC 1 的上位機 maintainer、部署流程與同步安排是未解的非硬體前置，不在已批准的硬體延期範圍內；未知回覆 TCP 呼叫端對 `slot::STATUS` 格式的相容性亦保持待確認。實際 KVM／治具／目標設備／發布驗收保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。
+- App 提交：驗收／摘要 `278eb11e56a31d2f1c926a5d7c90876e48348bc9`、審查修正紀錄 `4c22c8bfe48135295aedf56a88ff87e0482aaf88`、假動作證據 `6c7c0caf2cddf6b6300372099ef84efe651c8792`。`6c7c0ca` 是驗收／回放同步檢查點；最後狀態紀錄提交後，App Gitea `origin` 與 GitHub 兩端 `codex/ticket-16` 已再次核對至本 ticket 的最新提交。兩 repo 固定基準 Standards／Spec 最終複審皆無未解發現。App 非 GUI 149 項通過；完整套件在 Tk UI 測試建立視窗期間以 exit 134 中止，因此不宣稱完整 App 套件通過。App/prototype 專用分支雖已同步，但本票不合併：AC 1 的上位機 maintainer、部署流程與同步安排是未解的非硬體前置，不在已批准的硬體延期範圍內；未知回覆 TCP 呼叫端對 `slot::STATUS` 格式的相容性亦保持待確認。實際 KVM／治具／目標設備／發布驗收保持未勾選；Ticket 12 AC 1、Ticket 13 AC 4 不變。
 
 ## 執行與追蹤
 
