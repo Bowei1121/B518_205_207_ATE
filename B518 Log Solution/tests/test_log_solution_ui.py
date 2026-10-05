@@ -134,6 +134,10 @@ class LogSolutionUiTests(unittest.TestCase):
             finally:
                 if app.monitor:
                     app.rounds.stop()
+                monitor = app.rounds.monitor
+                if monitor is not None:
+                    monitor.session.flush(timeout=3)
+                app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
@@ -654,7 +658,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.paths["DFU"]["active"].set("")
         app.paths["DFU"]["final"].set("")
         try:
-            with patch("b518_log_solution.AtlasActiveArchiveMonitor") as monitor_type, \
+            with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
                     patch("b518_log_solution.messagebox.showerror") as show_error:
                 app.start_monitor()
             monitor_type.assert_not_called()
@@ -709,9 +713,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 try:
                     self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
                     self.assertEqual(restarted._timeout_seconds("BT")["round"], 6300)
-                    with patch("b518_log_solution.BtLogMonitor") as monitor_factory:
+                    with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_factory:
                         restarted.start_monitor()
-                    self.assertEqual(monitor_factory.call_args.kwargs["round_timeout_seconds"], 6300)
+                    self.assertEqual(monitor_factory.call_args.args[0], "b482")
+                    self.assertEqual(monitor_factory.call_args.kwargs["timeouts"]["round"], 6300)
                 finally:
                     restarted.hotkey.close()
                     restarted_root.destroy()
@@ -724,7 +729,8 @@ class LogSolutionUiTests(unittest.TestCase):
         app.paths["DFU"]["active"].set(".")
         app.paths["DFU"]["final"].set(".")
         try:
-            with patch("b518_log_solution.AtlasActiveArchiveMonitor", side_effect=PermissionError("denied")), \
+            with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
+                       side_effect=PermissionError("denied")), \
                     patch("b518_log_solution.messagebox.showerror") as show_error:
                 app.start_monitor()
                 deadline = time.monotonic() + 3
@@ -867,11 +873,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.settings_paths['BT']['final'].set(folder)
                 with patch.object(app, '_save_preferences'):
                     app._save_settings()
-                    with patch('b518_log_solution.RsWmtLogMonitor') as factory:
+                    with patch('b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor') as factory:
                         app.start_monitor()
                         self.wait_for(lambda: factory.called)
                         factory.assert_called_once()
-                        self.assertEqual(factory.call_args.kwargs['start_timeout_seconds'], 240)
+                        self.assertEqual(factory.call_args.args[0], 'rswmt')
+                        self.assertEqual(factory.call_args.kwargs['timeouts']['start'], 240)
                         factory.return_value.start.assert_called_once()
                         app.rounds.stop()
             finally:
@@ -903,7 +910,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app._save_preferences = MagicMock()
         app._reset_rows = MagicMock()
         app._set_monitor_controls = MagicMock()
-        with patch("b518_log_solution.AtlasActiveArchiveMonitor", return_value=monitor):
+        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor", return_value=monitor):
             app.start_monitor()
             self.wait_for(lambda: monitor.start.called)
 
@@ -919,12 +926,12 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_existing_monitor_sources_start_through_the_shared_round_entry(self):
         scenarios = (
-            ("DFU", "B482 TestData", "AtlasActiveArchiveMonitor"),
-            ("FCT", "B482 TestData", "AtlasActiveArchiveMonitor"),
-            ("BT", "B482 TestData", "BtLogMonitor"),
-            ("BT", "B518 RS-WMT", "RsWmtLogMonitor"),
+            ("DFU", "B482 TestData", "atlas"),
+            ("FCT", "B482 TestData", "atlas"),
+            ("BT", "B482 TestData", "b482"),
+            ("BT", "B518 RS-WMT", "rswmt"),
         )
-        for station, bt_format, factory_name in scenarios:
+        for station, bt_format, expected_platform in scenarios:
             with self.subTest(station=station, bt_format=bt_format):
                 app = object.__new__(B518LogSolutionApp)
                 app.root = MagicMock()
@@ -950,7 +957,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._save_preferences = MagicMock()
                 app._reset_rows = MagicMock()
                 app._set_monitor_controls = MagicMock()
-                with patch("b518_log_solution." + factory_name) as factory:
+                with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
                     app.start_monitor()
                     self.wait_for(lambda: factory.called)
                     self.wait_for(lambda: factory.return_value.start.called)
@@ -959,6 +966,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(snapshot.station, station)
                 self.assertEqual(snapshot.state, "RUNNING")
                 factory.assert_called_once()
+                self.assertEqual(factory.call_args.args[0], expected_platform)
                 factory.return_value.start.assert_called_once()
                 app.rounds.stop()
 
@@ -986,7 +994,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app._save_preferences = MagicMock()
         app._reset_rows = MagicMock()
         app._set_monitor_controls = MagicMock()
-        with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
+        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
             app.start_monitor()
             first_round_id = app.active_round_id
             self.wait_for(lambda: factory.called)
@@ -1025,7 +1033,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app._reset_rows = MagicMock()
         app._set_monitor_controls = MagicMock()
         app._set_row = MagicMock()
-        with patch("b518_log_solution.AtlasActiveArchiveMonitor") as factory:
+        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
             app.start_monitor()
             old_round_id = app.active_round_id
             self.wait_for(lambda: factory.called)

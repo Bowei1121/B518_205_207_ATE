@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "project": "SAMPLE",
+      "machine": "FCT",
+      "platform": "sample-json",
+      "capacity": 3,
+      "paths": {
+        "active": "/replace-with-an-isolated-sample-directory"
+      },
+      "mapping": [
+        {"source": 20, "display": 1},
+        {"source": 4, "display": 2},
+        {"source": 7, "display": 3}
+      ],
+      "timeouts": {
+        "start": 30,
+        "test": 60,
+        "round": 600
+      }
+    }
+  ]
+}

@@ -14,12 +14,13 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
-from log_monitoring import DEFAULT_TIMEOUTS, AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent
+from log_monitoring import DEFAULT_TIMEOUTS, MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
 from configured_monitor import ConfiguredMonitor
 from machine_profiles import (
     MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
+from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
     KVM_FIRST_ROW_Y, KVM_ROW_STEP,
@@ -583,25 +584,34 @@ class B518LogSolutionApp:
             "rswmt" if station == "BT" and self.bt_format.get() == "B518 RS-WMT"
             else ("b482" if station == "BT" else "atlas")
         )
-        if platform == "atlas":
-            active = configured_directory(values["active"].get())
-            final = configured_directory(values["final"].get())
-            if active is None or final is None:
-                messagebox.showerror("路徑錯誤", "請設定存在且可讀取的 active 與最終結果路徑。", parent=self.root)
+        try:
+            platform_definition = DEFAULT_PLATFORM_REGISTRY.get(platform)
+        except ValueError as error:
+            messagebox.showerror("配置錯誤", str(error), parent=self.root)
+            return
+        # The station fields are the current selected profile's loaded values;
+        # freeze them here before asynchronous adapter preparation begins.
+        profile_paths = {field: variable.get() for field, variable in values.items()}
+        resolved_paths = {}
+        for field in platform_definition.required_paths:
+            directory = configured_directory(profile_paths.get(field, ""))
+            if directory is None:
+                messagebox.showerror(
+                    "路徑錯誤", "請設定存在且可讀取的{}。".format(
+                        platform_definition.path_labels.get(field, field)), parent=self.root,
+                )
                 return
-            caseinfo = None
-        else:
-            final = configured_directory(values["final"].get())
-            if final is None:
-                messagebox.showerror("路徑錯誤", "請設定存在且可讀取的結果根路徑。", parent=self.root)
+            resolved_paths[field] = directory
+        for field in platform_definition.optional_paths:
+            configured = profile_paths.get(field, "")
+            directory = configured_directory(configured) if configured.strip() else None
+            if configured.strip() and directory is None:
+                messagebox.showerror(
+                    "路徑錯誤", "{} 不存在或無法讀取。".format(
+                        platform_definition.path_labels.get(field, field)), parent=self.root,
+                )
                 return
-            optional_field = "caseinfo"
-            optional_value = values[optional_field].get()
-            caseinfo_text = optional_value.strip()
-            caseinfo = configured_directory(caseinfo_text) if caseinfo_text else None
-            if caseinfo_text and caseinfo is None:
-                messagebox.showerror("路徑錯誤", "即時 Log 路徑不存在或無法讀取。", parent=self.root)
-                return
+            resolved_paths[field] = directory
         self.active_profile_snapshot = profile
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
@@ -620,32 +630,12 @@ class B518LogSolutionApp:
                     else:
                         return on_event(event)
 
-                if platform == "rswmt":
-                    monitor = RsWmtLogMonitor(
-                        final, slots=source_slots, progress_root=caseinfo, callback=deliver,
-                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                        round_timeout_seconds=timeouts["round"],
-                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
-                        async_session_writes=True,
-                    )
-                elif platform == "b482":
-                    monitor = BtLogMonitor(
-                        final, source_slots, caseinfo_root=caseinfo, callback=deliver,
-                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                        round_timeout_seconds=timeouts["round"],
-                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
-                        async_session_writes=True,
-                    )
-                elif platform == "atlas":
-                    monitor = AtlasActiveArchiveMonitor(
-                        station, active, final, source_slots, callback=deliver,
-                        start_timeout_seconds=timeouts["start"], test_timeout_seconds=timeouts["test"],
-                        round_timeout_seconds=timeouts["round"],
-                        session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
-                        async_session_writes=True,
-                    )
-                else:
-                    raise ValueError("未知平台：{}。".format(platform))
+                monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                    platform, station=station, paths=resolved_paths, source_slots=source_slots,
+                    callback=deliver, timeouts=timeouts,
+                    session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
+                    async_session_writes=True,
+                )
                 configured = ConfiguredMonitor(monitor, mapping)
                 if profile:
                     monitor.session.update_settings({
@@ -1042,7 +1032,7 @@ class B518LogSolutionApp:
             row=0, column=3, sticky="w", padx=6, pady=4)
         ttk.Label(parent, text="平台").grid(row=0, column=4, sticky="w", padx=(12, 0), pady=4)
         ttk.Combobox(parent, textvariable=self.profile_editor_platform,
-                     values=("atlas", "b482", "rswmt"), state="readonly", width=12).grid(
+                     values=DEFAULT_PLATFORM_REGISTRY.names, state="readonly", width=16).grid(
             row=0, column=5, sticky="w", padx=6, pady=4)
 
         ttk.Label(parent, text="測試容量").grid(row=1, column=0, sticky="w", pady=4)
@@ -1308,13 +1298,18 @@ class B518LogSolutionApp:
         for child in self.settings_paths_box.winfo_children():
             child.destroy()
         station = self.settings_station.get()
-        schema = (("final", "BT TestData 根路徑"), ("caseinfo", "BT CaseInfo 根路徑（選填）")) if station == "BT" else (
-            ("active", "即時 Log 根路徑 (active)"),
-            ("final", "最終結果根路徑 (unitest)" if station == "DFU" else "最終結果根路徑 (unit-archive)"),
-        )
+        try:
+            selected = self.profiles.get(self.settings_project.get(), station)
+            definition = DEFAULT_PLATFORM_REGISTRY.get(selected.platform)
+            schema = tuple((field, definition.path_labels.get(field, field))
+                           for field in definition.required_paths + definition.optional_paths)
+        except (AttributeError, ProfileError, ValueError):
+            schema = (("final", "BT TestData 根路徑"), ("caseinfo", "BT CaseInfo 根路徑（選填）")) if station == "BT" else (
+                ("active", "即時 Log 根路徑 (active)"), ("final", "最終結果根路徑"),
+            )
         disabled = self.monitor is not None
         offset = 0
-        if station == "BT":
+        if station == "BT" and not hasattr(self, "profiles"):
             ttk.Label(self.settings_paths_box, text="BT 格式 / Format").grid(row=0, column=0, sticky="w")
             choice = ttk.Combobox(self.settings_paths_box, textvariable=self.settings_bt_format,
                                   values=("B482 TestData", "B518 RS-WMT"),
