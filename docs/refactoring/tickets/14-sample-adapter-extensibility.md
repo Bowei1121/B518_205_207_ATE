@@ -49,10 +49,10 @@
 - 環境：macOS 15.7.9、Intel x86_64、Python 3.8.10；桌面 1440×900（macOS 顯示點），Tk scaling 約 1；主視窗 752×990 實際像素／376×467 Tk 邏輯單位。實際 KVM／上位機未連接。
 - Tk 驗證命令：`python3 -u tools/smoke_sample_adapter_app.py`。結果：工程師配置建立／保存及操作員選擇成功；配置容量 3 與非恆等映射生效；衝突與警報各自可操作；畫面最終為 `[1: FAIL, 2: FAIL, 3: TIMEOUT]`、共同輪次 COMPLETED、結果可取用；稽核可由磁碟重建且與 App 一致。隔離 HOME、偏好、來源及 sessions 目錄均由腳本建立於暫存目錄；樣本僅含 `SAMPLE000xxx`。
 - 實際畫面證據：`B518 Log Solution/docs/refactoring/evidence/ticket-14/` 中的 `monitoring.png`、`conflict.png`、`alarm.png`、`complete.png` 與 `app-round.json`。截圖來自受控 Tk App，不是 KVM／上位機輸出。
-- 單檔／回歸命令：`python3 scripts/run_tests.py test_platform_registry test_machine_profiles test_configured_monitor`；26 tests，全數通過。平台回歸及 UI 測試亦納入下列完整套件。
-- 全套命令：`python3 scripts/run_tests.py`；186 tests，全數通過（macOS 桌面環境，約 33 秒）。
+- 單檔／回歸命令：`python3 scripts/run_tests.py test_platform_registry test_machine_profiles test_configured_monitor`；27 tests，全數通過。平台回歸及 UI 測試亦納入下列完整套件。
+- 全套命令：`python3 scripts/run_tests.py`；187 tests，全數通過（macOS 桌面環境，約 22 秒）。
 - 語法檢查：`python3 -m py_compile src/platform_registry.py src/sample_json_monitor.py src/machine_profiles.py src/b518_log_solution.py tests/test_platform_registry.py tools/smoke_sample_adapter_app.py`。專案沒有 mypy／pyright／其他型別檢查設定；此命令只驗證 Python 語法，不作型別檢查通過宣稱。
-- 補充：`git diff --check` 通過。固定基準雙軸審查初次結果：Standards 無規範違反或可操作異味；Spec 指出缺少時間排序應放在未知時間之前，以及 final 後的活動不得進入狀態處理。以新增公開輪次回歸先重現，再將缺少時間排序鍵設為空值並忽略已終態位置的後續 activity；修正後 `test_platform_registry` 7 tests、相關 26 tests 及全套 186 tests 通過。檔案結尾空白行也已移除；修正後複審結果於後續提交紀錄。
+- 補充：`git diff --check` 通過。固定基準雙軸初審：Standards 無規範違反或可操作異味；Spec 發現未知時間排序鍵不符交付說明，及需驗證輸入順序不影響共同衝突裁決。以公開輪次測試重現缺時間 final 被較晚 activity 影響的順序，再將未知時間排前並略過已終態位置後續 activity；另以正序／反序寫入兩筆同批次 final，確認共同快照均保留同一原始 PASS 與 FAIL 候選。修正後 Adapter 8 tests、相關 27 tests、全套 187 tests 通過。檔案末尾空白行亦已移除；最終複審結果待確認。
 
 ## 尚未執行／限制
 
@@ -62,4 +62,4 @@
 
 ## 提交與同步
 
-- 實作提交 `2c293c4` 已推送 Gitea 與 GitHub。Spec／格式審查修正提交、複審、合併 commit SHA、合併後驗證、雙端同步及分支清理結果：完成後補記。
+- 實作提交 `2c293c4` 與 Spec／格式修正提交 `533b016` 已推送 Gitea 與 GitHub。輸入順序回歸與測試紀錄提交、最終複審、合併 commit SHA、合併後驗證、雙端同步及分支清理結果：完成後補記。

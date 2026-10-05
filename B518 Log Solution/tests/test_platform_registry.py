@@ -221,6 +221,53 @@ class PlatformRegistryTests(unittest.TestCase):
             self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
             self.assertFalse(any(event.event.kind == "result_candidate" for event in snapshot.events))
 
+    def test_reversed_sample_input_keeps_the_same_shared_conflict_decision(self):
+        records = (
+            '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"PASS",'
+            '"source_time":"2026-10-05T09:00:00","batch_id":"fixture-run-7"}',
+            '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"FAIL",'
+            '"source_time":"2026-10-05T09:00:10","batch_id":"fixture-run-7"}',
+        )
+        outcomes = []
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index, ordered_records in enumerate((records, tuple(reversed(records)))):
+                case_root = root / str(index)
+                source = case_root / "source"
+                source.mkdir(parents=True)
+                evidence_file = source / "events.jsonl"
+                evidence_file.write_text("", encoding="utf-8")
+                rounds = RoundCoordinator(audit_root=case_root / "sessions")
+
+                def monitor_factory(callback):
+                    monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                        "sample-json", station="FCT", paths={"active": source},
+                        source_slots=(1,), callback=callback,
+                        timeouts={"start": 30, "test": 60, "round": 600},
+                        session_root=case_root / "sessions", async_session_writes=False,
+                    )
+                    return ConfiguredMonitor(monitor, {1: 1})
+
+                rounds.start("FCT", monitor_factory, run_async=False, capacity=1,
+                             round_timeout_seconds=600,
+                             audit_context={"project": "SAMPLE", "machine": "FCT",
+                                            "platform": "sample-json", "profile_version": 1})
+                evidence_file.write_text("\n".join(ordered_records) + "\n", encoding="utf-8")
+                rounds.poll_once()
+
+                snapshot = rounds.snapshot()
+                self.assertEqual(snapshot.results[0].status, "PASS")
+                self.assertEqual(len(snapshot.pending_conflicts), 1)
+                self.assertEqual(snapshot.pending_conflicts[0].candidate.status, "FAIL")
+                self.assertFalse(snapshot.result_available)
+                outcomes.append((snapshot.results[0].status,
+                                 snapshot.pending_conflicts[0].candidate.status,
+                                 tuple((event.event.kind, event.event.status)
+                                       for event in snapshot.events
+                                       if event.event.kind in {"result", "result_candidate"})))
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
     def test_registry_rejects_duplicate_names_and_builds_registered_adapter(self):
         registry = PlatformRegistry()
         factory = lambda **context: context
