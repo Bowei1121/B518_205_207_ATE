@@ -30,4 +30,4 @@
 - 固定基準 Standards／Spec 審查及複審均無未解發現。兩項 P3 維護性意見（快照參數型別、共享格距）與一項完成狀態優先級規格問題已修正並有測試；複審確認方向拒判及文件狀態順序清楚。
 - `python3 scripts/run_tests.py test_kvm_display_contract` 通過 7 項，完整 `python3 scripts/run_tests.py` 通過 161 項；`py_compile` 僅語法檢查通過。repo 無型別檢查工具設定，未宣稱型別檢查通過。實際 KVM 傳輸、縮放、壓縮與目標／發布設備尚未驗收。
 - Ticket 12 AC 2～5 本機 Tk 範圍通過。AC 1 保持未勾選：雖已定義與測試本機 Tk 邏輯幾何及合成 locators／marker samples，但目前無可用的實際 KVM frame，仍缺物理方向、畫面座標／scale／壓縮及 KVM 調校容差證據。使用者於 2026-10-05 明確決定所有實機類測試可先略過並接受本票先合併；因此 AC 1 是已記錄的後續待驗項，不代表通過。Ticket 16 上位機共同整合仍按先前分工處理，不以本機畫面替代。
-- 固定基準雙軸 code-review 已最終通過；2026-10-05 使用者補充允許略過實機類驗收並合併，AC 1 保持未勾選。合併後 commit、驗證、Gitea／GitHub 同步及分支清理結果待本次續辦後補入。
+- 固定基準雙軸 code-review 已最終通過；2026-10-05 使用者補充允許略過實機類驗收並合併，AC 1 保持未勾選。一般非快轉 merge commit `7bfe62b1f74abfd536919dfda1f42cb226a0afbf` 已在 `B518-Log-Solution` 建立；合併後完整測試 161 項通過。Gitea／GitHub 推送及 feature branch 清理尚待完成。
