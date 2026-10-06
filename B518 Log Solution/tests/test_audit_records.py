@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import unittest
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -121,6 +122,124 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(rebuilt["result_available"])
         self.assertEqual([event["sequence"] for event in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
+
+    def test_completed_round_audit_writers_exit_after_idle_period(self):
+        round_ids = []
+        for _ in range(6):
+            started = self.start_round()
+            round_ids.append(started.round_id)
+            monitor = self.monitors[-1]
+            monitor.pending.extend([
+                lambda monitor=monitor: monitor.apply_round_result(1, "PASS", "SN-A"),
+                lambda monitor=monitor: monitor.apply_round_result(2, "PASS", "SN-B"),
+            ])
+            completed = self.coordinator.poll_once()
+            self.assertTrue(completed.result_available)
+            self.assertTrue(self.coordinator.flush_audit())
+
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            workers = [thread for thread in threading.enumerate()
+                       if thread.is_alive() and thread.name.startswith("round-audit-")
+                       and any(thread.name == "round-audit-{}".format(round_id)
+                               for round_id in round_ids)]
+            if not workers:
+                break
+            time.sleep(0.01)
+
+        self.assertEqual(workers, [], "completed rounds retained idle audit workers")
+
+    def test_round_alarm_can_be_acknowledged_after_idle_writer_exits(self):
+        started = self.start_round(round_timeout=3)
+        self.clock[0] = 3.0
+        waiting = self.coordinator.poll_once()
+        self.assertIsNotNone(waiting.round_alarm)
+        self.assertTrue(self.coordinator.flush_audit())
+
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and any(
+                thread.is_alive() and thread.name == "round-audit-{}".format(started.round_id)
+                for thread in threading.enumerate()):
+            time.sleep(0.01)
+        self.assertFalse(any(
+            thread.is_alive() and thread.name == "round-audit-{}".format(started.round_id)
+            for thread in threading.enumerate()))
+
+        completed = self.coordinator.acknowledge_round_alarm(
+            started.round_id, waiting.round_alarm.alarm_id)
+        self.assertTrue(completed.result_available)
+        rebuilt = self.rebuild_current_round(started.round_id)
+        kinds = [event["kind"] for event in rebuilt["events"]]
+        self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
+        self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
+
+    def test_conflict_resolution_after_manual_stop_and_idle_exit_is_reconstructable(self):
+        started = self.start_round()
+        monitor = self.monitors[0]
+        monitor.pending.append(lambda: monitor.apply_round_result(
+            1, "PASS", "SN-OLD", "/source/old",
+            {"source_position": 2, "source_id": "original", "source_time": "2026-10-05T11:00:00",
+             "round_evidence_id": "batch-1"},
+        ))
+        self.coordinator.poll_once()
+        monitor.callback(MonitorEvent(
+            "result_candidate", "candidate", slot=1, sn="SN-NEW", status="FAIL", source="/source/new",
+            detail={"source_position": 2, "source_id": "candidate", "source_time": "2026-10-05T11:01:00",
+                    "round_evidence_id": "batch-1"},
+        ))
+        waiting = self.coordinator.stop()
+        self.assertTrue(waiting.collection_stopped)
+        self.assertEqual(waiting.state.value, "STOPPED")
+        conflict_id = waiting.pending_conflicts[0].conflict_id
+        self.assertTrue(self.coordinator.flush_audit())
+
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and any(
+                thread.is_alive() and thread.name == "round-audit-{}".format(started.round_id)
+                for thread in threading.enumerate()):
+            time.sleep(0.01)
+        self.assertFalse(any(
+            thread.is_alive() and thread.name == "round-audit-{}".format(started.round_id)
+            for thread in threading.enumerate()))
+
+        completed = self.coordinator.resolve_review(conflict_id, "accept_candidate")
+        self.assertEqual(completed.state.value, "STOPPED")
+        rebuilt = self.rebuild_current_round(started.round_id)
+        resolution = next(event for event in rebuilt["events"]
+                          if event["kind"] == "conflict_resolved")
+        self.assertEqual(resolution["detail"]["choice"], "accept_candidate")
+        self.assertEqual(rebuilt["results"][1]["sn"], "SN-NEW")
+
+    def test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order(self):
+        started = self.start_round()
+        self.assertTrue(self.coordinator.flush_audit())
+
+        for index in range(10):
+            self.assertTrue(self.coordinator.flush_audit())
+            if index % 2 == 0:
+                time.sleep(0.19)
+            barrier = threading.Barrier(3)
+
+            def acknowledge_stale_alarm():
+                barrier.wait()
+                self.coordinator.acknowledge_round_alarm("stale-round", "stale-alarm")
+
+            workers = [threading.Thread(target=acknowledge_stale_alarm) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            barrier.wait()
+            for worker in workers:
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+
+        self.assertTrue(self.coordinator.flush_audit())
+        rebuilt = self.rebuild_current_round(started.round_id)
+        events = rebuilt["events"]
+        self.assertEqual(len([event for event in events
+                              if event["kind"] == "round_alarm_acknowledgement_ignored"]), 20)
+        self.assertEqual([event["sequence"] for event in events],
+                         list(range(1, len(events) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
 
     def test_conflict_candidate_choice_and_release_are_reconstructable(self):
         started = self.start_round()
