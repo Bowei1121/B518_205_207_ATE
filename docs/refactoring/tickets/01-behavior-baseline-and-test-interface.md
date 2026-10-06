@@ -32,7 +32,7 @@
 | 分類 | 應保護的行為 | 現有證據／來源 |
 | --- | --- | --- |
 | Atlas | 首次可信 SN 鎖定；active 消失後讀 archive 最終結果；無效 SN 不冒充產品 SN；歷史來源啟動時排除；來源消失後再判未測 | `B518 Log Solution/test_log_monitoring.py` 的 4 個 Atlas 案例。另以 `replay_baseline_samples.py` 對外部 `B482 DFU/test_data` 的 20 個 archive records 及 `B482 FCT/unit-archive` 的 7 個 archive records 回放，結果均為 PASS 並到達本輪完成。提供的真實資料沒有 active tree；回放工具以 archive CSV 的臨時副本觸發 active 狀態，再讀取另一份同源 archive CSV 驗證 final 流程。 |
-| B482 | Thread／批次證據與衝突覆核；空 SN FAILED 為平台 NOTEST；CaseInfo 提供最終 CSV 前的活動與 SN；採第二個 SNRead 動作欄位；生產 CSV 的 CR／LF／增量與半筆記錄處理 | `B518 Log Solution/test_log_monitoring.py` 的 8 個 TestData／CaseInfo 案例。外部 B482 樣本回放 7 組完整四通道 TestData（28 個結果：12 PASS、16 NOTEST；另略過 10 組不完整或有重複 Thread 的群組）；明確選取 2026-08-21 的 4 份 CaseInfo，驗證 4 個通道可讀到活動及可信 SN。原始資料位於使用者提供資料夾，未複製至 repo。 |
+| B482 | Thread／批次證據與衝突覆核；空 SN FAILED 為平台 NOTEST（歷史基準，已由 ADR 0006／Ticket 18 使用者決策 supersede）；CaseInfo 提供最終 CSV 前的活動與 SN；採第二個 SNRead 動作欄位；生產 CSV 的 CR／LF／增量與半筆記錄處理 | `B518 Log Solution/test_log_monitoring.py` 的 8 個 TestData／CaseInfo 案例。外部 B482 樣本回放 7 組完整四通道 TestData（28 個結果：12 PASS、16 NOTEST；另略過 10 組不完整或有重複 Thread 的群組）；明確選取 2026-08-21 的 4 份 CaseInfo，驗證 4 個通道可讀到活動及可信 SN。原始資料位於使用者提供資料夾，未複製至 repo。 |
 | RS-WMT | CSV Slot 與日期證據；排除 Summary／上下限列；單項 PASS 不代表整機 PASS；無 SN 明確 Fail 保持 FAIL；只接受有效完整資料；啟動前舊資料排除；增量 Log、半寫入與穩定性；不同輪次不混合 | `B518 Log Solution/test_rswmt_monitoring.py` 的 14 個案例；實機格式回放使用 4 個外部最終 CSV 與 4 個 Log，四個 Slot 均為 PASS。回放使用暫存目錄與模擬時鐘。 |
 | 操作／打包 | 設定取消、路徑檢查、快捷鍵／視窗行為、狀態色彩；靜態 bundle 相依、架構與最低版本判斷 | `B518 Log Solution/test_log_solution_ui.py`、`test_verify_macos_bundle.py`。本次 bundle 測試只驗證檢查器，不代表已建置或啟動 App。 |
 
@@ -57,9 +57,9 @@ python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE
 
 | 分類 | 本票基準 |
 | --- | --- |
-| 應保護 | 各平台有證據的欄位、可信 SN、來源位置／時間／批次判讀、啟動前歷史資料排除、半筆記錄等待完整、檔案穩定性、final 結果不被進度降級、B482 空 SN FAILED → NOTEST、RS-WMT 無 SN 明確 Fail → FAIL、快捷鍵及設定取消／保存等現有操作；保留測試可重現結果及實際環境。 |
+| 應保護 | 各平台有證據的欄位、可信 SN、來源位置／時間／批次判讀、啟動前歷史資料排除、半筆記錄等待完整、檔案穩定性、final 結果不被進度降級、B482 空 SN FAILED → NOTEST（歷史基準，已由 ADR 0006／Ticket 18 使用者決策取代）、RS-WMT 無 SN 明確 Fail → FAIL、快捷鍵及設定取消／保存等現有操作；保留測試可重現結果及實際環境。 |
 | 預期變更 | 固定平台／工站容量 7／6／4、七格 KVM 色帶、等待開始逾期時整輪所有位置 TIMEOUT、全通道有結果後額外三秒觀察。新版須依配置容量、十格／兩排、開始等待逾期只將未開始位置判為 NOTEST，以及全通道有結果即停止收集。舊測試若鎖定以上舊行為，後續需按新版規格調整，不能作為新版保護條件。 |
-| 待驗／待決 | Atlas 真實 active tree；RS-WMT 實際即時資料何時可讀；M4／目標 macOS 打包啟動、KVM 像素辨識及上位機共同驗收；來源無法確認同輪時能否人工採用（Ticket 18，使用者要求繼續未決）。匿名化樣本包已於後續完成。 |
+| 待驗／待決 | Atlas 真實 active tree；RS-WMT 實際即時資料何時可讀；M4／目標 macOS 打包啟動、KVM 像素辨識及上位機共同驗收。Ticket 18 的來源採用政策已由使用者定案，見 ADR 0006 及 Ticket 18。匿名化樣本包已於後續完成。 |
 
 ### AC-01～AC-28 後續任務與驗證對照
 
@@ -110,7 +110,7 @@ python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE
 6. 整輪期限到達時保留已完成結果、分類其餘通道、只產生一次警報；確認警報本身不清除衝突，全部必要確認後才可取用。
 7. 啟動新輪後送入舊輪排隊事件，確認舊事件不改新輪狀態。
 
-**確認紀錄：**使用者於 2026-09-30 明確接受以上輪次公開接口及 7 個代表案例，作為後續主要行為測試範圍。此確認不包含 Ticket 18「無法確認是否屬同輪時能否人工採用」政策；該政策依使用者指示繼續未決，日後另行討論。後續實際行為測試仍須在 Ticket 02 建立共同輪次對外接口後，經該接口觀察狀態、事件與可取用性；Ticket 01 不提前實作共同輪次重構。
+**確認紀錄：**使用者於 2026-09-30 明確接受以上輪次公開接口及 7 個代表案例，作為後續主要行為測試範圍。當時此確認不包含 Ticket 18「無法確認是否屬同輪時能否人工採用」政策；該政策後於 2026-10-06 由使用者決定，見 ADR 0006 與 Ticket 18。後續實際行為測試仍須在 Ticket 02 建立共同輪次對外接口後，經該接口觀察狀態、事件與可取用性；Ticket 01 不提前實作共同輪次重構。
 
 這 7 個案例中有數項驗證新版 NOTEST、停止收集、人工確認放行及輪次事件隔離；現有單平台監控器尚未提供已確認的共同輪次接口，也仍保有將改變的 MVP 行為。本票不把這些新版案例硬接到舊監控器或先加入會預期失敗的測試；Ticket 02 建立共同接口後，再以該公開邊界逐項採 TDD 落實。
 
@@ -122,9 +122,9 @@ python3 replay_baseline_samples.py --caseinfo-date 2026-08-21 "/完整路徑/ATE
 
 ## 保留決策、待確認事項與限制
 
-測試接口已於 2026-09-30 由使用者確認，確認內容與 7 個案例見本票上方。來源無法確認是否屬同輪時的人工採用政策仍未決，另由 Ticket 18 討論；本票已完成部分不能抵銷該未決分支。
+測試接口已於 2026-09-30 由使用者確認，確認內容與 7 個案例見本票上方。當時來源無法確認是否屬同輪時的人工採用政策仍未決；該政策已於 2026-10-06 由 Ticket 18／ADR 0006 定案。
 
-後續主要行為測試依使用者已確認的接口與 7 個代表案例，在 Ticket 02 建立共同公開接口後落實。未知同輪來源能否人工採用仍由 Ticket 18 決定；本票不替該未決分支設定政策。
+後續主要行為測試依使用者已確認的接口與 7 個代表案例，在 Ticket 02 建立共同公開接口後落實。未知同輪來源的人工採用政策由 Ticket 18／ADR 0006 定案；本票僅記錄當時的基準，不改寫其歷史範圍。
 
 ## 執行與追蹤
 

@@ -140,7 +140,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             rounds.stop()
             self.assertTrue(rounds.flush_session())
 
-    def test_atlas_active_identity_change_is_retained_as_unconfirmed_evidence(self):
+    def test_atlas_active_identity_change_fails_without_confirmed_round_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             active, final = root / "active", root / "unit-archive"
@@ -153,13 +153,14 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             snapshot = rounds.poll_once()
 
             self.assertEqual(snapshot.results[0].sn, "SAMPLE123456")
+            self.assertEqual(snapshot.results[0].status, "FAIL")
             self.assertFalse(snapshot.pending_conflicts)
-            unresolved = [item.event for item in snapshot.events
-                          if item.event.kind == "unresolved_source_conflict"]
-            self.assertEqual(len(unresolved), 1)
-            self.assertEqual(unresolved[0].detail["original_sn"], "SAMPLE123456")
-            self.assertEqual(unresolved[0].detail["candidate_sn"], "OTHER1234567")
-            self.assertEqual(unresolved[0].detail["source_time"], "unknown")
+            rejected = [item.event for item in snapshot.events
+                        if item.event.kind == "unknown_round_candidate_rejected"]
+            self.assertEqual(len(rejected), 1)
+            self.assertEqual(rejected[0].detail["original_sn"], "SAMPLE123456")
+            self.assertEqual(rejected[0].detail["candidate_sn"], "OTHER1234567")
+            self.assertEqual(rejected[0].detail["source_time"], "unknown")
             rounds.stop()
             self.assertTrue(rounds.flush_session())
 
@@ -210,7 +211,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
             self.assertEqual([result.status for result in snapshot.results], ["COMPLETING", "WAITING"])
             self.assertFalse(any(event.event.status == "NOTEST" for event in snapshot.events))
 
-    def test_first_trusted_identity_is_locked_and_invalid_value_is_not_exposed(self):
+    def test_first_trusted_identity_is_locked_and_unknown_identity_change_fails_slot(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             active, final = root / "active", root / "unit-archive"
@@ -230,7 +231,7 @@ class AtlasSourceAdapterRoundTests(unittest.TestCase):
 
             snapshot = rounds.snapshot()
             self.assertEqual(snapshot.results[0].sn, "SAMPLE123456")
-            self.assertEqual(snapshot.results[0].status, "TESTING")
+            self.assertEqual(snapshot.results[0].status, "FAIL")
             self.assertEqual(sum(event.event.kind == "sn_locked" for event in snapshot.events), 1)
 
     def test_unreadable_identity_keeps_the_atlas_sn_failure_result(self):

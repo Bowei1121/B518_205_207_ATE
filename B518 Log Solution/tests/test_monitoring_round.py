@@ -134,8 +134,11 @@ class DeadlineMonitor:
                                    source, detail or {}))
 
     def offer_candidate(self, slot, status, sn, source, detail):
-        return self.callback(MonitorEvent("result_candidate", "candidate", slot, sn, status,
-                                           source, detail))
+        event = MonitorEvent("result_candidate", "candidate", slot, sn, status, source, detail)
+        decision = self.callback(event)
+        if decision == "accept":
+            self.apply_round_result(slot, status, sn, source, detail)
+        return decision
 
     def stop_collection(self):
         self.collection_stopped = True
@@ -168,7 +171,8 @@ class MonitoringRoundTests(unittest.TestCase):
         rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
         rounds.start("BT", factory, run_async=False)
         monitor = holder["monitor"]
-        evidence = {"round_evidence_id": "rswmt-run-20261002T100000"}
+        evidence = {"round_evidence_id": "rswmt-run-20261002T100000",
+                    "source_time": "2026-10-02T10:00:00"}
         monitor.apply_round_result(1, "PASS", "SERIAL000001", "/logs/original.csv", evidence)
         monitor.apply_round_result(2, "TESTING", "SERIAL000002", "/logs/active.csv", evidence)
         monitor.offer_candidate(
@@ -237,7 +241,7 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(kept_then_accepted_events[-1]["chosen_sn"], "SERIAL000003")
         self.assertEqual(kept_then_accepted_events[-1]["result_after_sn"], "SERIAL000003")
 
-    def test_unconfirmed_round_evidence_is_retained_without_an_adoption_choice(self):
+    def test_unconfirmed_round_evidence_fails_slot_without_an_adoption_choice(self):
         holder = {}
 
         def factory(callback):
@@ -258,10 +262,112 @@ class MonitoringRoundTests(unittest.TestCase):
         snapshot = rounds.snapshot()
         self.assertFalse(snapshot.pending_conflicts)
         self.assertEqual(snapshot.results[0].sn, "SERIAL000001")
-        unresolved = [event.event for event in snapshot.events
-                      if event.event.kind == "unresolved_source_conflict"]
-        self.assertEqual(len(unresolved), 1)
-        self.assertEqual(unresolved[0].detail["candidate_source_time"], "unknown")
+        self.assertEqual(snapshot.results[0].status, "FAIL")
+        rejected = [event.event for event in snapshot.events
+                    if event.event.kind == "unknown_round_candidate_rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0].detail["candidate_source_time"], "unknown")
+
+    def test_first_final_without_round_link_fails_and_audits_candidate_and_operation_time(self):
+        fixed_time = datetime(2026, 10, 6, 12, 34, 56)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            holder = {}
+
+            def factory(callback):
+                monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+                holder["monitor"] = monitor
+                return monitor
+
+            rounds = RoundCoordinator(audit_root=root / "audit", wall_clock=lambda: fixed_time)
+            rounds.start("BT", factory, run_async=False, capacity=1,
+                         audit_context={"project": "B518", "machine": "BT", "platform": "test"})
+            holder["monitor"].offer_candidate(1, "PASS", "SERIAL000001", "first.csv", {
+                "source_id": "first.csv", "source_time": "2026-10-06T12:30:00",
+            })
+            snapshot = rounds.poll_once()
+
+            self.assertEqual(snapshot.results[0].status, "FAIL")
+            self.assertEqual(snapshot.results[0].sn, "")
+            self.assertTrue(snapshot.result_available)
+            self.assertFalse(snapshot.pending_conflicts)
+            rejected = next(item.event for item in snapshot.events
+                            if item.event.kind == "unknown_round_candidate_rejected")
+            self.assertEqual(rejected.detail["operation"], "fail_unconfirmed_candidate")
+            self.assertEqual(rejected.detail["candidate_sn"], "SERIAL000001")
+            self.assertEqual(rejected.detail["candidate_status"], "PASS")
+            self.assertEqual(rejected.detail["candidate_source_time"], "2026-10-06T12:30:00")
+            self.assertEqual(rejected.detail["operation_at"], "2026-10-06T12:34:56")
+            self.assertNotIn("reason", rejected.detail)
+
+            self.assertTrue(rounds.flush_audit())
+            from audit_records import read_round_audit
+            audit_path = next((root / "audit").rglob("audit.jsonl"))
+            audit = read_round_audit(audit_path)
+            stored = next(item for item in audit["events"]
+                          if item["kind"] == "unknown_round_candidate_rejected")
+            self.assertEqual(stored["operation_at"], "2026-10-06T12:34:56")
+            self.assertEqual(stored["source_time"], "2026-10-06T12:30:00")
+            self.assertEqual(stored["detail"]["candidate_status"], "PASS")
+
+    def test_unlinked_replacement_candidate_fails_slot_without_adopting_candidate(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        monitor.apply_round_result(1, "PASS", "ORIGINAL0001", "original.csv", {
+            "source_id": "original.csv", "source_time": "2026-10-06T12:00:00",
+            "round_evidence_id": "b482:1:run-a",
+        })
+        monitor.offer_candidate(1, "PASS", "CANDIDATE001", "candidate.csv", {
+            "source_id": "candidate.csv", "source_time": "2026-10-06T12:01:00",
+        })
+        snapshot = rounds.poll_once()
+
+        self.assertEqual(snapshot.results[0].status, "FAIL")
+        self.assertEqual(snapshot.results[0].sn, "ORIGINAL0001")
+        self.assertTrue(snapshot.result_available)
+        self.assertFalse(snapshot.pending_conflicts)
+        rejected = next(item.event for item in snapshot.events
+                        if item.event.kind == "unknown_round_candidate_rejected")
+        self.assertEqual(rejected.detail["original_sn"], "ORIGINAL0001")
+        self.assertEqual(rejected.detail["candidate_sn"], "CANDIDATE001")
+        self.assertEqual(rejected.detail["candidate_source_time"], "2026-10-06T12:01:00")
+
+    def test_round_link_without_source_test_time_is_insufficient_and_fails_slot(self):
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", factory, run_async=False)
+        monitor = holder["monitor"]
+        round_evidence_id = "b482:1:run-a"
+        monitor.apply_round_result(1, "PASS", "SERIAL000001", "original.csv", {
+            "source_id": "original.csv", "source_time": "2026-10-06T12:00:00",
+            "round_evidence_id": round_evidence_id,
+        })
+        monitor.offer_candidate(1, "FAIL", "SERIAL000001", "candidate.csv", {
+            "source_id": "candidate.csv", "source_time": "2026-10-06",
+            "round_evidence_id": round_evidence_id,
+        })
+        snapshot = rounds.poll_once()
+
+        self.assertEqual(snapshot.results[0].status, "FAIL")
+        self.assertTrue(snapshot.result_available)
+        self.assertFalse(snapshot.pending_conflicts)
+        rejected = next(item.event for item in snapshot.events
+                        if item.event.kind == "unknown_round_candidate_rejected")
+        self.assertEqual(rejected.detail["candidate_source_time"], "2026-10-06")
 
     def test_same_result_from_another_path_is_traceable_without_a_new_conflict(self):
         holder = {}
@@ -322,7 +428,8 @@ class MonitoringRoundTests(unittest.TestCase):
 
         coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
         coordinator.start("FCT", factory, run_async=False)
-        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001",
+                    "source_time": "2026-10-06T12:00:00"}
         holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
         holder["monitor"].offer_candidate(
             1, "FAIL", "SERIAL000001", "final.csv", dict(evidence, source_id="final.csv"),
@@ -472,7 +579,8 @@ class MonitoringRoundTests(unittest.TestCase):
 
         coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
         coordinator.start("FCT", factory, run_async=False)
-        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001",
+                    "source_time": "2026-10-06T12:00:00"}
         holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
         holder["monitor"].offer_candidate(
             1, "FAIL", "SERIAL000001", "final.csv", dict(evidence, source_id="final.csv"),
@@ -500,7 +608,8 @@ class MonitoringRoundTests(unittest.TestCase):
 
         coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
         started = coordinator.start("FCT", factory, run_async=False)
-        evidence = {"round_evidence_id": "atlas:1:SERIAL000001"}
+        evidence = {"round_evidence_id": "atlas:1:SERIAL000001",
+                    "source_time": "2026-10-06T12:00:00"}
         holder["monitor"].apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
         holder["monitor"].apply_round_result(2, "TESTING", "SERIAL000002", "active.csv")
         holder["monitor"].offer_candidate(
@@ -888,15 +997,16 @@ class MonitoringRoundTests(unittest.TestCase):
             observed = coordinator.poll_once()
 
             self.assertEqual(observed.results[0].sn, "HK5HUX6STQ800003YV")
-            self.assertEqual(observed.results[0].status, "PASS")
+            self.assertEqual(observed.results[0].status, "FAIL")
+            self.assertEqual(observed.results[0].sn, "HK5HUX6STQ800003YV")
             self.assertFalse(observed.pending_conflicts)
-            unresolved = [item.event for item in observed.events
-                          if item.event.kind == "unresolved_source_conflict"]
-            self.assertEqual(len(unresolved), 1)
-            self.assertEqual(unresolved[0].detail["candidate_sn"], "HK5HUX6STQ900003YV")
-            self.assertEqual(unresolved[0].detail["candidate_source_id"], caseinfo_path.name)
-            self.assertEqual(unresolved[0].detail["candidate_source_time"], "2026-10-02 10:00:02.000")
-            self.assertNotIn("round_evidence_id", unresolved[0].detail)
+            rejected = [item.event for item in observed.events
+                        if item.event.kind == "unknown_round_candidate_rejected"]
+            self.assertEqual(len(rejected), 1)
+            self.assertEqual(rejected[0].detail["candidate_sn"], "HK5HUX6STQ900003YV")
+            self.assertEqual(rejected[0].detail["candidate_source_id"], caseinfo_path.name)
+            self.assertEqual(rejected[0].detail["candidate_source_time"], "2026-10-02 10:00:02.000")
+            self.assertNotIn("reason", rejected[0].detail)
             self.assertTrue(coordinator.flush_session())
 
     def test_shared_start_deadline_marks_only_unobserved_slots_notest_and_completes_empty_round(self):
