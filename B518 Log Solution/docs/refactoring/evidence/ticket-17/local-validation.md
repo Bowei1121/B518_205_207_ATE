@@ -34,7 +34,12 @@ Ticket 執行分支：`codex/ticket-17`；驗證包含該分支的 build-check �
 - 沒有針對產物執行 `codesign`／`codesign --verify` 或 SHA-256 sidecar 校驗。Build scripts 的 ad-hoc signature 路徑與靜態 verifier 由程式及測試覆蓋，不代表簽章或分發政策已通過；Developer ID／notarization 仍未提供／驗收。
 - Intel macOS 10.14／10.15、Apple Silicon macOS 15.x（含最低 15.0）及 26.x 目標機尚無本票實測。需要可用的原生 builder、實際設備與現場人員／TE 部署紀錄。
 - 尚未取得 RS-WMT 現場資料時機；本機平台測試及 synthetic replay 不代替實際來源更新時序。
-- Ticket 18 的同輪來源不明候選是否允許人工採用仍待使用者定案。所有依賴該規則的操作與發布範圍維持未完成，不由本票推定政策。
+- 當時 Ticket 18 的同輪來源採用政策仍未決；這是 2026-10-06 Ticket 17 本機驗證階段的歷史紀錄。Ticket 18 其後已由使用者定案並合併，當前政策見 ADR 0006 與本票發行指南的「Ticket 18 已定案政策」。
+
+## Ticket 18 主線整合後驗證｜2026-10-06
+
+- Ticket 17 已將主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3` 合併進工作分支，其中已包含 Ticket 18 政策與實作；衝突只在兩票更新的跨日摘要，已保留雙方紀錄。整合後完整 `python3 scripts/run_tests.py` 通過 193 tests（22.930 秒），三個 build 腳本 `zsh -n` 通過，`git diff --check` 通過。這些檢查只驗證本機程式與受控案例，不替代尚未建立的發行 bundle 或目標環境驗收。
+- 尚未取得適用的建置主機、目標設備、現場資料及所需簽章政策；沒有建立或聲稱存在 `.app`／ZIP、codesign 驗證或 SHA-256 產物證據。
 
 ## 型別檢查
 

@@ -35,4 +35,27 @@
 - 真實 Tk source App 受控回放 `smoke_deadline_app.py` 與 `smoke_state_marker_app.py` 通過。證據 `B518 Log Solution/docs/refactoring/evidence/ticket-17/source-tk-replay/run.json` 及 PNG 為隔離的合成畫面；明記 physical KVM unavailable，不能當成發行 App 或現場驗收。
 - 桌面執行完整 `python3 scripts/run_tests.py`：最後一次重跑為 188 tests 通過、22.621 秒。三個 zsh build 腳本語法檢查通過；本機 Python 3.8 preflight 正確拒絕正式 Python 3.12 build target。沒有符合條件的 Catalina Intel／原生 Apple Silicon builder，因此無實際 bundle、codesign、checksum 或目標機驗收結果。
 - 固定基準雙軸審查：Standards 無硬性違規，指出 build scripts 重複做 `lipo` 架構檢查；已移除 Intel／26 shell 重複迴圈，由 bundle verifier 單一負責。Spec 無未要求功能或錯誤實作，指出各目標實機未執行時 AC 4 不應勾選；已取消。修正後再跑聚焦 20 tests、完整 188 tests 及 zsh 語法檢查均通過。
-- Ticket 18 未決政策，以及 Intel／Apple Silicon/macOS 各目標機、KVM／ATE、RS-WMT 現場資料、實際發布 bundle 與簽章條件分別列為待驗。Ticket 17 AC 2、3、4 未勾選，分支保留；不合併、不刪除分支。詳細測試、環境與限制見 `B518 Log Solution/docs/refactoring/evidence/ticket-17/local-validation.md`。
+- Ticket 18 未決政策，以及 Intel／Apple Silicon/macOS 各目標機、KVM／ATE、RS-WMT 現場資料、實際發布 bundle 與簽章條件分別列為待驗。Ticket 17 AC 2、3、4 未勾選，分支保留；不合併、不刪除分支。詳細測試、環境與限制見 `B518 Log Solution/docs/refactoring/evidence/ticket-17/local-validation.md`。這是 Ticket 17 執行當時的狀態快照；Ticket 18 政策其後由使用者定案並完成，見下節。
+
+本次僅保存跨日摘要，沒有新增程式或產品規則。
+
+## Ticket 18 執行紀錄（2026-10-06）
+
+- 從乾淨的 `B518-Log-Solution` 固定基準 `26a097e1dd7fc00c40bbb7d8472d946fdc920939` 建立 `codex/ticket-18` 隔離工作樹；本地及 Gitea／GitHub 均無同名既有分支，主分支三處 SHA 一致。Ticket 17 分支未混入。
+- 核對 Ticket 10 程式與受控驗收已在基準，Ticket 02 共同輪次接口已完成。已整理 Atlas、B482、RS-WMT 的未知來源與已知同輪對照，見 [Ticket 18 案例與現況](evidence/ticket-18/source-case-review.md)。測試案例是隔離輸入，非現場實機證據。
+- 決策前關鍵現況：無既有結果時，無 `round_evidence_id` 的 final 可被接受；已存在結果的未知同輪矛盾則留下 `unresolved_source_conflict` 並保留原結果，但該事件不建立人工確認項目，也不單獨阻擋放行。此為決策前程式現況，未視為已批准政策；政策後續已定案並實作。
+- 決策前階段只補證據及驗收對照，沒有修改產品程式或新增政策預期；該階段結束時尚待使用者決策，後續政策答覆及狀態變更記錄如下。
+
+## Ticket 18 政策決定（2026-10-06）
+
+- 使用者決定未知同輪來源一律不得人工採用，規則同時適用第一筆 final 與替換既有結果。測試時間是最低來源證據；SN 非必要證據，但 SN 讀取失敗、證據不足、拒絕或未選擇時 Slot 判 FAIL。紀錄操作、候選及時間，不記理由。
+- 使用者選擇 B482 空 SN 且平台回報 FAILED 維持產品 FAIL，取代 Ticket 01／04 的歷史 NOTEST 映射。新增 [ADR 0006](../adr/0006-unknown-round-result-adoption.md) 並更新 REFACTOR_SPEC、Ticket 04 及相關測試。
+- 依 Ticket 01／02 已確認的公開輪次接口先寫失敗測試，再實作共用輪次未知來源拒絕與 FAIL、操作 audit，以及 B482 空 SN 產品 FAIL。104 項核心／Adapter／audit 相關測試通過；真實 Tk `test_log_solution_ui` 37 項通過，新增未知 Atlas 身份變更呈現 FAIL 並驗證 audit。
+- 同步更新 Ticket 04／18、REFACTOR_SPEC、案例證據、測試資料指南及操作 README。完整 `python3 scripts/run_tests.py` 在 Python 3.8.10、Tk 8.6、macOS 15.7.9 通過 190 tests；`git diff --check` 通過。Repo 沒有 mypy／pyright 或其他型別檢查設定。
+- Ticket 18 的候選拒絕、FAIL、UI、audit 欄位受控案例已驗證。使用者確認未知來源判 FAIL 後按一般 FAIL 終態處理，其他必要條件完成後可結束輪次並供上位機讀取 FAIL；此項已補 ADR／README。未知同輪現場原始資料仍缺，不以 Tk 合成回放冒充。最終完整測試 190 項通過，固定基準 Standards／Spec 雙軸複審均無未解發現；此票必要受控範圍完成。
+
+## Ticket 17 整合至 Ticket 18 主線｜2026-10-06
+
+- 使用者同意先合併 Ticket 17 的建置／bundle 驗證工具、測試、文件與受控驗收證據；分支沒有 App 核心流程改動，但確有打包相關程式碼變更。此決定不代表發行 bundle、目標 App 或現場驗收已通過。Ticket 17 AC 2、3、4 保持未勾選，整體仍 blocked。
+- Ticket 17 工作分支先合併最新主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3`，保留雙方 Ticket 17／18 摘要。Ticket 18 已定案政策取代 Ticket 17 原本的未決說明；Ticket 17 發行指南與限制同步更新。
+- 整合後完整 `python3 scripts/run_tests.py` 通過 193 tests；三個 build 腳本 `zsh -n` 與 `git diff --check` 通過。測試僅證明本機程式和受控案例，沒有 `.app`、codesign／checksum、部署 App 或目標現場驗收結果。Ticket 分支雙軸審查及推送／合併結果後續補記。

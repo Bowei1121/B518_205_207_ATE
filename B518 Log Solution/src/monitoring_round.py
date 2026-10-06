@@ -47,6 +47,22 @@ class RoundState(str, Enum):
     STOPPED = "STOPPED"
 
 
+def _has_source_test_time(value: object) -> bool:
+    """Accept only parseable platform test timestamps, never observation/file times."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    normalized = value.strip()
+    if normalized.lower() in {"unknown", "none", "null"}:
+        return False
+    if len(normalized) <= 10 or normalized[10] not in {"T", " "}:
+        return False
+    try:
+        datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class RoundResult:
     slot: int
@@ -689,6 +705,9 @@ class MonitoringRound:
             return
         if event.kind == "result_candidate":
             return self._consider_result_candidate(event)
+        if event.kind == "unresolved_source_conflict":
+            self._fail_unconfirmed_candidate(event)
+            return
         if event.kind == "session_write_failed":
             message = event.message
             if message not in self._audit_errors:
@@ -757,7 +776,7 @@ class MonitoringRound:
         self._on_event(failure)
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:
-        """Admit source facts, queue confirmed contradictions, and retain uncertainty."""
+        """Admit linked, timed source facts and queue confirmed same-round contradictions."""
         outbound_event = None
         decision = "ignore"
         with self._lock:
@@ -767,10 +786,15 @@ class MonitoringRound:
             candidate_detail = dict(event.detail)
             evidence_id = candidate_detail.get("round_evidence_id", "")
             current_evidence_id = current_detail.get("round_evidence_id", "")
-            if current is None or current.status == "WAITING":
+            # SNRead failures are direct product failures when no trusted identity
+            # exists. After a valid identity was locked, ignore a later unreadable
+            # observation instead of replacing that identity or its active state.
+            if event.status == "FAIL" and not event.source and not candidate_detail.get("source_id"):
+                if current is not None and current.sn and current.status == "TESTING":
+                    return "ignore"
                 return "accept"
             same_round = bool(evidence_id and current_evidence_id and evidence_id == current_evidence_id)
-            same_value = current.status == event.status and current.sn == event.sn
+            same_value = bool(current and current.status == event.status and current.sn == event.sn)
             if same_value:
                 if current.source != event.source:
                     outbound_event = MonitorEvent(
@@ -779,24 +803,21 @@ class MonitoringRound:
                         {"original_source": current.source, "source_id": candidate_detail.get("source_id", "unknown"),
                          "source_time": candidate_detail.get("source_time", "unknown")},
                     )
+            elif current is None or current.status == "WAITING":
+                if event.status in TERMINAL:
+                    if not evidence_id or not _has_source_test_time(candidate_detail.get("source_time")):
+                        self._fail_unconfirmed_candidate(event, current=current)
+                        return "ignore"
+                return "accept"
             else:
                 terminal_conflict = current.status in TERMINAL and event.status in TERMINAL
                 identity_conflict = bool(current.sn and event.sn and current.sn != event.sn)
                 evidence_conflict = terminal_conflict or identity_conflict
                 if not evidence_conflict:
                     return "accept"
-                if not same_round:
-                    outbound_event = MonitorEvent(
-                        "unresolved_source_conflict",
-                        "slot{} 出現無法確認同輪的矛盾來源；保留證據待後續政策處理".format(event.slot),
-                        event.slot, event.sn, event.status, event.source,
-                        {"original_sn": current.sn or "unknown", "original_status": current.status,
-                         "original_source": current.source, "candidate_sn": event.sn or "unknown",
-                         "candidate_status": event.status,
-                         "candidate_source_id": candidate_detail.get("source_id", "unknown"),
-                         "candidate_source_time": candidate_detail.get("source_time", "unknown"),
-                         **candidate_detail},
-                    )
+                if not same_round or not _has_source_test_time(candidate_detail.get("source_time")):
+                    self._fail_unconfirmed_candidate(event, current=current)
+                    return "ignore"
                 else:
                     original = self._conflict_side(current.sn, current.status, current.source, current_detail)
                     candidate = self._conflict_side(event.sn, event.status, event.source, candidate_detail)
@@ -853,6 +874,40 @@ class MonitoringRound:
         if outbound_event is not None:
             self._append_event(outbound_event)
         return decision
+
+    def _fail_unconfirmed_candidate(self, event: MonitorEvent, current=None) -> None:
+        """Audit an unlinked source candidate and make its slot a terminal FAIL."""
+        if current is None and self._monitor is not None and event.slot is not None:
+            current = next((item for item in self._monitor.round_results()
+                            if item.slot == event.slot), None)
+        detail = {key: value for key, value in event.detail.items() if key != "reason"}
+        original_detail = self._result_evidence.get(event.slot or -1, {})
+        source_time = detail.get("source_time", detail.get("candidate_source_time", "unknown"))
+        audit_detail = {
+            "round_id": self.round_id,
+            "operation": "fail_unconfirmed_candidate",
+            "operation_at": self._wall_clock().isoformat(timespec="seconds"),
+            "original_sn": current.sn if current and current.sn else "unknown",
+            "original_status": current.status if current else "WAITING",
+            "original_source": current.source if current and current.source else "unknown",
+            "original_source_time": original_detail.get("source_time", "unknown"),
+            "candidate_sn": event.sn or detail.get("candidate_sn", "unknown"),
+            "candidate_status": event.status or detail.get("candidate_status", "unknown"),
+            "candidate_source_id": detail.get("source_id", detail.get("candidate_source_id", "unknown")),
+            "candidate_source_time": source_time,
+            "source_time": source_time,
+            **detail,
+        }
+        self._append_event(MonitorEvent(
+            "unknown_round_candidate_rejected",
+            "slot{} 無法確認來源屬於本輪；候選未採用並判定 FAIL".format(event.slot),
+            event.slot, event.sn, event.status, event.source, audit_detail,
+        ))
+        if self._monitor is not None and event.slot is not None:
+            self._monitor.apply_round_result(
+                event.slot, "FAIL", current.sn if current else "", current.source if current else "",
+                {"round_id": self.round_id, "policy_outcome": "unknown_round_candidate_rejected"},
+            )
 
     @staticmethod
     def _conflict_side(sn: str, status: str, source: str, detail: Dict[str, str]) -> ConflictSide:

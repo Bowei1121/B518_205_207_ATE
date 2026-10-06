@@ -104,7 +104,7 @@ class LogMonitoringTests(unittest.TestCase):
         monitor.poll_once()
         self.assertEqual(monitor.results[1].status, "TESTING")
 
-    def test_bt_locks_batch_and_empty_failed_csv_is_notest(self):
+    def test_bt_locks_batch_and_empty_failed_csv_is_fail(self):
         clock = [0.0]
         root = self.temp / "TestData"
         monitor = BtLogMonitor(root, (1,), now=lambda: self.now, monotonic=lambda: clock[0], session_root=self.temp / "sessions")
@@ -114,7 +114,7 @@ class LogMonitoringTests(unittest.TestCase):
         clock[0] = 5.1
         monitor.poll_once()
         self.assertEqual(monitor.batch_stamp, "20220618022901")
-        self.assertEqual(monitor.results[1].status, "NOTEST")
+        self.assertEqual(monitor.results[1].status, "FAIL")
 
     def test_b482_adapter_exposes_exact_batch_identity_for_common_round(self):
         clock = [0.0]

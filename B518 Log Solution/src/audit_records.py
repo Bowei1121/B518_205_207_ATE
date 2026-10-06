@@ -166,7 +166,7 @@ class RoundAuditStore:
             "source": event.source or None,
             "source_id": _first(detail, "source_id", "source_identifier"),
             "source_time": _first(detail, "source_time", "source_timestamp"),
-            "operation_at": _first(detail, "selected_at", "acknowledged_at", "operator_at"),
+            "operation_at": _first(detail, "operation_at", "selected_at", "acknowledged_at", "operator_at"),
             "date_evidence": _first(detail, "date", "date_evidence", "caseinfo_date"),
             "batch_evidence": _first(detail, "batch_id", "batch", "round_evidence_id"),
             "detail": detail or {},

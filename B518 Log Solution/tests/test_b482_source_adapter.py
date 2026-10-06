@@ -70,7 +70,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         self.assertEqual(rounds.snapshot().results[0].status, "TESTING")
         self.assertEqual(rounds.snapshot().results[0].sn, "HK5HVH6ZF4U00003YV")
 
-    def test_empty_sn_failed_testdata_result_keeps_notest_and_batch_evidence(self):
+    def test_empty_sn_failed_testdata_result_remains_fail_and_keeps_batch_evidence(self):
         testdata = self.temp / "TestData"
         result = testdata / "2026-08-21" / "FAILED" / "[Thread0][cfg][][FAILED][20260821151940].csv"
         testdata.mkdir()
@@ -88,12 +88,32 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         rounds.poll_once()
         snapshot = rounds.snapshot()
 
-        self.assertEqual(snapshot.results[0].status, "NOTEST")
+        self.assertEqual(snapshot.results[0].status, "FAIL")
         event = next(item.event for item in snapshot.events if item.event.kind == "result")
         self.assertEqual(event.detail["source_id"], "2026-08-21/FAILED/" + result.name)
         self.assertEqual(event.detail["source_time"], "2026-08-21 15:19:40")
         self.assertEqual(event.detail["batch_id"], "20260821151940")
         self.assertEqual(event.detail["batch_evidence"], "thread=0;config=cfg")
+
+    def test_empty_sn_passed_testdata_result_fails_product(self):
+        testdata = self.temp / "TestData"
+        result = testdata / "2026-08-21" / "PASSED" / "[Thread0][cfg][][PASSED][20260821151940].csv"
+        testdata.mkdir()
+        clock = [0.0]
+        rounds = self.start_round(testdata, monotonic=lambda: clock[0])
+        result.parent.mkdir(parents=True)
+        result.write_text(
+            "SerialNumber,Unit Number,Test Pass/Fail Status,StartTime,EndTime\n"
+            ",0,PASSED,start,end\n",
+            encoding="utf-8",
+        )
+
+        rounds.poll_once()
+        clock[0] = 5.1
+        snapshot = rounds.poll_once()
+
+        self.assertEqual(snapshot.results[0].status, "FAIL")
+        self.assertEqual(snapshot.results[0].sn, "")
 
     def test_testdata_threads_keep_their_established_round_positions(self):
         testdata = self.temp / "TestData"
@@ -126,7 +146,7 @@ class B482SourceAdapterRoundTests(unittest.TestCase):
         self.assertEqual([(item.slot, item.sn, item.status) for item in results], [
             (1, "SAMPLE00000001", "PASS"),
             (2, "SAMPLE00000002", "FAIL"),
-            (3, "", "NOTEST"),
+            (3, "", "FAIL"),
             (4, "SAMPLE00000004", "PASS"),
         ])
 

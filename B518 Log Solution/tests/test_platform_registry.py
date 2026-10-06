@@ -185,7 +185,7 @@ class PlatformRegistryTests(unittest.TestCase):
             self.assertEqual([(slot, value["status"]) for slot, value in sorted(rebuilt["results"].items())],
                              [(1, "PASS"), (2, "PASS")])
 
-    def test_final_only_sample_reaches_shared_round_without_invented_activity(self):
+    def test_final_only_sample_without_round_or_time_evidence_fails_slot(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "source"
@@ -215,19 +215,19 @@ class PlatformRegistryTests(unittest.TestCase):
 
             snapshot = rounds.snapshot()
             self.assertEqual([(item.slot, item.sn, item.status) for item in snapshot.results],
-                             [(1, "SAMPLE000001", "PASS")])
+                             [(1, "", "FAIL")])
             self.assertTrue(snapshot.result_available)
             self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
-            final_event = next(event.event for event in snapshot.events
-                               if event.event.status == "PASS")
-            self.assertEqual(final_event.detail["source_time"], "unknown")
-            self.assertNotIn("round_evidence_id", final_event.detail)
+            rejected = next(event.event for event in snapshot.events
+                            if event.event.kind == "unknown_round_candidate_rejected")
+            self.assertEqual(rejected.detail["candidate_sn"], "SAMPLE000001")
+            self.assertEqual(rejected.detail["source_time"], "unknown")
             self.assertTrue(rounds.flush_audit())
 
             from audit_records import read_round_audit
             rebuilt = read_round_audit(rounds.session_path / "audit.jsonl")
             self.assertTrue(rebuilt["result_available"])
-            self.assertEqual(rebuilt["results"][1]["status"], "PASS")
+            self.assertEqual(rebuilt["results"][1]["status"], "FAIL")
 
     def test_activity_observed_after_final_cannot_downgrade_terminal_result(self):
         with TemporaryDirectory() as temporary:
@@ -252,7 +252,8 @@ class PlatformRegistryTests(unittest.TestCase):
                          audit_context={"project": "SAMPLE", "machine": "FCT",
                                         "platform": "sample-json", "profile_version": 1})
             evidence_file.write_text(
-                '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"PASS"}\n'
+                '{"kind":"final","position":1,"sn":"SAMPLE000001","status":"PASS",'
+                '"source_time":"2026-10-05T09:00:00","batch_id":"fixture-run-7"}\n'
                 '{"kind":"activity","position":1,"sn":"SAMPLE000001",'
                 '"source_time":"2026-10-05T09:00:10"}\n',
                 encoding="utf-8",
