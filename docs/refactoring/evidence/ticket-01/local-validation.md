@@ -29,7 +29,9 @@ repository 沒有 mypy、pyright 或其他型別檢查器／型別檢查命令�
 
 - `6008c12 fix: retire idle audit workers safely`
 - `f1cd840 test: cover audit idle races and shared locks`
-- 固定基準 Standards／Spec 雙軸審查均無未解發現。審查涵蓋 `git diff a6bd86ed6097e7fb1f0c7a53b3b7c8b05d9dfa06...HEAD`。
-- 兩個程式提交均已推送至 Gitea `origin` 與 GitHub `github`。最終分支 refs 會在整合紀錄中再次查核。
+- 合併 commit：`1453da1ae93733a89756278acad490b4b77a9261`。合併後完整測試 198 tests 通過，並推送至兩個目的地。
+- 固定基準 Standards／Spec 雙軸審查均無未解發現。審查涵蓋 `git diff a6bd86ed6097e7fb1f0c7a53b3b7c8b05d9dfa06...7241c3491f2d65685dab3513c09ad2ebae223866`。
+- 兩批程式提交均已推送至 Gitea `origin` 與 GitHub `github`。
+- 合併 SHA 曾在 Gitea 與 GitHub 主線 refs 核對一致；本地及兩個遠端 `round/ticket-01` 分支均已安全刪除。最後工作分支為乾淨的 `B518-Log-Solution`。
 
 本機受控測試不代表現場設備或實際長時間部署測試。本票沒有實作保存失敗重試、完整保存後關閉、封存或到期清理。
