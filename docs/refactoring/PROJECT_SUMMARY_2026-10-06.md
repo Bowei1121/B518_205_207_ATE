@@ -29,4 +29,6 @@
 
 - 使用者決定未知同輪來源一律不得人工採用，規則同時適用第一筆 final 與替換既有結果。測試時間是最低來源證據；SN 非必要證據，但 SN 讀取失敗、證據不足、拒絕或未選擇時 Slot 判 FAIL。紀錄操作、候選及時間，不記理由。
 - 使用者選擇 B482 空 SN 且平台回報 FAILED 維持產品 FAIL，取代 Ticket 01／04 的歷史 NOTEST 映射。新增 [ADR 0006](../adr/0006-unknown-round-result-adoption.md) 並更新 REFACTOR_SPEC；Ticket 04 新驗收尚待實作與測試。
-- Ticket 18 由 `deferred-decision` 轉為 `in-progress`。下一步依 Ticket 01／02 已確認的公開輪次接口採 TDD；AC 3 未完成，分支不得合併。
+- 依 Ticket 01／02 已確認的公開輪次接口先寫失敗測試，再實作共用輪次未知來源拒絕與 FAIL、操作 audit，以及 B482 空 SN 產品 FAIL。104 項核心／Adapter／audit 相關測試通過；真實 Tk `test_log_solution_ui` 37 項通過，新增未知 Atlas 身份變更呈現 FAIL 並驗證 audit。
+- 同步更新 Ticket 04／18、REFACTOR_SPEC、案例證據、測試資料指南及操作 README。完整 `python3 scripts/run_tests.py` 在 Python 3.8.10、Tk 8.6、macOS 15.7.9 通過 190 tests；`git diff --check` 通過。Repo 沒有 mypy／pyright 或其他型別檢查設定。
+- Ticket 18 AC 3 已由受控案例驗證；固定基準雙軸審查仍待完成。未知同輪現場原始資料與實機驗收仍缺，不以 Tk 合成回放冒充。Ticket 18 維持 `in-progress`，不得合併直到審查與必要驗收完成。

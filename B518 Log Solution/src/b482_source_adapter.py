@@ -95,8 +95,8 @@ def parse_bt_csv(path: Path) -> Optional[Dict[str, str]]:
     if file_sn and csv_sn and file_sn != csv_sn:
         return None
     sn = file_sn or csv_sn
-    if not sn and name["status"].upper() == "FAILED":
-        state = "NOTEST"
+    if not sn:
+        state = "FAIL"
     elif sn:
         state = "PASS" if name["status"].upper() == "PASSED" else "FAIL"
     else:

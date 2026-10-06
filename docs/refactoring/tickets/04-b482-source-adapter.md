@@ -15,7 +15,7 @@
 - [x] 歷史來源不混入本輪，位置、可信 SN 與進度符合保護基準。（RoundCoordinator 案例覆蓋啟動前 TestData 排除、Thread 至位置映射、可信 SN 與 CaseInfo 活動進度；四位置 App 回放完成。）
 - [x] CaseInfo 第二個 SNRead 動作欄位解析正確。（RoundCoordinator 快照確認讀取 `...,--,SNRead,<barcode>`，忽略後續 CBRead 欄位。）
 - [x] 半筆記錄不提前產生結果，補齊後可正常處理。（RoundCoordinator 案例確認未完成行維持 WAITING，補完整行後成為 TESTING 並鎖定可信 SN。）
-- [ ] SN 讀取失敗且平台回報 FAILED 時為產品 FAIL。（2026-10-06 使用者依 Ticket 18 決定取代舊 NOTEST 映射；新回歸案例待實作及驗證。）
+- [x] SN 讀取失敗時為產品 FAIL，不論 TestData 終態為 PASSED 或 FAILED。（Ticket 18 依使用者決策更新 B482 判定；`test_empty_sn_failed_testdata_result_remains_fail_and_keeps_batch_evidence` 與 `test_empty_sn_passed_testdata_result_fails_product` 經共同輪次驗證。）
 - [x] 來源識別、來源時間與批次證據可交付輪次，未知欄位不捏造；App 可完成一輪。（RoundEvent detail 提供檔案相對識別、來源時間及現有日期／Thread／Config 證據；不確定的 CaseInfo 批次 ID 保持未知。本機 Tk App 完成四通道。）
 
 ## 驗證方式
@@ -44,7 +44,7 @@
 - 依本票保護既有 B482 Thread 0–3 對應顯示位置 1–4；新增 RoundCoordinator 案例以四個不同 SN／結果直接驗證位置。配置驅動的位置映射屬 AC-05／Ticket 08，不由本票提前實作。
 - Adapter 在輪次建立時記錄已存在 CaseInfo 檔案的大小，只讀取後續新增內容；回歸案例確認時間仍在 30 秒寬限內的歷史行也不會混入本輪。檔案截短時跳過當下已存在的內容，從新檔尾繼續讀取。
 - 每筆 B482 RoundEvent 的結果 detail 帶有來源識別與來源時間；TestData 另提供檔名批次戳記及已知 Thread／Config，CaseInfo 提供檔名日期與 Thread 作為來源證據，不宣稱其為已確認批次。缺少的批次欄位保持未知。
-- 新增 `tests/test_b482_source_adapter.py`，經 RoundCoordinator 公開快照／事件驗證歷史 TestData 與 CaseInfo 隔離、第二個 SNRead 欄位、半筆 CaseInfo 補齊、空 SN FAILED → NOTEST（歷史行為，已由 ADR 0006／Ticket 18 決定 supersede；新行為尚待驗證），以及來源識別／時間／批次證據。
+- 新增 `tests/test_b482_source_adapter.py`，經 RoundCoordinator 公開快照／事件驗證歷史 TestData 與 CaseInfo 隔離、第二個 SNRead 欄位、半筆 CaseInfo 補齊、空 SN 的 PASSED／FAILED 終態皆判產品 FAIL，以及來源識別／時間／批次證據。此項新判定由 ADR 0006／Ticket 18 依使用者政策決定。
 - 新增 `tools/smoke_b482_app.py`，以隔離偏好目錄與匿名化四通道樣本，透過 Tk App 開始並完成一輪；四通道平台 NOTEST 均可取用。這是本機受控回放，不代表目標產線或目標機驗收。
 - Ticket 18 的未知同輪來源人工採用政策保留未決；本次沒有替 CaseInfo 日期或檔名戳記推斷未知批次，也未改動允許／禁止採用政策。
 

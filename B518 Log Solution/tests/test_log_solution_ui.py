@@ -291,6 +291,75 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_unknown_atlas_identity_change_is_visible_as_fail_and_audited_without_reason(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
+
+            def wait_ui(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.02)
+                self.fail("Timed out waiting for the unknown-source FAIL flow")
+
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("1")
+                app.profile_editor_mapping.set("1:1")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_monitor()
+                wait_ui(lambda: app.rounds.session_path is not None)
+
+                record = active / "group0-slot1" / "system" / "records.csv"
+                record.parent.mkdir(parents=True)
+                record.write_text("MLB_SN,status\nSERIAL00000001,Pass\n", encoding="utf-8")
+                wait_ui(lambda: len(app.rounds.snapshot().results) == 1 and
+                        app.rounds.snapshot().results[0].status == "TESTING")
+                record.write_text("MLB_SN,status\nSERIAL00000002,Pass\n", encoding="utf-8")
+                wait_ui(lambda: app.rounds.snapshot().results[0].status == "FAIL")
+                wait_ui(lambda: app.status_rows[1]["status"].cget("text") == "FAIL")
+
+                snapshot = app.rounds.snapshot()
+                self.assertTrue(snapshot.result_available)
+                self.assertEqual(snapshot.results[0].sn, "SERIAL00000001")
+                rejected = next(item.event for item in snapshot.events
+                                if item.event.kind == "unknown_round_candidate_rejected")
+                self.assertEqual(rejected.detail["operation"], "fail_unconfirmed_candidate")
+                self.assertNotIn("reason", rejected.detail)
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                from audit_records import read_round_audit
+                stored = read_round_audit(app.rounds.session_path / "audit.jsonl")
+                audit_event = next(item for item in stored["events"]
+                                   if item["kind"] == "unknown_round_candidate_rejected")
+                self.assertEqual(audit_event["status"], "TESTING")
+                self.assertTrue(audit_event["operation_at"])
+                self.assertEqual(audit_event["detail"]["candidate_sn"], "SERIAL00000002")
+                self.assertNotIn("reason", audit_event["detail"])
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
