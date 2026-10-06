@@ -102,7 +102,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(self.coordinator.flush_audit())
         return read_round_audit(self.audit_path(round_id))
 
-    def wait_for_threads_to_return_to(self, baseline, timeout=1.0):
+    def wait_for_threads_to_return_to(self, baseline, timeout=0.75):
         deadline = time.monotonic() + timeout
         while threading.active_count() > baseline and time.monotonic() < deadline:
             time.sleep(0.01)
