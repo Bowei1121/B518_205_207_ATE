@@ -6,6 +6,8 @@
 
 使用者其後要求依 ADR 0007／0008 使用 to-spec 撰寫並發布規格，已確認主要測試入口為 RoundCoordinator 公開接口、注入時鐘、真實暫存檔與磁碟重建，另保留真正 Tk 行為測試。[本機規格](ROUND_RECORD_LIFECYCLE_SPEC_2026-10-06.md) 已發布至 [GitHub Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)，標記 ready-for-agent；包含 38 項使用者故事及 16 組驗收案例，產品程式未修改。其他 P2 解析與架構重構列為另案；規格文件結構及 diff 檢查通過，未執行產品測試，也未宣告實作完成。
 
+使用者再要求以 to-tickets 拆票；已形成 [7 張拆票草案與驗收覆蓋表](round-record-lifecycle-tickets/README.md)，待確認粒度與直接阻擋關係後發布。T1／T6 無阻擋，T2→T3 後分支至 T4／T5，T7 由 T4／T5／T6 阻擋；代號尚非 GitHub 票號。原規格 Issue #1 未修改或關閉，沒有發布子票或執行產品修改。
+
 ## 前次討論決策與 Ticket 16 結果
 
 - 使用者確認上位機執行 `B518_JetKVM_Log`，由使用者維護並提供更新，當地 TE 工程師協助人工部署。ATE 僅連 SFC 網路；上位機能否連工廠內網仍未知，自動更新僅為未來可能，沒有實作或部署。
