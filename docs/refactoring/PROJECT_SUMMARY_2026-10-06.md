@@ -31,4 +31,4 @@
 - 使用者選擇 B482 空 SN 且平台回報 FAILED 維持產品 FAIL，取代 Ticket 01／04 的歷史 NOTEST 映射。新增 [ADR 0006](../adr/0006-unknown-round-result-adoption.md) 並更新 REFACTOR_SPEC；Ticket 04 新驗收尚待實作與測試。
 - 依 Ticket 01／02 已確認的公開輪次接口先寫失敗測試，再實作共用輪次未知來源拒絕與 FAIL、操作 audit，以及 B482 空 SN 產品 FAIL。104 項核心／Adapter／audit 相關測試通過；真實 Tk `test_log_solution_ui` 37 項通過，新增未知 Atlas 身份變更呈現 FAIL 並驗證 audit。
 - 同步更新 Ticket 04／18、REFACTOR_SPEC、案例證據、測試資料指南及操作 README。完整 `python3 scripts/run_tests.py` 在 Python 3.8.10、Tk 8.6、macOS 15.7.9 通過 190 tests；`git diff --check` 通過。Repo 沒有 mypy／pyright 或其他型別檢查設定。
-- Ticket 18 的候選拒絕、FAIL、UI、audit 欄位受控案例已驗證；Spec 審查指出 FAIL 是否仍按一般規則完成輪次並供上位機取用尚未由使用者決定。該政策問題已提出，回答前 AC 3 不勾選且不得合併。未知同輪現場原始資料與實機驗收仍缺，不以 Tk 合成回放冒充。
+- Ticket 18 的候選拒絕、FAIL、UI、audit 欄位受控案例已驗證。使用者確認未知來源判 FAIL 後按一般 FAIL 終態處理，其他必要條件完成後可結束輪次並供上位機讀取 FAIL；此項已補 ADR／README。未知同輪現場原始資料與實機驗收仍缺，不以 Tk 合成回放冒充。固定基準完整雙軸複審完成前不得合併。
