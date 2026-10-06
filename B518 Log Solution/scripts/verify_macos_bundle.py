@@ -45,7 +45,7 @@ def load_commands(text):
     return versions, rpaths, dependencies
 
 
-def inspect_bundle(app, target="15.0", run=subprocess.run):
+def inspect_bundle(app, target="15.0", architecture="arm64", run=subprocess.run):
     target_version = version_tuple(target)
     app = Path(app).resolve()
     errors, binaries = [], {}
@@ -77,11 +77,11 @@ def inspect_bundle(app, target="15.0", run=subprocess.run):
         try:
             if "Mach-O" not in command("file", "-b", str(path)):
                 continue
-            if "arm64" not in command("lipo", "-archs", str(path)).split():
-                errors.append("{}: arm64 architecture missing".format(display))
+            if architecture not in command("lipo", "-archs", str(path)).split():
+                errors.append("{}: {} architecture missing".format(display, architecture))
                 continue
             versions, rpaths, dependencies = load_commands(
-                command("otool", "-arch", "arm64", "-l", str(path)))
+                command("otool", "-arch", architecture, "-l", str(path)))
             if not versions:
                 errors.append("{}: minimum macOS version unavailable".format(display))
             elif max(map(version_tuple, versions)) > target_version:
@@ -91,9 +91,9 @@ def inspect_bundle(app, target="15.0", run=subprocess.run):
         except (OSError, subprocess.CalledProcessError, ValueError) as exc:
             errors.append("{}: inspection failed: {}".format(display, exc))
     if not binaries:
-        errors.append("No inspectable arm64 Mach-O binaries found in {}".format(app))
+        errors.append("No inspectable {} Mach-O binaries found in {}".format(architecture, app))
     if executable.resolve() not in binaries:
-        errors.append("Main executable is not an inspectable arm64 Mach-O binary")
+        errors.append("Main executable is not an inspectable {} Mach-O binary".format(architecture))
 
     def expand(value, loader):
         for prefix, base in (("@loader_path", loader.parent),
@@ -149,8 +149,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("app", type=Path)
     parser.add_argument("--target", default="15.0")
+    parser.add_argument("--architecture", choices=("arm64", "x86_64"), default="arm64")
     args = parser.parse_args()
-    problems = inspect_bundle(args.app, args.target)
+    problems = inspect_bundle(args.app, args.target, args.architecture)
     if problems:
         parser.exit(1, "Bundle compatibility check failed:\n" + "\n".join(problems) + "\n")
-    print("Bundle compatibility check passed for macOS {} arm64".format(args.target))
+    print("Bundle compatibility check passed for macOS {} {}".format(
+        args.target, args.architecture))

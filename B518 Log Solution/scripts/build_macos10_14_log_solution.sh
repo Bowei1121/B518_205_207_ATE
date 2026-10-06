@@ -6,11 +6,13 @@ cd "$ROOT"
 [[ "$(sw_vers -productVersion)" == 10.15.* ]] || { print -u2 'Requires macOS 10.15.x Catalina VM.'; exit 1; }
 PYTHON_BIN="${PYTHON_BIN:-/usr/local/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN"; exit 1; }
+"$PYTHON_BIN" scripts/check_macos_build_python.py --architecture x86_64
 export MACOSX_DEPLOYMENT_TARGET=10.14 CMAKE_OSX_DEPLOYMENT_TARGET=10.14 CMAKE_OSX_ARCHITECTURES=x86_64
 VENV=.venv-macos10.14-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements/requirements-macos10.14-common.txt
+"$VENV/bin/python" scripts/check_macos_build_python.py --architecture x86_64
 "$VENV/bin/python" scripts/run_tests.py
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
@@ -29,10 +31,7 @@ for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LS
   key=${pair%% *}; value=${pair#* }
   /usr/libexec/PlistBuddy -c "Set :$key $value" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$key string $value" "$PLIST"
 done
-while IFS= read -r -d '' binary; do
-  file "$binary" | grep -q 'Mach-O' || continue
-  lipo -archs "$binary" | grep -qw x86_64 || { print -u2 "Not x86_64: $binary"; exit 1; }
-done < <(find "$APP" -type f -print0)
+"$VENV/bin/python" scripts/verify_macos_bundle.py "$APP" --target 10.14 --architecture x86_64
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 ZIP="$DIST/B518-Log-Solution-V${VERSION}-macOS10.14-x86_64.zip"

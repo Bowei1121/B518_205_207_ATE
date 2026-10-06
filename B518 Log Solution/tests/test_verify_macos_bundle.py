@@ -44,7 +44,9 @@ class BundleCheckTests(unittest.TestCase):
         elif args[0] == "lipo":
             value = self.outputs[path][0]
         else:
-            self.assertEqual(args[:4], ["otool", "-arch", "arm64", "-l"])
+            self.assertEqual(args[:2], ["otool", "-arch"])
+            self.assertIn(args[2], ("arm64", "x86_64"))
+            self.assertEqual(args[3], "-l")
             value = self.outputs[path][1]
         return SimpleNamespace(stdout=value)
 
@@ -60,6 +62,19 @@ class BundleCheckTests(unittest.TestCase):
     def test_valid_bundle_and_system_dependency(self):
         self.add_binary("Contents/MacOS/example", commands(dependencies=["/usr/lib/libSystem.B.dylib"]))
         self.assertEqual(self.inspect(), [])
+
+    def test_valid_x86_64_bundle_for_older_intel_target(self):
+        self.info["LSMinimumSystemVersion"] = "10.14"
+        self.write_info()
+        self.add_binary("Contents/MacOS/example", text=commands("10.14"), arch="x86_64")
+        self.assertEqual(inspect_bundle(self.app, target="10.14", architecture="x86_64",
+                                        run=self.run_tool), [])
+
+    def test_rejects_bundle_without_requested_architecture(self):
+        self.add_binary("Contents/MacOS/example", arch="arm64")
+        errors = inspect_bundle(self.app, target="10.14", architecture="x86_64",
+                                run=self.run_tool)
+        self.assertTrue(any("x86_64 architecture missing" in error for error in errors))
 
     def test_universal_library_uses_only_arm64_load_commands(self):
         self.add_binary("Contents/Frameworks/universal.dylib", arch="x86_64 arm64")
@@ -139,6 +154,10 @@ class BundleCheckTests(unittest.TestCase):
 class PythonPreflightTests(unittest.TestCase):
     def test_valid_interpreter(self):
         self.assertEqual(check_python((3, 12, 10), "arm64", lambda name: None), [])
+
+    def test_valid_intel_interpreter(self):
+        self.assertEqual(check_python((3, 12, 10), "x86_64", lambda name: None,
+                                      required_architecture="x86_64"), [])
 
     def test_wrong_version_and_architecture(self):
         errors = check_python((3, 11, 9), "x86_64", lambda name: None)

@@ -11,6 +11,8 @@ python3 src/b518_log_solution.py
 
 ## 建置安裝包
 
+每次 macOS 候選發行的目標矩陣、離線部署步驟、現場一輪驗收表、ad-hoc 簽章／SHA-256 說明及未驗收範圍，見 [macOS 發布與現場驗收指南](docs/TICKET17_MACOS_RELEASE_AND_FIELD_ACCEPTANCE.md)。
+
 舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./scripts/build_macos10_14_log_solution.sh`。
 
 M4／macOS 26.5.2 建置給美國 M4／macOS 15.4.1 使用時（最低目標為 15.0，涵蓋 15.x），先在建置機安裝 [Python.org 3.12.10 universal2](https://www.python.org/downloads/release/python-31210/)，再執行 `./scripts/build_macos15_arm64_log_solution.sh`。預設 Python 路徑為 `/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12`；必要時可用 `PYTHON_BIN=/完整路徑/python3.12` 指定。產物為 `dist-macos15_0-arm64/B518-Log-Solution-V版本號-macOS15.0-arm64.zip`。腳本會檢查內含執行檔的 arm64 架構、最低 macOS 版本及外部函式庫依賴；檢查失敗時不會產生 ZIP。產物仍需在目標 M4／15.4.1 實機驗證，並在支援 15.0 的硬體驗證最低版本，目標機不需另外安裝 Python。
@@ -29,7 +31,7 @@ open "dist-macos15_0-arm64/B518 Log Solution.app"
 
 建置須在登入桌面的 M4 上執行，完整核心、UI 與建置檢查測試任一失敗都會中止。建置後先在 26.5.2 確認 App 視窗正常開啟，再將 ZIP 與 SHA-256 檔交給目標機測試人員。
 
-`scripts/verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、每個 Mach-O 的 arm64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
+`scripts/verify_macos_bundle.py` 只讀取二進位資訊，不修改版本標記；檢查 `Info.plist`、指定的 arm64／x86_64 slice 及 macOS 載入指令，依 `@loader_path`、`@executable_path`、`LC_RPATH` 核對依賴的實際路徑。外部／損壞連結、找不到的依賴及無法判讀的版本都會阻止 ZIP 輸出。保守靜態檢查不保證所有執行階段動態載入與系統 API 都相容；deployment target 不會降低預編譯函式庫的需求，參見 [PyInstaller macOS 說明](https://www.pyinstaller.org/en/stable/usage.html#making-macos-apps-forward-compatible)。
 
 目標 M4／macOS 15.4.1 不另外安裝 Python 或 Homebrew，解壓縮後逐項驗收並記錄版本號與結果：
 
@@ -39,7 +41,7 @@ open "dist-macos15_0-arm64/B518 Log Solution.app"
 - 最終結果解析後視窗回到前景，PASS／FAIL／NOTEST 正確。
 - 各 Slot 的測試逾時與等待開始逾時顯示正確。
 
-2026-09-29 開發端驗證使用 Intel／macOS 15.7.9，尚未在 M4／26.5.2 打包或 M4／15.4.1 與最低系統版本的實機驗收；上述兩階段仍須在對應電腦完成。
+Ticket 17 的驗收紀錄依建置主機、bundle、目標 macOS 與現場一輪分開維護；在各目標完成實際建置與實機驗收前，不宣稱其相容性已通過。當日實際結果及待驗設備列於上述發布與現場驗收指南。
 
 每輪必須由人員按下「開始監控」建立系統時間基準與啟動前快照。
 

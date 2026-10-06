@@ -9,11 +9,13 @@ cd "$ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-/opt/homebrew/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN"; exit 1; }
+"$PYTHON_BIN" scripts/check_macos_build_python.py --architecture arm64
 
 export MACOSX_DEPLOYMENT_TARGET=26.0 CMAKE_OSX_DEPLOYMENT_TARGET=26.0 CMAKE_OSX_ARCHITECTURES=arm64
 
 VENV=.venv-macos26-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
+"$VENV/bin/python" scripts/check_macos_build_python.py --architecture arm64
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
 "$VENV/bin/python" scripts/run_tests.py
@@ -44,10 +46,7 @@ for pair in "CFBundleShortVersionString $VERSION" "CFBundleVersion $VERSION" "LS
     /usr/libexec/PlistBuddy -c "Add :$key string $value" "$PLIST"
 done
 
-while IFS= read -r -d '' binary; do
-  file "$binary" | grep -q 'Mach-O' || continue
-  lipo -archs "$binary" | grep -qw arm64 || { print -u2 "Not arm64: $binary"; exit 1; }
-done < <(find "$APP" -type f -print0)
+"$VENV/bin/python" scripts/verify_macos_bundle.py "$APP" --target 26.0 --architecture arm64
 
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
