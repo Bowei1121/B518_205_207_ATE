@@ -97,10 +97,8 @@ def parse_bt_csv(path: Path) -> Optional[Dict[str, str]]:
     sn = file_sn or csv_sn
     if not sn:
         state = "FAIL"
-    elif sn:
-        state = "PASS" if name["status"].upper() == "PASSED" else "FAIL"
     else:
-        return None
+        state = "PASS" if name["status"].upper() == "PASSED" else "FAIL"
     # B482 TestData labels its four logical positions as Thread0..Thread3.
     # Normalize those identifiers to source positions 1..4; ConfiguredMonitor
     # still applies the engineer's independent source-to-display mapping.

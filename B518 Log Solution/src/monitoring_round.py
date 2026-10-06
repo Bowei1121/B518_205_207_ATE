@@ -47,6 +47,20 @@ class RoundState(str, Enum):
     STOPPED = "STOPPED"
 
 
+def _has_source_test_time(value: object) -> bool:
+    """Accept only parseable platform test timestamps, never observation/file times."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    normalized = value.strip()
+    if normalized.lower() in {"unknown", "none", "null"}:
+        return False
+    try:
+        datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class RoundResult:
     slot: int
@@ -789,8 +803,7 @@ class MonitoringRound:
                     )
             elif current is None or current.status == "WAITING":
                 if event.status in TERMINAL:
-                    source_time = candidate_detail.get("source_time", "").strip().lower()
-                    if not evidence_id or source_time in {"", "unknown", "none", "null"}:
+                    if not evidence_id or not _has_source_test_time(candidate_detail.get("source_time")):
                         self._fail_unconfirmed_candidate(event, current=current)
                         return "ignore"
                 return "accept"
@@ -800,8 +813,7 @@ class MonitoringRound:
                 evidence_conflict = terminal_conflict or identity_conflict
                 if not evidence_conflict:
                     return "accept"
-                source_time = candidate_detail.get("source_time", "").strip().lower()
-                if not same_round or source_time in {"", "unknown", "none", "null"}:
+                if not same_round or not _has_source_test_time(candidate_detail.get("source_time")):
                     self._fail_unconfirmed_candidate(event, current=current)
                     return "ignore"
                 else:
