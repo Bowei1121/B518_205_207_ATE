@@ -8,13 +8,15 @@ import os
 import tempfile
 import threading
 import queue
+import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
 
 AUDIT_SCHEMA_VERSION = 1
-_LOCKS = {}  # type: Dict[str, threading.RLock]
+_IDLE_WORKER_TIMEOUT_SECONDS = 0.2
+_LOCKS = weakref.WeakValueDictionary()  # type: Dict[str, threading.RLock]
 _LOCKS_GUARD = threading.Lock()
 
 
@@ -116,9 +118,9 @@ class RoundAuditStore:
             else:
                 self._pending += 1
                 self._queue.put(self._header)
-        self._writer = threading.Thread(target=self._write_worker,
-                                        name="round-audit-{}".format(round_id), daemon=True)
-        self._writer.start()
+        self._writer = None
+        with self._condition:
+            self._ensure_worker_locked()
 
     @property
     def audit_path(self) -> Path:
@@ -128,24 +130,29 @@ class RoundAuditStore:
         """Move early preparation records into the conventional Session folder."""
         self.flush()
         destination = Path(session_path)
-        with self._lock:
-            current = self.audit_path
-            if current.parent.resolve() == destination.resolve():
-                return
-            destination.mkdir(parents=True, exist_ok=True)
-            payload = read_round_audit(current)
-            header = dict(payload["round"])
-            header["legacy_session_path"] = str(destination)
-            events = payload["events"]
-            _replace_file(destination / "audit.jsonl",
-                          b"".join(_json_bytes(item) for item in [header] + events))
-            try:
-                current.unlink()
-                self.path.rmdir()
-            except OSError:
-                pass
-            self.path = destination
-            self._header = header
+        destination_lock = _lock_for(destination / "audit.jsonl")
+        source_lock = self._lock
+        first_lock, second_lock = sorted((source_lock, destination_lock), key=id)
+        with first_lock:
+            with second_lock:
+                current = self.audit_path
+                if current.parent.resolve() == destination.resolve():
+                    return
+                destination.mkdir(parents=True, exist_ok=True)
+                payload = read_round_audit(current)
+                header = dict(payload["round"])
+                header["legacy_session_path"] = str(destination)
+                events = payload["events"]
+                _replace_file(destination / "audit.jsonl",
+                              b"".join(_json_bytes(item) for item in [header] + events))
+                try:
+                    current.unlink()
+                    self.path.rmdir()
+                except OSError:
+                    pass
+                self.path = destination
+                self._header = header
+                self._lock = destination_lock
 
     def append_event(self, event: AuditEvent, observed_at: str,
                      elapsed_seconds: float) -> None:
@@ -179,6 +186,7 @@ class RoundAuditStore:
             self._last_enqueued_sequence = event.sequence
             self._pending += 1
             self._queue.put(record)
+            self._ensure_worker_locked()
 
     @property
     def pending(self) -> bool:
@@ -204,7 +212,14 @@ class RoundAuditStore:
 
     def _write_worker(self) -> None:
         while True:
-            record = self._queue.get()
+            try:
+                record = self._queue.get(timeout=_IDLE_WORKER_TIMEOUT_SECONDS)
+            except queue.Empty:
+                with self._condition:
+                    if self._pending == 0:
+                        self._writer = None
+                        return
+                continue
             try:
                 if record.get("record_type") == "round":
                     self.path.mkdir(parents=True, exist_ok=True)
@@ -224,6 +239,15 @@ class RoundAuditStore:
                     self._pending -= 1
                     self._condition.notify_all()
                 self._queue.task_done()
+
+    def _ensure_worker_locked(self) -> None:
+        """Start a writer while holding the condition that protects pending work."""
+        if self._writer is not None and self._writer.is_alive():
+            return
+        worker = threading.Thread(target=self._write_worker,
+                                  name="round-audit-{}".format(self.round_id), daemon=True)
+        self._writer = worker
+        worker.start()
 
     def _append_complete_line(self, record: dict) -> None:
         content = _json_bytes(record)

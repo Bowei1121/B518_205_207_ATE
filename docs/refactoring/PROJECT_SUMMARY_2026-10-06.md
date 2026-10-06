@@ -70,3 +70,12 @@
 - Ticket 17 工作分支先合併最新主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3`，保留雙方 Ticket 17／18 摘要。Ticket 18 已定案政策取代 Ticket 17 原本的未決說明；Ticket 17 發行指南與限制同步更新。
 - 整合後完整 `python3 scripts/run_tests.py` 通過 193 tests；三個 build 腳本 `zsh -n` 與 `git diff --check` 通過。Standards／Spec 以主線整合點 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3` 為基準審至 Ticket 分支 `1b444ecb587a826f46b04fc686eb598fc9936058`，均無未解發現。
 - Ticket 17 合併 commit 為 `883d9f4448ab36b388f4fb01ece66ff406871f31`；合併後完整測試再通過 193 tests，合併 commit 已推送且 Gitea／GitHub refs 同步。工作樹乾淨並停在 `B518-Log-Solution`。因 AC 2、3、4 尚未驗收，`codex/ticket-17` 本地及兩個遠端分支保留在 `1b444ec` 供後續接續；合併不代表發行／目標環境驗收完成。
+
+## Ticket 01 執行紀錄｜2026-10-06
+
+- 以 `a6bd86ed6097e7fb1f0c7a53b3b7c8b05d9dfa06` 為固定 code-review 基準，從乾淨且位於 `B518-Log-Solution` 的工作目錄建立 `round/ticket-01`。本機及 Gitea／GitHub 起初均無同名票分支。Gitea 主線與本機相同；GitHub 主線是其祖先，落後 8 個已知文件提交，沒有 GitHub 獨有提交。票分支成功推送至兩個目的地。
+- audit writer 現在在佇列空閒約 0.2 秒後退出；enqueue、pending 更新及 worker 退場由同一條件鎖序列化，分別安全接續現有 worker 或建立新 worker。路徑鎖登記改為弱引用；鎖仍由活著的 store／操作持有。audit 搬入 Session 目錄時同時鎖住來源與目標路徑，依固定順序取得鎖並保留目標路徑原鎖。
+- 以 RoundCoordinator 公開入口、暫存磁碟及磁碟重建驗證六輪完成後 worker 回到基線、空閒退出後警報確認可重新保存、操作員停止讀檔後衝突處理可保存，以及同步競爭後所有事件仍完整有序。另以受控 fsync 暫停持有目標路徑鎖的 writer，確認 audit 搬移會等待並保留磁碟內容。
+- Ticket 01 五項驗收均有本機受控證據並已勾選；逐項命令、結果及環境記於 [Ticket 01 本機驗收紀錄](evidence/ticket-01/local-validation.md)。程式提交 `6008c12`；追加競爭／共享路徑鎖案例提交 `f1cd840`。兩批均推送到 Gitea `origin` 及 GitHub `github`。
+- 聚焦 `test_audit_records` 與 `test_monitoring_round` 共 55 tests 通過。完整 `python3 'B518 Log Solution/scripts/run_tests.py'` 在 Python 3.8.10、Tk 8.6、macOS 15.7.9 通過 198 tests；沙箱 UI 執行曾以 Tk 初始化 abort，桌面執行有一次暫存目錄清理錯誤，隔離重跑該 Tk 案例及最後完整套件均通過。`py_compile` 與 `git diff --check` 通過；repository 未配置 mypy、pyright 或其他型別檢查器，不宣稱型別檢查通過。
+- 固定基準 Standards／Spec 雙軸 code review 均無未解決發現；Spec 對退出競爭及路徑鎖證據複查後確認通過。此票沒有加入保存失敗重試、關閉流程、封存或到期清理功能。

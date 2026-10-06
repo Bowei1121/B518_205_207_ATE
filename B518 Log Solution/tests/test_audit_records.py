@@ -3,14 +3,16 @@ import threading
 import csv
 import io
 import json
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import audit_records
 from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent, SessionStore, SlotResult
 from monitoring_round import RoundCoordinator
-from audit_records import AuditRecordError, RoundAuditStore, read_round_audit
+from audit_records import AuditEvent, AuditRecordError, RoundAuditStore, read_round_audit
 from rswmt_monitoring import RsWmtLogMonitor
 from configured_monitor import ConfiguredMonitor
 
@@ -100,6 +102,13 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(self.coordinator.flush_audit())
         return read_round_audit(self.audit_path(round_id))
 
+    def wait_for_threads_to_return_to(self, baseline, timeout=0.75):
+        deadline = time.monotonic() + timeout
+        while threading.active_count() > baseline and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertLessEqual(threading.active_count(), baseline,
+                             "completed rounds retained audit writer threads")
+
     def test_normal_round_can_be_rebuilt_from_a_fresh_disk_reader(self):
         started = self.start_round()
         monitor = self.monitors[0]
@@ -121,6 +130,158 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(rebuilt["result_available"])
         self.assertEqual([event["sequence"] for event in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
+
+    def test_completed_round_audit_writers_exit_after_idle_period(self):
+        thread_baseline = threading.active_count()
+        for _ in range(6):
+            started = self.start_round()
+            monitor = self.monitors[-1]
+            monitor.pending.extend([
+                lambda monitor=monitor: monitor.apply_round_result(1, "PASS", "SN-A"),
+                lambda monitor=monitor: monitor.apply_round_result(2, "PASS", "SN-B"),
+            ])
+            completed = self.coordinator.poll_once()
+            self.assertTrue(completed.result_available)
+            self.assertTrue(self.coordinator.flush_audit())
+
+        self.wait_for_threads_to_return_to(thread_baseline)
+
+    def test_round_alarm_can_be_acknowledged_after_idle_writer_exits(self):
+        thread_baseline = threading.active_count()
+        started = self.start_round(round_timeout=3)
+        self.clock[0] = 3.0
+        waiting = self.coordinator.poll_once()
+        self.assertIsNotNone(waiting.round_alarm)
+        self.assertTrue(self.coordinator.flush_audit())
+
+        self.wait_for_threads_to_return_to(thread_baseline)
+
+        completed = self.coordinator.acknowledge_round_alarm(
+            started.round_id, waiting.round_alarm.alarm_id)
+        self.assertTrue(completed.result_available)
+        rebuilt = self.rebuild_current_round(started.round_id)
+        kinds = [event["kind"] for event in rebuilt["events"]]
+        self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
+        self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
+
+    def test_conflict_resolution_after_manual_stop_and_idle_exit_is_reconstructable(self):
+        thread_baseline = threading.active_count()
+        started = self.start_round()
+        monitor = self.monitors[0]
+        monitor.pending.append(lambda: monitor.apply_round_result(
+            1, "PASS", "SN-OLD", "/source/old",
+            {"source_position": 2, "source_id": "original", "source_time": "2026-10-05T11:00:00",
+             "round_evidence_id": "batch-1"},
+        ))
+        self.coordinator.poll_once()
+        monitor.callback(MonitorEvent(
+            "result_candidate", "candidate", slot=1, sn="SN-NEW", status="FAIL", source="/source/new",
+            detail={"source_position": 2, "source_id": "candidate", "source_time": "2026-10-05T11:01:00",
+                    "round_evidence_id": "batch-1"},
+        ))
+        waiting = self.coordinator.stop()
+        self.assertTrue(waiting.collection_stopped)
+        self.assertEqual(waiting.state.value, "STOPPED")
+        conflict_id = waiting.pending_conflicts[0].conflict_id
+        self.assertTrue(self.coordinator.flush_audit())
+
+        self.wait_for_threads_to_return_to(thread_baseline)
+
+        completed = self.coordinator.resolve_review(conflict_id, "accept_candidate")
+        self.assertEqual(completed.state.value, "STOPPED")
+        rebuilt = self.rebuild_current_round(started.round_id)
+        resolution = next(event for event in rebuilt["events"]
+                          if event["kind"] == "conflict_resolved")
+        self.assertEqual(resolution["detail"]["choice"], "accept_candidate")
+        self.assertEqual(rebuilt["results"][1]["sn"], "SN-NEW")
+
+    def test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order(self):
+        started = self.start_round()
+        self.assertTrue(self.coordinator.flush_audit())
+
+        for index in range(10):
+            self.assertTrue(self.coordinator.flush_audit())
+            if index % 2 == 0:
+                time.sleep(0.19)
+            barrier = threading.Barrier(3)
+
+            def acknowledge_stale_alarm():
+                barrier.wait()
+                self.coordinator.acknowledge_round_alarm("stale-round", "stale-alarm")
+
+            workers = [threading.Thread(target=acknowledge_stale_alarm) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            barrier.wait()
+            for worker in workers:
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+
+        self.assertTrue(self.coordinator.flush_audit())
+        rebuilt = self.rebuild_current_round(started.round_id)
+        events = rebuilt["events"]
+        self.assertEqual(len([event for event in events
+                              if event["kind"] == "round_alarm_acknowledgement_ignored"]), 20)
+        self.assertEqual([event["sequence"] for event in events],
+                         list(range(1, len(events) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
+
+    def test_session_attachment_waits_for_the_destination_path_lock(self):
+        source_root = Path(self.temp.name) / "audit"
+        destination_root = Path(self.temp.name) / "sessions"
+        round_id = "shared-round"
+        source = RoundAuditStore(source_root, round_id, "FCT", "2026-10-05T12:00:00", 0.0)
+        self.assertTrue(source.flush())
+        source.append_event(AuditEvent(1, "diagnostic", "source event", None),
+                            "2026-10-05T12:00:01", 1.0)
+        self.assertTrue(source.flush())
+
+        writer_holds_destination = threading.Event()
+        release_destination_writer = threading.Event()
+        attach_started = threading.Event()
+        attach_finished = threading.Event()
+        attach_errors = []
+        original_fsync = audit_records.os.fsync
+        first_fsync = [True]
+        first_fsync_lock = threading.Lock()
+
+        def controlled_fsync(descriptor):
+            with first_fsync_lock:
+                should_pause = first_fsync[0]
+                first_fsync[0] = False
+            if should_pause:
+                writer_holds_destination.set()
+                release_destination_writer.wait(2)
+            return original_fsync(descriptor)
+
+        def attach_source():
+            attach_started.set()
+            try:
+                source.attach_session(destination_root / round_id)
+            except Exception as error:
+                attach_errors.append(error)
+            finally:
+                attach_finished.set()
+
+        with patch.object(audit_records.os, "fsync", side_effect=controlled_fsync):
+            destination_store = RoundAuditStore(
+                destination_root, round_id, "FCT", "2026-10-05T12:00:00", 0.0)
+            self.assertTrue(writer_holds_destination.wait(1))
+            attacher = threading.Thread(target=attach_source)
+            attacher.start()
+            self.assertTrue(attach_started.wait(1))
+            self.assertFalse(attach_finished.wait(0.05),
+                             "session attachment bypassed the active destination lock")
+            release_destination_writer.set()
+            attacher.join(2)
+            self.assertFalse(attacher.is_alive())
+            self.assertTrue(destination_store.flush())
+
+        self.assertEqual(attach_errors, [])
+        self.assertTrue(source.flush())
+        rebuilt = read_round_audit(destination_root / round_id / "audit.jsonl")
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]], [1])
+        self.assertEqual(rebuilt["events"][0]["message"], "source event")
 
     def test_conflict_candidate_choice_and_release_are_reconstructable(self):
         started = self.start_round()
