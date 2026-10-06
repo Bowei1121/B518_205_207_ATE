@@ -15,7 +15,7 @@
 - [x] 歷史來源不混入本輪，位置、可信 SN 與進度符合保護基準。（RoundCoordinator 案例覆蓋啟動前 TestData 排除、Thread 至位置映射、可信 SN 與 CaseInfo 活動進度；四位置 App 回放完成。）
 - [x] CaseInfo 第二個 SNRead 動作欄位解析正確。（RoundCoordinator 快照確認讀取 `...,--,SNRead,<barcode>`，忽略後續 CBRead 欄位。）
 - [x] 半筆記錄不提前產生結果，補齊後可正常處理。（RoundCoordinator 案例確認未完成行維持 WAITING，補完整行後成為 TESTING 並鎖定可信 SN。）
-- [x] 空 SN FAILED 保留為平台 NOTEST，而非套用其他平台規則。（RoundCoordinator 測試與四位置 App 回放均確認。）
+- [ ] SN 讀取失敗且平台回報 FAILED 時為產品 FAIL。（2026-10-06 使用者依 Ticket 18 決定取代舊 NOTEST 映射；新回歸案例待實作及驗證。）
 - [x] 來源識別、來源時間與批次證據可交付輪次，未知欄位不捏造；App 可完成一輪。（RoundEvent detail 提供檔案相對識別、來源時間及現有日期／Thread／Config 證據；不確定的 CaseInfo 批次 ID 保持未知。本機 Tk App 完成四通道。）
 
 ## 驗證方式
@@ -44,7 +44,7 @@
 - 依本票保護既有 B482 Thread 0–3 對應顯示位置 1–4；新增 RoundCoordinator 案例以四個不同 SN／結果直接驗證位置。配置驅動的位置映射屬 AC-05／Ticket 08，不由本票提前實作。
 - Adapter 在輪次建立時記錄已存在 CaseInfo 檔案的大小，只讀取後續新增內容；回歸案例確認時間仍在 30 秒寬限內的歷史行也不會混入本輪。檔案截短時跳過當下已存在的內容，從新檔尾繼續讀取。
 - 每筆 B482 RoundEvent 的結果 detail 帶有來源識別與來源時間；TestData 另提供檔名批次戳記及已知 Thread／Config，CaseInfo 提供檔名日期與 Thread 作為來源證據，不宣稱其為已確認批次。缺少的批次欄位保持未知。
-- 新增 `tests/test_b482_source_adapter.py`，經 RoundCoordinator 公開快照／事件驗證歷史 TestData 與 CaseInfo 隔離、第二個 SNRead 欄位、半筆 CaseInfo 補齊、空 SN FAILED → NOTEST，以及來源識別／時間／批次證據。
+- 新增 `tests/test_b482_source_adapter.py`，經 RoundCoordinator 公開快照／事件驗證歷史 TestData 與 CaseInfo 隔離、第二個 SNRead 欄位、半筆 CaseInfo 補齊、空 SN FAILED → NOTEST（歷史行為，已由 ADR 0006／Ticket 18 決定 supersede；新行為尚待驗證），以及來源識別／時間／批次證據。
 - 新增 `tools/smoke_b482_app.py`，以隔離偏好目錄與匿名化四通道樣本，透過 Tk App 開始並完成一輪；四通道平台 NOTEST 均可取用。這是本機受控回放，不代表目標產線或目標機驗收。
 - Ticket 18 的未知同輪來源人工採用政策保留未決；本次沒有替 CaseInfo 日期或檔名戳記推斷未知批次，也未改動允許／禁止採用政策。
 
@@ -61,6 +61,10 @@
 ### 審查與提交
 
 - 固定審查基準：`30739a0690ed534b5db2801a2eba2fadc08384ce`（`B518-Log-Solution`）。
+
+## 2026-10-06 Ticket 18 政策覆寫
+
+- 使用者明確決定：B482 空 SN 且平台回報 FAILED 仍判為產品 FAIL，取代上述歷史 NOTEST 規則。新測試與實作由 Ticket 18 完成；此處 AC 維持未勾選直至驗證通過。
 - 固定審查基準 `30739a0690ed534b5db2801a2eba2fadc08384ce` 至 `01a93e4` 完成 Standards／Spec 雙軸 code-review。初審找到 CaseInfo 啟動前內容隔離缺口及未使用的 Adapter 輸入，分別由 `3764f30`、`aaf788e` 修正；複審無未解決發現。Spec 確認 AC-05 配置映射由 Ticket 08 負責，本票保護既有 Thread 0–3 至位置 1–4 對應。Ticket 18 政策明確維持未決，沒有宣稱該分支驗收。
 - 本批程式與測試提交：`f9837ae`（`refactor: isolate B482 source adapter`），已推送至內部 Gitea 與 GitHub 的同名專用分支。
 - 整合合併提交：`6f7ba47234c3f6f32b1e1ac451fde895515d348c`。合併後 97 項完整測試通過，`git diff --check` 通過；合併 SHA 已核對並推送到 Gitea 與 GitHub。遠端 `codex/ticket-04-b482-source-adapter` 於兩處刪除，本地分支以一般 `git branch -d` 刪除；最後停留於 `B518-Log-Solution`。
