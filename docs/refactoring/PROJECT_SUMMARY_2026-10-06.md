@@ -17,3 +17,10 @@
 - 上位機 repo：`docs/TICKET16_DEPLOYMENT.md`、`docs/PROJECT_SUMMARY.md`、`docs/evidence/ticket-16/contract-1.1/`。
 
 本次僅保存跨日摘要，沒有新增程式或產品規則。
+
+## Ticket 18 執行紀錄（2026-10-06）
+
+- 從乾淨的 `B518-Log-Solution` 固定基準 `26a097e1dd7fc00c40bbb7d8472d946fdc920939` 建立 `codex/ticket-18` 隔離工作樹；本地及 Gitea／GitHub 均無同名既有分支，主分支三處 SHA 一致。Ticket 17 分支未混入。
+- 核對 Ticket 10 程式與受控驗收已在基準，Ticket 02 共同輪次接口已完成。已整理 Atlas、B482、RS-WMT 的未知來源與已知同輪對照，見 [Ticket 18 案例與現況](evidence/ticket-18/source-case-review.md)。測試案例是隔離輸入，非現場實機證據。
+- 關鍵現況：無既有結果時，無 `round_evidence_id` 的 final 目前可被接受；已存在結果的未知同輪矛盾則留下 `unresolved_source_conflict` 並保留原結果，但該事件不建立人工確認項目，也不單獨阻擋放行。這是待使用者裁定的範圍，未視為已批准政策。
+- 本階段只補決策前證據及 Ticket 驗收對照，沒有修改產品程式或新增政策預期。需由使用者明確決定首次結果與替換結果是否適用相同政策、證據門檻、拒絕／未處理狀態、放行及紀錄要求；Ticket 18 維持 deferred-decision。
