@@ -54,6 +54,8 @@ def _has_source_test_time(value: object) -> bool:
     normalized = value.strip()
     if normalized.lower() in {"unknown", "none", "null"}:
         return False
+    if len(normalized) <= 10 or normalized[10] not in {"T", " "}:
+        return False
     try:
         datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     except ValueError:

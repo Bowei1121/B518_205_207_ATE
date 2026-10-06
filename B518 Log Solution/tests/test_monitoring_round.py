@@ -357,7 +357,7 @@ class MonitoringRoundTests(unittest.TestCase):
             "round_evidence_id": round_evidence_id,
         })
         monitor.offer_candidate(1, "FAIL", "SERIAL000001", "candidate.csv", {
-            "source_id": "candidate.csv", "source_time": "not-a-source-timestamp",
+            "source_id": "candidate.csv", "source_time": "2026-10-06",
             "round_evidence_id": round_evidence_id,
         })
         snapshot = rounds.poll_once()
@@ -367,7 +367,7 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertFalse(snapshot.pending_conflicts)
         rejected = next(item.event for item in snapshot.events
                         if item.event.kind == "unknown_round_candidate_rejected")
-        self.assertEqual(rejected.detail["candidate_source_time"], "not-a-source-timestamp")
+        self.assertEqual(rejected.detail["candidate_source_time"], "2026-10-06")
 
     def test_same_result_from_another_path_is_traceable_without_a_new_conflict(self):
         holder = {}
