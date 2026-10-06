@@ -2,7 +2,7 @@
 
 ## Parent
 
-Part of GitHub 規格 Issue #1。草案，待確認後發布。
+Part of [規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)。依 ADR 0007／0008 與已確認拆票方案實作。
 
 ## What to build
 
@@ -21,6 +21,6 @@ App 依工程師設定，於啟動後、持續開啟每 24 小時及設定修改
 
 ## Blocked by
 
-- T4：所有本次執行紀錄完整保存後才正常關閉。
-- T5：完整保存的已結束輪次產生可信封存時間。
-- T6：工程師可持久設定全域輪次保存天數。
+- [#5：所有本次執行紀錄完整保存後才正常關閉](https://github.com/Bowei1121/B518_205_207_ATE/issues/5)
+- [#6：完整保存的已結束輪次產生可信封存時間](https://github.com/Bowei1121/B518_205_207_ATE/issues/6)
+- [#7：工程師可持久設定全域輪次保存天數](https://github.com/Bowei1121/B518_205_207_ATE/issues/7)

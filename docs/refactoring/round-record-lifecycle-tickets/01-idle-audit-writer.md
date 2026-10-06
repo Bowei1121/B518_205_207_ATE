@@ -2,7 +2,7 @@
 
 ## Parent
 
-Part of GitHub 規格 Issue #1。草案，待確認後發布。
+Part of [規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)。依 ADR 0007／0008 與已確認拆票方案實作。
 
 ## What to build
 
