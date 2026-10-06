@@ -8,7 +8,7 @@
 
 - [10：共同處理已確定同輪的結果衝突](10-same-round-conflict-review.md)
 
-**Status：**in-progress（Ticket 10 已完成；使用者已於 2026-10-06 決定政策，實作與驗收進行中）
+**Status：**complete（2026-10-06；政策、實作、必要受控驗收及固定基準雙軸審查完成；現場未知來源原始資料仍列為限制，不冒充已驗）
 
 ## 驗收條件
 
@@ -60,7 +60,8 @@
 - 平台來源判讀仍在 Adapter；B482 空 SN 的 PASSED／FAILED TestData 終態都依 SN 讀取失敗判為 FAIL。Atlas 已鎖定 SN 後的未知身份變更令該 slot FAIL；可信 SN 已存在時，單獨的後續不可讀觀察不會改寫可信 SN。
 - 相關受控測試：`python3 scripts/run_tests.py test_monitoring_round test_b482_source_adapter test_atlas_source_adapter test_rswmt_monitoring test_audit_records`，79 tests 通過。這是核心／Adapter／audit 單元及共同輪次測試，不代表真實 Tk、上位機、設備或現場驗收。
 - 實際 Tk 受控測試 `python3 scripts/run_tests.py test_log_solution_ui` 通過 37 項；新增流程在暫存 Atlas 路徑中觀察到未知身份變更後 UI 顯示 FAIL、維持原 SN、結果可用，audit 含候選與操作時間且不含理由。這是受控 Tk 測試，不代表 Atlas 現場或目標設備驗收。
-- 完整 `python3 scripts/run_tests.py` 通過 190 tests；執行環境 Python 3.8.10、Tk 8.6、macOS 15.7.9。範圍含來源／共同輪次／audit 核心測試、真實 Tk UI、bundle verifier 單元檢查；無任何跨層替代。`git diff --check` 通過。
+- `_has_source_test_time()` 回歸案例先證明 `2026-10-06` 會誤被 `datetime.fromisoformat()` 當作測試時間並令 slot 保留 PASS；修正為必須包含時間部分後，日期字串候選轉為 FAIL，35 項輪次測試通過。
+- 完整 `python3 scripts/run_tests.py` 最終重跑通過 190 tests；執行環境 Python 3.8.10、Tk 8.6、macOS 15.7.9。範圍含來源／共同輪次／audit 核心測試、真實 Tk UI、bundle verifier 單元檢查；無任何跨層替代。`git diff --check` 通過。
 - repo 沒有 mypy、pyright、pyproject／setup.cfg／tox 型別檢查設定；沒有型別檢查結果可報，不以語法檢查替代。
-- Spec 初審要求釐清 FAIL 是否仍依一般規則放行或阻擋輪次完成／待確認／上位機取用；使用者已確認一般 FAIL 終態可放行，決策已補入 ADR 與操作文件。完整雙軸複審完成前仍不得合併。
-- 沒有 Ticket 18 未知同輪現場原始資料；此限制如需現場補驗，仍不能由合成來源回放抵銷。固定基準雙軸審查、複審與實際提交／多目的地推送狀態於後續更新；全部必要驗收與審查完成前保持 `in-progress`，不合併分支。
+- Spec 初審要求釐清 FAIL 是否仍依一般規則放行或阻擋輪次完成／待確認／上位機取用；使用者已確認一般 FAIL 終態可放行，決策已補入 ADR 與操作文件。最終 Standards／Spec 雙軸平行複審皆以固定起始 SHA `26a097e1dd7fc00c40bbb7d8472d946fdc920939` 為基準、覆蓋整票變更，結論無未解發現；先前發現的時間日期邊界與歷史政策措辭均已修正並複審。
+- 沒有 Ticket 18 未知同輪現場原始資料；此限制不能由合成來源回放抵銷。此票定義的程式與受控驗收、測試及固定基準雙軸審查已完成；現場補驗仍需取得實際資料及設備。最終提交、各 push 目的地同步、合併及分支清理結果另於本節追記。
