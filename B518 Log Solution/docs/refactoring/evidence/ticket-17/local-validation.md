@@ -40,6 +40,7 @@ Ticket 執行分支：`codex/ticket-17`；驗證包含該分支的 build-check �
 
 - Ticket 17 已將主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3` 合併進工作分支，其中已包含 Ticket 18 政策與實作；衝突只在兩票更新的跨日摘要，已保留雙方紀錄。整合後完整 `python3 scripts/run_tests.py` 通過 193 tests（22.930 秒），三個 build 腳本 `zsh -n` 通過，`git diff --check` 通過。這些檢查只驗證本機程式與受控案例，不替代尚未建立的發行 bundle 或目標環境驗收。
 - 尚未取得適用的建置主機、目標設備、現場資料及所需簽章政策；沒有建立或聲稱存在 `.app`／ZIP、codesign 驗證或 SHA-256 產物證據。
+- 整合後 Standards／Spec 審查基準為 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3`，Ticket 分支 HEAD `1b444ecb587a826f46b04fc686eb598fc9936058`，兩軸均無未解發現。Ticket 17 以 merge commit `883d9f4448ab36b388f4fb01ece66ff406871f31` 合入主線，合併後全套 193 tests 通過並推送至 Gitea／GitHub。因 AC 2、3、4 未驗收，Ticket 分支保留供後續接續；此狀態不改變任何 bundle 或現場項目為待驗。
 
 ## 型別檢查
 

@@ -57,3 +57,9 @@
 - Ticket 18 已合併至 `B518-Log-Solution`（`3d15abf77575b9b1b5db2b1f878846c930c9d5e3`），未知同輪來源政策已由 ADR 0006 定案。前述「政策仍未決」是原執行紀錄中的歷史狀態，現依新政策更新本票發布指南。
 - 本機開發機仍為 Intel macOS 15.7.9／Python 3.8.10，不符合 Intel Catalina／Python 3.12 或 Apple Silicon 原生 arm64 target。發行 `.app`、實際 bundle 上的操作驗收及目標機驗收仍未執行，AC 2、3、4 保持未勾選，Ticket 維持 blocked。
 - 使用者同意先合併 Ticket 17 變更不代表 AC 2、3、4 已驗收；整合最新主線後重跑測試及審查，未完成項目留在主線續驗。
+
+## 主線合併及後續追蹤｜2026-10-06
+
+- Ticket 17 分支 `1b444ecb587a826f46b04fc686eb598fc9936058` 以非快轉方式合併至 `B518-Log-Solution`，合併 commit：`883d9f4448ab36b388f4fb01ece66ff406871f31`。
+- 合併後 `python3 scripts/run_tests.py` 通過 193 tests；三個 build 腳本語法檢查及 `git diff --check` 通過。合併 commit 已推送並核對 Gitea／GitHub 兩處主分支一致；最後工作樹乾淨並位於 `B518-Log-Solution`。
+- Standards／Spec 以整合主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3` 為基準審查 Ticket 17 分支，均無未解發現。AC 2、3、4 尚未完成，因此 Ticket 保持 blocked；本地及 Gitea／GitHub 的 `codex/ticket-17` 分支保留於 `1b444ecb587a826f46b04fc686eb598fc9936058`，供指定環境建置、bundle／部署 App 驗收與後續現場驗收接續。

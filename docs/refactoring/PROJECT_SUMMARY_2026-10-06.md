@@ -58,4 +58,5 @@
 
 - 使用者同意先合併 Ticket 17 的建置／bundle 驗證工具、測試、文件與受控驗收證據；分支沒有 App 核心流程改動，但確有打包相關程式碼變更。此決定不代表發行 bundle、目標 App 或現場驗收已通過。Ticket 17 AC 2、3、4 保持未勾選，整體仍 blocked。
 - Ticket 17 工作分支先合併最新主線 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3`，保留雙方 Ticket 17／18 摘要。Ticket 18 已定案政策取代 Ticket 17 原本的未決說明；Ticket 17 發行指南與限制同步更新。
-- 整合後完整 `python3 scripts/run_tests.py` 通過 193 tests；三個 build 腳本 `zsh -n` 與 `git diff --check` 通過。測試僅證明本機程式和受控案例，沒有 `.app`、codesign／checksum、部署 App 或目標現場驗收結果。Ticket 分支雙軸審查及推送／合併結果後續補記。
+- 整合後完整 `python3 scripts/run_tests.py` 通過 193 tests；三個 build 腳本 `zsh -n` 與 `git diff --check` 通過。Standards／Spec 以主線整合點 `3d15abf77575b9b1b5db2b1f878846c930c9d5e3` 為基準審至 Ticket 分支 `1b444ecb587a826f46b04fc686eb598fc9936058`，均無未解發現。
+- Ticket 17 合併 commit 為 `883d9f4448ab36b388f4fb01ece66ff406871f31`；合併後完整測試再通過 193 tests，合併 commit 已推送且 Gitea／GitHub refs 同步。工作樹乾淨並停在 `B518-Log-Solution`。因 AC 2、3、4 尚未驗收，`codex/ticket-17` 本地及兩個遠端分支保留在 `1b444ec` 供後續接續；合併不代表發行／目標環境驗收完成。
