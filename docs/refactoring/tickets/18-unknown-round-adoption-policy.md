@@ -56,7 +56,7 @@
 ## 2026-10-06 實作與受控驗證
 
 - 首次測試以公開 `RoundCoordinator` seam 重現三個紅案例：沒有輪次連結的第一筆 final、未知同輪替換候選、具輪次連結但缺來源測試時間。另重現 B482 空 SN 且平台 FAILED 被轉成 NOTEST。實作後相關測試轉綠。
-- 現行規則：PASS／FAIL 等來源終態只有在有輪次來源連結且有實際來源測試時間時才可被採用；未知同輪候選不顯示採用選項。來源不明或時間不足時記錄 `unknown_round_candidate_rejected`、操作 `fail_unconfirmed_candidate`、原／候選資料與操作時間，slot 設為 FAIL；不保存理由。已確認同輪且有來源測試時間的矛盾仍進入 Ticket 10 逐項覆核。
+- 現行規則：採用來源回報的 PASS／FAIL 終態，須有輪次來源連結及實際來源測試時間；SN 讀取失敗依政策直接判產品 FAIL，不以來源結果採用門檻改成其他狀態。未知同輪候選不顯示採用選項。來源不明或時間不足時記錄 `unknown_round_candidate_rejected`、操作 `fail_unconfirmed_candidate`、原／候選資料與操作時間，slot 設為 FAIL；不保存理由。已確認同輪且有來源測試時間的矛盾仍進入 Ticket 10 逐項覆核。
 - 平台來源判讀仍在 Adapter；B482 空 SN 的 PASSED／FAILED TestData 終態都依 SN 讀取失敗判為 FAIL。Atlas 已鎖定 SN 後的未知身份變更令該 slot FAIL；可信 SN 已存在時，單獨的後續不可讀觀察不會改寫可信 SN。
 - 相關受控測試：`python3 scripts/run_tests.py test_monitoring_round test_b482_source_adapter test_atlas_source_adapter test_rswmt_monitoring test_audit_records`，79 tests 通過。這是核心／Adapter／audit 單元及共同輪次測試，不代表真實 Tk、上位機、設備或現場驗收。
 - 實際 Tk 受控測試 `python3 scripts/run_tests.py test_log_solution_ui` 通過 37 項；新增流程在暫存 Atlas 路徑中觀察到未知身份變更後 UI 顯示 FAIL、維持原 SN、結果可用，audit 含候選與操作時間且不含理由。這是受控 Tk 測試，不代表 Atlas 現場或目標設備驗收。
