@@ -4,6 +4,8 @@
 
 狀態：共識已確認。使用者確認「這份文件符合我的想改動的方向」，以下方案作為後續規格與實作依據。
 
+後續依使用者要求以 to-spec 轉為 [正式規格](CONFLICT_DIALOG_SPEC_2026-10-07.md)，已發布至 [GitHub Issue #9](https://github.com/Bowei1121/B518_205_207_ATE/issues/9)，標記 ready-for-agent；目前為規格交付，尚未實作。
+
 ## 使用者已指定的方向
 
 - 左側維持衝突選單。
