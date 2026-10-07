@@ -1,5 +1,9 @@
 # 專案摘要：2026-10-07
 
+## 多語言訪談共識
+
+使用者確認 [美國工廠多語言方案](MULTILINGUAL_DISCUSSION_2026-10-07.md) 符合改動方向，並要求主頁語言按鈕及選單越直覺越好。首版 English／繁體中文、首次英文、記住上次語言，監控及待確認時可即時切換，已開自有視窗保留操作狀態；關閉保存期間暫停切換。全部 App 事件同筆保存固定繁中／英文與訊息識別、參數、必要原始診斷，政策見 [ADR 0009](../adr/0009-bilingual-app-event-records.md)；非輪次事件另存並沿用全域期限，舊檔不重寫。翻譯隨 App 發布，原生檔案選擇器遵照系統語言，中英詞彙表已補入 CONTEXT.md。本次僅保存文件，尚未依此方案修改產品程式。
+
 承接 [2026-10-06 專案摘要](PROJECT_SUMMARY_2026-10-06.md) 與本對話可查證的 Ticket 01 交付結果。
 
 ## 本對話前次決策與衝突彈窗新需求
@@ -59,3 +63,11 @@
 - Ticket 05 六項驗收均有真實暫存磁碟及新讀取器證據，含人工確認後封存、數日後以實際時刻封存、分散組件完整性驗證、故障與修復、事件競爭、foreign round 身分替換拒絕、Tk 未保存／完整保存／封存狀態及舊格式可讀。聚焦 `python3 scripts/run_tests.py test_round_archival test_monitoring_round test_audit_records test_log_solution_ui` 為 130 tests 通過（27.251 秒）；固定程式提交 `d679b9992a7582169352c8f745a408cd2fe34d82` 完整 `python3 scripts/run_tests.py` 為 242 tests 通過（36.113 秒）；`compileall` 與 `git diff --check` 通過。Tk 在可存取桌面工作階段執行。Repository 沒有 mypy／pyright 或其他型別檢查設定，未宣稱型別檢查通過。
 - 固定 Standards／Spec 基準 `a4a00d5fd6ca7ea4fdb6c2e1482cf2c78d244de5`。複審指出封存寫入需比對 coordinator 預期 round ID，及脫離追蹤物件的已封存輪磁碟驗證失敗時須維持 close 阻擋；均已修正並以回歸測試覆蓋。Standards 與 Spec 最終複審均無未解問題。實作提交 `0798043`、驗證修正 `938542c`、分支驗收文件提交 `6feebe2` 已推送至 Gitea 與 GitHub。完整命令、逐項證據與環境限制見 [Ticket 05 本機驗收紀錄](evidence/ticket-05/local-validation.md)。
 - 合併前即時 fetch 確認主線 Gitea／GitHub refs 均為固定基準 `a4a00d5`，兩端 Ticket 分支均為 `6feebe2`。使用乾淨主線 worktree 合併，merge commit `fbd3ac0f09381819e87b40cb17f190145d190f88`；合併後完整套件 242 tests 通過（38.883 秒）。主線摘要提交 `3d405236c7564b725b34c40587ef782670e7f1c9` 已推送至 Gitea／GitHub，即時 fetch 確認兩地主線 refs 一致且包含 merge SHA。確認同步後安全刪除兩遠端 `round/ticket-05`、本地分支及 stale tracking refs，未使用強制刪除。最後清理證據的文件提交也推送至兩個目的地；最後工作目錄切回 `B518-Log-Solution`。完整證據見 [Ticket 05 本機驗收紀錄](evidence/ticket-05/local-validation.md)。
+
+## Ticket 06 全域保存期限設定（本日後續）
+
+- 使用者授權在 `round/ticket-06` 完成全域輪次保存天數設定。起始固定 Standards／Spec review 基準為 `f1d6e4768626b73732653ec7d978e9fa41b87bf7`；即時檢查確認 Ticket 01～05 已在基準，本地與 Gitea／GitHub 主線 refs 一致，專用分支原先不存在。
+- 已在偏好 Store 加入預設 365 天及正整數持久讀寫，沿用原子替換；profile 保存與匯入保留全域設定，profile 匯出維持原契約。設定頁顯示生效值、錯誤及可信封存時間／完整 24 小時／下次背景清理提示。本票未加入到期掃描、排程或刪除。
+- Ticket 06 五項驗收均有真實暫存偏好檔、新 Store 磁碟重讀、真正 Tk Entry／Button 操作及 Session 檔案前後比對證據。舊格式缺少欄位及全新偏好檔均預設 365；測試涵蓋 180、730、無效輸入、原子替換失敗、profile save/import/export、跨重啟與設定失敗。最終程式／測試 commit `70db40709ade55d4605959df4207afaccce3ebed` 完整 `python3 scripts/run_tests.py` 248 tests 通過（38.673 秒），`compileall`、`git diff --check` 通過。Repository 無型別檢查設定，未宣稱型別檢查通過。真正 Tk 測試於 macOS 15.7.9、Python 3.8.10 桌面工作階段執行。
+- Standards／Spec 固定基準雙軸複審均無未解問題。首輪 Standards 指出正整數驗證重複，已改由 Store 作唯一規則來源並重跑受影響測試及完整套件。Ticket 06 本機驗收文件見 [Ticket 06 驗收紀錄](evidence/ticket-06/local-validation.md)。
+- 程式／測試 commits `475a4e4`、`5e3a962`、`32ceaf8`、`70db407` 已推送至 Gitea 與 GitHub；最後即時 refs 查核兩端 ticket 分支均為 `70db407`，主線仍一致於固定基準 `f1d6e47`。驗收文件及拆票 README 已更新；合併、主線推送、合併後驗證及分支清理待完成後補記。起始即存在的未提交 `CONTEXT.md` 修改與兩個未追蹤文件均未納入本票提交。
