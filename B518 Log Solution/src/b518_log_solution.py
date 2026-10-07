@@ -1145,7 +1145,8 @@ class B518LogSolutionApp:
 
         previous = self.profile_store.retention_days
         try:
-            self.profile_store.save_retention_days(days)
+            self.rounds.save_retention_setting(
+                days, lambda: self.profile_store.save_retention_days(days))
         except ProfileError as error:
             self.retention_status.set(
                 "設定無效或偏好檔無法讀取，目前仍生效 {} 天：{}".format(previous, error))
@@ -1160,7 +1161,6 @@ class B518LogSolutionApp:
                 "保存天數已更新；既有符合條件的紀錄可能於下一次背景清理到期。")
         else:
             self.retention_status.set("保存天數已更新並持久保存。")
-        self.rounds.retention_setting_changed(days)
 
     def _refresh_retention_cleanup_status(self) -> None:
         """Display coordinator cleanup state and durable summaries on the Tk thread."""

@@ -27,6 +27,18 @@ _UNLINKAT = _LIBC.unlinkat
 _UNLINKAT.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
 _UNLINKAT.restype = ctypes.c_int
 _AT_REMOVEDIR = 0x80 if os.uname().sysname == "Darwin" else 0x200
+if os.uname().sysname == "Darwin":
+    _RENAME_EXCLUSIVE = _LIBC.renameatx_np
+    _RENAME_EXCLUSIVE.argtypes = (ctypes.c_int, ctypes.c_char_p,
+                                  ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    _RENAME_EXCLUSIVE.restype = ctypes.c_int
+    _RENAME_FLAGS = 0x00000004  # RENAME_EXCL
+else:
+    _RENAME_EXCLUSIVE = _LIBC.renameat2
+    _RENAME_EXCLUSIVE.argtypes = (ctypes.c_int, ctypes.c_char_p,
+                                  ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    _RENAME_EXCLUSIVE.restype = ctypes.c_int
+    _RENAME_FLAGS = 0x00000001  # RENAME_NOREPLACE
 
 
 def _openat(directory_fd: int, name: str, flags: int) -> int:
@@ -43,6 +55,26 @@ def _unlinkat(directory_fd: int, name: str, flags: int = 0) -> None:
     if _UNLINKAT(directory_fd, os.fsencode(name), flags) != 0:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), name)
+
+
+def _rename_exclusive(directory_fd: int, source: str, destination: str) -> None:
+    if _RENAME_EXCLUSIVE(directory_fd, os.fsencode(source), directory_fd,
+                         os.fsencode(destination), _RENAME_FLAGS) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), source, destination)
+
+
+def _hash_fd(descriptor: int) -> dict:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    digest = hashlib.sha256()
+    size = 0
+    while True:
+        chunk = os.read(descriptor, 1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+        size += len(chunk)
+    return {"size": size, "sha256": digest.hexdigest()}
 
 
 @dataclass(frozen=True)
@@ -82,7 +114,8 @@ class RoundRetentionStore:
                  wall_clock: Callable[[], datetime],
                  protected_round_ids: Callable[[], Iterable[str]],
                  cleanup_allowed: Callable[[], bool],
-                 effective_retention_days: Callable[[], int]):
+                 effective_retention_days: Callable[[], int],
+                 delete_if_expired: Callable[[datetime, Callable[[], None]], None]):
         requested_root = Path(managed_root).absolute()
         self._root_is_symlink = requested_root.is_symlink()
         self.root = requested_root.resolve()
@@ -91,6 +124,7 @@ class RoundRetentionStore:
         self._protected_round_ids = protected_round_ids
         self._cleanup_allowed = cleanup_allowed
         self._effective_retention_days = effective_retention_days
+        self._delete_if_expired = delete_if_expired
         self._lock = threading.RLock()
         self._status = RetentionStatus()
         self._summaries = ()
@@ -412,15 +446,7 @@ class RoundRetentionStore:
                 opened = os.fstat(file_descriptor)
                 if not stat.S_ISREG(opened.st_mode):
                     raise ValueError("清理目標不是一般檔案或已成為符號連結")
-                digest = hashlib.sha256()
-                size = 0
-                while True:
-                    chunk = os.read(file_descriptor, 1024 * 1024)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    size += len(chunk)
-                return {"size": size, "sha256": digest.hexdigest()}
+                return _hash_fd(file_descriptor)
             finally:
                 os.close(file_descriptor)
         finally:
@@ -428,18 +454,50 @@ class RoundRetentionStore:
 
     def _unlink_managed_file(self, path: Path, expected: dict,
                              archived_at: Optional[datetime] = None) -> None:
-        actual = self._managed_file_record(path)
-        if actual is None:
-            return
-        if actual != expected:
-            raise ValueError("刪除前檔案內容或身分已變更")
-        if archived_at is not None and archived_at + timedelta(
-                days=self._effective_retention_days()) > normalize_archive_time(self._wall_clock()):
-            raise ValueError("保存期限在刪除前已延長，停止刪除並保留剩餘進度")
         descriptor, name = self._managed_parent_fd(path)
+        file_descriptor = None
         try:
-            _unlinkat(descriptor, name)
+            try:
+                file_descriptor = _openat(
+                    descriptor, name,
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+            except FileNotFoundError:
+                return
+            original = os.fstat(file_descriptor)
+            if not stat.S_ISREG(original.st_mode):
+                raise ValueError("清理目標不是一般檔案或已成為符號連結")
+            if _hash_fd(file_descriptor) != expected:
+                raise ValueError("刪除前檔案內容或身分已變更")
+
+            staged_name = ".round-retention-{}".format(uuid.uuid4().hex)
+            _rename_exclusive(descriptor, name, staged_name)
+            staged_fd = _openat(descriptor, staged_name,
+                                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                                getattr(os, "O_NONBLOCK", 0))
+            try:
+                opened = os.fstat(staged_fd)
+                if (opened.st_dev, opened.st_ino) != (original.st_dev, original.st_ino):
+                    raise ValueError("刪除目標在驗證後被替換")
+                if _hash_fd(staged_fd) != expected:
+                    raise ValueError("刪除目標在驗證後內容已變更")
+            finally:
+                os.close(staged_fd)
+
+            def unlink_stage():
+                _unlinkat(descriptor, staged_name)
+
+            self._delete_if_expired(archived_at or normalize_archive_time(self._wall_clock()),
+                                    unlink_stage)
+        except Exception:
+            if "staged_name" in locals():
+                try:
+                    _rename_exclusive(descriptor, staged_name, name)
+                except OSError:
+                    pass
+            raise
         finally:
+            if file_descriptor is not None:
+                os.close(file_descriptor)
             os.close(descriptor)
 
     def _remove_empty_managed_directories(self, paths) -> None:

@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import Empty, Queue
 from enum import Enum
 from pathlib import Path
@@ -1203,7 +1203,7 @@ class RoundCoordinator:
             self._audit_root,
             retention_ledger_path or self._audit_root.parent / "round-retention-ledger.json",
             self._wall_clock, self._protected_round_ids, self._retention_cleanup_allowed,
-            self._effective_retention_days)
+            self._effective_retention_days, self._delete_if_currently_expired)
             if self._audit_root is not None else None)
         self._retention_worker_active = False
         self._retention_trigger_pending = False
@@ -1427,6 +1427,16 @@ class RoundCoordinator:
             self._retention_next_due = self._monotonic() + 24 * 60 * 60
         return self.request_retention_cleanup(retention_days, "setting-changed")
 
+    def save_retention_setting(self, retention_days: int, persist: Callable[[], None]) -> RetentionStatus:
+        """Serialize a durable setting update with the final irreversible delete step."""
+        if type(retention_days) is not int or retention_days <= 0:
+            raise ValueError("保存天數必須是正整數")
+        with self._lock:
+            persist()
+            self._retention_days = retention_days
+            self._retention_next_due = self._monotonic() + 24 * 60 * 60
+        return self.request_retention_cleanup(retention_days, "setting-changed")
+
     def poll_retention_schedule(self, retention_days: int) -> RetentionStatus:
         """Cheap Tk-safe due check; scanning and deletion always run in a worker."""
         with self._lock:
@@ -1507,6 +1517,16 @@ class RoundCoordinator:
     def _effective_retention_days(self) -> int:
         with self._lock:
             return self._retention_days
+
+    def _delete_if_currently_expired(self, archived_at: datetime,
+                                     operation: Callable[[], None]) -> None:
+        with self._lock:
+            if self._closing:
+                raise ValueError("關閉保存期間不執行新的輪次刪除")
+            if archived_at + timedelta(days=self._retention_days) > normalize_archive_time(
+                    self._wall_clock()):
+                raise ValueError("保存期限在刪除前已延長，停止刪除並保留剩餘進度")
+            operation()
 
     def retry_close_saves(self) -> CloseSnapshot:
         """Retry failed rounds, then recheck every tracked round before close."""

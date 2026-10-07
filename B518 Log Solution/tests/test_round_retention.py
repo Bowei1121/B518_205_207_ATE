@@ -256,6 +256,70 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
             self.assertIn("保存期限", rounds.retention_cleanup_summaries()[0].results[0].reason)
 
+    def test_new_retention_days_win_race_at_final_unlink_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=200)
+            entered = threading.Event()
+            release = threading.Event()
+            original_guard = RoundCoordinator._delete_if_currently_expired
+
+            def controlled_guard(rounds, archived_at, operation):
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError("test did not release final unlink gate")
+                return original_guard(rounds, archived_at, operation)
+
+            with patch.object(RoundCoordinator, "_delete_if_currently_expired", controlled_guard):
+                rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+                rounds.request_retention_cleanup(180)
+                self.assertTrue(entered.wait(2))
+                rounds.retention_setting_changed(365)
+                release.set()
+                self.wait_until(lambda: len(rounds.retention_cleanup_summaries()) >= 2 and
+                                rounds.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertTrue(archive.path.parent.exists())
+            self.assertTrue(archive.path.exists())
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
+
+    def test_replaced_file_after_hash_is_preserved_instead_of_unlinked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            target = next(item.path for item in archive.components if item.name == "audit.jsonl")
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            entered = threading.Event()
+            release = threading.Event()
+            original_rename = round_retention._rename_exclusive
+
+            def controlled_rename(directory_fd, source, destination):
+                if source == target.name and not entered.is_set():
+                    entered.set()
+                    if not release.wait(3):
+                        raise RuntimeError("test did not release file replacement race")
+                return original_rename(directory_fd, source, destination)
+
+            replacement_contents = b"new file produced after the verified inode"
+            with patch.object(round_retention, "_rename_exclusive", side_effect=controlled_rename):
+                rounds.request_retention_cleanup(365)
+                self.assertTrue(entered.wait(2))
+                replacement = target.with_name("replacement.tmp")
+                replacement.write_bytes(replacement_contents)
+                replacement.replace(target)
+                release.set()
+                self.wait_until(lambda: rounds.retention_cleanup_status().status == "failed")
+
+            self.assertEqual(target.read_bytes(), replacement_contents)
+            self.assertTrue(archive.path.exists())
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].results[0].outcome, "failed")
+
     def test_failed_partial_round_keeps_progress_while_next_candidate_is_cleaned(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -438,7 +502,7 @@ class RoundRetentionTests(unittest.TestCase):
             original_unlinkat = round_retention._unlinkat
 
             def controlled_unlinkat(directory_fd, name, flags=0):
-                if name in {"audit.jsonl", "events.log", "results.csv", "session.json"} and not entered.is_set():
+                if name.startswith(".round-retention-") and not entered.is_set():
                     entered.set()
                     if not release.wait(3):
                         raise RuntimeError("test did not release directory-handle race")
