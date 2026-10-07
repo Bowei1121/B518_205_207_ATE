@@ -315,10 +315,19 @@ class B518LogSolutionApp:
         self.unsaved_round_retry_button = ttk.Button(
             round_save_controls, text="重試所選", command=self.retry_selected_round, state="disabled")
         self.unsaved_round_retry_button.pack(side="right")
-        self.unsaved_round_detail = ttk.Label(controls, text="", anchor="w", wraplength=350)
-        self.unsaved_round_detail.pack(fill="x", pady=(3, 0))
+        round_detail_controls = ttk.Frame(controls)
+        round_detail_controls.pack(fill="x", pady=(3, 0))
+        self.unsaved_round_detail = ttk.Label(round_detail_controls, text="", anchor="w", wraplength=270)
+        self.unsaved_round_detail.pack(side="left", fill="x", expand=True)
         self._unsaved_round_ids = {}
         self.unsaved_round_picker.bind("<<ComboboxSelected>>", self._update_selected_round_retry)
+        self.archive_status_label = self.unsaved_round_detail
+        self.archive_round_detail = self.unsaved_round_detail
+        self.archive_status_label.configure(
+            text="輪次：未完整保存 0 · 完整保存 0 · 可信封存 0")
+        self.archive_retry_button = ttk.Button(
+            round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
+        self.archive_retry_button.pack(side="right")
         self._render_rows()
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
@@ -464,6 +473,53 @@ class B518LogSolutionApp:
         self.unsaved_round_choice.set(selected)
         self.unsaved_round_count.configure(text="未保存輪次 {}".format(len(snapshots)))
         self._update_selected_round_retry()
+
+    def _refresh_archive_statuses(self) -> None:
+        """Show current-run save and archive states without disk work in Tk."""
+        if not hasattr(self, "archive_retry_button"):
+            return
+        statuses = self.rounds.archive_statuses()
+        unsaved = sum(status.save_state != "complete" for status in statuses)
+        saved = sum(status.save_state == "complete" and not status.cleanup_eligible
+                    for status in statuses)
+        archived = sum(status.cleanup_eligible for status in statuses)
+        summary = "輪次：未完整保存 {} · 完整保存 {} · 可信封存 {}".format(unsaved, saved, archived)
+        selected_round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
+        unsaved_status = next((status for status in statuses
+                               if status.round_id == selected_round_id and status.save_state != "complete"), None)
+        if unsaved_status is None:
+            unsaved_status = next((status for status in statuses if status.save_state != "complete"), None)
+        retryable = [status for status in statuses
+                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
+        archived_status = next((status for status in statuses if status.cleanup_eligible), None)
+        detail_status = unsaved_status or (retryable[0] if retryable else archived_status)
+        detail = ""
+        if detail_status is not None:
+            state = ("可信封存" if detail_status.cleanup_eligible else
+                     "完整保存・受保護" if detail_status.save_state == "complete" else
+                     SAVE_STATE_LABELS.get(detail_status.save_state, detail_status.save_state))
+            reason = detail_status.message
+            if detail_status.save_state == "failed":
+                snapshot = self.rounds.round_snapshot(detail_status.round_id)
+                if snapshot is not None and snapshot.save_errors:
+                    reason = snapshot.save_errors[-1]
+            if detail_status.cleanup_eligible:
+                reason = str(detail_status.archived_at)
+            detail = " · {} · {}{}".format(
+                detail_status.round_id, state, "：" + reason if reason else "")
+        self.archive_status_label.configure(text=summary + detail)
+        self.archive_retry_button.configure(
+            state="normal" if retryable and not self._closing_ui else "disabled")
+
+    def retry_selected_archive(self) -> None:
+        if self._closing_ui:
+            return
+        retryable = [status.round_id for status in self.rounds.archive_statuses()
+                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
+        if retryable:
+            self.archive_retry_button.configure(state="disabled")
+            for round_id in retryable:
+                self.rounds.retry_archival(round_id)
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)
@@ -758,6 +814,7 @@ class B518LogSolutionApp:
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
         self._refresh_unsaved_rounds()
+        self._refresh_archive_statuses()
         self._refresh_conflict_review()
         self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
@@ -1386,6 +1443,7 @@ class B518LogSolutionApp:
         self._close_window = None
         self._apply_round_snapshot(self.rounds.snapshot())
         self._refresh_unsaved_rounds()
+        self._refresh_archive_statuses()
 
     def _finish_close(self) -> None:
         if self._close_window and self._close_window.winfo_exists():

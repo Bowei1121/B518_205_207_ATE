@@ -7,12 +7,14 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from queue import Empty, Queue
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from round_archival import ArchiveSnapshot, write_round_archive
 
 
 class RoundMonitor(Protocol):
@@ -562,6 +564,44 @@ class MonitoringRound:
         session = getattr(monitor, "session", None)
         flush = getattr(session, "flush", None)
         return flush(timeout) if callable(flush) else True
+
+    def archive_status(self, archived_at: datetime) -> ArchiveSnapshot:
+        """Verify and seal this round while serializing against round operations."""
+        with self._poll_lock:
+            snapshot = self.snapshot()
+            def status(state, message):
+                return ArchiveSnapshot(self.round_id, state, message=message,
+                                       save_state=snapshot.save_state, station=self.station)
+
+            ended_state = snapshot.state in {RoundState.COMPLETED, RoundState.STOPPED} or (
+                snapshot.state == RoundState.AWAITING_REVIEW and snapshot.collection_stopped)
+            if not ended_state or not snapshot.collection_stopped:
+                return status("protected", "輪次尚未結束")
+            if snapshot.pending_conflicts:
+                return status("protected", "仍有待確認衝突")
+            if snapshot.round_alarm is not None and not snapshot.round_alarm.acknowledged_at:
+                return status("protected", "仍有未確認警報")
+            if snapshot.save_state == "failed":
+                return status("failed", snapshot.save_errors[0] if snapshot.save_errors else "輪次保存失敗")
+            if snapshot.save_state != "complete":
+                return status("saving", "等待 Session 與 audit 完整保存")
+            if not snapshot.audit_complete:
+                return status("protected", "audit 尚未完整保存")
+            audit_path = getattr(self._audit_store, "audit_path", None)
+            session_path = self.session_path
+            if audit_path is None or session_path is None:
+                return status("protected", "缺少可驗證的 Session 或 audit 位置")
+            try:
+                archived = write_round_archive(audit_path, session_path, archived_at)
+            except OSError as error:
+                return ArchiveSnapshot(self.round_id, "failed", message=str(error),
+                                       path=Path(audit_path).parent / "round-archive.json",
+                                       save_state=snapshot.save_state, station=self.station)
+            except (AuditRecordError, TypeError, ValueError) as error:
+                return status("protected", str(error))
+            return ArchiveSnapshot(archived.round_id, archived.status, archived.archived_at,
+                                   archived.message, archived.path, archived.components,
+                                   snapshot.save_state, self.station)
 
     def _audit_write_failed(self, record: dict, message: str) -> None:
         with self._lock:
@@ -1139,6 +1179,11 @@ class RoundCoordinator:
         self._closing = False
         self._close_status = CloseSnapshot()
         self._close_worker_active = False
+        self._archive_states: Dict[str, ArchiveSnapshot] = {}
+        self._archive_queue = Queue()
+        self._archive_queued = set()
+        self._archive_dirty = set()
+        self._archive_worker_active = False
 
     def start(self, station: str,
               monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
@@ -1156,6 +1201,9 @@ class RoundCoordinator:
                                       self._wall_clock)
             self._current = session
             self._tracked_rounds[session.round_id] = session
+            self._archive_states[session.round_id] = ArchiveSnapshot(
+                session.round_id, "waiting", message="輪次尚未完成",
+                save_state="waiting", station=station)
             self._prune_saved_rounds_locked()
             self._events = []
             try:
@@ -1198,6 +1246,94 @@ class RoundCoordinator:
             target = self._tracked_rounds.get(target_id) if target_id is not None else None
         return target.retry_saves() if target is not None else False
 
+    def retry_archival(self, round_id: str) -> bool:
+        """Request a nonblocking disk revalidation after storage repair."""
+        with self._lock:
+            if round_id not in self._archive_states:
+                return False
+            self._queue_archive_check_locked(round_id)
+        return True
+
+    def archive_status(self, round_id: str) -> Optional[ArchiveSnapshot]:
+        """Return the latest shared archive status for a current-run round."""
+        with self._lock:
+            status = self._archive_states.get(round_id)
+            round_ = self._tracked_rounds.get(round_id)
+        if status is None:
+            return None
+        if round_ is None:
+            return status
+        snapshot = round_.snapshot()
+        return ArchiveSnapshot(status.round_id, status.status, status.archived_at,
+                               status.message, status.path, status.components,
+                               snapshot.save_state, status.station)
+
+    def archive_statuses(self) -> Tuple[ArchiveSnapshot, ...]:
+        """Return lightweight archive and protection states for this App run."""
+        with self._lock:
+            round_ids = tuple(self._archive_states)
+        return tuple(status for round_id in round_ids
+                     if (status := self.archive_status(round_id)) is not None)
+
+    @property
+    def has_unarchived_rounds(self) -> bool:
+        return any(not status.cleanup_eligible for status in self.archive_statuses())
+
+    def _queue_archive_check_locked(self, round_id: str) -> None:
+        if round_id in self._archive_queued:
+            self._archive_dirty.add(round_id)
+        else:
+            self._archive_queued.add(round_id)
+            self._archive_queue.put(round_id)
+        if not self._archive_worker_active:
+            self._archive_worker_active = True
+            threading.Thread(target=self._archive_worker, daemon=True).start()
+
+    def _archive_worker(self) -> None:
+        while True:
+            try:
+                round_id = self._archive_queue.get(timeout=0.1)
+            except Empty:
+                with self._lock:
+                    if self._archive_queue.empty():
+                        self._archive_worker_active = False
+                        return
+                continue
+            with self._lock:
+                round_ = self._tracked_rounds.get(round_id)
+            retry_after_save = False
+            if round_ is not None:
+                snapshot = round_.snapshot()
+                if snapshot.state in {RoundState.COMPLETED, RoundState.STOPPED} and snapshot.collection_stopped:
+                    if snapshot.save_state == "saving":
+                        status = ArchiveSnapshot(
+                            round_id, "saving", message="等待 Session 與 audit 完整保存",
+                            save_state=snapshot.save_state, station=round_.station)
+                        retry_after_save = True
+                    else:
+                        now = self._wall_clock()
+                        if now.tzinfo is None or now.utcoffset() is None:
+                            now = now.astimezone()
+                        status = round_.archive_status(now)
+                    with self._lock:
+                        self._archive_states[round_id] = status
+                        self._prune_saved_rounds_locked()
+                else:
+                    status = round_.archive_status(self._wall_clock())
+                    with self._lock:
+                        self._archive_states[round_id] = status
+            else:
+                pass
+            self._archive_queue.task_done()
+            if retry_after_save:
+                time.sleep(0.05)
+            with self._lock:
+                self._archive_queued.discard(round_id)
+                changed_while_checking = round_id in self._archive_dirty
+                self._archive_dirty.discard(round_id)
+                if retry_after_save or changed_while_checking:
+                    self._queue_archive_check_locked(round_id)
+
     def request_close(self) -> CloseSnapshot:
         """Stop new rounds and durably flush all current-run records in a worker."""
         with self._lock:
@@ -1221,9 +1357,14 @@ class RoundCoordinator:
                 "saving", generation, tuple(self._tracked_rounds))
             failed = tuple(round_ for round_ in self._tracked_rounds.values()
                            if round_.snapshot().save_state == "failed")
+            failed_archive_ids = tuple(
+                round_id for round_id, status in self._archive_states.items()
+                if status.status == "failed")
         for round_ in failed:
             round_.retry_saves()
         with self._lock:
+            for round_id in failed_archive_ids:
+                self._queue_archive_check_locked(round_id)
             self._start_close_worker_locked(generation)
         return self.close_status()
 
@@ -1278,6 +1419,23 @@ class RoundCoordinator:
                     snapshot for (_round_id, round_), snapshot in zip(rounds, snapshots)
                     if not _round_close_complete(round_, snapshot))
                 if not incomplete:
+                    archive_failures = []
+                    if self._audit_root is not None:
+                        for round_id, round_ in rounds:
+                            now = self._wall_clock()
+                            if now.tzinfo is None or now.utcoffset() is None:
+                                now = now.astimezone()
+                            archive = round_.archive_status(now)
+                            with self._lock:
+                                self._archive_states[round_id] = archive
+                            if archive.status == "failed":
+                                archive_failures.append("{}：{}".format(
+                                    round_id[:10], archive.message or "封存資訊尚未完整保存"))
+                    if archive_failures:
+                        self._set_close_failure(
+                            generation, round_ids,
+                            "封存資訊保存失敗；視窗仍保持開啟。" + "; ".join(archive_failures))
+                        return
                     with self._lock:
                         if self._closing and self._close_status.generation == generation:
                             self._close_status = CloseSnapshot("complete", generation, round_ids)
@@ -1364,7 +1522,17 @@ class RoundCoordinator:
         for round_id, round_ in tuple(self._tracked_rounds.items()):
             if round_ is self._current:
                 continue
-            if round_.snapshot().save_state == "complete":
+            archive = self._archive_states.get(round_id)
+            snapshot = round_.snapshot()
+            saved = snapshot.save_state == "complete"
+            archival_unavailable = self._audit_root is None
+            session_unavailable = round_.session_path is None
+            no_operator_work = not snapshot.pending_conflicts and not (
+                snapshot.round_alarm is not None and not snapshot.round_alarm.acknowledged_at)
+            archival_retry_needed = archive is not None and archive.status == "failed"
+            archive_releasable = archive is not None and archive.cleanup_eligible
+            if saved and no_operator_work and not archival_retry_needed and (
+                    archival_unavailable or session_unavailable or archive_releasable):
                 del self._tracked_rounds[round_id]
 
     def stop(self) -> Optional[RoundSnapshot]:
@@ -1399,6 +1567,14 @@ class RoundCoordinator:
         with self._lock:
             if event.round_id not in self._tracked_rounds:
                 return
+            previous = self._archive_states.get(event.round_id)
+            if previous is not None and self._audit_root is not None:
+                self._archive_states[event.round_id] = ArchiveSnapshot(
+                    event.round_id, "saving", message="偵測到輪次紀錄更新，正在重新驗證封存",
+                    save_state="saving", station=previous.station or
+                    self._tracked_rounds[event.round_id].station)
+            if self._audit_root is not None:
+                self._queue_archive_check_locked(event.round_id)
             if self._current is not None and event.round_id == self._current.round_id:
                 self._events.append(event)
             else:
