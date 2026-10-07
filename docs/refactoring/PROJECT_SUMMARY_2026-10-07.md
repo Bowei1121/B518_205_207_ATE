@@ -32,6 +32,6 @@
 
 - 使用者授權在 `round/ticket-03` 接續 Ticket 01／02，完成 App 本次執行中的跨輪未保存追蹤、舊輪選取與非阻塞重試。固定 code-review 基準及本次實作主線基準為 `438dd951b6404c5a3f0a900ce08e4285066dd8ea`；即時 fetch 後 Gitea 與 GitHub 主線一致，開始時沒有同名 ticket 分支。
 - `RoundCoordinator` 目前持有本次執行中尚未完整保存的輪次，公開提供 `unsaved_rounds()`、按 round ID 查詢／重試，以及 `has_unsaved_rounds` 共用保護狀態。新輪事件依原 round ID 路由；Tk 可選取舊輪、讀取錯誤原因及重試，舊輪事件不更新目前結果看板。完整保存後移除舊輪物件；沒有掃描歷史 Session。沒有加入 Ticket 04～07 的關閉、封存、期限或清理流程。
-- 五項 Ticket 03 驗收均已勾選並有證據。聚焦輪次及 UI 77 tests 通過；完整套件 218 tests 通過，包含在桌面工作階段實際執行的 Tk 跨輪重試及磁碟重建。語法編譯和 `git diff --check` 通過；repository 未發現型別檢查設定，未宣稱型別檢查通過。逐項命令與證據見 [Ticket 03 本機驗收紀錄](evidence/ticket-03/local-validation.md)。
-- 實作及測試提交 `abc5a8b152d56e7daf4ae60d1fee9049aae66fbe` 已推送至 `origin` 的 Gitea、GitHub 兩個 push URL；本次即時 refs 核對兩個目的地的 ticket branch SHA 相同，主線仍為固定基準。Standards／Spec 雙軸審查及後續文件提交尚待完成；完成前不合併或刪除分支。
+- 五項 Ticket 03 驗收均已勾選並有證據。聚焦輪次及 UI 77 tests 通過；最終程式 HEAD `64e903e` 的完整套件 218 tests 通過，包含在桌面工作階段實際執行的 Tk 跨輪重試及磁碟重建。語法編譯和 `git diff --check` 通過；repository 未發現型別檢查設定，未宣稱型別檢查通過。逐項命令與證據見 [Ticket 03 本機驗收紀錄](evidence/ticket-03/local-validation.md)。
+- 實作及測試提交 `abc5a8b152d56e7daf4ae60d1fee9049aae66fbe`、狀態標籤審查修正 `64e903e` 與驗收文件提交 `3168ec7` 已推送至 `origin` 的 Gitea、GitHub 兩個 push URL；本次即時 refs 核對兩個目的地的 ticket branch SHA 相同，主線仍為固定基準。Standards／Spec 雙軸最終複審均無未解問題。最終驗收文件摘要更新待提交／推送。
 - 原專案工作樹另有一份既存未提交修改 `docs/refactoring/CONFLICT_DIALOG_DISCUSSION_2026-10-07.md`；Ticket 03 使用獨立 worktree，沒有觸碰該修改。後續若合併須先安全保存並恢復此修改，不能把它納入 Ticket 03。

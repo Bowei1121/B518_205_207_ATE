@@ -1,9 +1,9 @@
 # Ticket 03 本機驗收紀錄
 
-日期：2026-10-07（Asia/Taipei）  
-固定 code-review 基準：`438dd951b6404c5a3f0a900ce08e4285066dd8ea`  
-驗收分支：`round/ticket-03`  
-目前實作提交：`abc5a8b152d56e7daf4ae60d1fee9049aae66fbe`  
+日期：2026-10-07（Asia/Taipei）
+固定 code-review 基準：`438dd951b6404c5a3f0a900ce08e4285066dd8ea`
+驗收分支：`round/ticket-03`
+目前實作提交：`64e903e`（程式批次：`abc5a8b152d56e7daf4ae60d1fee9049aae66fbe`、`64e903e`）
 環境：Python 3.8.10、macOS 15.7.9、x86_64、Git 2.50.1；完整套件及真正 Tk 測試在可存取桌面圖形工作階段執行。
 
 ## 基準與變更保護
@@ -29,7 +29,7 @@
 
 - TDD 紅燈：`python3 scripts/run_tests.py test_monitoring_round.MonitoringRoundTests.test_failed_previous_round_remains_queryable_and_retriable_after_new_round_starts`。實作前以 `AttributeError: 'RoundCoordinator' object has no attribute 'unsaved_rounds'` 失敗，確認前輪無公開追蹤入口；實作後此案例通過。
 - 聚焦驗收：`python3 scripts/run_tests.py test_monitoring_round test_log_solution_ui`，77 tests 通過，17.010 秒；包含真正 Tk 跨輪重試及目前輪畫面隔離。
-- 完整套件：`python3 scripts/run_tests.py`，218 tests 通過，33.746 秒。於可存取桌面圖形工作階段執行，Tk 案例實際執行，不以待驗代替通過。
+- 完整套件：最終程式 HEAD `64e903e` 執行 `python3 scripts/run_tests.py`，218 tests 通過，31.115 秒。於可存取桌面圖形工作階段執行，Tk 案例實際執行，不以待驗代替通過。
 - 語法編譯：`python3 -m py_compile src/monitoring_round.py src/b518_log_solution.py tests/test_monitoring_round.py tests/test_log_solution_ui.py`，通過。
 - 差異格式：`git diff --check 438dd951b6404c5a3f0a900ce08e4285066dd8ea...HEAD`，通過。
 - 型別檢查設定查找：`rg --files -g 'mypy.ini' -g '.mypy.ini' -g 'pyrightconfig.json' -g 'pyproject.toml' -g 'setup.cfg' -g 'tox.ini' -g 'Makefile' -g 'Pipfile'`，沒有找到型別檢查器設定；未宣稱型別檢查通過。語法編譯僅代表 Python 語法有效。
@@ -38,6 +38,6 @@
 
 ## 審查、提交與整合
 
-Standards／Spec 雙軸 code review 尚待固定基準 `438dd951b6404c5a3f0a900ce08e4285066dd8ea` 審查完成後更新本節與 Ticket 核取狀態。完成審查後若修改程式，將重跑受影響測試；合併前另確認主線工作樹乾淨並重新納入兩個遠端最新主線提交。
+固定基準 `438dd951b6404c5a3f0a900ce08e4285066dd8ea` 的 Standards／Spec 雙軸複審均無未解問題。Standards 首次指出 UI 保存狀態文字重複（P3 judgement call）；已以共用 `SAVE_STATE_LABELS` 修正於 `64e903e`，兩個真正 Tk 重試測試及其後完整 218 tests 均通過；最終複審未再發現標準違規或可行 smell。Spec 複審確認五項驗收皆有實作和證據、沒有未完成要求或 scope creep。合併前仍須確認主線工作樹乾淨並重新納入兩個遠端最新主線提交。
 
-目前實作提交 `abc5a8b152d56e7daf4ae60d1fee9049aae66fbe` 已推送至 origin 的 Gitea 與 GitHub 兩個 push URL；`git push -u origin round/ticket-03` 已建立 upstream。Ticket 文件、驗收紀錄及摘要提交將另行驗證後提交／推送。未執行合併或分支刪除。
+程式提交 `abc5a8b152d56e7daf4ae60d1fee9049aae66fbe`、`64e903e` 及文件／摘要提交 `3168ec7` 均已推送至 origin 的 Gitea 與 GitHub 兩個 push URL；`git push -u origin round/ticket-03` 已建立 upstream。Standards／Spec 最終複審均無未解問題。最後驗收文件及摘要狀態更新尚待提交／推送。尚未執行合併或分支刪除。
