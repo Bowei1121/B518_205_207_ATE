@@ -246,6 +246,27 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(rebuilt["audit_complete"])
         self.assertEqual(self.coordinator.snapshot().save_state, "complete")
 
+    def test_monitor_startup_failure_is_not_mislabeled_as_persistence_failure(self):
+        start_failed = threading.Event()
+
+        def observe(round_event):
+            if round_event.event.kind == "start_failed":
+                start_failed.set()
+
+        coordinator = RoundCoordinator(on_event=observe, audit_root=self.audit_root)
+
+        def broken_factory(_callback):
+            raise RuntimeError("monitor source is unavailable")
+
+        started = coordinator.start("FCT", broken_factory, run_async=True, capacity=1)
+        self.assertTrue(start_failed.wait(2))
+        snapshot = coordinator.snapshot()
+        self.assertEqual(snapshot.save_state, "waiting")
+        self.assertEqual(snapshot.save_errors, ())
+        self.assertTrue(coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        self.assertTrue(any(event["kind"] == "start_failed" for event in rebuilt["events"]))
+
     def test_append_completed_before_error_report_is_not_duplicated_on_retry(self):
         started = self.start_round()
         original_write = audit_records.os.write

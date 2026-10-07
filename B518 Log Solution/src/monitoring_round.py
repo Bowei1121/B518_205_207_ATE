@@ -383,8 +383,7 @@ class MonitoringRound:
             if self._retry_in_progress:
                 save_state = "saving"
             elif current_errors or audit_recovery_pending or (
-                    self._audit_store is not None and self._audit_store.error) or (
-                    self._collection_stopped and not self._monitor_persistence_ready):
+                    self._audit_store is not None and self._audit_store.error):
                 save_state = "failed"
             elif not self._monitor_persistence_ready:
                 save_state = "waiting"
@@ -852,7 +851,7 @@ class MonitoringRound:
         if event.kind == "unresolved_source_conflict":
             self._fail_unconfirmed_candidate(event)
             return
-        if event.kind in {"session_write_failed", "start_failed"}:
+        if event.kind == "session_write_failed":
             message = event.message
             if message not in self._audit_errors:
                 self._audit_errors.append(message)

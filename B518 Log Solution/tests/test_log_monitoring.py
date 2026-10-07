@@ -125,6 +125,90 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(records[0]["detail"], {"order": "first"})
         self.assertEqual(records[1]["detail"], {"order": "second"})
 
+    def test_session_flush_waits_for_writes_added_during_repeated_retry(self):
+        store = log_monitoring.SessionStore("retry-pending", {}, self.temp / "sessions")
+        original_event = store.event
+
+        def fail_initial(message, detail=None, timestamp=None):
+            if message == "first event":
+                raise OSError("initial append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_initial):
+            with self.assertRaises(OSError):
+                store.enqueue_event("first event")
+            store.enqueue_event("second event")
+
+        first_retry_entered = threading.Event()
+        release_first_retry = threading.Event()
+
+        def fail_first_retry(message, detail=None, timestamp=None):
+            if message == "first event":
+                first_retry_entered.set()
+                release_first_retry.wait(2)
+                raise OSError("retry append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_first_retry):
+            self.assertTrue(store.retry())
+            self.assertTrue(first_retry_entered.wait(2))
+            store.enqueue_event("third event")
+            release_first_retry.set()
+            self.assertFalse(store.flush(timeout=2))
+
+        third_retry_entered = threading.Event()
+        release_third_retry = threading.Event()
+
+        def block_third_retry(message, detail=None, timestamp=None):
+            if message == "third event":
+                third_retry_entered.set()
+                release_third_retry.wait(2)
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=block_third_retry):
+            self.assertTrue(store.retry())
+            self.assertTrue(third_retry_entered.wait(2))
+            self.assertFalse(store.flush(timeout=0.05))
+            release_third_retry.set()
+            self.assertTrue(store.flush(timeout=2))
+
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([record["message"] for record in records],
+                         ["first event", "second event", "third event"])
+
+    def test_session_retry_from_failure_callback_keeps_a_worker_for_retained_write(self):
+        failure_reported = threading.Event()
+        retries = []
+        store_holder = {}
+
+        def retry_from_callback(_label, _error):
+            retries.append(store_holder["store"].retry())
+            failure_reported.set()
+
+        store = log_monitoring.SessionStore(
+            "retry-callback", {}, self.temp / "sessions", on_error=retry_from_callback,
+            async_writes=True)
+        store_holder["store"] = store
+        original_event = store.event
+        write_attempts = []
+
+        def fail_once(message, detail=None, timestamp=None):
+            write_attempts.append(message)
+            if len(write_attempts) == 1:
+                raise OSError("background append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_once):
+            store.enqueue_event("recover from callback")
+            self.assertTrue(failure_reported.wait(2))
+            self.assertTrue(store.flush(timeout=2))
+
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(retries, [True])
+        self.assertEqual([record["message"] for record in records], ["recover from callback"])
+
     def test_session_background_failure_retains_work_until_retry(self):
         failed = threading.Event()
         store = log_monitoring.SessionStore(

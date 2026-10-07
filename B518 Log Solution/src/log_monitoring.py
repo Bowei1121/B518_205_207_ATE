@@ -87,6 +87,7 @@ class SessionStore:
         self._write_errors = []  # type: List[str]
         self._write_history = []  # type: List[str]
         self._recovery_writes = deque()
+        self._retry_counted_writes = 0
         self._on_write_error = on_error
         self._async_writes = async_writes
         try:
@@ -115,6 +116,9 @@ class SessionStore:
                 worker_active = self._write_thread is not None and self._write_thread.is_alive()
                 if self._write_errors or self._recovery_writes:
                     self._recovery_writes.append((operation, arguments, label))
+                    if worker_active and not self._write_errors:
+                        self._write_pending += 1
+                        self._retry_counted_writes += 1
                     return
                 if worker_active or self._write_pending:
                     self._write_pending += 1
@@ -163,24 +167,35 @@ class SessionStore:
             try:
                 getattr(self, operation)(*arguments)
             except OSError as error:
-                self._remember_failed_write(operation, arguments, label, error,
-                                             prepend=not queued)
                 if queued:
                     self._write_queue.task_done()
+                message = "{}：{}".format(label, error)
                 with self._write_condition:
+                    self._write_errors.append(message)
+                    self._write_history.append(message)
+                    failed_write = (operation, arguments, label)
+                    if not queued:
+                        self._recovery_writes.appendleft(failed_write)
+                    else:
+                        self._recovery_writes.append(failed_write)
                     self._write_pending -= 1
                     if not queued:
                         # The current and remaining retained writes are excluded from
                         # pending while a failed recovery waits for the next retry.
-                        self._write_pending -= max(0, len(self._recovery_writes) - 1)
+                        self._write_pending -= max(0, self._retry_counted_writes - 1)
+                        self._retry_counted_writes = 0
                     self._write_thread = None
                     self._write_condition.notify_all()
+                if self._on_write_error is not None:
+                    self._on_write_error(label, error)
                 return
             else:
                 if queued:
                     self._write_queue.task_done()
                 with self._write_condition:
                     self._write_pending -= 1
+                    if not queued and self._retry_counted_writes:
+                        self._retry_counted_writes -= 1
                     self._write_condition.notify_all()
 
     def initialize(self) -> None:
@@ -223,7 +238,8 @@ class SessionStore:
             if not self._write_errors:
                 return True
             self._write_errors = []
-            self._write_pending += len(self._recovery_writes)
+            self._retry_counted_writes = len(self._recovery_writes)
+            self._write_pending += self._retry_counted_writes
             self._ensure_write_worker_locked()
             self._write_condition.notify_all()
         return True
