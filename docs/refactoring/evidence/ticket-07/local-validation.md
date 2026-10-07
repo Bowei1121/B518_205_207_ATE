@@ -1,6 +1,6 @@
 # Ticket 07 本機實作與驗收紀錄
 
-狀態：Ticket 07 實作與驗收完成；25 項清理聚焦測試、274 項含真正 Tk 的完整套件、Standards／Spec 固定基準複審均通過。固定主線起點為 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支 `round/ticket-07` 在本票開始前已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`（父提交為上述主線 SHA，內容為 2026-10-07 多語言票草稿）。該既存提交未改寫；固定審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，Standards／Spec 審查範圍是其後的 Ticket 07 變更。正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`；合併樹僅納入 Ticket 07 交付，排除無關草稿檔案並移除其摘要段落。合併後 274 項含真正 Tk 的完整套件通過；主線同步及分支清理仍待完成。
+狀態：Ticket 07 實作與驗收完成；25 項清理聚焦測試、274 項含真正 Tk 的完整套件、Standards／Spec 固定基準複審均通過。固定主線起點為 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支 `round/ticket-07` 在本票開始前已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`（父提交為上述主線 SHA，內容為 2026-10-07 多語言票草稿）。該既存提交未改寫；固定審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，Standards／Spec 審查範圍是其後的 Ticket 07 變更。正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`；合併樹僅納入 Ticket 07 交付，排除無關草稿檔案並移除其摘要段落。合併後 274 項含真正 Tk 的完整套件通過；主線及驗收文件已同步至 Gitea／GitHub；兩端遠端分支、本地分支及 stale tracking refs 均已安全清理。最終主線文件 commit 為 `e621daf9bd735171f68467a4f2d9a2541de6211b`。
 
 ## 實作內容
 
@@ -48,4 +48,4 @@
 
 ## 整合待辦
 
-驗收及固定基準雙軸審查均已完成。合併前即時核對 Gitea、GitHub 的主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`。正常兩父提交合併 SHA `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e` 與 Ticket 分支 `fd746ed5071abfec6264e69170d6b4c566167f4c`。合併樹排除票前十張多語言草稿檔案及其摘要段落，Ticket 分支歷史未改寫。合併後於可存取桌面的環境執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，274 項通過（43.684 秒）。主線與驗收文件的遠端同步、兩端 refs 驗證及安全分支清理待完成後記錄。
+驗收及固定基準雙軸審查均已完成。合併前即時核對 Gitea、GitHub 的主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`。正常兩父提交合併 SHA `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e` 與 Ticket 分支 `fd746ed5071abfec6264e69170d6b4c566167f4c`。合併樹排除票前十張多語言草稿檔案及其摘要段落，Ticket 分支歷史未改寫。合併後於可存取桌面的環境執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，274 項通過（43.684 秒）。主線 commit `3c07e1e371c8e7f0467c39e591ab84df591d9ad0` 與驗收文件 commit `e621daf9bd735171f68467a4f2d9a2541de6211b` 均已推送至 origin 的 Gitea／GitHub push URL；`git ls-remote origin` 與 `git ls-remote github` 均確認主線為 `e621daf9bd735171f68467a4f2d9a2541de6211b`，`round/ticket-07` ref 不存在。之後以非強制方式刪除兩端遠端分支、本地分支，並 fetch prune 清除追蹤 refs。最終工作樹乾淨，位於 `B518-Log-Solution`。

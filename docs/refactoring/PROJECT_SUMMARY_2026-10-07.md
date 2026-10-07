@@ -2,10 +2,10 @@
 
 ## Ticket 07 開發記錄（本對話）
 
-- 實際 Git 根目錄為 `B518 Log Solution/`，程式與測試目錄在該根下同名子目錄 `B518 Log Solution/src`、`B518 Log Solution/tests`。本次主線基準 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，內容為十張多語言票草稿；保留未改寫，Ticket 07 固定雙軸審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`。該提交與 Ticket 07 無關，整合前須排除其內容。
+- 實際 Git 根目錄為 `B518 Log Solution/`，程式與測試目錄在該根下同名子目錄 `B518 Log Solution/src`、`B518 Log Solution/tests`。本次主線基準 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，內容為十張多語言票草稿；保留未改寫，Ticket 07 固定雙軸審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`。該提交與 Ticket 07 無關，已從主線合併樹排除。
 - 背景輪次清理從可信封存 manifest 驗證完整組件、時間與 App 管理路徑；Coordinator 管理啟動／每日／設定變更觸發、保護、工作合併及關閉協調。持久 ledger 記錄摘要與逐檔刪除意圖；stage crash、保存期限延長及部分刪除可在新 Coordinator 重讀後安全續作或還原。
-- `python3 scripts/run_tests.py test_round_retention`：25 項隔離真實暫存磁碟測試通過。桌面工作階段 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 項完整套件通過（42.641 秒），包含真正 Tk 設定、背景清理、摘要檢視、暫存磁碟刪除及 Tk 心跳。`python3 -m compileall -q src tests`、`git diff --check` 通過。
-- macOS Darwin 24.6.0 x86_64、Python 3.8.10、Tk 8.6。Repository 未配置型別檢查工具；不把 compileall 當型別檢查。Standards／Spec 固定基準審查及母規格覆蓋複核已完成；程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66` 已同步至 Gitea／GitHub，文件更新、主線整合及分支清理尚待完成。
+- `python3 scripts/run_tests.py test_round_retention`：25 項隔離真實暫存磁碟測試通過。合併後桌面工作階段 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 項完整套件通過（43.684 秒），包含真正 Tk 設定、背景清理、摘要檢視、暫存磁碟刪除及 Tk 心跳。`python3 -m compileall -q src tests`、`git diff --check` 通過。
+- macOS Darwin 24.6.0 x86_64、Python 3.8.10、Tk 8.6。Repository 未配置型別檢查工具；不把 compileall 當型別檢查。Standards／Spec 固定基準審查及母規格覆蓋複核已完成；合併 commit `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`、最終文件 commit `e621daf9bd735171f68467a4f2d9a2541de6211b` 已推送至 Gitea／GitHub。兩端遠端與本地 `round/ticket-07` 及 stale tracking refs 均已清理，最後工作樹乾淨並位於 `B518-Log-Solution`。
 - 完整實際命令、母規格覆蓋和限制見 [Ticket 07 本機驗收紀錄](evidence/ticket-07/local-validation.md)。
 
 ## 多語言訪談共識
@@ -89,4 +89,4 @@
 - 以 `RoundCoordinator` 公開入口及背景 worker 實作啟動／每日／設定變更排程、同輪可信完整性驗證、跨目錄整輪刪除、保護狀態及持久摘要。stage 名稱和刪除步驟會在改名前持久化；崩潰、保存期限延長或寫入錯誤時依雜湊驗證續作或還原；摘要在輪次檔案刪除後仍可由新 Coordinator 讀取。UI 操作設定與摘要，Tk 執行緒不負責掃描或刪除。
 - Ticket 07 八項驗收及規格母表 16 項覆蓋逐案查核完成。`python3 scripts/run_tests.py test_round_retention`：25 tests 通過；合併後於桌面工作階段執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 tests 通過（43.684 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 測試操作設定保存／失敗、設定觸發清理、摘要檢視、暫存輪次刪除及外部來源／匯出保護，並確認 `after` 心跳。repository 未配置型別檢查器，未宣稱型別檢查通過；受控測試不代表現場設備驗收。
 - 固定基準 Standards／Spec 雙軸複審通過，最終沒有未解問題。審查找到 stage rename 崩潰復原、期限延長後還原冪等性、重複摘要及檔案／目錄 FD 洩漏；均以 Event／故障注入測試修正，聚焦測試與完整套件在修正後重跑。
-- Ticket 分支程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66`、驗收文件 SHA `fd746ed5071abfec6264e69170d6b4c566167f4c` 已同步至 Gitea 與 GitHub。合併前即時查核兩端主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`；正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，合併後 274 項完整桌面測試通過。Standards／Spec 最終複審沒有未解問題。主線文件補記及同步、兩端 refs 再確認與分支清理尚待完成；完成前保留 `round/ticket-07`。細節及命令見 [Ticket 07 驗收紀錄](evidence/ticket-07/local-validation.md)。
+- Ticket 分支程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66`、驗收文件 SHA `fd746ed5071abfec6264e69170d6b4c566167f4c` 已同步至 Gitea 與 GitHub。合併前即時查核兩端主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`；正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，合併後 274 項完整桌面測試通過。Standards／Spec 最終複審沒有未解問題。主線文件最終 commit `e621daf9bd735171f68467a4f2d9a2541de6211b` 與合併結果均已同步兩端；refs 核對一致後刪除兩端遠端分支、本地分支及 tracking refs，最後停在乾淨的 `B518-Log-Solution`。細節及命令見 [Ticket 07 驗收紀錄](evidence/ticket-07/local-validation.md)。
