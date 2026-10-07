@@ -23,6 +23,83 @@ def valid_profile():
 
 
 class MachineProfileTests(unittest.TestCase):
+    def test_global_retention_days_defaults_and_reload_from_preferences_disk(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            store.load()
+            self.assertEqual(store.retention_days, 365)
+
+            store.save_retention_days(180)
+
+            restarted = MachineProfileStore(path)
+            restarted.load()
+            self.assertEqual(restarted.retention_days, 180)
+
+    def test_global_retention_days_reject_invalid_values_without_changing_saved_setting(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            store.load()
+            store.save_retention_days(730)
+            original = path.read_bytes()
+
+            for invalid in ("", "not-a-number", 0, -1, 1.5, True):
+                with self.subTest(value=invalid), self.assertRaises(ProfileError):
+                    store.save_retention_days(invalid)
+                self.assertEqual(store.retention_days, 730)
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_global_retention_save_failure_preserves_disk_and_effective_value(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            store.load()
+            original_catalog, _project, _machine = migrate_legacy_preferences({})
+            store.save(original_catalog, "B518", "FCT")
+            original = path.read_bytes()
+
+            with patch("machine_profiles.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    store.save_retention_days(180)
+
+            self.assertEqual(store.retention_days, 365)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_profile_save_and_import_preserve_global_retention_but_exports_do_not_include_it(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            export_path = Path(temporary) / "profiles.json"
+            store = MachineProfileStore(path)
+            catalog, _project, _machine, _error = store.load()
+            store.save(catalog, "B518", "FCT")
+            store.save_retention_days(180)
+            replacement = catalog.with_profile(MachineProfileStore(path).load()[0].get("B518", "FCT"))
+            store.save(replacement, "B518", "FCT")
+            MachineProfileStore.export_document(export_path, replacement)
+            store.import_document(replacement.to_json(), "B518", "FCT")
+
+            self.assertEqual(MachineProfileStore(path).load()[0].profiles, replacement.profiles)
+            restarted = MachineProfileStore(path)
+            restarted.load()
+            self.assertEqual(restarted.retention_days, 180)
+            self.assertNotIn("retention_days", json.loads(export_path.read_text(encoding="utf-8")))
+
+    def test_profile_save_from_fresh_store_preserves_existing_global_retention(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            seeded = MachineProfileStore(path)
+            catalog, _project, _machine, _error = seeded.load()
+            seeded.save(catalog, "B518", "FCT")
+            seeded.save_retention_days(180)
+
+            fresh_writer = MachineProfileStore(path)
+            fresh_writer.save(catalog, "B518", "FCT")
+
+            restarted = MachineProfileStore(path)
+            restarted.load()
+            self.assertEqual(restarted.retention_days, 180)
+
     def test_capacity_and_source_positions_follow_parser_capabilities(self):
         for capacity in (1, 4, 6, 10, 12, 20):
             pairs = [{"source": source, "display": display}
@@ -157,12 +234,15 @@ class MachineProfileTests(unittest.TestCase):
 
             self.assertIsNone(error)
             self.assertEqual((project, machine), ("B518", "BT"))
+            self.assertEqual(store.retention_days, 365)
             self.assertTrue(store.migration_required)
             store.save(catalog, project, machine, preserve_legacy=store.migration_required)
             self.assertTrue((path.parent / "preferences.legacy.json").is_file())
-            restarted = MachineProfileStore(path).load()
+            restarted_store = MachineProfileStore(path)
+            restarted = restarted_store.load()
             self.assertEqual((restarted[1], restarted[2]), ("B518", "BT"))
             self.assertEqual(restarted[0].get("B518", "BT").paths["final"], "/tmp/rswmt")
+            self.assertEqual(restarted_store.retention_days, 365)
 
     def test_malformed_legacy_profile_returns_error_and_preserves_original_file(self):
         with TemporaryDirectory() as temporary:

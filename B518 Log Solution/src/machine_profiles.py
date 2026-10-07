@@ -7,12 +7,13 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Dict, Iterable, Mapping, Tuple
+from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
 
 
 PROFILE_SCHEMA_VERSION = 1
+DEFAULT_RETENTION_DAYS = 365
 SUPPORTED_MACHINES = ("DFU", "FCT", "BT")
 SUPPORTED_PLATFORMS = DEFAULT_PLATFORM_REGISTRY.names
 MAX_CAPACITY = 20
@@ -124,6 +125,27 @@ class MachineProfileStore:
     def __init__(self, preferences_path: Path):
         self.path = Path(preferences_path)
         self.migration_required = False
+        self._retention_days = DEFAULT_RETENTION_DAYS
+
+    @property
+    def retention_days(self) -> int:
+        """Return the effective global retention duration in whole days."""
+        return self._retention_days
+
+    @staticmethod
+    def _validated_retention_days(value: object) -> int:
+        if type(value) is not int or value <= 0:
+            raise ProfileError("保存天數必須是正整數。")
+        return value
+
+    def _load_retention_days(self, preferences: Mapping[str, object]) -> Optional[str]:
+        value = preferences.get("retention_days", DEFAULT_RETENTION_DAYS)
+        try:
+            self._retention_days = self._validated_retention_days(value)
+        except ProfileError as error:
+            self._retention_days = DEFAULT_RETENTION_DAYS
+            return "保存天數設定無效，已使用預設值 365 天：{}".format(error)
+        return None
 
     def load(self):
         try:
@@ -133,23 +155,30 @@ class MachineProfileStore:
         except FileNotFoundError:
             raw = {}
         except (OSError, json.JSONDecodeError, ProfileError) as error:
+            self._retention_days = DEFAULT_RETENTION_DAYS
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "無法讀取偏好檔：{}".format(error)
 
         if type(raw.get("schema_version")) is int and raw.get("schema_version") == PROFILE_SCHEMA_VERSION:
             try:
                 catalog = ProfileCatalog.from_dict(raw)
+                retention_error = self._load_retention_days(raw)
                 project, machine = raw.get("project"), raw.get("machine")
                 try:
                     catalog.get(project, machine)
-                    return catalog, project, machine, None
+                    return catalog, project, machine, retention_error
                 except ProfileError:
                     fallback = catalog.profiles[0]
-                    return catalog, fallback.project, fallback.machine, "已保存的專案與機型選擇已不存在，請重新選擇。"
+                    error = "已保存的專案與機型選擇已不存在，請重新選擇。"
+                    if retention_error:
+                        error = "{} {}".format(error, retention_error)
+                    return catalog, fallback.project, fallback.machine, error
             except (ProfileError, TypeError) as error:
+                self._retention_days = DEFAULT_RETENTION_DAYS
                 catalog, project, machine = migrate_legacy_preferences({})
                 return catalog, project, machine, "配置無效：{}".format(error)
         if "schema_version" in raw:
+            self._retention_days = DEFAULT_RETENTION_DAYS
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "不支援的偏好版本：{}。".format(raw.get("schema_version"))
 
@@ -159,14 +188,25 @@ class MachineProfileStore:
             catalog, project, machine = migrate_legacy_preferences({})
             self.migration_required = False
             return catalog, project, machine, "舊偏好遷移失敗：{}".format(error)
+        retention_error = self._load_retention_days(raw)
         self.migration_required = True
-        return catalog, project, machine, None
+        return catalog, project, machine, retention_error
 
     def save(self, catalog: ProfileCatalog, project: str, machine: str,
              preserve_legacy: bool = False) -> None:
         catalog.get(project, machine)
+        retention_days = self._retention_days
+        try:
+            current = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(current, dict) and "retention_days" in current:
+                retention_days = self._validated_retention_days(current["retention_days"])
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError, json.JSONDecodeError, ProfileError):
+            pass
         payload = catalog.to_dict()
         payload.update({"project": project, "machine": machine})
+        payload["retention_days"] = retention_days
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if preserve_legacy and self.path.exists():
             legacy_path = self.path.with_name("preferences.legacy.json")
@@ -174,6 +214,29 @@ class MachineProfileStore:
                 _atomic_write_text(legacy_path, self.path.read_text(encoding="utf-8"))
         _atomic_write_text(self.path, _profile_document_json(payload))
         self.migration_required = False
+        self._retention_days = retention_days
+
+    def save_retention_days(self, days: int) -> None:
+        """Persist a global retention duration without replacing profile data."""
+        value = self._validated_retention_days(days)
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raw = {}
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ProfileError("無法讀取偏好檔：{}".format(error))
+        if not isinstance(raw, dict):
+            raise ProfileError("偏好檔根節點必須是 JSON 物件。")
+        version = raw.get("schema_version")
+        if version is not None:
+            if type(version) is not int or version != PROFILE_SCHEMA_VERSION:
+                raise ProfileError("不支援的偏好版本：{}。".format(version))
+            ProfileCatalog.from_dict(raw)
+        payload = dict(raw)
+        payload["retention_days"] = value
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(self.path, _profile_document_json(payload))
+        self._retention_days = value
 
     def import_document(self, document: str, selected_project: str, selected_machine: str):
         """Validate a complete catalog, then atomically replace the saved catalog."""
