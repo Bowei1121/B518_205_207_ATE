@@ -109,6 +109,12 @@ class B518LogSolutionApp:
         self.events: queue.Queue[RoundEvent] = queue.Queue()
         self.hotkey_events: queue.Queue[bool] = queue.Queue()
         self.rounds = RoundCoordinator(self.events.put, audit_root=self.session_root)
+        self._closing_ui = False
+        self._close_window = None
+        self._close_status_label = None
+        self._close_error_label = None
+        self._close_retry_button = None
+        self._close_poll_generation = None
         self.active_round_id: Optional[str] = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
@@ -412,6 +418,8 @@ class B518LogSolutionApp:
 
     def retry_selected_round(self) -> None:
         """Retry the operator-selected current-run round without blocking Tk."""
+        if getattr(self, "_closing_ui", False):
+            return
         round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
         if round_id and self.rounds.retry_saves(round_id):
             self.unsaved_round_retry_button.configure(state="disabled")
@@ -419,7 +427,8 @@ class B518LogSolutionApp:
     def _update_selected_round_retry(self, _event=None) -> None:
         round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
         snapshot = self.rounds.round_snapshot(round_id) if round_id else None
-        state = "normal" if snapshot is not None and snapshot.save_state == "failed" else "disabled"
+        state = "normal" if (not getattr(self, "_closing_ui", False) and snapshot is not None and
+                              snapshot.save_state == "failed") else "disabled"
         self.unsaved_round_retry_button.configure(state=state)
         if snapshot is None:
             self.unsaved_round_detail.configure(text="")
@@ -577,20 +586,25 @@ class B518LogSolutionApp:
         self.hotkey_events.put(True)
 
     def _start_from_hotkey(self) -> None:
-        if not self._round_is_active():
+        if not getattr(self, "_closing_ui", False) and not self._round_is_active():
             self.start_monitor()
 
     def _show_hotkey_warning(self) -> None:
         messagebox.showwarning("全域快捷鍵不可用", self.hotkey.message, parent=self.root)
 
     def _set_monitor_controls(self, monitoring: bool, state_text: Optional[str] = None) -> None:
-        self.start_button.configure(state="disabled" if monitoring else "normal")
-        self.stop_button.configure(state="normal" if monitoring else "disabled")
-        self.monitor_state.configure(text=state_text or ("監控中" if monitoring else "待命"))
+        if getattr(self, "_closing_ui", False):
+            self.start_button.configure(state="disabled")
+            self.stop_button.configure(state="disabled")
+            self.monitor_state.configure(text="關閉前保存中")
+        else:
+            self.start_button.configure(state="disabled" if monitoring else "normal")
+            self.stop_button.configure(state="normal" if monitoring else "disabled")
+            self.monitor_state.configure(text=state_text or ("監控中" if monitoring else "待命"))
         for name in ("project_choice", "machine_choice"):
             choice = getattr(self, name, None)
             if choice:
-                choice.configure(state="disabled" if monitoring else "readonly")
+                choice.configure(state="disabled" if monitoring or getattr(self, "_closing_ui", False) else "readonly")
 
     def _set_row(self, slot: int, sn: str, status: str) -> None:
         widgets = self.status_rows.get(slot)
@@ -606,6 +620,8 @@ class B518LogSolutionApp:
             self._set_row(slot, "", "WAITING")
 
     def start_monitor(self) -> None:
+        if getattr(self, "_closing_ui", False):
+            return
         current = self.rounds.snapshot()
         if current is not None and current.state == "RUNNING":
             return
@@ -786,6 +802,8 @@ class B518LogSolutionApp:
 
     def _open_conflict_review(self) -> None:
         """Show the captured candidates in a modeless, non-blocking window."""
+        if getattr(self, "_closing_ui", False):
+            return
         if not self.conflict_window or not self.conflict_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.conflict_window = window
@@ -900,6 +918,8 @@ class B518LogSolutionApp:
         self.conflict_details.configure(state="disabled")
 
     def _resolve_selected_conflict(self, choice: str) -> None:
+        if getattr(self, "_closing_ui", False):
+            return
         if not self.conflict_list:
             return
         selected = self.conflict_list.curselection()
@@ -932,6 +952,8 @@ class B518LogSolutionApp:
             self._render_round_alarm(alarm)
 
     def _open_round_alarm(self) -> None:
+        if getattr(self, "_closing_ui", False):
+            return
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         alarm = snapshot.round_alarm if snapshot else None
         if alarm is None:
@@ -980,6 +1002,8 @@ class B518LogSolutionApp:
             )
 
     def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
+        if getattr(self, "_closing_ui", False):
+            return
         snapshot = self.rounds.snapshot()
         if snapshot is None:
             return
@@ -1276,19 +1300,98 @@ class B518LogSolutionApp:
             messagebox.showerror("無法開啟", str(error), parent=self.root)
 
     def close(self) -> None:
-        self.hotkey.close()
         rounds = getattr(self, "rounds", None)
-        snapshot = rounds.snapshot() if rounds is not None else None
-        if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
-            rounds.stop()
-        session_saved = rounds.flush_session(timeout=2.0) if rounds is not None else True
-        audit_saved = rounds.flush_audit(timeout=2.0) if rounds is not None else True
-        if not session_saved or not audit_saved:
-            messagebox.showwarning(
-                "稽核紀錄不完整",
-                "關閉前仍有稽核或 Session 紀錄未能完整保存；既有結果放行狀態不變。",
-                parent=self.root,
-            )
+        if rounds is None:
+            self._finish_close()
+            return
+        if self._closing_ui:
+            return
+        self._closing_ui = True
+        self._set_monitor_controls(self._round_is_active())
+        status = rounds.request_close()
+        self._show_close_progress(status)
+        self._schedule_close_poll(status.generation)
+
+    def _show_close_progress(self, status) -> None:
+        if self._close_window is None or not self._close_window.winfo_exists():
+            window = tk.Toplevel(self.root)
+            self._close_window = window
+            window.title("關閉前保存紀錄")
+            window.geometry("500x210")
+            window.resizable(False, False)
+            window.transient(self.root)
+            window.protocol("WM_DELETE_WINDOW", self.cancel_close)
+            self._close_status_label = ttk.Label(window, text="正在停止來源並確認所有輪次紀錄…",
+                                                  wraplength=460, justify="left")
+            self._close_status_label.pack(fill="x", padx=18, pady=(18, 8))
+            self._close_error_label = ttk.Label(window, text="", wraplength=460, justify="left")
+            self._close_error_label.pack(fill="x", padx=18, pady=6)
+            actions = ttk.Frame(window)
+            actions.pack(fill="x", padx=18, pady=(12, 16))
+            self._close_retry_button = ttk.Button(actions, text="重試保存", command=self.retry_close_saves,
+                                                  state="disabled")
+            self._close_retry_button.pack(side="left")
+            ttk.Button(actions, text="取消關閉", command=self.cancel_close).pack(side="right")
+        if self._close_window and self._close_window.winfo_exists():
+            self._close_window.deiconify()
+            self._close_window.lift()
+        self._render_close_status(status)
+
+    def _render_close_status(self, status) -> None:
+        if not self._close_status_label or not self._close_status_label.winfo_exists():
+            return
+        labels = {
+            "saving": "正在停止來源並保存本次執行中所有輪次…",
+            "waiting": "正在等待來源準備及背景保存完成…",
+            "failed": "保存尚未完整。修復保存位置或磁碟問題後可重試；視窗仍保持開啟。",
+            "complete": "本次執行的所有必要 Session 與 audit 紀錄均已完整保存。",
+            "cancelled": "已取消關閉；保存工作會繼續，來源不會自動重新啟動。",
+        }
+        self._close_status_label.configure(text=labels.get(status.status, "正在確認保存狀態…"))
+        self._close_error_label.configure(text=status.error)
+        if self._close_retry_button:
+            self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
+
+    def _schedule_close_poll(self, generation: int) -> None:
+        self._close_poll_generation = generation
+        self.root.after(100, lambda: self._poll_close_status(generation))
+
+    def _poll_close_status(self, generation: int) -> None:
+        if not self._closing_ui or generation != self._close_poll_generation:
+            return
+        status = self.rounds.close_status()
+        if status.generation != generation:
+            return
+        self._render_close_status(status)
+        if status.status == "complete":
+            self._finish_close()
+        elif status.status in {"saving", "waiting"}:
+            self._schedule_close_poll(generation)
+
+    def retry_close_saves(self) -> None:
+        if not self._closing_ui:
+            return
+        status = self.rounds.retry_close_saves()
+        self._render_close_status(status)
+        self._schedule_close_poll(status.generation)
+
+    def cancel_close(self) -> None:
+        if not self._closing_ui:
+            return
+        status = self.rounds.cancel_close()
+        self._closing_ui = False
+        self._close_poll_generation = None
+        if self._close_window and self._close_window.winfo_exists():
+            self._close_window.destroy()
+        self._close_window = None
+        self._apply_round_snapshot(self.rounds.snapshot())
+        self._refresh_unsaved_rounds()
+
+    def _finish_close(self) -> None:
+        self.hotkey.close()
+        if self._close_window and self._close_window.winfo_exists():
+            self._close_window.destroy()
+        self._closing_ui = False
         try:
             self._save_preferences()
         except (OSError, ProfileError) as error:

@@ -125,6 +125,15 @@ class RoundSnapshot:
     retry_in_progress: bool = False
 
 
+@dataclass(frozen=True)
+class CloseSnapshot:
+    """Public progress for the current app-run save-before-close attempt."""
+    status: str = "idle"
+    generation: int = 0
+    round_ids: Tuple[str, ...] = ()
+    error: str = ""
+
+
 class MonitoringRound:
     """Apply common deadlines and lifecycle rules to platform observations."""
 
@@ -181,6 +190,7 @@ class MonitoringRound:
         self._audit_next_sequence = 1
         self._audit_recovery_events = []
         self._audit_recovery_replaying = False
+        self._prepared_event = threading.Event()
         if self._audit_root is not None:
             try:
                 self._audit_store = self._create_audit_store()
@@ -559,6 +569,8 @@ class MonitoringRound:
                 MonitorEvent("start_failed", "無法準備監控來源：{}".format(error))
             )
             return
+        finally:
+            self._prepared_event.set()
         self._run()
 
     def _prepare_monitor(self) -> None:
@@ -1092,12 +1104,17 @@ class RoundCoordinator:
         self._monotonic = monotonic
         self._audit_root = Path(audit_root) if audit_root is not None else None
         self._wall_clock = wall_clock
+        self._closing = False
+        self._close_status = CloseSnapshot()
+        self._close_worker_active = False
 
     def start(self, station: str,
               monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
               run_async: bool = True, round_timeout_seconds: Optional[int] = None,
               capacity: Optional[int] = None, audit_context: Optional[dict] = None) -> RoundSnapshot:
         with self._lock:
+            if self._closing:
+                raise RuntimeError("關閉保存進行中，暫時不能開始新輪")
             if self._current is not None and self._current.snapshot().state in {
                     RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return self._current.snapshot()
@@ -1110,7 +1127,10 @@ class RoundCoordinator:
             self._prune_saved_rounds_locked()
             self._events = []
             try:
-                return session.start(run_async=run_async)
+                snapshot = session.start(run_async=run_async)
+                if not run_async:
+                    session._prepared_event.set()
+                return snapshot
             except Exception:
                 self._current = None
                 raise
@@ -1142,9 +1162,122 @@ class RoundCoordinator:
     def retry_saves(self, round_id: Optional[str] = None) -> bool:
         """Start one nonblocking recovery attempt for a tracked round."""
         with self._lock:
+            if self._closing:
+                return False
             target_id = round_id or (self._current.round_id if self._current is not None else None)
             target = self._tracked_rounds.get(target_id) if target_id is not None else None
         return target.retry_saves() if target is not None else False
+
+    def request_close(self) -> CloseSnapshot:
+        """Stop new rounds and durably flush all current-run records in a worker."""
+        with self._lock:
+            if self._close_status.status in {"waiting", "saving"}:
+                return self._close_status
+            self._closing = True
+            generation = self._close_status.generation + 1
+            round_ids = tuple(self._tracked_rounds)
+            self._close_status = CloseSnapshot("saving", generation, round_ids)
+            self._start_close_worker_locked(generation)
+            return self._close_status
+
+    def retry_close_saves(self) -> CloseSnapshot:
+        """Retry failed rounds, then recheck every tracked round before close."""
+        with self._lock:
+            if self._close_status.status != "failed":
+                return self._close_status
+            self._closing = True
+            generation = self._close_status.generation + 1
+            self._close_status = CloseSnapshot(
+                "saving", generation, tuple(self._tracked_rounds))
+            failed = tuple(round_ for round_ in self._tracked_rounds.values()
+                           if round_.snapshot().save_state == "failed")
+        for round_ in failed:
+            round_.retry_saves()
+        with self._lock:
+            self._start_close_worker_locked(generation)
+        return self.close_status()
+
+    def cancel_close(self) -> CloseSnapshot:
+        """Invalidate a close attempt without cancelling or discarding any save work."""
+        with self._lock:
+            if self._close_status.status == "complete":
+                return self._close_status
+            self._closing = False
+            self._close_status = CloseSnapshot(
+                "cancelled", self._close_status.generation + 1,
+                tuple(self._tracked_rounds), self._close_status.error)
+            return self._close_status
+
+    def close_status(self) -> CloseSnapshot:
+        """Return the shared close-save state without reading historical Sessions."""
+        with self._lock:
+            return self._close_status
+
+    def _start_close_worker_locked(self, generation: int) -> None:
+        if self._close_worker_active:
+            return
+        self._close_worker_active = True
+        threading.Thread(target=self._coordinate_close, args=(generation,), daemon=True).start()
+
+    def _coordinate_close(self, generation: int) -> None:
+        try:
+            with self._lock:
+                current = self._current
+            if current is not None:
+                current.stop()
+            while True:
+                if not self._close_attempt_is_current(generation):
+                    return
+                with self._lock:
+                    rounds = tuple(self._tracked_rounds.items())
+                    round_ids = tuple(round_id for round_id, _round in rounds)
+                waiting_for_preparation = False
+                for _round_id, round_ in rounds:
+                    if not round_._prepared_event.wait(0.05):
+                        waiting_for_preparation = True
+                        break
+                    if not self._close_attempt_is_current(generation):
+                        return
+                    round_.flush_session(timeout=None)
+                    round_.flush_audit(timeout=None)
+                if waiting_for_preparation:
+                    continue
+                snapshots = tuple(round_.snapshot() for _round_id, round_ in rounds)
+                incomplete = tuple(snapshot for snapshot in snapshots
+                                   if snapshot.save_state != "complete" or not snapshot.audit_complete)
+                if not incomplete:
+                    with self._lock:
+                        if self._closing and self._close_status.generation == generation:
+                            self._close_status = CloseSnapshot("complete", generation, round_ids)
+                    return
+                failed = tuple(snapshot for snapshot in incomplete
+                               if snapshot.save_state == "failed")
+                if failed:
+                    details = "; ".join(
+                        "{}：{}".format(snapshot.round_id[:10],
+                                        snapshot.save_errors[0] if snapshot.save_errors else "保存尚未完整")
+                        for snapshot in failed)
+                    self._set_close_failure(generation, round_ids, details)
+                    return
+                threading.Event().wait(0.05)
+        except Exception as error:
+            with self._lock:
+                round_ids = tuple(self._tracked_rounds)
+            self._set_close_failure(generation, round_ids, str(error))
+        finally:
+            with self._lock:
+                self._close_worker_active = False
+                if self._closing and self._close_status.status == "saving":
+                    self._start_close_worker_locked(self._close_status.generation)
+
+    def _close_attempt_is_current(self, generation: int) -> bool:
+        with self._lock:
+            return self._closing and self._close_status.generation == generation
+
+    def _set_close_failure(self, generation: int, round_ids: Tuple[str, ...], error: str) -> None:
+        with self._lock:
+            if self._closing and self._close_status.generation == generation:
+                self._close_status = CloseSnapshot("failed", generation, round_ids, error)
 
     def unsaved_rounds(self) -> Tuple[RoundSnapshot, ...]:
         """Return current-run rounds that still need durable saving or protection."""

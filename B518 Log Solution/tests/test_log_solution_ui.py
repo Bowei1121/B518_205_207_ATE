@@ -1330,67 +1330,207 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root.attributes.assert_not_called()
         app._set_monitor_controls.assert_called_once_with(False)
 
-    def test_close_does_not_change_window_topmost_attribute(self):
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.hotkey = MagicMock()
-        app.rounds = MagicMock()
-        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
-        app._save_preferences = MagicMock()
+    def test_close_waits_responsively_and_cancellation_invalidates_old_completion(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            rounds = RoundCoordinator(app.events.put, audit_root=session_root)
+            app.rounds = rounds
+            monitor_holder = {}
 
-        app.close()
+            class Monitor:
+                def __init__(self, callback):
+                    self.callback = callback
+                    self.session = SessionStore("close-round", {}, session_root)
+                    self.results = (SlotResult(1),)
 
-        app.root.attributes.assert_not_called()
-        app.root.destroy.assert_called_once()
+                def round_results(self):
+                    return self.results
 
-    def test_close_flushes_session_then_audit_before_destroying_tk(self):
-        calls = []
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.hotkey = MagicMock()
-        app.rounds = MagicMock()
-        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
-        app.rounds.flush_session.side_effect = lambda timeout: calls.append("session") or True
-        app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
-        app._save_preferences = MagicMock()
-        app.root.destroy.side_effect = lambda: calls.append("destroy")
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 10}[kind]
 
-        app.close()
+                def update_round_settings(self, settings):
+                    self.session.update_settings(settings)
 
-        self.assertEqual(calls, ["session", "audit", "destroy"])
-        app.rounds.flush_audit.assert_called_once_with(timeout=2.0)
+                def publish_round_event(self, event):
+                    self.session.enqueue_event(event.message, event.detail)
+                    self.callback(event)
 
-    def test_close_surfaces_incomplete_session_or_audit_flush(self):
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.hotkey = MagicMock()
-        app.rounds = MagicMock()
-        app.rounds.snapshot.return_value = SimpleNamespace(state="READY")
-        app.rounds.flush_audit.return_value = False
-        app._save_preferences = MagicMock()
+                def start(self):
+                    pass
 
-        with patch("b518_log_solution.messagebox.showwarning") as warning:
-            app.close()
+                def stop_collection(self):
+                    pass
 
-        warning.assert_called_once()
-        self.assertIn("稽核紀錄不完整", warning.call_args.args[0])
-        app.root.destroy.assert_called_once()
+                def finish(self):
+                    self.session.enqueue_finish()
 
-    def test_close_flushes_completed_round_session_after_ui_monitor_was_cleared(self):
-        calls = []
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.hotkey = MagicMock()
-        app.rounds = MagicMock()
-        app.rounds.snapshot.return_value = SimpleNamespace(state="COMPLETED")
-        app.rounds.flush_session.side_effect = lambda timeout: calls.append("session") or True
-        app.rounds.flush_audit.side_effect = lambda timeout: calls.append("audit") or True
-        app._save_preferences = MagicMock()
-        app.root.destroy.side_effect = lambda: calls.append("destroy")
+                def stop(self):
+                    self.callback(MonitorEvent("stopped", "stopped"))
 
-        app.close()
+                def poll_once(self):
+                    pass
 
-        self.assertEqual(calls, ["session", "audit", "destroy"])
+            def create(callback):
+                monitor = Monitor(callback)
+                monitor_holder["monitor"] = monitor
+                return monitor
+
+            def root_is_alive():
+                try:
+                    return bool(root.winfo_exists())
+                except tk.TclError:
+                    return False
+
+            entered = threading.Event()
+            release = threading.Event()
+            original_write = audit_records.os.write
+            blocked = [False]
+
+            def hold_collection_stop(descriptor, content):
+                if b"collection_stopped" in content and not blocked[0]:
+                    blocked[0] = True
+                    entered.set()
+                    release.wait(8)
+                return original_write(descriptor, content)
+
+            try:
+                started = rounds.start("FCT", create, run_async=False, capacity=1)
+                app.active_round_id = started.round_id
+                with patch.object(audit_records.os, "write", side_effect=hold_collection_stop):
+                    app.close()
+                    self.assertTrue(entered.wait(2))
+                    ticks = []
+                    root.after(0, lambda: ticks.append("responsive"))
+                    deadline = time.monotonic() + 2.2
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+                    self.assertTrue(root.winfo_exists())
+                    self.assertIn("responsive", ticks)
+                    self.assertTrue(app._close_window.winfo_exists())
+
+                    app.cancel_close()
+                    release.set()
+                    self.wait_for(lambda: rounds.round_snapshot(started.round_id).save_state == "complete")
+                    self.assertTrue(root.winfo_exists())
+
+                app.close()
+                self.wait_for(lambda: rounds.close_status().status == "complete")
+                deadline = time.monotonic() + 2
+                while root_is_alive() and time.monotonic() < deadline:
+                    root.update()
+                self.assertFalse(root_is_alive())
+                rebuilt = read_round_audit(monitor_holder["monitor"].session.path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertTrue(any(event["kind"] == "collection_stopped"
+                                    for event in rebuilt["events"]))
+            finally:
+                release.set()
+                if root_is_alive():
+                    app.hotkey.close()
+                    root.destroy()
+
+    def test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            rounds = RoundCoordinator(app.events.put, audit_root=session_root)
+            app.rounds = rounds
+            holder = {}
+
+            class Monitor:
+                def __init__(self, callback):
+                    self.callback = callback
+                    self.session = SessionStore("failed-close-round", {}, session_root)
+                    self.results = (SlotResult(1),)
+
+                def round_results(self):
+                    return self.results
+
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 10}[kind]
+
+                def update_round_settings(self, settings):
+                    self.session.update_settings(settings)
+
+                def publish_round_event(self, event):
+                    self.session.enqueue_event(event.message, event.detail)
+                    self.callback(event)
+
+                def start(self):
+                    pass
+
+                def stop_collection(self):
+                    pass
+
+                def finish(self):
+                    self.session.enqueue_finish()
+
+                def stop(self):
+                    self.callback(MonitorEvent("stopped", "stopped"))
+
+                def poll_once(self):
+                    pass
+
+            def create(callback):
+                holder["monitor"] = Monitor(callback)
+                return holder["monitor"]
+
+            original_write = audit_records.os.write
+            failed = [False]
+
+            def fail_once(descriptor, content):
+                if b"collection_stopped" in content and not failed[0]:
+                    failed[0] = True
+                    raise OSError("temporary close audit fault")
+                return original_write(descriptor, content)
+
+            def pump_until(predicate, timeout=4):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out while pumping the Tk close dialog")
+
+            def root_is_alive():
+                try:
+                    return bool(root.winfo_exists())
+                except tk.TclError:
+                    return False
+
+            try:
+                started = rounds.start("FCT", create, run_async=False, capacity=1)
+                with patch.object(audit_records.os, "write", side_effect=fail_once):
+                    app.close()
+                    pump_until(lambda: rounds.close_status().status == "failed" and
+                               str(app._close_retry_button["state"]) == "normal")
+                    snapshot = rounds.round_snapshot(started.round_id)
+                    self.assertFalse(snapshot.audit_complete)
+                    self.assertTrue(root_is_alive())
+                    self.assertEqual(str(app._close_retry_button["state"]), "normal")
+                    self.assertIn("temporary close audit fault", app._close_error_label.cget("text"))
+
+                app._close_retry_button.invoke()
+                pump_until(lambda: rounds.close_status().status == "complete")
+                pump_until(lambda: not root_is_alive())
+                rebuilt = read_round_audit(holder["monitor"].session.path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertEqual([event["kind"] for event in rebuilt["events"]].count("collection_stopped"), 1)
+                self.assertTrue(any(event["kind"] == "save_recovered" for event in rebuilt["events"]))
+            finally:
+                if root_is_alive():
+                    app.hotkey.close()
+                    root.destroy()
 
 
 if __name__ == "__main__":
