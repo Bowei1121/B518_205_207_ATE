@@ -288,6 +288,23 @@ class B518LogSolutionApp:
         self.retry_save_button = ttk.Button(save_controls, text="重試保存", command=self.retry_saves,
                                             state="disabled")
         self.retry_save_button.pack(side="right")
+        round_save_controls = ttk.Frame(controls)
+        round_save_controls.pack(fill="x", pady=(5, 0))
+        self.unsaved_round_count = ttk.Label(round_save_controls, text="未保存輪次 0")
+        self.unsaved_round_count.pack(side="left")
+        self.unsaved_round_choice = tk.StringVar(value="")
+        self.unsaved_round_picker = ttk.Combobox(
+            round_save_controls, textvariable=self.unsaved_round_choice,
+            state="readonly", width=26,
+        )
+        self.unsaved_round_picker.pack(side="left", fill="x", expand=True, padx=(5, 4))
+        self.unsaved_round_retry_button = ttk.Button(
+            round_save_controls, text="重試所選", command=self.retry_selected_round, state="disabled")
+        self.unsaved_round_retry_button.pack(side="right")
+        self.unsaved_round_detail = ttk.Label(controls, text="", anchor="w", wraplength=350)
+        self.unsaved_round_detail.pack(fill="x", pady=(3, 0))
+        self._unsaved_round_ids = {}
+        self.unsaved_round_picker.bind("<<ComboboxSelected>>", self._update_selected_round_retry)
         self._render_rows()
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
@@ -391,6 +408,52 @@ class B518LogSolutionApp:
         if started:
             self.save_status.configure(text="保存狀態：保存中")
             self.retry_save_button.configure(state="disabled")
+
+    def retry_selected_round(self) -> None:
+        """Retry the operator-selected current-run round without blocking Tk."""
+        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
+        if round_id and self.rounds.retry_saves(round_id):
+            self.unsaved_round_retry_button.configure(state="disabled")
+
+    def _update_selected_round_retry(self, _event=None) -> None:
+        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
+        snapshot = self.rounds.round_snapshot(round_id) if round_id else None
+        state = "normal" if snapshot is not None and snapshot.save_state == "failed" else "disabled"
+        self.unsaved_round_retry_button.configure(state=state)
+        if snapshot is None:
+            self.unsaved_round_detail.configure(text="")
+        elif snapshot.save_errors:
+            self.unsaved_round_detail.configure(text="{}：{}".format(
+                snapshot.round_id[:10], snapshot.save_errors[0]))
+        else:
+            self.unsaved_round_detail.configure(text="{}：{}".format(
+                snapshot.round_id[:10], {"waiting": "等待保存", "saving": "保存中",
+                                         "complete": "完整保存"}.get(
+                                             snapshot.save_state, snapshot.save_state)))
+
+    def _refresh_unsaved_rounds(self) -> None:
+        """Render all protected rounds by identity, separate from the active result board."""
+        if not hasattr(self, "unsaved_round_picker"):
+            return
+        snapshots = self.rounds.unsaved_rounds()
+        current_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
+        labels = []
+        mapping = {}
+        states = {"waiting": "等待保存", "saving": "保存中", "failed": "保存失敗", "complete": "完整保存"}
+        for snapshot in snapshots:
+            label = "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10],
+                                           states.get(snapshot.save_state, snapshot.save_state))
+            mapping[label] = snapshot.round_id
+            labels.append(label)
+        self._unsaved_round_ids = mapping
+        self.unsaved_round_picker.configure(values=labels)
+        selected = next((label for label, round_id in mapping.items() if round_id == current_id), "")
+        if not selected and labels:
+            selected = next((label for label in labels
+                             if "保存失敗" in label), labels[0])
+        self.unsaved_round_choice.set(selected)
+        self.unsaved_round_count.configure(text="未保存輪次 {}".format(len(snapshots)))
+        self._update_selected_round_retry()
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)
@@ -677,6 +740,7 @@ class B518LogSolutionApp:
             pass
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
+        self._refresh_unsaved_rounds()
         self._refresh_conflict_review()
         self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
@@ -693,6 +757,9 @@ class B518LogSolutionApp:
     def _handle_event(self, event: MonitorEvent) -> None:
         if isinstance(event, RoundEvent):
             if event.round_id != self.active_round_id:
+                if event.event.kind in {"audit_write_failed", "save_recovered"}:
+                    self._log("輪次 {}：{}".format(event.round_id[:10], event.event.message))
+                self._refresh_unsaved_rounds()
                 return
             event = event.event
         self._log(event.message)

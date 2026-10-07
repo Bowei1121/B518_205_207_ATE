@@ -1084,6 +1084,9 @@ class RoundCoordinator:
                  wall_clock: Callable[[], datetime] = datetime.now):
         self._lock = threading.RLock()
         self._current: Optional[MonitoringRound] = None
+        # Keep only rounds whose current-run durable work is not yet complete.
+        # This is deliberately in-memory: prior Sessions are never scanned.
+        self._tracked_rounds: Dict[str, MonitoringRound] = {}
         self._events = []  # type: list[RoundEvent]
         self._on_event = on_event
         self._monotonic = monotonic
@@ -1098,10 +1101,13 @@ class RoundCoordinator:
             if self._current is not None and self._current.snapshot().state in {
                     RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return self._current.snapshot()
-            session = MonitoringRound(station, monitor_factory, self._record_current_event, self._monotonic,
+            self._prune_saved_rounds_locked()
+            session = MonitoringRound(station, monitor_factory, self._record_round_event, self._monotonic,
                                       round_timeout_seconds, capacity, self._audit_root, audit_context,
                                       self._wall_clock)
             self._current = session
+            self._tracked_rounds[session.round_id] = session
+            self._prune_saved_rounds_locked()
             self._events = []
             try:
                 return session.start(run_async=run_async)
@@ -1133,11 +1139,41 @@ class RoundCoordinator:
             current = self._current
         return current.flush_session(timeout) if current is not None else True
 
-    def retry_saves(self) -> bool:
-        """Start one nonblocking recovery attempt for the current round."""
+    def retry_saves(self, round_id: Optional[str] = None) -> bool:
+        """Start one nonblocking recovery attempt for a tracked round."""
         with self._lock:
-            current = self._current
-        return current.retry_saves() if current is not None else False
+            target_id = round_id or (self._current.round_id if self._current is not None else None)
+            target = self._tracked_rounds.get(target_id) if target_id is not None else None
+        return target.retry_saves() if target is not None else False
+
+    def unsaved_rounds(self) -> Tuple[RoundSnapshot, ...]:
+        """Return current-run rounds that still need durable saving or protection."""
+        with self._lock:
+            self._prune_saved_rounds_locked()
+            rounds = tuple(self._tracked_rounds.values())
+        snapshots = [round_.snapshot() for round_ in rounds]
+        snapshots = [snapshot for snapshot in snapshots if snapshot.save_state != "complete"]
+        snapshots.sort(key=lambda snapshot: snapshot.round_id)
+        return tuple(snapshots)
+
+    @property
+    def has_unsaved_rounds(self) -> bool:
+        """Expose a shared protection state for save/archive/cleanup callers."""
+        return bool(self.unsaved_rounds())
+
+    def round_snapshot(self, round_id: str) -> Optional[RoundSnapshot]:
+        """Return a tracked current-run round snapshot by its stable identity."""
+        with self._lock:
+            self._prune_saved_rounds_locked()
+            round_ = self._tracked_rounds.get(round_id)
+        return round_.snapshot() if round_ is not None else None
+
+    def _prune_saved_rounds_locked(self) -> None:
+        for round_id, round_ in tuple(self._tracked_rounds.items()):
+            if round_ is self._current:
+                continue
+            if round_.snapshot().save_state == "complete":
+                del self._tracked_rounds[round_id]
 
     def stop(self) -> Optional[RoundSnapshot]:
         with self._lock:
@@ -1167,10 +1203,15 @@ class RoundCoordinator:
         with self._lock:
             return self._current.round_id if self._current is not None else None
 
-    def _record_current_event(self, event: RoundEvent) -> None:
+    def _record_round_event(self, event: RoundEvent) -> None:
         with self._lock:
-            if self._current is None or event.round_id != self._current.round_id:
+            if event.round_id not in self._tracked_rounds:
                 return
-            self._events.append(event)
+            if self._current is not None and event.round_id == self._current.round_id:
+                self._events.append(event)
+            else:
+                old_round = self._tracked_rounds[event.round_id]
+                if old_round.snapshot().save_state == "complete":
+                    del self._tracked_rounds[event.round_id]
         if self._on_event:
             self._on_event(event)
