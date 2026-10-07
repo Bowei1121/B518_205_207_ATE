@@ -1237,7 +1237,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app.open_settings()
             tabs = tuple(app.settings_notebook.tab(tab, "text")
                          for tab in app.settings_notebook.tabs())
-            self.assertEqual(tabs, ("工程師配置", "事件與 Session"))
+            self.assertEqual(tabs, ("工程師配置", "事件與 Session", "保存期限"))
         finally:
             app._close_settings()
             app.hotkey.close()
