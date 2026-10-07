@@ -48,4 +48,6 @@ git diff --check
 - 程式提交：`0798043`（封存能力）、`938542c`（磁碟驗證修正）、`d679b99`（審查修正）。
 - 分支驗收文件／專案摘要提交：`6feebe2ed08b63fdd277c9d76e0a1fb90e34d612`。
 - 主線合併 commit：`fbd3ac0f09381819e87b40cb17f190145d190f88`。合併前即時 fetch 確認 Gitea／GitHub 主線都是 `a4a00d5fd6ca7ea4fdb6c2e1482cf2c78d244de5`、票分支都是 `6feebe2ed08b63fdd277c9d76e0a1fb90e34d612`；乾淨主線 worktree 無未提交檔案。
-- Ticket 分支推送目的地：`origin` 的 Gitea 與 GitHub push URL，兩端均同步至 `6feebe2`。合併後主線 push、分支清理及最後文件提交待完成後記錄。
+- Ticket 分支推送目的地：`origin` 的 Gitea 與 GitHub push URL，兩端均同步至 `6feebe2`。主線合併 commit `fbd3ac0f09381819e87b40cb17f190145d190f88` 與摘要驗收提交 `3d405236c7564b725b34c40587ef782670e7f1c9` 已推送至兩個目的地；即時 fetch 確認兩地主線均為 `3d40523` 且包含合併 commit。
+- 確認合併已同步後，使用 `git push origin --delete round/ticket-05` 刪除 Gitea 與 GitHub 遠端分支，`git ls-remote --heads` 查無兩端分支；本地 `git branch -d round/ticket-05` 成功，`git fetch --prune` 移除 stale tracking refs。最後工作目錄切回 `B518-Log-Solution`。本次清理證據文件更新也提交並推送至兩個目的地，最後 refs 已再次查核。
+- 最終主工作目錄保留未追蹤的 `docs/adr/0009-bilingual-app-event-records.md` 與 `docs/refactoring/MULTILINGUAL_DISCUSSION_2026-10-07.md`；未修改或納入 Ticket 05。
