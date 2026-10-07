@@ -47,7 +47,7 @@ ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
 DETAIL_ROWS_VISIBLE = 7
-WINDOW_FIXED_HEIGHT = 379
+WINDOW_FIXED_HEIGHT = 353
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -278,12 +278,12 @@ class B518LogSolutionApp:
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 4))
-        self.stop_button = ttk.Button(controls, text="停止監控", command=self.stop_monitor,
-                                      style="Main.TButton", state="disabled")
-        self.stop_button.pack(fill="x")
         save_controls = ttk.Frame(controls)
-        save_controls.pack(fill="x", pady=(4, 0))
-        self.save_status = ttk.Label(save_controls, text="保存狀態：等待本輪資料")
+        save_controls.pack(fill="x")
+        self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
+                                      style="Main.TButton", state="disabled")
+        self.stop_button.pack(side="left")
+        self.save_status = ttk.Label(save_controls, text="等待保存")
         self.save_status.pack(side="left", fill="x", expand=True)
         self.retry_save_button = ttk.Button(save_controls, text="重試保存", command=self.retry_saves,
                                             state="disabled")
@@ -364,13 +364,11 @@ class B518LogSolutionApp:
         save_state = getattr(snapshot, "save_state", "saving")
         save_errors = getattr(snapshot, "save_errors", ())
         status_text = {
-            "waiting": "保存狀態：等待本輪資料",
-            "saving": "保存狀態：保存中",
-            "failed": "保存狀態：失敗，可重試",
-            "complete": "保存狀態：完整保存",
-        }.get(save_state, "保存狀態：保存中")
-        if save_errors:
-            status_text += "（{}）".format(save_errors[-1])
+            "waiting": "等待保存",
+            "saving": "保存中",
+            "failed": "保存失敗",
+            "complete": "完整保存",
+        }.get(save_state, "保存中")
         if hasattr(self, "save_status"):
             self.save_status.configure(text=status_text)
         if hasattr(self, "retry_save_button"):

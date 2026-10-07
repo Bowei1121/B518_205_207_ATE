@@ -123,7 +123,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     pass
 
             try:
-                self.assertIn("等待", app.save_status.cget("text"))
+                self.assertEqual(app.save_status.cget("text"), "等待保存")
                 app.rounds = coordinator
                 started = coordinator.start("FCT", lambda callback: holder.setdefault(
                     "monitor", Monitor(callback)), run_async=False, capacity=1)
