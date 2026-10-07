@@ -79,6 +79,63 @@ class LogSolutionUiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Timed out waiting for asynchronous monitor preparation")
 
+    def test_real_tk_global_retention_setting_validates_persists_and_preserves_round_files(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            session_root = Path(temporary) / "sessions"
+            round_path = session_root / "existing-round" / "session.json"
+            round_path.parent.mkdir(parents=True)
+            round_path.write_text('{"result": "preserve"}', encoding="utf-8")
+            original_round_data = round_path.read_bytes()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            try:
+                app.open_settings()
+                self.assertEqual(app.retention_days_var.get(), "365")
+                help_text = app.retention_help_label.cget("text")
+                self.assertIn("完整 24 小時", help_text)
+                self.assertIn("下一次背景清理", help_text)
+
+                app.retention_days_var.set("730")
+                app.retention_save_button.invoke()
+                second_value = MachineProfileStore(Path(temporary) / "preferences.json")
+                second_value.load()
+                self.assertEqual(second_value.retention_days, 730)
+
+                app.retention_days_var.set("180")
+                app.retention_save_button.invoke()
+                persisted = MachineProfileStore(Path(temporary) / "preferences.json")
+                persisted.load()
+                self.assertEqual(persisted.retention_days, 180)
+                self.assertIn("下一次背景清理", app.retention_status.get())
+
+                valid_preferences = Path(temporary, "preferences.json").read_bytes()
+                for invalid in ("", "not-a-number", "0", "-1"):
+                    app.retention_days_var.set(invalid)
+                    app.retention_save_button.invoke()
+                    rejected = MachineProfileStore(Path(temporary) / "preferences.json")
+                    rejected.load()
+                    self.assertEqual(rejected.retention_days, 180)
+                    self.assertEqual(Path(temporary, "preferences.json").read_bytes(), valid_preferences)
+                    self.assertIn("正整數", app.retention_status.get())
+
+                app.retention_days_var.set("730")
+                with patch.object(app.profile_store, "save_retention_days",
+                                  side_effect=OSError("disk full")):
+                    app.retention_save_button.invoke()
+                failed = MachineProfileStore(Path(temporary) / "preferences.json")
+                failed.load()
+                self.assertEqual(failed.retention_days, 180)
+                self.assertEqual(app.retention_effective_label.cget("text"), "目前生效：180 天")
+                self.assertIn("保存失敗", app.retention_status.get())
+                self.assertEqual(round_path.read_bytes(), original_round_data)
+                self.assertEqual(tuple(session_root.rglob("*")), (round_path.parent, round_path))
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_real_tk_distinguishes_unsaved_saved_and_archived_round_states(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -869,6 +926,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 source = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
                 try:
                     source.open_settings()
+                    source.retention_days_var.set("180")
+                    source.retention_save_button.invoke()
                     source.profile_editor_project.set("Demo")
                     source.profile_editor_machine.set("DFU")
                     source.profile_editor_platform.set("atlas")
@@ -880,6 +939,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     source._apply_profile_editor()
                     with patch("b518_log_solution.filedialog.asksaveasfilename", return_value=str(exported)):
                         source._export_profiles()
+                    self.assertNotIn("retention_days", json.loads(exported.read_text(encoding="utf-8")))
                     MachineProfileStore.export_document(
                         single_profile_export,
                         ProfileCatalog((source.profiles.get("Demo", "DFU"),)),
@@ -895,9 +955,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 deployed = B518LogSolutionApp(deploy_root, hotkey_factory=FakeHotkey)
                 try:
                     deployed.open_settings()
+                    deployed.retention_days_var.set("730")
+                    deployed.retention_save_button.invoke()
                     with patch("b518_log_solution.filedialog.askopenfilename",
                                return_value=str(single_profile_export)):
                         deployed._import_profiles()
+                    reloaded = MachineProfileStore(deployment_preferences)
+                    reloaded.load()
+                    self.assertEqual(reloaded.retention_days, 730)
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/deployment/active")
                     self.assertEqual((deployed.project.get(), deployed.station.get()), ("Demo", "DFU"))

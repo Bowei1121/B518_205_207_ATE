@@ -131,6 +131,8 @@ class B518LogSolutionApp:
         self.event_lines: list[str] = []
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
+        self.retention_days_var: Optional[tk.StringVar] = None
+        self.retention_status: Optional[tk.StringVar] = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_details: Optional[tk.Text] = None
@@ -1085,10 +1087,64 @@ class B518LogSolutionApp:
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
         profile_tab = ttk.Frame(notebook, padding=12)
         log_tab = ttk.Frame(notebook, padding=12)
+        retention_tab = ttk.Frame(notebook, padding=12)
         notebook.add(profile_tab, text="工程師配置")
         notebook.add(log_tab, text="事件與 Session")
+        notebook.add(retention_tab, text="保存期限")
         self._build_profile_editor_tab(profile_tab)
         self._build_log_tab(log_tab)
+        self._build_retention_tab(retention_tab)
+
+    def _build_retention_tab(self, parent: ttk.Frame) -> None:
+        """Build the global round-record retention settings tab."""
+        self.retention_days_var = tk.StringVar(value=str(self.profile_store.retention_days))
+        self.retention_status = tk.StringVar(value="設定已保存。")
+        self.retention_effective_label = ttk.Label(
+            parent, text="目前生效：{} 天".format(self.profile_store.retention_days))
+        self.retention_effective_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        ttk.Label(parent, text="全域保存天數").grid(row=1, column=0, sticky="w", pady=4)
+        self.retention_days_entry = ttk.Entry(parent, textvariable=self.retention_days_var, width=16)
+        self.retention_days_entry.grid(row=1, column=1, sticky="w", padx=8, pady=4)
+        self.retention_save_button = ttk.Button(
+            parent, text="保存設定", command=self._save_retention_days)
+        self.retention_save_button.grid(row=2, column=0, sticky="w", pady=(8, 4))
+        ttk.Label(parent, textvariable=self.retention_status, wraplength=620,
+                  foreground=TEXT_COLOUR).grid(row=2, column=1, sticky="w", padx=8, pady=(8, 4))
+        self.retention_help_label = ttk.Label(
+            parent,
+            text=("保存期限從輪次可信封存時間起算，每天按完整 24 小時計算。\n"
+                  "縮短期限可能使既有符合條件的紀錄於下一次背景清理時到期。\n"
+                  "此版本只保存設定，不會執行輪次紀錄刪除。"),
+            wraplength=650, justify="left", foreground=TEXT_COLOUR,
+        )
+        self.retention_help_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        parent.columnconfigure(1, weight=1)
+
+    def _save_retention_days(self) -> None:
+        """Validate and persist the global retention duration from the settings UI."""
+        assert self.retention_days_var is not None and self.retention_status is not None
+        text = self.retention_days_var.get().strip()
+        try:
+            days = int(text)
+            if days <= 0:
+                raise ValueError("保存天數必須是正整數。")
+        except ValueError:
+            self.retention_status.set("設定無效：保存天數必須是正整數。")
+            return
+
+        previous = self.profile_store.retention_days
+        try:
+            self.profile_store.save_retention_days(days)
+        except (OSError, ProfileError, TypeError, ValueError) as error:
+            self.retention_status.set("保存失敗，目前仍生效 {} 天：{}".format(previous, error))
+            return
+
+        self.retention_effective_label.configure(text="目前生效：{} 天".format(days))
+        if days < previous:
+            self.retention_status.set(
+                "保存天數已更新；既有符合條件的紀錄可能於下一次背景清理到期。")
+        else:
+            self.retention_status.set("保存天數已更新並持久保存。")
 
     def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""
