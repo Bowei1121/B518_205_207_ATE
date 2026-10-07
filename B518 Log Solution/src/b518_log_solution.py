@@ -115,6 +115,8 @@ class B518LogSolutionApp:
         self._close_error_label = None
         self._close_retry_button = None
         self._close_poll_generation = None
+        self.resolve_conflict_original_button = None
+        self.resolve_conflict_candidate_button = None
         self.active_round_id: Optional[str] = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
@@ -802,8 +804,6 @@ class B518LogSolutionApp:
 
     def _open_conflict_review(self) -> None:
         """Show the captured candidates in a modeless, non-blocking window."""
-        if getattr(self, "_closing_ui", False):
-            return
         if not self.conflict_window or not self.conflict_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.conflict_window = window
@@ -830,10 +830,16 @@ class B518LogSolutionApp:
             self.conflict_details.pack(side="left", fill="both", expand=True, padx=(10, 0))
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=12, pady=(8, 12))
-            ttk.Button(actions, text="保留原結果", command=lambda: self._resolve_selected_conflict(
-                "keep_original")).pack(side="left", padx=(0, 8))
-            ttk.Button(actions, text="採用新結果", command=lambda: self._resolve_selected_conflict(
-                "accept_candidate")).pack(side="left")
+            self.resolve_conflict_original_button = ttk.Button(
+                actions, text="保留原結果",
+                command=lambda: self._resolve_selected_conflict("keep_original"),
+            )
+            self.resolve_conflict_original_button.pack(side="left", padx=(0, 8))
+            self.resolve_conflict_candidate_button = ttk.Button(
+                actions, text="採用新結果",
+                command=lambda: self._resolve_selected_conflict("accept_candidate"),
+            )
+            self.resolve_conflict_candidate_button.pack(side="left")
             ttk.Button(actions, text="關閉", command=window.withdraw).pack(side="right")
         self._refresh_conflict_review()
         if self.conflict_window and self.conflict_window.winfo_exists():
@@ -918,8 +924,6 @@ class B518LogSolutionApp:
         self.conflict_details.configure(state="disabled")
 
     def _resolve_selected_conflict(self, choice: str) -> None:
-        if getattr(self, "_closing_ui", False):
-            return
         if not self.conflict_list:
             return
         selected = self.conflict_list.curselection()
@@ -952,8 +956,6 @@ class B518LogSolutionApp:
             self._render_round_alarm(alarm)
 
     def _open_round_alarm(self) -> None:
-        if getattr(self, "_closing_ui", False):
-            return
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         alarm = snapshot.round_alarm if snapshot else None
         if alarm is None:
@@ -1002,8 +1004,6 @@ class B518LogSolutionApp:
             )
 
     def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
-        if getattr(self, "_closing_ui", False):
-            return
         snapshot = self.rounds.snapshot()
         if snapshot is None:
             return
@@ -1348,7 +1348,7 @@ class B518LogSolutionApp:
             "cancelled": "已取消關閉；保存工作會繼續，來源不會自動重新啟動。",
         }
         self._close_status_label.configure(text=labels.get(status.status, "正在確認保存狀態…"))
-        self._close_error_label.configure(text=status.error)
+        self._close_error_label.configure(text=status.message)
         if self._close_retry_button:
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
 

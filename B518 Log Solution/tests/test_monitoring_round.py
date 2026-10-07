@@ -1660,6 +1660,70 @@ class MonitoringRoundTests(unittest.TestCase):
                     self.assertEqual(snapshot.save_state, "complete")
                     self.assertTrue(snapshot.audit_complete)
 
+    def test_close_waits_for_inflight_operator_resolution_and_freezes_after_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            action_entered = threading.Event()
+            release_action = threading.Event()
+            holder = {}
+
+            class BlockingResolutionMonitor(FakeMonitor):
+                block_resolution = False
+
+                def apply_round_result(self, slot, status, sn="", source="", detail=None,
+                                       lock_terminal=False):
+                    if self.block_resolution:
+                        action_entered.set()
+                        if not release_action.wait(5):
+                            raise RuntimeError("test did not release conflict resolution")
+                    result = self.results[slot]
+                    result.sn = sn or result.sn
+                    result.status = status
+                    result.source = source or result.source
+                    result.updated_at = "2026-10-07T10:00:00"
+                    self.callback(MonitorEvent("result", "slot{} {}".format(slot, status),
+                                               slot, result.sn, status, source, detail or {}))
+
+            def factory(callback):
+                monitor = BlockingResolutionMonitor(callback)
+                holder["monitor"] = monitor
+                return monitor
+
+            rounds = RoundCoordinator(audit_root=Path(temporary))
+            started = rounds.start("FCT", factory, run_async=False, capacity=2)
+            monitor = holder["monitor"]
+            evidence = {"round_evidence_id": "fct:1:close-race",
+                        "source_time": "2026-10-07T10:00:00"}
+            monitor.apply_round_result(1, "PASS", "SERIAL000001", "active.csv", evidence)
+            self.assertEqual(monitor.callback(MonitorEvent(
+                "result_candidate", "candidate", 1, "SERIAL000001", "FAIL", "final.csv",
+                dict(evidence, source_id="final.csv"))), "defer")
+            conflict_id = rounds.round_snapshot(started.round_id).pending_conflicts[0].conflict_id
+            monitor.block_resolution = True
+            resolution = threading.Thread(
+                target=lambda: rounds.resolve_review(conflict_id, "keep_original"), daemon=True,
+            )
+            resolution.start()
+            self.assertTrue(action_entered.wait(2))
+
+            rounds.request_close()
+            self.assertNotEqual(rounds.close_status().status, "complete")
+            release_action.set()
+            resolution.join(2)
+            self.assertFalse(resolution.is_alive())
+            deadline = time.monotonic() + 3
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+
+            audit_path = Path(temporary) / started.round_id / "audit.jsonl"
+            rebuilt = read_round_audit(audit_path)
+            self.assertTrue(rebuilt["audit_complete"])
+            self.assertEqual([event["kind"] for event in rebuilt["events"]].count(
+                "conflict_resolved"), 1)
+            count_at_close = len(rebuilt["events"])
+            rounds.resolve_review(conflict_id, "accept_candidate")
+            self.assertEqual(len(read_round_audit(audit_path)["events"]), count_at_close)
+
     def test_close_waits_for_source_preparation_and_restarts_after_cancel(self):
         with tempfile.TemporaryDirectory() as temporary:
             entered = threading.Event()
@@ -1769,7 +1833,7 @@ class MonitoringRoundTests(unittest.TestCase):
                     super().stop()
                     stop_finished.set()
 
-            rounds = RoundCoordinator(audit_root=Path(temporary))
+            rounds = RoundCoordinator()
             first = rounds.start("FCT", lambda callback: holder.setdefault(
                 "monitor", SlowStopMonitor(callback)), run_async=False)
             accepted = rounds.request_close()
@@ -1800,7 +1864,7 @@ class MonitoringRoundTests(unittest.TestCase):
         while rounds.close_status().status != "failed" and time.monotonic() < deadline:
             threading.Event().wait(0.01)
         self.assertEqual(rounds.close_status().status, "failed")
-        self.assertIn("audit_complete 仍為 false", rounds.close_status().error)
+        self.assertIn("audit_complete 仍為 false", rounds.close_status().message)
 
 
 if __name__ == "__main__":

@@ -131,7 +131,18 @@ class CloseSnapshot:
     status: str = "idle"
     generation: int = 0
     round_ids: Tuple[str, ...] = ()
-    error: str = ""
+    message: str = ""
+
+
+def _round_close_complete(round_: "MonitoringRound", snapshot: RoundSnapshot) -> bool:
+    session_complete = snapshot.save_state == "complete" or (
+        snapshot.completion_reason == "start_failed" and round_.session_path is None)
+    return snapshot.audit_complete and session_complete and _round_close_operators_complete(snapshot)
+
+
+def _round_close_operators_complete(snapshot: RoundSnapshot) -> bool:
+    return not snapshot.pending_conflicts and not (
+        snapshot.round_alarm is not None and not snapshot.round_alarm.acknowledged_at)
 
 
 class MonitoringRound:
@@ -191,6 +202,7 @@ class MonitoringRound:
         self._audit_recovery_events = []
         self._audit_recovery_replaying = False
         self._prepared_event = threading.Event()
+        self._close_finalized = False
         if self._audit_root is not None:
             try:
                 self._audit_store = self._create_audit_store()
@@ -222,7 +234,10 @@ class MonitoringRound:
                 self._run_thread = threading.Thread(target=self._prepare_and_run, daemon=True)
                 self._run_thread.start()
             else:
-                self._prepare_monitor()
+                try:
+                    self._prepare_monitor()
+                finally:
+                    self._prepared_event.set()
             return self.snapshot()
 
     def poll_once(self) -> RoundSnapshot:
@@ -291,6 +306,8 @@ class MonitoringRound:
         """Resolve exactly one captured same-round conflict."""
         with self._poll_lock:
             with self._lock:
+                if self._close_finalized:
+                    return self.snapshot()
                 conflict = self._pending_conflicts.get(conflict_id)
                 monitor = self._monitor
                 if (monitor is None or conflict is None or self._state not in {
@@ -351,6 +368,8 @@ class MonitoringRound:
         """Acknowledge only the identified alarm for this round."""
         with self._poll_lock:
             with self._lock:
+                if self._close_finalized:
+                    return self.snapshot()
                 alarm = self._round_alarm
                 if round_id != self.round_id or alarm is None or alarm.alarm_id != alarm_id:
                     reason = "stale_round_or_alarm"
@@ -424,6 +443,15 @@ class MonitoringRound:
                 tuple(self._save_history),
                 self._retry_in_progress,
             )
+
+    def finalize_close_snapshot(self) -> RoundSnapshot:
+        """Atomically freeze operator actions once this round is fully durable."""
+        with self._poll_lock:
+            snapshot = self.snapshot()
+            if _round_close_complete(self, snapshot):
+                with self._lock:
+                    self._close_finalized = True
+            return snapshot
 
     def retry_saves(self) -> bool:
         """Retry retained current-round Session and audit work without blocking the caller."""
@@ -560,24 +588,10 @@ class MonitoringRound:
             self._prepare_monitor()
         except Exception as error:
             with self._lock:
-                monitor = self._monitor
-            session = getattr(monitor, "session", None)
-            session_flush = getattr(session, "flush", None)
-            try:
-                session_saved = session_flush(None) if callable(session_flush) else True
-            except (OSError, RuntimeError, TypeError, ValueError):
-                session_saved = False
-            with self._lock:
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
                 self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
-                if session_saved:
-                    self._monitor_persistence_ready = True
-                else:
-                    message = "啟動失敗後 Session 尚未完整保存"
-                    self._save_errors.append(message)
-                    self._save_history.append(message)
             self._append_event(MonitorEvent(
                 "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
                 detail={"round_id": self.round_id, "reason": "start_failed",
@@ -1146,8 +1160,6 @@ class RoundCoordinator:
             self._events = []
             try:
                 snapshot = session.start(run_async=run_async)
-                if not run_async:
-                    session._prepared_event.set()
                 return snapshot
             except Exception:
                 self._current = None
@@ -1223,7 +1235,7 @@ class RoundCoordinator:
             self._closing = False
             self._close_status = CloseSnapshot(
                 "cancelled", self._close_status.generation + 1,
-                tuple(self._tracked_rounds), self._close_status.error)
+                tuple(self._tracked_rounds), self._close_status.message)
             return self._close_status
 
     def close_status(self) -> CloseSnapshot:
@@ -1259,10 +1271,12 @@ class RoundCoordinator:
                     round_.flush_session(timeout=None)
                     round_.flush_audit(timeout=None)
                 if waiting_for_preparation:
+                    self._set_close_waiting(generation, round_ids, "等待來源準備及停止交接完成")
                     continue
-                snapshots = tuple(round_.snapshot() for _round_id, round_ in rounds)
-                incomplete = tuple(snapshot for snapshot in snapshots
-                                   if snapshot.save_state != "complete" or not snapshot.audit_complete)
+                snapshots = tuple(round_.finalize_close_snapshot() for _round_id, round_ in rounds)
+                incomplete = tuple(
+                    snapshot for (_round_id, round_), snapshot in zip(rounds, snapshots)
+                    if not _round_close_complete(round_, snapshot))
                 if not incomplete:
                     with self._lock:
                         if self._closing and self._close_status.generation == generation:
@@ -1286,6 +1300,19 @@ class RoundCoordinator:
                         for snapshot in audit_incomplete)
                     self._set_close_failure(generation, round_ids, details)
                     return
+                operator_pending = tuple(snapshot for snapshot in incomplete
+                                         if not _round_close_operators_complete(snapshot))
+                if operator_pending:
+                    details = "; ".join(
+                        "{}：尚有 {} 項人工確認".format(
+                            snapshot.round_id[:10],
+                            len(snapshot.pending_conflicts) + int(
+                                snapshot.round_alarm is not None and
+                                not snapshot.round_alarm.acknowledged_at),
+                        ) for snapshot in operator_pending)
+                    self._set_close_waiting(generation, round_ids, details)
+                    threading.Event().wait(0.05)
+                    continue
                 threading.Event().wait(0.05)
         except Exception as error:
             with self._lock:
@@ -1305,6 +1332,11 @@ class RoundCoordinator:
         with self._lock:
             if self._closing and self._close_status.generation == generation:
                 self._close_status = CloseSnapshot("failed", generation, round_ids, error)
+
+    def _set_close_waiting(self, generation: int, round_ids: Tuple[str, ...], detail: str) -> None:
+        with self._lock:
+            if self._closing and self._close_status.generation == generation:
+                self._close_status = CloseSnapshot("waiting", generation, round_ids, detail)
 
     def unsaved_rounds(self) -> Tuple[RoundSnapshot, ...]:
         """Return current-run rounds that still need durable saving or protection."""
