@@ -21,8 +21,8 @@ App 依工程師設定，於啟動後、持續開啟每 24 小時及設定修改
 
 ## Blocked by
 
-- [#5](https://github.com/Bowei1121/B518_205_207_ATE/issues/5)、[#6](https://github.com/Bowei1121/B518_205_207_ATE/issues/6)、[#7](https://github.com/Bowei1121/B518_205_207_ATE/issues/7) 已在工作基準合併；Ticket 07 仍待本票驗收與審查完成。
+- [#5](https://github.com/Bowei1121/B518_205_207_ATE/issues/5)、[#6](https://github.com/Bowei1121/B518_205_207_ATE/issues/6)、[#7](https://github.com/Bowei1121/B518_205_207_ATE/issues/7) 已在工作基準合併解除阻擋；Ticket 07 驗收與固定基準雙軸審查已完成，僅剩文件同步及安全整合。
 
 ## 實作與驗收狀態
 
-程式已在 `round/ticket-07` 完成；25 項清理聚焦測試、完整 274 項含真正 Tk 的套件、語法／diff 檢查、母規格覆蓋查核及固定基準 Standards／Spec 複審通過。提交文件及安全整合尚待完成；詳細命令與證據見[本機驗收紀錄](../evidence/ticket-07/local-validation.md)。
+程式已在 `round/ticket-07` 完成；25 項清理聚焦測試、完整 274 項含真正 Tk 的套件、語法／diff 檢查、母規格覆蓋查核及固定基準 Standards／Spec 複審通過。程式／測試提交 `1243450b957fb326c8941f63ba3f9f367c853a66` 已推送到 Gitea／GitHub；文件同步及安全整合尚待完成。詳細命令與證據見[本機驗收紀錄](../evidence/ticket-07/local-validation.md)。
