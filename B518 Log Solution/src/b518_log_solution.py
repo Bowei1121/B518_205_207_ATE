@@ -54,6 +54,12 @@ STATUS_COLOURS = {
     "WAITING": "#d9d9d9", "COMPLETING": "#82c7ff", "STALLED": "#ff9900", "STOPPED": "#bfbfbf",
     "TIMEOUT": "#ff9900",
 }
+SAVE_STATE_LABELS = {
+    "waiting": "等待保存",
+    "saving": "保存中",
+    "failed": "保存失敗",
+    "complete": "完整保存",
+}
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 20
 
@@ -386,12 +392,7 @@ class B518LogSolutionApp:
                 self._log("本輪保存失敗：{}".format(error))
                 reported_save_errors.add(error)
         self._reported_save_errors = reported_save_errors
-        status_text = {
-            "waiting": "等待保存",
-            "saving": "保存中",
-            "failed": "保存失敗",
-            "complete": "完整保存",
-        }.get(save_state, "保存中")
+        status_text = SAVE_STATE_LABELS.get(save_state, "保存中")
         if hasattr(self, "save_status"):
             self.save_status.configure(text=status_text)
         if hasattr(self, "retry_save_button"):
@@ -427,9 +428,8 @@ class B518LogSolutionApp:
                 snapshot.round_id[:10], snapshot.save_errors[0]))
         else:
             self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], {"waiting": "等待保存", "saving": "保存中",
-                                         "complete": "完整保存"}.get(
-                                             snapshot.save_state, snapshot.save_state)))
+                snapshot.round_id[:10], SAVE_STATE_LABELS.get(
+                    snapshot.save_state, snapshot.save_state)))
 
     def _refresh_unsaved_rounds(self) -> None:
         """Render all protected rounds by identity, separate from the active result board."""
@@ -439,10 +439,9 @@ class B518LogSolutionApp:
         current_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
         labels = []
         mapping = {}
-        states = {"waiting": "等待保存", "saving": "保存中", "failed": "保存失敗", "complete": "完整保存"}
         for snapshot in snapshots:
             label = "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10],
-                                           states.get(snapshot.save_state, snapshot.save_state))
+                                           SAVE_STATE_LABELS.get(snapshot.save_state, snapshot.save_state))
             mapping[label] = snapshot.round_id
             labels.append(label)
         self._unsaved_round_ids = mapping
