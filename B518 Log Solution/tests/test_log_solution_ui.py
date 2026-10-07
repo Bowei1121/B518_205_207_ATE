@@ -43,9 +43,10 @@ class FakeHotkey:
 def install_test_profile(app, station, platform, active=".", final=".", caseinfo=""):
     """Give a lightweight App fixture the same required profile seam as production."""
     project = "B482" if platform == "b482" else "B518"
-    defaults, _project, _machine, _error = MachineProfileStore(
-        Path("/tmp/b518-ticket15-test-preferences.json"),
-    ).load()
+    with TemporaryDirectory() as temporary:
+        defaults, _project, _machine, _error = MachineProfileStore(
+            Path(temporary) / "preferences.json",
+        ).load()
     profile = defaults.get(project, station)
     profile = replace(profile, platform=platform, paths={
         "active": active, "final": final, "caseinfo": caseinfo,
@@ -1196,13 +1197,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
                     app.start_monitor()
                     self.wait_for(lambda: factory.called)
-                    self.wait_for(lambda: factory.return_value.start.called or
-                                  app.rounds.snapshot().completion_reason == "start_failed",
-                                  timeout=8)
+                    preparation_deadline = time.monotonic() + 8
+                    while (not factory.return_value.start.called and
+                           app.rounds.snapshot().completion_reason != "start_failed" and
+                           time.monotonic() < preparation_deadline):
+                        time.sleep(0.01)
 
                 snapshot = app.rounds.snapshot()
                 self.assertTrue(factory.return_value.start.called,
-                                "monitor preparation failed: {}".format(snapshot.save_errors))
+                                "monitor preparation did not start: {}".format(snapshot))
                 self.assertEqual(snapshot.station, station)
                 self.assertEqual(snapshot.state, "RUNNING")
                 factory.assert_called_once()

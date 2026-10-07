@@ -3,7 +3,7 @@
 日期：2026-10-07（Asia/Taipei）  
 固定 code-review 基準：`ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5`  
 驗收分支：`round/ticket-04`  
-實作提交：`67e8a15`、`ea1f11e`、`945162a`、`74f9029`、`7a241be380b55cd237908554d60fcb584f3ebfc8`  
+實作提交：`67e8a15`、`ea1f11e`、`945162a`、`74f9029`、`7a241be380b55cd237908554d60fcb584f3ebfc8`；測試 fixture 後續提交：`60ddc79c27c1517b416b2748729b4e23784d2ab2`
 環境：Python 3.8.10、macOS 15.7.9、x86_64、Git 2.50.1；完整套件與 Tk 案例在可存取桌面圖形工作階段執行。
 
 ## 基準與變更保護
@@ -34,11 +34,11 @@
 - 完整套件：`python3 scripts/run_tests.py`，225 tests 通過，34.943 秒；在可存取桌面圖形工作階段執行，所有 Tk 案例實際執行。
 - 語法編譯及差異：`python3 -m compileall -q src tests && git diff --check`，通過。
 - TDD 修正證據：來源準備 Tk 案例首次重現關閉狀態停留在 saving 的問題，修正後等待狀態可見且案例通過；關閉人工操作案例先確認衝突與警報可由實際 UI 操作並保存，後續另加入受控操作競爭測試。
-- 完整套件初次執行曾在既有「平台監控由共同入口啟動」案例的 3 秒測試等待逾時；該案例單獨執行通過。把這個測試的來源啟動等待延長至 8 秒並在啟動失敗時提供明確診斷後，最終完整套件 225 tests 通過。這是測試等待穩定性調整，未放寬產品行為驗收。
+- 完整套件初次執行曾在既有「平台監控由共同入口啟動」案例逾時；該案例單獨執行通過。進一步查出該案例曾讀取共用 `/tmp/b518-ticket15-test-preferences.json`，會受其他測試留下的設定影響；改為每次呼叫使用隔離的 `TemporaryDirectory` 後，完整套件於 Ticket 分支通過 225 tests（39.615 秒）。啟動等待保留 8 秒上限並在失敗時輸出輪次快照診斷，沒有放寬產品行為驗收。
 - 型別檢查設定查找：`rg --files -g 'mypy.ini' -g '.mypy.ini' -g 'pyrightconfig.json' -g 'pyproject.toml' -g 'setup.cfg' -g 'tox.ini' -g 'Makefile' -g 'Pipfile'`，沒有找到型別檢查器設定；未宣稱型別檢查通過。`compileall` 僅驗證語法。
 
 ## 審查與交付狀態
 
 固定基準 `ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5` 的 Standards／Spec 雙軸複審已完成，均無未解問題。Standards 初審指出 coordinator 直接使用準備事件私有欄位，改以 `MonitoringRound.wait_until_prepared()` 公開能力處理；複審指出 operator 狀態判定重複及 `CloseSnapshot.error` 名稱不符合 waiting 訊息，已抽出共用判定並改名 `message`。Spec 初審指出關閉完成快照與人工操作間有競爭，及缺少真正 Tk 來源準備案例；已加入輪次原子完成凍結、Event 控制的競爭回歸與真正 Tk 準備案例，Spec 最終複審確認已解決且無其他發現。
 
-目前實作 commit `7a241be380b55cd237908554d60fcb584f3ebfc8` 已同步至 Gitea、GitHub。尚未合併；合併前會重新確認主線工作樹、兩個遠端最新狀態及 push 目的地。合併後驗證、最終合併 SHA、同步 refs 與分支清理結果將在此處追加。
+目前最新實作 commit `7a241be380b55cd237908554d60fcb584f3ebfc8` 及測試 fixture follow-up `60ddc79c27c1517b416b2748729b4e23784d2ab2` 已同步至 Gitea、GitHub；最終雙軸複審涵蓋此 branch HEAD，無未解問題。初次合併後完整套件發現上述測試 fixture 隔離問題，故分支保留並補上修正；Ticket 分支完整測試現已通過。最終合併後驗證、合併 SHA、同步 refs 與分支清理結果將在此處追加。
