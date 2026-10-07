@@ -110,6 +110,13 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertLessEqual(threading.active_count(), baseline,
                              "completed rounds retained audit writer threads")
 
+    def wait_for_retry_to_finish(self, timeout=3):
+        deadline = time.monotonic() + timeout
+        while self.coordinator.snapshot().retry_in_progress and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.coordinator.snapshot().retry_in_progress,
+                         "current-round save retry did not finish")
+
     def test_normal_round_can_be_rebuilt_from_a_fresh_disk_reader(self):
         started = self.start_round()
         monitor = self.monitors[0]
@@ -166,6 +173,10 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
 
     def test_transient_audit_append_failure_retries_original_record_from_public_coordinator(self):
+        wall_clock = [datetime(2026, 10, 7, 12, 0, 0)]
+        self.coordinator = RoundCoordinator(
+            monotonic=lambda: self.clock[0], audit_root=self.audit_root,
+            wall_clock=lambda: wall_clock[0])
         started = self.start_round()
         original_write = audit_records.os.write
         failed = threading.Event()
@@ -186,14 +197,16 @@ class RoundAuditRecordTests(unittest.TestCase):
             self.assertFalse(self.coordinator.flush_audit(timeout=0.2))
             self.assertFalse(self.coordinator.snapshot().audit_complete)
 
+        wall_clock[0] = datetime(2026, 10, 7, 12, 30, 0)
         self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
         self.assertTrue(self.coordinator.flush_audit(timeout=2))
         rebuilt = read_round_audit(self.audit_path(started.round_id))
         event = next(item for item in rebuilt["events"] if item["kind"] == "recovery_probe")
         live = next(item for item in self.coordinator.snapshot().events
                     if item.event.kind == "recovery_probe")
         self.assertEqual(event["sequence"], live.sequence)
-        self.assertEqual(event["observed_at"], live.event.detail.get("observed_at", event["observed_at"]))
+        self.assertEqual(event["observed_at"], "2026-10-07T12:00:00")
         self.assertEqual(event["detail"], {"original": "payload"})
         self.assertEqual([item["sequence"] for item in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
@@ -218,6 +231,7 @@ class RoundAuditRecordTests(unittest.TestCase):
             self.assertFalse(self.coordinator.flush_audit(timeout=0.2))
 
         self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
         self.assertTrue(self.coordinator.flush_audit(timeout=2))
         rebuilt = read_round_audit(self.audit_path(started.round_id))
         events = [item for item in rebuilt["events"] if item["kind"] == "durable_before_error"]
@@ -243,6 +257,7 @@ class RoundAuditRecordTests(unittest.TestCase):
             self.assertFalse(self.coordinator.flush_audit(timeout=1))
 
         self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
         self.assertTrue(self.coordinator.flush_audit(timeout=2))
         rebuilt = read_round_audit(self.audit_path(started.round_id))
         self.assertEqual(len([event for event in rebuilt["events"] if event["kind"] == "partial_probe"]), 1)
@@ -271,6 +286,7 @@ class RoundAuditRecordTests(unittest.TestCase):
             self.assertFalse(later.is_alive(), "saving failure blocked event collection")
 
         self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
         later.join(2)
         self.assertFalse(later.is_alive())
         self.assertTrue(self.coordinator.flush_audit(timeout=2))

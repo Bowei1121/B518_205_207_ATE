@@ -440,14 +440,26 @@ class MonitoringRound:
                 store.attach_session(target)
                 self._audit_attach_target = None
                 audit_ok = store.flush(30.0)
+            recovered = session_ok and audit_ok and not self._audit_attach_target
+            if recovered:
+                with self._lock:
+                    recovered_errors = tuple(self._save_history)
+                    self._save_errors.clear()
+                self._append_event(MonitorEvent(
+                    "save_recovered", "本輪 Session 與稽核紀錄已完成保存復原",
+                    detail={"round_id": self.round_id,
+                            "recovered_errors": list(recovered_errors)},
+                ))
+                session_ok = session_flush(30.0) if callable(session_flush) else True
+                audit_ok = store.flush(30.0) if store is not None else True
+                recovered = session_ok and audit_ok
             with self._lock:
-                if session_ok and audit_ok and not self._audit_attach_target:
+                if recovered:
                     self._save_errors.clear()
                 elif not self._save_errors:
                     self._save_errors.append("本輪保存仍未完整；請檢查磁碟及保存位置後重試")
                 self._save_history.append(
-                    "本輪保存復原成功" if session_ok and audit_ok and not self._audit_attach_target
-                    else "本輪保存復原未完成")
+                    "本輪保存復原成功" if recovered else "本輪保存復原未完成")
         except (OSError, AuditRecordError, TypeError, ValueError) as error:
             with self._lock:
                 message = "本輪保存復原失敗：{}".format(error)

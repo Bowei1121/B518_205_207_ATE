@@ -123,6 +123,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     pass
 
             try:
+                self.assertIn("等待", app.save_status.cget("text"))
                 app.rounds = coordinator
                 started = coordinator.start("FCT", lambda callback: holder.setdefault(
                     "monitor", Monitor(callback)), run_async=False, capacity=1)
@@ -149,7 +150,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     monitor.callback(MonitorEvent("tk_retry_probe", "persist from Tk"))
                     self.assertTrue(failed.wait(2))
                     deadline = time.monotonic() + 2
-                    while coordinator.snapshot().save_state != "failed" and time.monotonic() < deadline:
+                    while (coordinator.snapshot().save_state != "failed" or
+                           str(app.retry_save_button["state"]) != "normal") and time.monotonic() < deadline:
                         root.update()
                     self.assertEqual(coordinator.snapshot().save_state, "failed")
                     self.assertEqual(str(app.retry_save_button["state"]), "normal")
@@ -166,16 +168,25 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(write_number[0], 2)
                     release_retry.set()
                     deadline = time.monotonic() + 3
-                    while coordinator.snapshot().save_state != "complete" and time.monotonic() < deadline:
+                    while (coordinator.snapshot().save_state != "complete" or
+                           "完整保存" not in app.save_status.cget("text")) and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
 
                 self.assertEqual(coordinator.snapshot().save_state, "complete")
+                self.assertIn("完整保存", app.save_status.cget("text"))
                 self.assertTrue(coordinator.flush_session(timeout=2))
                 rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
                 self.assertEqual(len([event for event in rebuilt["events"]
                                       if event["kind"] == "tk_retry_probe"]), 1)
+                recovery = next(event for event in rebuilt["events"]
+                                if event["kind"] == "save_recovered")
+                self.assertTrue(recovery["detail"]["recovered_errors"])
                 self.assertTrue(rebuilt["audit_complete"])
+                session_events = [json.loads(line) for line in
+                                  (coordinator.session_path / "events.log").read_text(
+                                      encoding="utf-8").splitlines()]
+                self.assertTrue(any("保存復原" in event["message"] for event in session_events))
                 self.assertTrue(coordinator.snapshot().save_history)
             finally:
                 app.hotkey.close()

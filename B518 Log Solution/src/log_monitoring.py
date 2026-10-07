@@ -274,7 +274,12 @@ class SessionStore:
     def update_settings(self, settings: Dict[str, object]) -> None:
         with self._lock:
             self.settings.update(settings)
-            self._write_metadata()
+            try:
+                self._write_metadata()
+            except OSError as error:
+                self._remember_failed_write("_write_metadata", (), "Session 設定保存失敗",
+                                            error, notify=False)
+                raise
 
     def finish(self, finished_at: Optional[str] = None) -> None:
         with self._lock:
