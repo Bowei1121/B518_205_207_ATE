@@ -16,5 +16,5 @@
 - 使用者授權在 `round/ticket-02` 完整執行 [Ticket 02：本輪保存復原](round-record-lifecycle-tickets/02-current-round-save-recovery.md)，逐批驗證、commit／push；全部驗收與固定基準 Standards／Spec 審查通過後合併至 `B518-Log-Solution`，確認所有目的地同步再安全清理分支。
 - 已接續 Ticket 01 的 audit writer 生命週期，完成單輪 Session／audit 故障保留與有序重試、audit 初始化失敗重建、保存狀態及真正 Tk 非阻塞重試操作。沒有擴張至跨輪追蹤、正常關閉協調、封存或到期清理。
 - 七項驗收均有證據並已勾選。最終完整套件 213 tests 通過，包含真實 Tk、暫存磁碟及重建；聚焦 Session 21、audit 28 tests 通過，`compileall`／`git diff --check` 通過。repository 未配置型別檢查器，未宣稱型別檢查通過。Standards／Spec 雙軸複審無未解問題。
-- 固定 code-review 基準 `68b31d5ada3e67e29f04336a7738654f585d4fa0`；最後實作 commit `1b4c8322065a0e390e62a6651a21e41369883b07`。所有五個程式提交均推送至 Gitea 與 GitHub。即時 refs 查核時兩個 Ticket 分支相同為 `1b4c832`，兩個主線均仍為基準 `68b31d5`；合併和分支清理待下一步執行。
+- 固定 code-review 基準 `68b31d5ada3e67e29f04336a7738654f585d4fa0`；最後實作 commit `1b4c8322065a0e390e62a6651a21e41369883b07`。所有五個程式提交及驗收文件均推送至 Gitea 與 GitHub。非快轉合併 commit `61e1e6c77c960052d3f2f39f31ffa24f0af5cb49`；合併後完整 213 tests 再次通過，兩遠端主線同步至合併 SHA 後，安全刪除本地與兩遠端 `round/ticket-02`，並清理 stale tracking refs。最後停在乾淨的 `B518-Log-Solution`；本摘要與清理結果由合併後主線文件提交同步至兩個 push 目的地。
 - 完整逐項驗收、TDD 證據、實際命令、環境及同步狀態見 [Ticket 02 本機驗收紀錄](evidence/ticket-02/local-validation.md)。

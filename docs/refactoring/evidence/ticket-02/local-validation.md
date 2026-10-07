@@ -35,4 +35,5 @@ repository 未配置 mypy、pyright 或其他型別檢查器／型別檢查命�
 - 固定基準為 `68b31d5ada3e67e29f04336a7738654f585d4fa0`。Standards／Spec 雙軸審查均以此基準檢視整個 Ticket 02 差異；發現的重試順序、flush 計數、audit 初始化與事件競爭、錯誤 callback 競爭、監控啟動狀態分類問題均已修正並增加回歸測試，最終複審無未解問題。
 - 程式提交：`2babb626a59d947f8ba19f47d86304f65067cea7`、`2076180a6cbeb89bc293e43bc69d612245a6bdcc`、`da09142a81a1ca3fb5d7c041e82f41bd1f4c8e68`、`58fb3dbfb9a64896d9c0cc2dff5464bb04c66e06`、`1b4c8322065a0e390e62a6651a21e41369883b07`。每批程式變更均已驗證後提交並推送。
 - `origin` 設有 Gitea 與 GitHub 兩個 push URL。即時 `git ls-remote` 核對時，兩個目的地的 `round/ticket-02` 均為 `1b4c8322065a0e390e62a6651a21e41369883b07`，兩個 `B518-Log-Solution` 仍為固定基準 `68b31d5ada3e67e29f04336a7738654f585d4fa0`。
-- 本紀錄建立時，Ticket 02 已完成驗收及審查，主線整合、合併後驗證／推送及分支清理尚待執行；這些結果會在整合後補記。未進行強制推送或強制刪除。
+- 合併 commit：`61e1e6c77c960052d3f2f39f31ffa24f0af5cb49`。合併後 `python3 -m compileall -q 'B518 Log Solution/src' 'B518 Log Solution/tests'`、`git diff --check` 及完整 `python3 'B518 Log Solution/scripts/run_tests.py'` 再次通過（213 tests，38.844 秒）。
+- 合併後主線推送至 Gitea 與 GitHub；刪除前即時 refs 核對兩者均為合併 SHA `61e1e6c77c960052d3f2f39f31ffa24f0af5cb49`。隨後以 `git branch -d round/ticket-02` 安全刪除本地分支，`git push origin --delete round/ticket-02` 刪除兩個遠端分支，並 `git fetch --prune` 清理本地 tracking refs。再次查核確認兩遠端的 feature refs 均不存在；工作目錄乾淨並停留在 `B518-Log-Solution`。未進行強制推送或強制刪除。
