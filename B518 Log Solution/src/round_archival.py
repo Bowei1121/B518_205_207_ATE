@@ -77,6 +77,20 @@ def _validate_round_components(audit_path: Path, session_path: Path):
         raise ValueError("audit 尚未完整保存")
     if not audit["collection_stopped"]:
         raise ValueError("輪次仍在收集，不能封存")
+    for event in audit["events"]:
+        detail = event.get("detail", {})
+        if event["kind"] in {"conflict_detected", "conflict_resolved"}:
+            if not isinstance(detail.get("conflict_id"), str) or not detail["conflict_id"]:
+                raise ValueError("衝突事件缺少可驗證的身分")
+        if event["kind"] in {"round_alarm_created", "round_alarm_acknowledged"}:
+            if not isinstance(detail.get("alarm_id"), str) or not detail["alarm_id"]:
+                raise ValueError("警報事件缺少可驗證的身分")
+    if any(conflict.get("resolution") is None for conflict in audit["conflicts"].values()):
+        raise ValueError("仍有未處理衝突")
+    if any("created" not in alarm for alarm in audit["alarms"].values()):
+        raise ValueError("警報缺少建立事件")
+    if any("acknowledged" not in alarm for alarm in audit["alarms"].values()):
+        raise ValueError("仍有未確認警報")
 
     session_file = session_path / "session.json"
     try:
@@ -87,8 +101,12 @@ def _validate_round_components(audit_path: Path, session_path: Path):
             not isinstance(metadata.get("settings"), dict) or
             metadata["settings"].get("round_id") != round_id):
         raise ValueError("Session metadata 缺少相同輪次身分或格式不支援")
-    if not isinstance(metadata.get("finished_at"), str) or not metadata["finished_at"].strip():
-        raise ValueError("Session 尚無完成時間")
+    if (not isinstance(metadata.get("started_at"), str) or not metadata["started_at"].strip() or
+            not isinstance(metadata.get("finished_at"), str) or not metadata["finished_at"].strip()):
+        raise ValueError("Session 缺少有效的開始或完成時間")
+    if (not isinstance(metadata.get("sources"), list) or
+            any(not isinstance(source, str) or not source.strip() for source in metadata["sources"])):
+        raise ValueError("Session 來源 metadata 不完整")
 
     events_path = session_path / "events.log"
     try:
@@ -96,7 +114,7 @@ def _validate_round_components(audit_path: Path, session_path: Path):
         for line in text.splitlines():
             record = json.loads(line)
             if (not isinstance(record, dict) or not isinstance(record.get("timestamp"), str) or
-                    not isinstance(record.get("message"), str) or
+                    not record["timestamp"].strip() or not isinstance(record.get("message"), str) or
                     not isinstance(record.get("detail", {}), dict)):
                 raise ValueError("Session event 欄位不完整")
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -109,8 +127,9 @@ def _validate_round_components(audit_path: Path, session_path: Path):
             if reader.fieldnames != ["slot", "sn", "status", "source", "updated_at"]:
                 raise ValueError("Session results 欄位不完整")
             for row in reader:
-                int(row["slot"])
-                if any(row[key] is None for key in reader.fieldnames):
+                slot = int(row["slot"])
+                if (slot < 1 or any(row[key] is None for key in reader.fieldnames) or
+                        not row["status"].strip() or not row["updated_at"].strip()):
                     raise ValueError("Session result 欄位不完整")
     except (OSError, UnicodeError, csv.Error) as error:
         raise ValueError("Session results 無法驗證：{}".format(error))

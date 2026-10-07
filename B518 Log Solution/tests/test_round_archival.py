@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import threading
@@ -379,6 +380,63 @@ class RoundArchivalTests(unittest.TestCase):
                     audit_path, session_path,
                     datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
                 )
+
+    def test_disk_archival_rejects_unresolved_conflicts_and_alarms(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cases = (
+                ("unresolved-conflict", "conflict_detected", {"conflict_id": "conflict-1"}, "衝突"),
+                ("unacknowledged-alarm", "round_alarm_created", {"alarm_id": "alarm-1"}, "警報"),
+            )
+            for round_id, kind, detail, expected_reason in cases:
+                with self.subTest(kind=kind):
+                    audit_path, session_path = self.create_complete_round(root, round_id)
+                    original = write_round_archive(
+                        audit_path, session_path,
+                        datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
+                    )
+                    audit = RoundAuditStore(root / "audit", round_id, "FCT",
+                                            "2026-10-07T08:00:00", 0.0)
+                    audit.append_event(AuditEvent(2, kind, "pending operator action", 1,
+                                                  detail=detail),
+                                       "2026-10-07T09:01:00", 3660.0)
+                    self.assertTrue(audit.flush())
+                    manifest = json.loads(original.path.read_text(encoding="utf-8"))
+                    component = next(item for item in manifest["components"]
+                                     if item["name"] == "audit.jsonl")
+                    audit_bytes = audit_path.read_bytes()
+                    component["size"] = len(audit_bytes)
+                    component["sha256"] = hashlib.sha256(audit_bytes).hexdigest()
+                    manifest.pop("seal_sha256")
+                    canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                                           separators=(",", ":")).encode("utf-8")
+                    manifest["seal_sha256"] = hashlib.sha256(canonical).hexdigest()
+                    original.path.write_text(json.dumps(manifest), encoding="utf-8")
+                    disk_status = read_round_archive(original.path, expected_round_id=round_id)
+                    self.assertFalse(disk_status.cleanup_eligible)
+                    self.assertIn(expected_reason, disk_status.message)
+                    with self.assertRaisesRegex(ValueError, expected_reason):
+                        write_round_archive(
+                            audit_path, session_path,
+                            datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
+                        )
+
+    def test_disk_archival_rejects_parseable_but_incomplete_session_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for missing_field in ("started_at", "sources"):
+                with self.subTest(field=missing_field):
+                    audit_path, session_path = self.create_complete_round(
+                        root, "missing-" + missing_field)
+                    metadata_path = session_path / "session.json"
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    metadata.pop(missing_field)
+                    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "Session"):
+                        write_round_archive(
+                            audit_path, session_path,
+                            datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
+                        )
 
 
 if __name__ == "__main__":

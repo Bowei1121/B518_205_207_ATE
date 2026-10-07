@@ -422,7 +422,19 @@ def read_round_audit(path: Path) -> dict:
             state = "RUNNING"
         elif kind == "conflict_detected":
             state = "AWAITING_REVIEW"
+            conflict_id = event.get("detail", {}).get("conflict_id")
+            if conflict_id:
+                conflicts[conflict_id] = event.get("detail", {})
         elif kind == "conflict_resolved":
+            detail = event.get("detail", {})
+            if detail.get("conflict_id") in conflicts:
+                conflicts[detail["conflict_id"]]["resolution"] = detail
+            slot = event.get("display_position")
+            if slot is not None and slot in results:
+                results[slot].update({"sn": detail.get("result_after_sn"),
+                                      "status": detail.get("result_after_status"),
+                                      "source": detail.get("result_after_source"),
+                                      "source_position": detail.get("chosen_source_position")})
             state = "AWAITING_REVIEW" if any(
                 conflict.get("resolution") is None for conflict in conflicts.values()) else state
         elif kind == "result" and slot is not None:
@@ -430,20 +442,6 @@ def read_round_audit(path: Path) -> dict:
                              "sn": event.get("sn"), "status": event.get("status"),
                              "source": event.get("source"), "source_time": event.get("source_time"),
                              "detail": event.get("detail", {})}
-        elif kind == "conflict_detected":
-            conflict_id = event.get("detail", {}).get("conflict_id")
-            if conflict_id:
-                conflicts[conflict_id] = event.get("detail", {})
-        elif kind == "conflict_resolved":
-            detail = event.get("detail", {})
-            slot = event.get("display_position")
-            if slot is not None and slot in results:
-                results[slot].update({"sn": detail.get("result_after_sn"),
-                                      "status": detail.get("result_after_status"),
-                                      "source": detail.get("result_after_source"),
-                                      "source_position": detail.get("chosen_source_position")})
-            if detail.get("conflict_id") in conflicts:
-                conflicts[detail["conflict_id"]]["resolution"] = detail
         elif kind == "round_alarm_created":
             alarm_id = event.get("detail", {}).get("alarm_id")
             if alarm_id:
