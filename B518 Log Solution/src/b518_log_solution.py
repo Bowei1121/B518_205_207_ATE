@@ -1388,7 +1388,6 @@ class B518LogSolutionApp:
         self._refresh_unsaved_rounds()
 
     def _finish_close(self) -> None:
-        self.hotkey.close()
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.destroy()
         self._closing_ui = False
@@ -1396,6 +1395,7 @@ class B518LogSolutionApp:
             self._save_preferences()
         except (OSError, ProfileError) as error:
             messagebox.showerror("偏好儲存失敗", str(error), parent=self.root)
+        self.hotkey.close()
         self.root.destroy()
 
 
