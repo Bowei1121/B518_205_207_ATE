@@ -2,7 +2,7 @@
 
 來源：[正式規格](../ROUND_RECORD_LIFECYCLE_SPEC_2026-10-06.md)，對應 [GitHub 規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)。已查核議題完整內容與本機規格一致，沒有留言。
 
-狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1～T3 已完成本機實作、驗收、雙軸 code review 及合併。T4 六項驗收、225 項完整測試及固定基準 Standards／Spec 雙軸複審已通過；目前實作 commit `7a241be` 已推送至 Gitea、GitHub，等待合併前主線即時查核及整合。T5～T7 尚未開始。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
+狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1～T3 已完成本機實作、驗收、雙軸 code review 及合併。T4 六項驗收、225 項完整測試及固定基準 Standards／Spec 雙軸複審已通過；實作 commit `7a241be` 及測試 fixture follow-up `60ddc79` 已推送至 Gitea、GitHub，正重新完成 Ticket 04 最終合併與合併後驗證。T5～T7 尚未開始。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
 
 | 本機票 | GitHub | 標題 | 直接阻擋票 | 可驗證交付 |
 | --- | --- | --- | --- | --- |
