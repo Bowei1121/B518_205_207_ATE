@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 import queue
 import tkinter as tk
 import time
@@ -133,6 +134,101 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(tuple(session_root.rglob("*")), (round_path.parent, round_path))
             finally:
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_shows_startup_cleanup_summary_after_disk_deletion(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            session_root = Path(temporary) / "sessions"
+            root = tk.Tk()
+            root.withdraw()
+            archived_at = datetime.now(timezone.utc) - timedelta(days=200)
+            writer = RoundCoordinator(audit_root=session_root, wall_clock=lambda: archived_at)
+
+            class OldRoundMonitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback, session_root=session_root,
+                                     now=lambda: archived_at, round_timeout_seconds=3600)
+                    self.done = False
+
+                def poll_once(self):
+                    if not self.done:
+                        self.done = True
+                        self.set_result(1, "PASS", "SERIAL000001", "source.csv", {
+                            "round_evidence_id": "tk-retention", "source_time": "2024-01-01T08:01:00",
+                        })
+
+            archived_round = writer.start("FCT", OldRoundMonitor, run_async=False)
+            writer.poll_once()
+            self.wait_for(lambda: writer.archive_status(archived_round.round_id) is not None and
+                          writer.archive_status(archived_round.round_id).cleanup_eligible)
+            archive_path = writer.archive_status(archived_round.round_id).path
+            protected_files = {
+                Path(temporary) / "manual-export.json": b'{"keep": true}',
+                Path(temporary) / "source-log.txt": b"external source log",
+            }
+            for path, contents in protected_files.items():
+                path.write_bytes(contents)
+
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            try:
+                app.open_settings()
+                heartbeat = [0]
+
+                def pump_ui():
+                    heartbeat[0] += 1
+                    root.after(10, pump_ui)
+
+                root.after(0, pump_ui)
+                deadline = time.monotonic() + 5
+                while (time.monotonic() < deadline and
+                       app.rounds.retention_cleanup_status().status not in {"complete", "failed"}):
+                    root.update()
+                    time.sleep(0.01)
+                root.update()
+                self.assertEqual(app.rounds.retention_cleanup_status().status, "complete",
+                                 app.rounds.retention_cleanup_status())
+                app._refresh_retention_cleanup_status()
+                self.assertEqual(app.retention_cleanup_heading.cget("text"), "背景清理摘要")
+                self.assertIn("保留 1 輪", app.retention_cleanup_status.get())
+                self.assertTrue(archive_path.parent.exists())
+
+                previous_count = len(app.rounds.retention_cleanup_summaries())
+                app.retention_days_var.set("180")
+                app.retention_save_button.invoke()
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    summaries = app.rounds.retention_cleanup_summaries()
+                    status = app.rounds.retention_cleanup_status()
+                    if (len(summaries) > previous_count and status.status in {"complete", "failed"}):
+                        break
+                    time.sleep(0.01)
+                root.update()
+                self.assertEqual(app.rounds.retention_cleanup_status().status, "complete",
+                                 app.rounds.retention_cleanup_status())
+                self.assertFalse(archive_path.parent.exists())
+                app._refresh_retention_cleanup_status()
+                self.assertIn("刪除 1 輪", app.retention_cleanup_status.get())
+                persisted = MachineProfileStore(Path(temporary) / "preferences.json")
+                persisted.load()
+                self.assertEqual(persisted.retention_days, 180)
+                for path, contents in protected_files.items():
+                    self.assertEqual(path.read_bytes(), contents)
+                self.assertFalse(archive_path.parent.exists())
+                self.assertGreater(heartbeat[0], 1)
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline and app.rounds.close_status().status != "complete":
+                    root.update()
+                    time.sleep(0.01)
                 app.hotkey.close()
                 root.destroy()
 

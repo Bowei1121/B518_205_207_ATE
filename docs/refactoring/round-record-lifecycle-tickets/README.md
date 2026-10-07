@@ -2,7 +2,7 @@
 
 來源：[正式規格](../ROUND_RECORD_LIFECYCLE_SPEC_2026-10-06.md)，對應 [GitHub 規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)。已查核議題完整內容與本機規格一致，沒有留言。
 
-狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1～T4 已完成驗收、固定基準雙軸 code review 及合併。T5 六項驗收、242 項完整測試、Standards／Spec 複審及合併後完整測試均已通過；merge commit `fbd3ac0` 已同步至 Gitea／GitHub，本地與兩遠端 ticket 分支已安全清理。T6 五項驗收、248 項完整測試及固定基準 Standards／Spec 複審已通過；merge commit `2c75f07` 已同步 Gitea／GitHub，本地與兩遠端 ticket 分支已安全清理。T7 尚未開始。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
+狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1～T4 已完成驗收、固定基準雙軸 code review 及合併。T5 六項驗收、242 項完整測試、Standards／Spec 複審及合併後完整測試均已通過；merge commit `fbd3ac0` 已同步至 Gitea／GitHub，本地與兩遠端 ticket 分支已安全清理。T6 五項驗收、248 項完整測試及固定基準 Standards／Spec 複審已通過；merge commit `2c75f07` 已同步 Gitea／GitHub，本地與兩遠端 ticket 分支已安全清理。T7 背景清理、排程、保護、持久摘要及中斷復原已實作；25 項隔離磁碟測試、274 項含真正 Tk 的完整套件、語法／diff 檢查、母規格覆蓋查核及固定基準雙軸複審通過。程式／測試提交 `1243450` 已推送至 Gitea／GitHub；驗收文件的最後狀態更新需 commit/push，安全整合尚待完成，故保留專用分支。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
 
 | 本機票 | GitHub | 標題 | 直接阻擋票 | 可驗證交付 |
 | --- | --- | --- | --- | --- |
@@ -12,13 +12,13 @@
 | [T4](04-responsive-save-before-close.md) | [#5](https://github.com/Bowei1121/B518_205_207_ATE/issues/5) | 所有本次執行紀錄完整保存後才正常關閉 | #4（已由 T3 合併解除） | 非阻塞等待、失敗、重試、取消及成功關閉；驗收完成，見 [本機驗收紀錄](../evidence/ticket-04/local-validation.md) |
 | [T5](05-trusted-round-archival.md) | [#6](https://github.com/Bowei1121/B518_205_207_ATE/issues/6) | 完整保存的已結束輪次產生可信封存時間 | #4（已解除） | 六項驗收與 Standards／Spec 複審完成並合併；見 [本機驗收紀錄](../evidence/ticket-05/local-validation.md) |
 | [T6](06-global-retention-setting.md) | [#7](https://github.com/Bowei1121/B518_205_207_ATE/issues/7) | 工程師可持久設定全域輪次保存天數 | 無 | 五項驗收與固定基準雙軸複審通過；merge `2c75f07`，見[本機驗收紀錄](../evidence/ticket-06/local-validation.md) |
-| [T7](07-background-round-retention.md) | [#8](https://github.com/Bowei1121/B518_205_207_ATE/issues/8) | 背景清理到期整輪紀錄，保留摘要並可恢復失敗 | #5、#6、#7 | 自動排程到整輪刪除、保護、摘要與下次重試 |
+| [T7](07-background-round-retention.md) | [#8](https://github.com/Bowei1121/B518_205_207_ATE/issues/8) | 背景清理到期整輪紀錄，保留摘要並可恢復失敗 | #5、#6、#7（均已合併解除） | 程式／測試已推送；25 項聚焦測試、274 項含真正 Tk 的完整套件、Standards／Spec 複審及母規格覆蓋查核通過；待文件 push 與安全整合，見 [本機驗收紀錄](../evidence/ticket-07/local-validation.md) |
 
 T1 是保存併發生命週期的前置整理，T2 在此基礎上加入故障保留與重啟。T3 提供共同未保存輪次保護清單，T4、T5 皆使用它；T5 不依賴關閉 UI，兩者可分別實作。T6 不依賴保存復原，僅設定及提示，不提前啟用清理。T7 需要可信封存、有效設定及關閉協調；不重複列出傳遞依賴。
 
-所有票沿用已確認的 RoundCoordinator 高層入口、注入時鐘、真實暫存檔、磁碟重建及真正 Tk 測試；不變更產品放行、未知同輪 FAIL 或 KVM 契約。T1～T6 已完成並有各票驗收紀錄；T7 尚未實作，到期資料清理尚未啟用。
+所有票沿用已確認的 RoundCoordinator 高層入口、注入時鐘、真實暫存檔、磁碟重建及真正 Tk 測試；不變更產品放行、未知同輪 FAIL 或 KVM 契約。T1～T6 已完成並有各票驗收紀錄。T7 的真正 Tk、完整套件、固定基準雙軸審查及覆蓋複核已完成，驗收文件最後修訂需 commit/push，安全整合待完成。
 
-T3、T4、T5、T6 均已完成驗收、雙軸複審及合併；較早版本中的「T4 等待整合」狀態已由後續合併證據取代。T7 仍需 T5、T6 及 T4 的相關關閉協調能力。發布票不代表已認領或開始產品實作。
+T3、T4、T5、T6 均已完成驗收、雙軸複審及合併；較早版本中的「T4 等待整合」狀態已由後續合併證據取代。T7 所需 T5、T6 及 T4 能力均已在工作基準。T7 驗收已通過，整合進度見本機驗收紀錄。
 
 ## 規格驗收覆蓋
 

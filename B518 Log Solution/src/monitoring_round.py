@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import Empty, Queue
 from enum import Enum
 from pathlib import Path
@@ -16,6 +16,7 @@ from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
+from round_retention import RetentionStatus, RetentionSummary, RoundRetentionStore
 
 
 class RoundMonitor(Protocol):
@@ -1176,7 +1177,8 @@ class RoundCoordinator:
     def __init__(self, on_event: Optional[Callable[[RoundEvent], None]] = None,
                  monotonic: Callable[[], float] = time.monotonic,
                  audit_root: Optional[Path] = None,
-                 wall_clock: Callable[[], datetime] = datetime.now):
+                 wall_clock: Callable[[], datetime] = datetime.now,
+                 retention_ledger_path: Optional[Path] = None):
         self._lock = threading.RLock()
         self._current: Optional[MonitoringRound] = None
         # Keep only rounds whose current-run durable work is not yet complete.
@@ -1197,6 +1199,18 @@ class RoundCoordinator:
         self._archive_queued = set()
         self._archive_dirty = set()
         self._archive_worker_active = False
+        self._retention_store = (RoundRetentionStore(
+            self._audit_root,
+            retention_ledger_path or self._audit_root.parent / "round-retention-ledger.json",
+            self._wall_clock, self._protected_round_ids, self._retention_cleanup_allowed,
+            self._effective_retention_days, self._delete_if_currently_expired)
+            if self._audit_root is not None else None)
+        self._retention_worker_active = False
+        self._retention_trigger_pending = False
+        self._retention_pending_days = 365
+        self._retention_pending_trigger = "scheduled"
+        self._retention_days = 365
+        self._retention_next_due: Optional[float] = None
 
     def start(self, station: str,
               monitor_factory: Callable[[Callable[[MonitorEvent], None]], object],
@@ -1399,6 +1413,121 @@ class RoundCoordinator:
             self._start_close_worker_locked(generation)
             return self._close_status
 
+    def start_retention_schedule(self, retention_days: int) -> RetentionStatus:
+        """Schedule the required startup cleanup and subsequent 24-hour checks."""
+        with self._lock:
+            self._retention_days = retention_days
+            self._retention_next_due = self._monotonic() + 24 * 60 * 60
+        return self.request_retention_cleanup(retention_days, "app-startup")
+
+    def retention_setting_changed(self, retention_days: int) -> RetentionStatus:
+        """Schedule cleanup only after the global preference was durably saved."""
+        with self._lock:
+            self._retention_days = retention_days
+            self._retention_next_due = self._monotonic() + 24 * 60 * 60
+        return self.request_retention_cleanup(retention_days, "setting-changed")
+
+    def save_retention_setting(self, retention_days: int, persist: Callable[[], None]) -> RetentionStatus:
+        """Serialize a durable setting update with the final irreversible delete step."""
+        if type(retention_days) is not int or retention_days <= 0:
+            raise ValueError("保存天數必須是正整數")
+        with self._lock:
+            persist()
+            self._retention_days = retention_days
+            self._retention_next_due = self._monotonic() + 24 * 60 * 60
+        return self.request_retention_cleanup(retention_days, "setting-changed")
+
+    def poll_retention_schedule(self, retention_days: int) -> RetentionStatus:
+        """Cheap Tk-safe due check; scanning and deletion always run in a worker."""
+        with self._lock:
+            if retention_days != self._retention_days:
+                self._retention_days = retention_days
+                self._retention_next_due = self._monotonic() + 24 * 60 * 60
+            due = self._retention_next_due is not None and self._monotonic() >= self._retention_next_due
+            if due:
+                self._retention_next_due = self._monotonic() + 24 * 60 * 60
+        if due:
+            return self.request_retention_cleanup(retention_days, "24-hour-schedule")
+        return self.retention_cleanup_status()
+
+    def request_retention_cleanup(self, retention_days: int, trigger: str = "requested") -> RetentionStatus:
+        """Queue/coalesce a cleanup run without blocking the caller."""
+        if type(retention_days) is not int or retention_days <= 0:
+            return RetentionStatus("failed", "保存天數無效，未執行清理",
+                                   self.retention_cleanup_summaries())
+        if self._retention_store is None:
+            return RetentionStatus("failed", "未設定 App 管理的輪次資料目錄")
+        with self._lock:
+            self._retention_days = retention_days
+            if self._closing:
+                self._retention_pending_days = retention_days
+                self._retention_pending_trigger = trigger
+                self._retention_trigger_pending = True
+                return self._retention_store.status.__class__(
+                    "skipped", "關閉保存期間不啟動新清理", self._retention_store.summaries)
+            self._retention_pending_days = retention_days
+            self._retention_pending_trigger = trigger
+            if self._retention_worker_active:
+                self._retention_trigger_pending = True
+                return self._retention_store.status
+            self._retention_worker_active = True
+            self._retention_trigger_pending = False
+            threading.Thread(target=self._run_retention_worker, daemon=True).start()
+        return self._retention_store.status
+
+    def retention_cleanup_status(self) -> RetentionStatus:
+        if self._retention_store is None:
+            return RetentionStatus("idle", "未設定 App 管理的輪次資料目錄")
+        return self._retention_store.status
+
+    def retention_cleanup_summaries(self) -> Tuple[RetentionSummary, ...]:
+        if self._retention_store is None:
+            return ()
+        return self._retention_store.summaries
+
+    def _run_retention_worker(self) -> None:
+        try:
+            while True:
+                with self._lock:
+                    days = self._retention_pending_days
+                    trigger = self._retention_pending_trigger
+                    self._retention_trigger_pending = False
+                self._retention_store.run(days, trigger)
+                with self._lock:
+                    if self._closing or not self._retention_trigger_pending:
+                        return
+        finally:
+            with self._lock:
+                self._retention_worker_active = False
+                if self._retention_trigger_pending and not self._closing:
+                    self._retention_worker_active = True
+                    threading.Thread(target=self._run_retention_worker, daemon=True).start()
+
+    def _protected_round_ids(self):
+        with self._lock:
+            protected = set(self._tracked_rounds)
+            if self._current is not None:
+                protected.add(self._current.round_id)
+            return tuple(protected)
+
+    def _retention_cleanup_allowed(self) -> bool:
+        with self._lock:
+            return not self._closing
+
+    def _effective_retention_days(self) -> int:
+        with self._lock:
+            return self._retention_days
+
+    def _delete_if_currently_expired(self, archived_at: datetime,
+                                     operation: Callable[[], None]) -> None:
+        with self._lock:
+            if self._closing:
+                raise ValueError("關閉保存期間不執行新的輪次刪除")
+            if archived_at + timedelta(days=self._retention_days) > normalize_archive_time(
+                    self._wall_clock()):
+                raise ValueError("保存期限在刪除前已延長，停止刪除並保留剩餘進度")
+            operation()
+
     def retry_close_saves(self) -> CloseSnapshot:
         """Retry failed rounds, then recheck every tracked round before close."""
         with self._lock:
@@ -1430,6 +1559,9 @@ class RoundCoordinator:
             self._close_status = CloseSnapshot(
                 "cancelled", self._close_status.generation + 1,
                 tuple(self._archive_states), self._close_status.message)
+            if self._retention_trigger_pending and not self._retention_worker_active:
+                self._retention_worker_active = True
+                threading.Thread(target=self._run_retention_worker, daemon=True).start()
             return self._close_status
 
     def close_status(self) -> CloseSnapshot:
@@ -1445,6 +1577,16 @@ class RoundCoordinator:
 
     def _coordinate_close(self, generation: int) -> None:
         try:
+            while True:
+                if not self._close_attempt_is_current(generation):
+                    return
+                with self._lock:
+                    cleanup_active = self._retention_worker_active
+                    round_ids = tuple(self._archive_states)
+                if not cleanup_active:
+                    break
+                self._set_close_waiting(generation, round_ids, "等待已開始的背景清理安全完成")
+                threading.Event().wait(0.05)
             with self._lock:
                 current = self._current
             if current is not None:

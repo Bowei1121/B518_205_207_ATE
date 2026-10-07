@@ -108,7 +108,9 @@ class B518LogSolutionApp:
         self.root.resizable(False, False)
         self.events: queue.Queue[RoundEvent] = queue.Queue()
         self.hotkey_events: queue.Queue[bool] = queue.Queue()
-        self.rounds = RoundCoordinator(self.events.put, audit_root=self.session_root)
+        self.rounds = RoundCoordinator(
+            self.events.put, audit_root=self.session_root,
+            retention_ledger_path=self.session_root.parent / "round-retention-ledger.json")
         self._closing_ui = False
         self._close_window = None
         self._close_status_label = None
@@ -133,6 +135,7 @@ class B518LogSolutionApp:
         self.settings_log: Optional[tk.Text] = None
         self.retention_days_var: Optional[tk.StringVar] = None
         self.retention_status: Optional[tk.StringVar] = None
+        self.retention_cleanup_status: Optional[tk.StringVar] = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_details: Optional[tk.Text] = None
@@ -148,6 +151,7 @@ class B518LogSolutionApp:
         self._position_window()
         self.root.after(150, self._drain_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.rounds.start_retention_schedule(self.profile_store.retention_days)
         if not self.hotkey.available:
             self.root.after(300, self._show_hotkey_warning)
 
@@ -817,6 +821,8 @@ class B518LogSolutionApp:
         self._apply_round_snapshot(snapshot)
         self._refresh_unsaved_rounds()
         self._refresh_archive_statuses()
+        self.rounds.poll_retention_schedule(self.profile_store.retention_days)
+        self._refresh_retention_cleanup_status()
         self._refresh_conflict_review()
         self._refresh_round_alarm()
         self.root.after(150, self._drain_events)
@@ -1114,10 +1120,17 @@ class B518LogSolutionApp:
             parent,
             text=("保存期限從輪次可信封存時間起算，每天按完整 24 小時計算。\n"
                   "縮短期限可能使既有符合條件的紀錄於下一次背景清理時到期。\n"
-                  "此版本只保存設定，不會執行輪次紀錄刪除。"),
+                  "符合期限且可信完整保存的輪次會在背景清理，執行結果列於下方摘要。"),
             wraplength=650, justify="left", foreground=TEXT_COLOUR,
         )
         self.retention_help_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        self.retention_cleanup_status = tk.StringVar(value="背景清理尚未執行")
+        self.retention_cleanup_heading = ttk.Label(
+            parent, text="背景清理摘要", font=("Helvetica", 10, "bold"))
+        self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
+        ttk.Label(parent, textvariable=self.retention_cleanup_status, wraplength=650,
+                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+        self._refresh_retention_cleanup_status()
         parent.columnconfigure(1, weight=1)
 
     def _save_retention_days(self) -> None:
@@ -1132,7 +1145,8 @@ class B518LogSolutionApp:
 
         previous = self.profile_store.retention_days
         try:
-            self.profile_store.save_retention_days(days)
+            self.rounds.save_retention_setting(
+                days, lambda: self.profile_store.save_retention_days(days))
         except ProfileError as error:
             self.retention_status.set(
                 "設定無效或偏好檔無法讀取，目前仍生效 {} 天：{}".format(previous, error))
@@ -1147,6 +1161,33 @@ class B518LogSolutionApp:
                 "保存天數已更新；既有符合條件的紀錄可能於下一次背景清理到期。")
         else:
             self.retention_status.set("保存天數已更新並持久保存。")
+
+    def _refresh_retention_cleanup_status(self) -> None:
+        """Display coordinator cleanup state and durable summaries on the Tk thread."""
+        variable = getattr(self, "retention_cleanup_status", None)
+        if variable is None:
+            return
+        status = self.rounds.retention_cleanup_status()
+        summaries = self.rounds.retention_cleanup_summaries()
+        latest = summaries[-1] if summaries else None
+        detail = status.message
+        if latest is not None:
+            outcomes = latest.results
+            detail += "\n最近執行 {} · 保存 {} 天 · 刪除 {} 輪、保留 {} 輪、失敗 {} 輪".format(
+                latest.completed_at or latest.started_at, latest.retention_days,
+                sum(item.outcome == "deleted" for item in outcomes),
+                sum(item.outcome == "skipped" for item in outcomes),
+                sum(item.outcome == "failed" for item in outcomes))
+            failures = [item for item in outcomes if item.outcome == "failed"]
+            if failures:
+                detail += "\n" + "；".join("{}：{}".format(item.round_id or "清理", item.reason)
+                                             for item in failures[:3])
+            skipped = [item for item in outcomes if item.outcome == "skipped"]
+            if skipped:
+                detail += "\n保留原因：" + "；".join(
+                    "{}：{}".format(item.round_id or "輪次", item.reason)
+                    for item in skipped[:3])
+        variable.set(detail)
 
     def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""
