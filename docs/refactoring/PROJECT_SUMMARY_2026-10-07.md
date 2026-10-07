@@ -85,8 +85,8 @@
 
 ## Ticket 07：背景輪次保存清理（2026-10-07）
 
-- 使用者授權在 `round/ticket-07` 完成母規格 Ticket 07；開始前固定審查基準 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，其父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e`。專用分支原已存在票前文件草稿提交 `495e8aa`，未改寫；其無關 multilingual 文件內容在整合時須避免混入本票提交。
+- 使用者授權在 `round/ticket-07` 完成母規格 Ticket 07；固定審查基準 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，其父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e`。專用分支原有票前草稿提交未改寫；正常兩父合併 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0` 的主線樹排除十張無關 multilingual 草稿檔案及其摘要段落。
 - 以 `RoundCoordinator` 公開入口及背景 worker 實作啟動／每日／設定變更排程、同輪可信完整性驗證、跨目錄整輪刪除、保護狀態及持久摘要。stage 名稱和刪除步驟會在改名前持久化；崩潰、保存期限延長或寫入錯誤時依雜湊驗證續作或還原；摘要在輪次檔案刪除後仍可由新 Coordinator 讀取。UI 操作設定與摘要，Tk 執行緒不負責掃描或刪除。
-- Ticket 07 八項驗收及規格母表 16 項覆蓋逐案查核完成。`python3 scripts/run_tests.py test_round_retention`：25 tests 通過；桌面工作階段 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 tests 通過（42.641 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 測試操作設定保存／失敗、設定觸發清理、摘要檢視、暫存輪次刪除及外部來源／匯出保護，並確認 `after` 心跳。repository 未配置型別檢查器，未宣稱型別檢查通過；受控測試不代表現場設備驗收。
+- Ticket 07 八項驗收及規格母表 16 項覆蓋逐案查核完成。`python3 scripts/run_tests.py test_round_retention`：25 tests 通過；合併後於桌面工作階段執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 tests 通過（43.684 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 測試操作設定保存／失敗、設定觸發清理、摘要檢視、暫存輪次刪除及外部來源／匯出保護，並確認 `after` 心跳。repository 未配置型別檢查器，未宣稱型別檢查通過；受控測試不代表現場設備驗收。
 - 固定基準 Standards／Spec 雙軸複審通過，最終沒有未解問題。審查找到 stage rename 崩潰復原、期限延長後還原冪等性、重複摘要及檔案／目錄 FD 洩漏；均以 Event／故障注入測試修正，聚焦測試與完整套件在修正後重跑。
-- Ticket 分支已有提交 `8806602`、`dad978b`、`dee5cfe`、`1243450`；最新程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66` 已同步至 origin 設定的 Gitea 與 GitHub 兩個 push URL，且即時 refs 核對一致。驗收、審查均通過；文件更新仍待 push。主線整合前須再次即時確認工作樹與全部目的地 refs，並避免合入票前多語言文件提交。完成整合驗證及同步前保留 `round/ticket-07`。細節及命令見 [Ticket 07 驗收紀錄](evidence/ticket-07/local-validation.md)。
+- Ticket 分支程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66`、驗收文件 SHA `fd746ed5071abfec6264e69170d6b4c566167f4c` 已同步至 Gitea 與 GitHub。合併前即時查核兩端主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`；正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，合併後 274 項完整桌面測試通過。Standards／Spec 最終複審沒有未解問題。主線文件補記及同步、兩端 refs 再確認與分支清理尚待完成；完成前保留 `round/ticket-07`。細節及命令見 [Ticket 07 驗收紀錄](evidence/ticket-07/local-validation.md)。

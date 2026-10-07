@@ -1,6 +1,6 @@
 # Ticket 07 本機實作與驗收紀錄
 
-狀態：Ticket 07 實作與驗收完成；25 項清理聚焦測試、274 項含真正 Tk 的完整套件、Standards／Spec 固定基準複審均通過。程式／測試已提交並推送，驗收文件的最後狀態更正待提交／推送；安全整合尚待完成，因此保留分支。固定主線起點為 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支 `round/ticket-07` 在本票開始前已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`（父提交為上述主線 SHA，內容為 2026-10-07 多語言票草稿，已同步遠端）。該既存提交未改寫；固定審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，Standards／Spec 審查範圍是其後的 Ticket 07 變更。此票前提交與 Ticket 07 無關；整合時須保護其分支內容並避免把多語言票草稿帶進主線。
+狀態：Ticket 07 實作與驗收完成；25 項清理聚焦測試、274 項含真正 Tk 的完整套件、Standards／Spec 固定基準複審均通過。固定主線起點為 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支 `round/ticket-07` 在本票開始前已有提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`（父提交為上述主線 SHA，內容為 2026-10-07 多語言票草稿）。該既存提交未改寫；固定審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，Standards／Spec 審查範圍是其後的 Ticket 07 變更。正常合併 commit 為 `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`；合併樹僅納入 Ticket 07 交付，排除無關草稿檔案並移除其摘要段落。合併後 274 項含真正 Tk 的完整套件通過；主線同步及分支清理仍待完成。
 
 ## 實作內容
 
@@ -15,7 +15,7 @@
 執行目錄：`B518 Log Solution/`（repository 內實際 Python 程式及測試目錄）。
 
 - `python3 scripts/run_tests.py test_round_retention`：25 項通過。隔離暫存磁碟及全新 Coordinator 涵蓋期限前／恰到／逾期、startup／24 小時排程、期限縮短／延長、目前輪次保護、同輪多目錄、未知檔、損壞資料與外部 symlink、清理摘要故障防刪、多目錄部分刪除續作、單輪失敗不阻擋其他輪次、觸發合併與關閉競爭。另以 Event 故障注入涵蓋 stage 意圖寫入後但 rename 前、rename 後、期限延長後復原、摘要重讀與 FD 關閉。刪除後用新 Coordinator 從 ledger 讀回摘要。
-- `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 項完整套件通過（42.641 秒），於可存取桌面圖形工作階段執行。真正 Tk 操作設定輸入與保存、驗證失敗／持久化失敗、保存天數變更觸發背景清理、檢視啟動清理摘要；以暫存輪次確認刪除及未刪檔案內容，外部來源 Log／人工匯出保持不變，Tk `after` 心跳持續更新。
+- 合併後 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 項完整套件通過（43.684 秒），於可存取桌面圖形工作階段執行。真正 Tk 操作設定輸入與保存、驗證失敗／持久化失敗、保存天數變更觸發背景清理、檢視啟動清理摘要；以暫存輪次確認刪除及未刪檔案內容，外部來源 Log／人工匯出保持不變，Tk `after` 心跳持續更新。
 - `B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_real_tk_shows_startup_cleanup_summary_after_disk_deletion`：獨立桌面 Tk 清理操作與摘要案例通過。測試等到公開清理狀態完成後才核對磁碟及顯示內容。
 - 曾在未提升桌面存取的執行環境遇到 Tk 初始化 fatal abort（exit 134）；後續已在可存取桌面的工作階段執行以上真正 Tk 測試並通過。先前 abort 不作為通過證據。
 - 環境：macOS Darwin 24.6.0、Intel x86_64、Python 3.8.10、Tk 8.6。
@@ -48,4 +48,4 @@
 
 ## 整合待辦
 
-驗收及固定基準雙軸審查均已完成。最後程式／測試 SHA `1243450b957fb326c8941f63ba3f9f367c853a66` 已在 Gitea 與 GitHub 分支 refs 核對一致；主線目前兩端均為 `56f895af0b5bceab73582ab8fec95417068b468e`。票前提交 `495e8aa` 是十張多語言票草稿，與本票範圍無關；整合時保留其分支歷史，但合併樹須排除這些檔案變更。合併前再次即時確認主線工作樹及遠端基準，合併後驗證並同步所有 push 目的地成功後才清理專用分支。最終文件 SHA、合併 SHA 與分支清理結果待執行後補記。
+驗收及固定基準雙軸審查均已完成。合併前即時核對 Gitea、GitHub 的主線均為 `56f895af0b5bceab73582ab8fec95417068b468e`，專用分支均為 `fd746ed5071abfec6264e69170d6b4c566167f4c`。正常兩父提交合併 SHA `3c07e1e371c8e7f0467c39e591ab84df591d9ad0`，父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e` 與 Ticket 分支 `fd746ed5071abfec6264e69170d6b4c566167f4c`。合併樹排除票前十張多語言草稿檔案及其摘要段落，Ticket 分支歷史未改寫。合併後於可存取桌面的環境執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，274 項通過（43.684 秒）。主線與驗收文件的遠端同步、兩端 refs 驗證及安全分支清理待完成後記錄。
