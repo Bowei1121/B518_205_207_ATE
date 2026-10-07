@@ -40,3 +40,17 @@ _Avoid_：測試平台（描述站別時）
 
 **封存時間**：
 測試輪次已結束、沒有待確認事項且輪次紀錄完整保存時，記錄的封存時刻；作為輪次紀錄保存期限的起點。
+
+## 中英詞彙對照
+
+多語言訪談確認建立共用詞彙表，供畫面與事件使用；以下保留既有概念，不改領域定義。
+
+| 繁體中文 | English |
+| --- | --- |
+| 測試輪次 | Test Round |
+| 待確認 | Awaiting Review |
+| 機型（工站類型） | Station Type |
+| 原結果 | Original Result |
+| 新候選 | New Candidate |
+| 來源時間 | Source Time |
+| 來源檔名 | Source Filename |
