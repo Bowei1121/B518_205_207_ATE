@@ -2,12 +2,12 @@
 
 來源：[正式規格](../ROUND_RECORD_LIFECYCLE_SPEC_2026-10-06.md)，對應 [GitHub 規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1)。已查核議題完整內容與本機規格一致，沒有留言。
 
-狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1 已完成本機實作、驗收及雙軸 code review，並已合併至 `B518-Log-Solution`；T2～T7 尚未開始。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
+狀態：使用者已確認拆票方案，7 張票已發布為 GitHub #2～#8，全部標記 ready-for-agent。T1 已完成本機實作、驗收及雙軸 code review，並已合併至 `B518-Log-Solution`；T2 已完成本機實作、驗收及雙軸 code review，目前在 `round/ticket-02` 等待依授權整合主線；T3～T7 尚未開始。T1～T7 保留作本機代號；直接阻擋關係已設定為 GitHub 原生 blocked-by，正文也附真實票號。原規格 Issue #1 僅在各票正文作 Parent 參考，沒有修改、關閉或新增其原生子議題關係。
 
 | 本機票 | GitHub | 標題 | 直接阻擋票 | 可驗證交付 |
 | --- | --- | --- | --- | --- |
 | [T1](01-idle-audit-writer.md) | [#2](https://github.com/Bowei1121/B518_205_207_ATE/issues/2) | 完成輪次後回收 audit writer，人工操作仍可保存 | 無 | 多輪不累積 writer，退出競爭不漏寫；已合併，見 Ticket 01 驗收紀錄 |
-| [T2](02-current-round-save-recovery.md) | [#3](https://github.com/Bowei1121/B518_205_207_ATE/issues/3) | 本輪保存失敗可有序重試，且不漏寫或重複 | #2 | 單輪故障、修復、UI 重試及磁碟重建完整路徑 |
+| [T2](02-current-round-save-recovery.md) | [#3](https://github.com/Bowei1121/B518_205_207_ATE/issues/3) | 本輪保存失敗可有序重試，且不漏寫或重複 | #2 | 單輪故障、修復、UI 重試及磁碟重建完整路徑；實作與驗收完成，見 [本機驗收紀錄](../evidence/ticket-02/local-validation.md) |
 | [T3](03-unsaved-round-tracking.md) | [#4](https://github.com/Bowei1121/B518_205_207_ATE/issues/4) | 換輪後仍追蹤並補存所有未保存輪次 | #3 | 前輪失敗後開始新輪，仍可選擇重試並確認完成 |
 | [T4](04-responsive-save-before-close.md) | [#5](https://github.com/Bowei1121/B518_205_207_ATE/issues/5) | 所有本次執行紀錄完整保存後才正常關閉 | #4 | 非阻塞等待、失敗、重試、取消及成功關閉 |
 | [T5](05-trusted-round-archival.md) | [#6](https://github.com/Bowei1121/B518_205_207_ATE/issues/6) | 完整保存的已結束輪次產生可信封存時間 | #4 | 人工處理後封存、磁碟可讀、舊資料保留 |
