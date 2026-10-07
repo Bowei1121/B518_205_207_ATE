@@ -1126,8 +1126,6 @@ class B518LogSolutionApp:
         text = self.retention_days_var.get().strip()
         try:
             days = int(text)
-            if days <= 0:
-                raise ValueError("保存天數必須是正整數。")
         except ValueError:
             self.retention_status.set("設定無效：保存天數必須是正整數。")
             return
@@ -1135,7 +1133,11 @@ class B518LogSolutionApp:
         previous = self.profile_store.retention_days
         try:
             self.profile_store.save_retention_days(days)
-        except (OSError, ProfileError, TypeError, ValueError) as error:
+        except ProfileError as error:
+            self.retention_status.set(
+                "設定無效或偏好檔無法讀取，目前仍生效 {} 天：{}".format(previous, error))
+            return
+        except (OSError, TypeError, ValueError) as error:
             self.retention_status.set("保存失敗，目前仍生效 {} 天：{}".format(previous, error))
             return
 
