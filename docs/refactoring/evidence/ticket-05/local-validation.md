@@ -3,7 +3,7 @@
 ## 基準與範圍
 
 - 固定 Standards／Spec code-review 基準：`a4a00d5fd6ca7ea4fdb6c2e1482cf2c78d244de5`。
-- 最後驗證的程式提交：`d679b9992a7582169352c8f745a408cd2fe34d82`（`fix: bind archive checks to tracked rounds`）。其後只新增本驗收文件、票單、拆票索引與專案摘要。
+- 最後驗證的程式提交：`d679b9992a7582169352c8f745a408cd2fe34d82`（`fix: bind archive checks to tracked rounds`）。其後只有文件提交。
 - 實作接續 Ticket 01～04；沒有加入 Ticket 06／07 的期限設定、到期判定、排程或刪除。
 - 開始時即時查核本地與 Gitea／GitHub push 目的地；分支 `round/ticket-05` 原先不存在，主線兩遠端均為固定基準的後續已知文件提交。工作樹既有未追蹤 `docs/adr/0009-bilingual-app-event-records.md` 及 `docs/refactoring/MULTILINGUAL_DISCUSSION_2026-10-07.md` 未修改、未納入提交。
 
@@ -37,6 +37,8 @@ git diff --check
 
 包含 Tk 的命令在可存取桌面圖形工作階段執行（macOS 15.7.9、Python 3.8.10、x86_64）；沙盒隔離的 Tcl 初始化會中止，因此不把該環境的退出碼當成 Tk 驗收。Repository 沒有 mypy、pyright 或其他既有型別檢查設定；型別檢查未配置，未宣稱通過。
 
+合併 commit `fbd3ac0f09381819e87b40cb17f190145d190f88` 後，在乾淨主線 worktree 再次執行 `python3 scripts/run_tests.py`，242 tests 通過（38.883 秒），包含真正 Tk 案例。
+
 ## Standards／Spec 審查
 
 兩軸均以固定基準 `a4a00d5fd6ca7ea4fdb6c2e1482cf2c78d244de5` 審查完整差異，最後檢視提交 `d679b9992a7582169352c8f745a408cd2fe34d82`。初次及複審發現的輪次身分驗證、脫離追蹤物件後磁碟損壞，以及 `ArchiveLocation`／時區正規化問題均已修正；最終 Standards 與 Spec 複審沒有未解問題。最後程式提交後重新執行完整 242 項測試。
@@ -44,5 +46,6 @@ git diff --check
 ## 提交與同步
 
 - 程式提交：`0798043`（封存能力）、`938542c`（磁碟驗證修正）、`d679b99`（審查修正）。
-- 驗收文件／專案摘要提交：完成文件後填入。
-- 推送目的地：`origin` 的 Gitea 與 GitHub push URL；最後同步 refs、主線合併 SHA 與安全清理結果於文件提交前即時查核並記錄。
+- 分支驗收文件／專案摘要提交：`6feebe2ed08b63fdd277c9d76e0a1fb90e34d612`。
+- 主線合併 commit：`fbd3ac0f09381819e87b40cb17f190145d190f88`。合併前即時 fetch 確認 Gitea／GitHub 主線都是 `a4a00d5fd6ca7ea4fdb6c2e1482cf2c78d244de5`、票分支都是 `6feebe2ed08b63fdd277c9d76e0a1fb90e34d612`；乾淨主線 worktree 無未提交檔案。
+- Ticket 分支推送目的地：`origin` 的 Gitea 與 GitHub push URL，兩端均同步至 `6feebe2`。合併後主線 push、分支清理及最後文件提交待完成後記錄。
