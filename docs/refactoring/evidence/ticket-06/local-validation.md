@@ -64,4 +64,7 @@ Repository 沒有 `mypy.ini`、`pyproject.toml`、`setup.cfg`、`tox.ini`、`pyr
 - Standards 與 Spec 雙軸均以固定基準 `f1d6e4768626b73732653ec7d978e9fa41b87bf7` 審查；最終程式／測試 HEAD 為 `70db40709ade55d4605959df4207afaccce3ebed`，兩軸複審均無未解問題。Standards 首審的 UI／Store 正整數檢查重複已修正為由 Store 統一驗證，錯誤文字及生效值仍由 UI 呈現；受影響測試及完整套件已重跑。
 - 程式／測試提交：`475a4e4`、`5e3a962`、`32ceaf8`、`70db407`。
 - 使用 `git push --set-upstream origin round/ticket-06` 建立追蹤並推送；`origin` 設定的兩個 push URL 為 Gitea 與 GitHub。最近一次即時 `git ls-remote` 確認兩端 `round/ticket-06` 均為 `70db40709ade55d4605959df4207afaccce3ebed`，兩端 `B518-Log-Solution` 均仍為固定基準 `f1d6e4768626b73732653ec7d978e9fa41b87bf7`。
-- 合併、合併後驗證、主線推送及分支清理結果待完成後補記；只有確認兩遠端同步後才會清理 Ticket 分支。
+- 合併前再次 fetch 並確認主線工作樹乾淨；本地與 Gitea／GitHub 主線均為固定基準 `f1d6e4768626b73732653ec7d978e9fa41b87bf7`，Ticket 分支是五個提交的單純前進。一般 `--no-ff` 合併 commit 為 `2c75f07f44b0b3dee9eff22d387b0385ababc3eb`。
+- 合併後於 `B518 Log Solution/` 執行 `python3 scripts/run_tests.py`：248 tests 通過（44.394 秒）；`python3 -m compileall -q src tests` 及 `git diff --check` 通過。合併後主線已推送至 Gitea 與 GitHub，重新 fetch／`git ls-remote` 確認兩端 `B518-Log-Solution` 均為 `2c75f07f44b0b3dee9eff22d387b0385ababc3eb`。
+- 確認兩遠端主線同步後，使用一般 `git push origin --delete round/ticket-06` 刪除兩端分支；即時查核兩遠端均無該 ref，再以 `git branch -d round/ticket-06` 安全刪除本地分支並 prune tracking refs。合併 worktree 已移除，原專案目錄最後切回 `B518-Log-Solution`，HEAD 為 merge SHA。未使用強制推送或強制刪除。
+- 原工作目錄內使用者既有未提交 `CONTEXT.md` 修改及未追蹤的 ADR／討論文件均保持未提交，未納入 Ticket 06 或合併提交。
