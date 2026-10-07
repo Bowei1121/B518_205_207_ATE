@@ -7,7 +7,7 @@ import time
 import threading
 import unittest
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from tkinter import ttk
@@ -21,7 +21,7 @@ from b518_log_solution import (
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
-from log_monitoring import SessionStore, SlotResult
+from log_monitoring import BaseMonitor, SessionStore, SlotResult
 from monitoring_round import RoundCoordinator, RoundEvent
 import audit_records
 from audit_records import read_round_audit
@@ -78,6 +78,69 @@ class LogSolutionUiTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail("Timed out waiting for asynchronous monitor preparation")
+
+    def test_real_tk_distinguishes_unsaved_saved_and_archived_round_states(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            now = datetime(2026, 10, 7, 10, 0, tzinfo=timezone(timedelta(hours=8)))
+            rounds = RoundCoordinator(app.events.put, audit_root=session_root, wall_clock=lambda: now)
+
+            class OneResultMonitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback, session_root=session_root,
+                                     now=lambda: now)
+                    self.done = False
+
+                def poll_once(self):
+                    if not self.done:
+                        self.done = True
+                        self.set_result(1, "PASS", "SERIAL000001", "source.csv", {
+                            "round_evidence_id": "tk-archive-round",
+                            "source_time": "2026-10-07T10:01:00",
+                        })
+
+            try:
+                app.rounds = rounds
+                self.assertIn("未完整保存 0", app.archive_status_label.cget("text"))
+                started = rounds.start("FCT", OneResultMonitor, run_async=False)
+                app.active_round_id = started.round_id
+                app._apply_round_snapshot(rounds.snapshot())
+                app._refresh_archive_statuses()
+                self.assertIn("未完整保存 1", app.archive_status_label.cget("text"))
+
+                import round_archival
+                original_replace = round_archival.os.replace
+
+                def fail_archive_replace(source, destination):
+                    if str(destination).endswith("round-archive.json"):
+                        raise OSError("temporary archive fault")
+                    return original_replace(source, destination)
+
+                with patch.object(round_archival.os, "replace", side_effect=fail_archive_replace):
+                    rounds.poll_once()
+                    def archive_failure_visible():
+                        app._refresh_archive_statuses()
+                        return (rounds.archive_status(started.round_id).status == "failed" and
+                                str(app.archive_retry_button["state"]) == "normal" and
+                                "temporary archive fault" in app.archive_round_detail.cget("text"))
+                    self.wait_for(archive_failure_visible)
+                    self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
+
+                app.archive_retry_button.invoke()
+                self.wait_for(lambda: rounds.archive_status(started.round_id).status == "archived")
+                root.update()
+
+                app._refresh_archive_statuses()
+                self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
+                self.assertIn("可信封存", app.archive_round_detail.cget("text"))
+                self.assertIn("2026-10-07T10:00:00+08:00", app.archive_round_detail.cget("text"))
+                self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+            finally:
+                root.destroy()
 
     def test_real_tk_retry_button_recovers_disk_record_once_without_blocking_ui(self):
         with TemporaryDirectory() as temporary, \
