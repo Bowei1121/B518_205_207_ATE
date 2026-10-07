@@ -1202,7 +1202,8 @@ class RoundCoordinator:
         self._retention_store = (RoundRetentionStore(
             self._audit_root,
             retention_ledger_path or self._audit_root.parent / "round-retention-ledger.json",
-            self._wall_clock, self._protected_round_ids, self._retention_cleanup_allowed)
+            self._wall_clock, self._protected_round_ids, self._retention_cleanup_allowed,
+            self._effective_retention_days)
             if self._audit_root is not None else None)
         self._retention_worker_active = False
         self._retention_trigger_pending = False
@@ -1447,6 +1448,7 @@ class RoundCoordinator:
         if self._retention_store is None:
             return RetentionStatus("failed", "未設定 App 管理的輪次資料目錄")
         with self._lock:
+            self._retention_days = retention_days
             if self._closing:
                 self._retention_pending_days = retention_days
                 self._retention_pending_trigger = trigger
@@ -1501,6 +1503,10 @@ class RoundCoordinator:
     def _retention_cleanup_allowed(self) -> bool:
         with self._lock:
             return not self._closing
+
+    def _effective_retention_days(self) -> int:
+        with self._lock:
+            return self._retention_days
 
     def retry_close_saves(self) -> CloseSnapshot:
         """Retry failed rounds, then recheck every tracked round before close."""

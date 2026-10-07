@@ -9,6 +9,7 @@ import stat
 import tempfile
 import threading
 import uuid
+import ctypes
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -18,6 +19,30 @@ from round_archival import normalize_archive_time, read_round_archive
 
 
 LEDGER_SCHEMA_VERSION = 2
+_LIBC = ctypes.CDLL(None, use_errno=True)
+_OPENAT = _LIBC.openat
+_OPENAT.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+_OPENAT.restype = ctypes.c_int
+_UNLINKAT = _LIBC.unlinkat
+_UNLINKAT.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+_UNLINKAT.restype = ctypes.c_int
+_AT_REMOVEDIR = 0x80 if os.uname().sysname == "Darwin" else 0x200
+
+
+def _openat(directory_fd: int, name: str, flags: int) -> int:
+    descriptor = _OPENAT(directory_fd, os.fsencode(name), flags)
+    if descriptor < 0:
+        error = ctypes.get_errno()
+        if error == getattr(os, "ENOENT", 2):
+            raise FileNotFoundError(error, os.strerror(error), name)
+        raise OSError(error, os.strerror(error), name)
+    return descriptor
+
+
+def _unlinkat(directory_fd: int, name: str, flags: int = 0) -> None:
+    if _UNLINKAT(directory_fd, os.fsencode(name), flags) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), name)
 
 
 @dataclass(frozen=True)
@@ -56,7 +81,8 @@ class RoundRetentionStore:
     def __init__(self, managed_root: Path, ledger_path: Path,
                  wall_clock: Callable[[], datetime],
                  protected_round_ids: Callable[[], Iterable[str]],
-                 cleanup_allowed: Callable[[], bool]):
+                 cleanup_allowed: Callable[[], bool],
+                 effective_retention_days: Callable[[], int]):
         requested_root = Path(managed_root).absolute()
         self._root_is_symlink = requested_root.is_symlink()
         self.root = requested_root.resolve()
@@ -64,6 +90,7 @@ class RoundRetentionStore:
         self._wall_clock = wall_clock
         self._protected_round_ids = protected_round_ids
         self._cleanup_allowed = cleanup_allowed
+        self._effective_retention_days = effective_retention_days
         self._lock = threading.RLock()
         self._status = RetentionStatus()
         self._summaries = ()
@@ -148,6 +175,11 @@ class RoundRetentionStore:
                 ledger["runs"] = [item for item in ledger["runs"] if item.get("run_id") != run_id]
                 ledger["runs"].append(_summary_to_dict(final))
                 ledger["runs"] = ledger["runs"][-1000:]
+                for result in results:
+                    if result.outcome == "deleted":
+                        plan = ledger.get("active_plans", {}).get(result.round_id)
+                        if plan is not None and plan.get("deletion_complete"):
+                            ledger["active_plans"].pop(result.round_id, None)
                 self._write_ledger(ledger)
                 self._summaries = tuple((_summary_from_dict(item) for item in ledger["runs"]))
                 self._status = RetentionStatus(status, message, self._summaries)
@@ -234,17 +266,22 @@ class RoundRetentionStore:
         for index, raw_path in enumerate(paths):
             if not self._cleanup_allowed():
                 raise ValueError("關閉保存開始，刪除進度已保留供復原")
+            current_days = self._effective_retention_days()
+            now = normalize_archive_time(self._wall_clock())
+            archived = min(datetime.fromisoformat(item.archived_at) for item in fresh)
+            if archived + timedelta(days=current_days) > now:
+                raise ValueError("保存期限在清理期間變更，保留剩餘資料等待重新判定")
             path = Path(raw_path)
             record = expected[raw_path]
             ledger = self._load_ledger()
             ledger["active_plans"][round_id]["next_index"] = index
             self._write_ledger(ledger)
-            self._unlink_managed_file(path, record)
+            self._unlink_managed_file(path, record, archived)
             ledger = self._load_ledger()
             ledger["active_plans"][round_id]["next_index"] = index + 1
             self._write_ledger(ledger)
         ledger = self._load_ledger()
-        ledger["active_plans"].pop(round_id, None)
+        ledger["active_plans"][round_id]["deletion_complete"] = True
         self._write_ledger(ledger)
         self._remove_empty_managed_directories(paths)
 
@@ -263,21 +300,34 @@ class RoundRetentionStore:
             try:
                 archived_at = datetime.fromisoformat(plan["archived_at"])
                 current = normalize_archive_time(self._wall_clock())
+                current_days = self._effective_retention_days()
                 if (archived_at.tzinfo is None or archived_at.utcoffset() is None or
-                        archived_at + timedelta(days=retention_days) > current):
+                        archived_at + timedelta(days=current_days) > current):
                     raise ValueError("目前保存期限不再允許繼續中斷的刪除計畫")
                 paths = plan["path_order"]
                 expected = plan["paths"]
                 next_index = plan["next_index"]
                 if (not isinstance(paths, list) or not isinstance(expected, dict) or
                         not isinstance(next_index, int) or not 0 <= next_index <= len(paths) or
+                        plan.get("round_id") != round_id or
                         set(paths) != set(expected) or
                         any(Path(raw_path).name not in {
                             "audit.jsonl", "session.json", "events.log", "results.csv",
-                            "round-archive.json"} for raw_path in paths)):
+                        "round-archive.json"} for raw_path in paths)):
                     raise ValueError("持久刪除計畫格式或輪次組件不可信")
+                if plan.get("deletion_complete"):
+                    self._validate_resume_directories(paths, len(paths))
+                    if any(Path(raw_path).exists() or Path(raw_path).is_symlink() for raw_path in paths):
+                        raise ValueError("已完成刪除的輪次資料重新出現")
+                    results.append(RetentionRoundResult(round_id, "deleted",
+                                                        "刪除已完成，補寫先前中斷的摘要"))
+                    continue
                 self._validate_resume_directories(paths, next_index)
                 for index, raw_path in enumerate(paths):
+                    current_days = self._effective_retention_days()
+                    if archived_at + timedelta(days=current_days) > normalize_archive_time(
+                            self._wall_clock()):
+                        raise ValueError("保存期限在清理期間變更，保留剩餘資料等待重新判定")
                     path = Path(raw_path)
                     if not self._safe_target(path):
                         raise ValueError("復原計畫路徑已越界或含符號連結：{}（管理根目錄 {}）".format(
@@ -293,7 +343,7 @@ class RoundRetentionStore:
                         plan["next_index"] = index
                         ledger["active_plans"][round_id] = plan
                         self._write_ledger(ledger)
-                        self._unlink_managed_file(path, expected[raw_path])
+                        self._unlink_managed_file(path, expected[raw_path], archived_at)
                         plan["next_index"] = index + 1
                         next_index = index + 1
                         ledger["active_plans"][round_id] = plan
@@ -307,7 +357,8 @@ class RoundRetentionStore:
                         next_index = index + 1
                         ledger["active_plans"][round_id] = plan
                         self._write_ledger(ledger)
-                ledger["active_plans"].pop(round_id, None)
+                plan["deletion_complete"] = True
+                ledger["active_plans"][round_id] = plan
                 self._write_ledger(ledger)
                 self._remove_empty_managed_directories(paths)
                 results.append(RetentionRoundResult(round_id, "deleted", "依持久刪除計畫完成中斷復原"))
@@ -333,16 +384,14 @@ class RoundRetentionStore:
                     raise ValueError("復原目錄出現未列入原計畫的新資料：{}".format(child.name))
 
     def _managed_parent_fd(self, path: Path):
-        if os.open not in os.supports_dir_fd:
-            raise NotImplementedError("dir_fd unavailable on this platform")
         relative = path.absolute().relative_to(self.root)
         if not relative.parts or self._root_is_symlink:
             raise ValueError("刪除路徑不在安全的 App 管理根目錄")
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(str(self.root), flags)
+        descriptor = os.open(os.path.sep, flags)
         try:
-            for part in relative.parts[:-1]:
-                child = os.open(part, flags, dir_fd=descriptor)
+            for part in self.root.parts[1:] + relative.parts[:-1]:
+                child = _openat(descriptor, part, flags)
                 os.close(descriptor)
                 descriptor = child
             return descriptor, relative.parts[-1]
@@ -351,24 +400,18 @@ class RoundRetentionStore:
             raise
 
     def _managed_file_record(self, path: Path):
-        if os.open not in os.supports_dir_fd or os.stat not in os.supports_dir_fd:
-            if not self._safe_file(path):
-                return None
-            return _file_record(path)
         descriptor, name = self._managed_parent_fd(path)
         try:
             try:
-                before = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                file_descriptor = _openat(
+                    descriptor, name,
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
             except FileNotFoundError:
                 return None
-            if not stat.S_ISREG(before.st_mode):
-                raise ValueError("清理目標不是一般檔案或已成為符號連結")
-            file_descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                                      dir_fd=descriptor)
             try:
                 opened = os.fstat(file_descriptor)
-                if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
-                    raise ValueError("清理目標在驗證期間被替換")
+                if not stat.S_ISREG(opened.st_mode):
+                    raise ValueError("清理目標不是一般檔案或已成為符號連結")
                 digest = hashlib.sha256()
                 size = 0
                 while True:
@@ -383,20 +426,19 @@ class RoundRetentionStore:
         finally:
             os.close(descriptor)
 
-    def _unlink_managed_file(self, path: Path, expected: dict) -> None:
+    def _unlink_managed_file(self, path: Path, expected: dict,
+                             archived_at: Optional[datetime] = None) -> None:
         actual = self._managed_file_record(path)
         if actual is None:
             return
         if actual != expected:
             raise ValueError("刪除前檔案內容或身分已變更")
-        if os.unlink not in os.supports_dir_fd:
-            if not self._safe_file(path):
-                raise ValueError("刪除目標路徑已變更或包含符號連結")
-            path.unlink()
-            return
+        if archived_at is not None and archived_at + timedelta(
+                days=self._effective_retention_days()) > normalize_archive_time(self._wall_clock()):
+            raise ValueError("保存期限在刪除前已延長，停止刪除並保留剩餘進度")
         descriptor, name = self._managed_parent_fd(path)
         try:
-            os.unlink(name, dir_fd=descriptor)
+            _unlinkat(descriptor, name)
         finally:
             os.close(descriptor)
 
@@ -405,30 +447,26 @@ class RoundRetentionStore:
         for directory in sorted(directories, key=lambda item: len(item.parts), reverse=True):
             if directory == self.root:
                 continue
-            if os.rmdir not in os.supports_dir_fd:
-                try:
-                    if self._safe_target(directory):
-                        directory.rmdir()
-                except OSError:
-                    pass
-                continue
             try:
                 descriptor, name = self._managed_parent_fd(directory)
                 try:
-                    os.rmdir(name, dir_fd=descriptor)
+                    _unlinkat(descriptor, name, _AT_REMOVEDIR)
                 finally:
                     os.close(descriptor)
             except (OSError, ValueError):
                 pass
 
     def _only_known_files(self, manifest: Path, paths: Tuple[Path, ...]) -> bool:
-        known_names = {manifest.name} | {item.name for item in paths}
-        for directory in {manifest.parent} | {item.parent for item in paths}:
+        expected = {manifest.parent: {manifest.name}}
+        for item in paths:
+            expected.setdefault(item.parent, set()).add(item.name)
+        for directory, known_names in expected.items():
             try:
                 children = tuple(directory.iterdir())
             except OSError:
                 return False
-            if any(child.is_dir() or child.name not in known_names for child in children):
+            if any(child.is_symlink() or child.is_dir() or child.name not in known_names
+                   for child in children):
                 return False
         return True
 

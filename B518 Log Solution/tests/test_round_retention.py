@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 import threading
 import time
@@ -144,6 +145,45 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(any(item.outcome == "deleted" for item in
                                 recovered.retention_cleanup_summaries()[-1].results))
 
+    def test_final_summary_failure_keeps_completed_plan_for_fresh_reader(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            failed = []
+
+            def fail_final_summary(store, payload):
+                final = payload["runs"][-1]
+                if (final.get("status") == "complete" and
+                        any(item.get("outcome") == "deleted"
+                            for item in final.get("results", [])) and not failed):
+                    failed.append(True)
+                    raise OSError("injected final summary failure")
+                return original_write(store, payload)
+
+            with patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                              fail_final_summary):
+                rounds.request_retention_cleanup(365)
+                self.wait_until(lambda: rounds.retention_cleanup_status().status == "failed")
+
+            self.assertFalse(archive.path.parent.exists())
+            ledger = json.loads((root / "round-retention-ledger.json").read_text())
+            self.assertTrue(ledger["active_plans"][round_id]["deletion_complete"])
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            before = len(recovered.retention_cleanup_summaries())
+            recovered.request_retention_cleanup(365)
+            self.wait_until(lambda: len(recovered.retention_cleanup_summaries()) > before and
+                            recovered.retention_cleanup_status().status == "complete")
+
+            self.assertEqual(recovered.retention_cleanup_summaries()[-1].deleted_round_ids,
+                             (round_id,))
+            ledger = json.loads((root / "round-retention-ledger.json").read_text())
+            self.assertNotIn(round_id, ledger["active_plans"])
+
     def test_new_unknown_file_after_partial_delete_blocks_resume(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -157,8 +197,8 @@ class RoundRetentionTests(unittest.TestCase):
             original_unlink = round_retention.RoundRetentionStore._unlink_managed_file
             created = []
 
-            def inject_unknown_after_unlink(store, path, expected):
-                original_unlink(store, path, expected)
+            def inject_unknown_after_unlink(store, path, expected, archived_at=None):
+                original_unlink(store, path, expected, archived_at)
                 if not created:
                     unknown = session_path / "new-operator-data.json"
                     unknown.write_text('{"keep": true}', encoding="utf-8")
@@ -182,6 +222,39 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(archive.path.exists())
             ledger = json.loads((root / "round-retention-ledger.json").read_text())
             self.assertIn(round_id, ledger["active_plans"])
+
+    def test_new_retention_days_stop_inflight_cleanup_before_first_unlink(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=200)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            entered = threading.Event()
+            release = threading.Event()
+            original_unlink = round_retention.RoundRetentionStore._unlink_managed_file
+
+            def controlled_unlink(store, path, expected, archived_at=None):
+                if not entered.is_set():
+                    entered.set()
+                    if not release.wait(3):
+                        raise RuntimeError("test did not release cleanup")
+                return original_unlink(store, path, expected, archived_at)
+
+            previous_count = len(rounds.retention_cleanup_summaries())
+            with patch.object(round_retention.RoundRetentionStore, "_unlink_managed_file",
+                              controlled_unlink):
+                rounds.request_retention_cleanup(180)
+                self.assertTrue(entered.wait(2))
+                rounds.retention_setting_changed(365)
+                release.set()
+                self.wait_until(lambda: len(rounds.retention_cleanup_summaries()) >= previous_count + 2 and
+                                rounds.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertTrue(archive.path.parent.exists())
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
+            self.assertIn("保存期限", rounds.retention_cleanup_summaries()[0].results[0].reason)
 
     def test_failed_partial_round_keeps_progress_while_next_candidate_is_cleaned(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -293,6 +366,37 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertFalse(audit_directory.exists())
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].deleted_round_ids, (round_id,))
 
+    def test_same_named_unknown_file_in_other_round_directory_blocks_deletion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            audit_path = next(item.path for item in archive.components if item.name == "audit.jsonl")
+            session_path = next(item.path.parent for item in archive.components
+                                if item.name == "session.json")
+            audit_directory = root / "sessions" / "separate-audit" / round_id
+            audit_directory.mkdir(parents=True)
+            separate_audit = audit_directory / "audit.jsonl"
+            audit_path.replace(separate_audit)
+            archive.path.unlink()
+            archive = write_round_archive(separate_audit, session_path,
+                                          datetime.fromisoformat(archive.archived_at), round_id)
+            unknown = separate_audit.parent / "session.json"
+            unknown.write_text('{"unowned": true}', encoding="utf-8")
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+
+            rounds.request_retention_cleanup(365)
+            self.wait_until(lambda: rounds.retention_cleanup_status().status == "complete")
+
+            self.assertTrue(archive.path.exists())
+            self.assertTrue(session_path.exists())
+            self.assertEqual(unknown.read_text(encoding="utf-8"), '{"unowned": true}')
+            result = next(item for item in rounds.retention_cleanup_summaries()[-1].results
+                          if item.round_id == round_id)
+            self.assertEqual(result.outcome, "skipped")
+
     def test_symlinked_component_to_external_data_is_preserved_and_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -314,6 +418,45 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(result_path.is_symlink())
             self.assertTrue(archive.path.exists())
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].results[0].outcome, "skipped")
+
+    def test_parent_replaced_with_external_symlink_during_unlink_cannot_delete_external_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            managed_session_dir = next(item.path.parent for item in archive.components
+                                       if item.name == "session.json")
+            external_dir = root / "external-copy"
+            shutil.copytree(str(managed_session_dir), str(external_dir))
+            external_audit = external_dir / "audit.jsonl"
+            original_external_bytes = external_audit.read_bytes()
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            entered = threading.Event()
+            release = threading.Event()
+            original_unlinkat = round_retention._unlinkat
+
+            def controlled_unlinkat(directory_fd, name, flags=0):
+                if name in {"audit.jsonl", "events.log", "results.csv", "session.json"} and not entered.is_set():
+                    entered.set()
+                    if not release.wait(3):
+                        raise RuntimeError("test did not release directory-handle race")
+                return original_unlinkat(directory_fd, name, flags)
+
+            with patch.object(round_retention, "_unlinkat", side_effect=controlled_unlinkat):
+                rounds.request_retention_cleanup(365)
+                self.assertTrue(entered.wait(2))
+                detached = root / "detached-managed-round"
+                managed_session_dir.replace(detached)
+                managed_session_dir.symlink_to(external_dir, target_is_directory=True)
+                release.set()
+                self.wait_until(lambda: rounds.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertEqual(external_audit.read_bytes(), original_external_bytes)
+            self.assertTrue((managed_session_dir / "audit.jsonl").is_symlink() or
+                            managed_session_dir.is_symlink())
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].status, "failed")
 
     def test_corrupt_round_is_skipped_and_summary_write_failure_prevents_deletion(self):
         with tempfile.TemporaryDirectory() as temporary:
