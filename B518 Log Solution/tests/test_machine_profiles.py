@@ -234,12 +234,15 @@ class MachineProfileTests(unittest.TestCase):
 
             self.assertIsNone(error)
             self.assertEqual((project, machine), ("B518", "BT"))
+            self.assertEqual(store.retention_days, 365)
             self.assertTrue(store.migration_required)
             store.save(catalog, project, machine, preserve_legacy=store.migration_required)
             self.assertTrue((path.parent / "preferences.legacy.json").is_file())
-            restarted = MachineProfileStore(path).load()
+            restarted_store = MachineProfileStore(path)
+            restarted = restarted_store.load()
             self.assertEqual((restarted[1], restarted[2]), ("B518", "BT"))
             self.assertEqual(restarted[0].get("B518", "BT").paths["final"], "/tmp/rswmt")
+            self.assertEqual(restarted_store.retention_days, 365)
 
     def test_malformed_legacy_profile_returns_error_and_preserves_original_file(self):
         with TemporaryDirectory() as temporary:
