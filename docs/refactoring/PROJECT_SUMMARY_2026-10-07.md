@@ -13,6 +13,8 @@
 
 依使用者要求以 to-spec 產生 [衝突彈窗正式規格](CONFLICT_DIALOG_SPEC_2026-10-07.md)，包含 28 項使用者故事及 12 組驗收案例，已發布 [GitHub Issue #9](https://github.com/Bowei1121/B518_205_207_ATE/issues/9)，標記 ready-for-agent。沿用已確認的真正 Tk 驗收方向及共同輪次公開行為，未新增來源或裁決政策；僅文件驗證，不宣告產品實作或新增測試通過。
 
+使用者再要求 to-tickets 拆分彈窗規格；[3 張票草案及驗收覆蓋](conflict-dialog-tickets/README.md) 採 C1 基本精簡／詳細分區 → C2 差異與同名來源辨識 → C3 多候選動態一致性。待使用者確認粒度及直接阻擋關係後發布，C1～C3 尚非 GitHub 票號；Issue #9 未修改或關閉，產品程式未因本次拆票改動。
+
 ## 前次討論與 Ticket 01 交付
 
 - 使用者授權在 `round/ticket-01` 執行生命週期 Ticket 01，逐批驗證、commit／push，必要驗收與 Standards／Spec 審查均通過後自動合併及安全清理分支。
