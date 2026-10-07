@@ -9,6 +9,7 @@ import tempfile
 import threading
 import queue
 import weakref
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
@@ -89,6 +90,8 @@ class RoundAuditStore:
         self._condition = threading.Condition()
         self._last_enqueued_sequence = 0
         self._error = None
+        self._error_history = []
+        self._retry_records = deque()
         self._on_error = on_error
         self._header = {
             "record_type": "round",
@@ -128,7 +131,8 @@ class RoundAuditStore:
 
     def attach_session(self, session_path: Path) -> None:
         """Move early preparation records into the conventional Session folder."""
-        self.flush()
+        if not self.flush():
+            raise AuditRecordError("稽核紀錄尚未完整保存，無法關聯 Session 位置")
         destination = Path(session_path)
         destination_lock = _lock_for(destination / "audit.jsonl")
         source_lock = self._lock
@@ -183,9 +187,9 @@ class RoundAuditStore:
             if event.sequence <= previous_sequence:
                 raise AuditRecordError("輪次事件序號未遞增：前筆 {}，收到 {}".format(
                     previous_sequence, event.sequence))
+            self._queue.put(record)
             self._last_enqueued_sequence = event.sequence
             self._pending += 1
-            self._queue.put(record)
             self._ensure_worker_locked()
 
     @property
@@ -198,12 +202,29 @@ class RoundAuditStore:
         with self._condition:
             return self._error
 
+    @property
+    def error_history(self):
+        with self._condition:
+            return tuple(self._error_history)
+
+    def retry(self) -> bool:
+        """Retry failed audit records before newer queued records."""
+        with self._condition:
+            if self._error is None:
+                return True
+            self._error = None
+            self._ensure_worker_locked()
+            self._condition.notify_all()
+        return True
+
     def flush(self, timeout: Optional[float] = 10.0) -> bool:
         """Wait until enqueued events are durable; return false on timeout or error."""
         import time
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._condition:
             while self._pending:
+                if self._error is not None:
+                    return False
                 remaining = None if deadline is None else deadline - time.monotonic()
                 if remaining is not None and remaining <= 0:
                     return False
@@ -212,14 +233,25 @@ class RoundAuditStore:
 
     def _write_worker(self) -> None:
         while True:
-            try:
-                record = self._queue.get(timeout=_IDLE_WORKER_TIMEOUT_SECONDS)
-            except queue.Empty:
-                with self._condition:
-                    if self._pending == 0:
-                        self._writer = None
-                        return
-                continue
+            with self._condition:
+                if self._error is not None:
+                    self._writer = None
+                    return
+                if self._retry_records:
+                    record = self._retry_records.popleft()
+                    retry_record = True
+                else:
+                    record = None
+                    retry_record = False
+            if record is None:
+                try:
+                    record = self._queue.get(timeout=_IDLE_WORKER_TIMEOUT_SECONDS)
+                except queue.Empty:
+                    with self._condition:
+                        if self._pending == 0:
+                            self._writer = None
+                            return
+                    continue
             try:
                 if record.get("record_type") == "round":
                     self.path.mkdir(parents=True, exist_ok=True)
@@ -232,13 +264,23 @@ class RoundAuditStore:
                 with self._condition:
                     if self._error is None:
                         self._error = message
+                    self._error_history.append(message)
+                    self._retry_records.appendleft(record)
                 if self._on_error is not None:
                     self._on_error(record, message)
-            finally:
+                if not retry_record:
+                    self._queue.task_done()
                 with self._condition:
-                    self._pending -= 1
+                    self._writer = None
                     self._condition.notify_all()
-                self._queue.task_done()
+                return
+            finally:
+                if self._error is None:
+                    with self._condition:
+                        self._pending -= 1
+                        self._condition.notify_all()
+                    if not retry_record:
+                        self._queue.task_done()
 
     def _ensure_worker_locked(self) -> None:
         """Start a writer while holding the condition that protects pending work."""
@@ -252,6 +294,33 @@ class RoundAuditStore:
     def _append_complete_line(self, record: dict) -> None:
         content = _json_bytes(record)
         with self._lock:
+            try:
+                existing_content = self.audit_path.read_bytes()
+            except OSError:
+                existing_content = b""
+            if existing_content and not existing_content.endswith(b"\n"):
+                boundary = existing_content.rfind(b"\n") + 1
+                partial = existing_content[boundary:]
+                if partial and content.startswith(partial):
+                    with self.audit_path.open("r+b") as handle:
+                        handle.truncate(boundary)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    existing_content = existing_content[:boundary]
+                else:
+                    raise AuditRecordError("稽核檔末端包含不明截斷資料，保留原檔等待人工檢查")
+            existing_lines = existing_content.decode("utf-8").splitlines()
+            if existing_lines:
+                try:
+                    last_record = json.loads(existing_lines[-1])
+                except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                    raise AuditRecordError("稽核檔末筆紀錄不完整，保留原檔等待修復：{}".format(error))
+                if last_record.get("sequence") == record.get("sequence"):
+                    if last_record == record:
+                        return
+                    raise AuditRecordError("稽核序號 {} 已存在不同內容".format(record.get("sequence")))
+                if last_record.get("sequence", 0) > record.get("sequence", 0):
+                    raise AuditRecordError("稽核重試序號已落後於磁碟紀錄")
             descriptor = os.open(str(self.audit_path), os.O_WRONLY | os.O_APPEND)
             original_size = os.fstat(descriptor).st_size
             try:

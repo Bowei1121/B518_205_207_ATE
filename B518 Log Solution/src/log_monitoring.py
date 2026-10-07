@@ -13,6 +13,7 @@ import queue
 import tempfile
 import threading
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -74,7 +75,6 @@ class SessionStore:
                  async_writes: bool = False):
         root = root or (Path.home() / "Library" / "Application Support" / "B518LogSolution" / "sessions")
         self.path = root / session_id
-        self.path.mkdir(parents=True, exist_ok=True)
         self.settings = settings
         self.started_at = datetime.now().isoformat(timespec="seconds")
         self.sources: Set[str] = set()
@@ -85,12 +85,19 @@ class SessionStore:
         self._write_pending = 0
         self._write_thread = None
         self._write_errors = []  # type: List[str]
+        self._write_history = []  # type: List[str]
+        self._recovery_writes = deque()
+        self._retry_counted_writes = 0
         self._on_write_error = on_error
         self._async_writes = async_writes
-        self._write_metadata()
+        try:
+            self.initialize()
+        except OSError as error:
+            self._remember_failed_write("initialize", (), "Session 初始化保存失敗", error)
 
     def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
-        self._enqueue_write("event", (message, dict(detail or {})), "Session 事件保存失敗")
+        self._enqueue_write("event", (message, dict(detail or {}),
+                                       datetime.now().isoformat(timespec="seconds")), "Session 事件保存失敗")
 
     def enqueue_source(self, path: Path) -> None:
         self._enqueue_write("source", (Path(path),), "Session 來源保存失敗")
@@ -100,49 +107,149 @@ class SessionStore:
         self._enqueue_write("update_results", (snapshot,), "Session 結果保存失敗")
 
     def enqueue_finish(self) -> None:
-        self._enqueue_write("finish", (), "Session 完成時間保存失敗")
+        self._enqueue_write("finish", (datetime.now().isoformat(timespec="seconds"),),
+                            "Session 完成時間保存失敗")
 
     def _enqueue_write(self, operation: str, arguments: tuple, label: str) -> None:
         if not self._async_writes:
-            getattr(self, operation)(*arguments)
+            with self._write_condition:
+                worker_active = self._write_thread is not None and self._write_thread.is_alive()
+                if self._write_errors or self._recovery_writes:
+                    self._recovery_writes.append((operation, arguments, label))
+                    if worker_active and not self._write_errors:
+                        self._write_pending += 1
+                        self._retry_counted_writes += 1
+                    return
+                if worker_active or self._write_pending:
+                    self._write_pending += 1
+                    self._write_queue.put((operation, arguments, label))
+                    self._ensure_write_worker_locked()
+                    return
+            try:
+                getattr(self, operation)(*arguments)
+            except OSError as error:
+                self._remember_failed_write(operation, arguments, label, error, notify=False)
+                raise
             return
         with self._write_condition:
             self._write_pending += 1
             self._write_queue.put((operation, arguments, label))
-            if self._write_thread is None or not self._write_thread.is_alive():
-                self._write_thread = threading.Thread(target=self._write_worker,
-                                                      name="session-store-{}".format(self.path.name),
-                                                      daemon=True)
-                self._write_thread.start()
+            self._ensure_write_worker_locked()
+
+    def _ensure_write_worker_locked(self) -> None:
+        if self._write_thread is None or not self._write_thread.is_alive():
+            self._write_thread = threading.Thread(target=self._write_worker,
+                                                  name="session-store-{}".format(self.path.name),
+                                                  daemon=True)
+            self._write_thread.start()
 
     def _write_worker(self) -> None:
         while True:
-            try:
-                operation, arguments, label = self._write_queue.get(timeout=0.2)
-            except queue.Empty:
-                with self._write_condition:
-                    if self._write_pending == 0:
-                        self._write_thread = None
-                        return
-                continue
+            with self._write_condition:
+                if self._write_errors:
+                    self._write_thread = None
+                    return
+                if self._recovery_writes:
+                    operation, arguments, label = self._recovery_writes.popleft()
+                    queued = False
+                else:
+                    operation = None
+                    queued = True
+            if operation is None:
+                try:
+                    operation, arguments, label = self._write_queue.get(timeout=0.2)
+                except queue.Empty:
+                    with self._write_condition:
+                        if self._write_pending == 0:
+                            self._write_thread = None
+                            return
+                    continue
             try:
                 getattr(self, operation)(*arguments)
             except OSError as error:
+                if queued:
+                    self._write_queue.task_done()
                 message = "{}：{}".format(label, error)
                 with self._write_condition:
                     self._write_errors.append(message)
+                    self._write_history.append(message)
+                    failed_write = (operation, arguments, label)
+                    if not queued:
+                        self._recovery_writes.appendleft(failed_write)
+                    else:
+                        self._recovery_writes.append(failed_write)
+                    self._write_pending -= 1
+                    if not queued:
+                        # The current and remaining retained writes are excluded from
+                        # pending while a failed recovery waits for the next retry.
+                        self._write_pending -= max(0, self._retry_counted_writes - 1)
+                        self._retry_counted_writes = 0
+                    self._write_thread = None
+                    self._write_condition.notify_all()
                 if self._on_write_error is not None:
                     self._on_write_error(label, error)
-            finally:
+                return
+            else:
+                if queued:
+                    self._write_queue.task_done()
                 with self._write_condition:
                     self._write_pending -= 1
+                    if not queued and self._retry_counted_writes:
+                        self._retry_counted_writes -= 1
                     self._write_condition.notify_all()
-                self._write_queue.task_done()
+
+    def initialize(self) -> None:
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._write_metadata()
+
+    def _remember_failed_write(self, operation, arguments, label, error, notify=True,
+                               prepend=False):
+        message = "{}：{}".format(label, error)
+        with self._write_condition:
+            self._write_errors.append(message)
+            self._write_history.append(message)
+            failed_write = (operation, arguments, label)
+            if prepend:
+                self._recovery_writes.appendleft(failed_write)
+            else:
+                self._recovery_writes.append(failed_write)
+            self._write_condition.notify_all()
+        if notify and self._on_write_error is not None:
+            self._on_write_error(label, error)
+
+    @property
+    def pending(self) -> bool:
+        with self._write_condition:
+            return bool(self._write_pending or self._recovery_writes)
+
+    @property
+    def write_errors(self):
+        with self._write_condition:
+            return tuple(self._write_errors)
+
+    @property
+    def write_history(self):
+        with self._write_condition:
+            return tuple(self._write_history)
+
+    def retry(self) -> bool:
+        """Retry retained Session operations before newer queued work."""
+        with self._write_condition:
+            if not self._write_errors:
+                return True
+            self._write_errors = []
+            self._retry_counted_writes = len(self._recovery_writes)
+            self._write_pending += self._retry_counted_writes
+            self._ensure_write_worker_locked()
+            self._write_condition.notify_all()
+        return True
 
     def flush(self, timeout: Optional[float] = 10.0) -> bool:
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._write_condition:
             while self._write_pending:
+                if self._write_errors:
+                    return False
                 remaining = None if deadline is None else deadline - time.monotonic()
                 if remaining is not None and remaining <= 0:
                     return False
@@ -172,9 +279,10 @@ class SessionStore:
         with self._lock:
             self._atomic_write(self.path / "session.json", encoded)
 
-    def event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
+    def event(self, message: str, detail: Optional[Dict[str, str]] = None,
+              timestamp: Optional[str] = None) -> None:
         record = json.dumps({
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "timestamp": timestamp or datetime.now().isoformat(timespec="seconds"),
             "message": message,
             "detail": detail or {},
         }, ensure_ascii=False) + "\n"
@@ -201,11 +309,16 @@ class SessionStore:
     def update_settings(self, settings: Dict[str, object]) -> None:
         with self._lock:
             self.settings.update(settings)
-            self._write_metadata()
+            try:
+                self._write_metadata()
+            except OSError as error:
+                self._remember_failed_write("_write_metadata", (), "Session 設定保存失敗",
+                                            error, notify=False)
+                raise
 
-    def finish(self) -> None:
+    def finish(self, finished_at: Optional[str] = None) -> None:
         with self._lock:
-            self.finished_at = datetime.now().isoformat(timespec="seconds")
+            self.finished_at = finished_at or datetime.now().isoformat(timespec="seconds")
             self._write_metadata()
 
 

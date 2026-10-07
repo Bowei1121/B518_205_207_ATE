@@ -1,7 +1,9 @@
 import csv
+import json
 import log_monitoring
 import shutil
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -55,6 +57,193 @@ class LogMonitoringTests(unittest.TestCase):
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))
         self.assertEqual(parse_archive_timestamp("20220618_02-28-01.374-any"), datetime(2022, 6, 18, 2, 28, 1, 374000))
+
+    def test_session_sync_failure_retains_original_event_for_nonblocking_retry(self):
+        store = log_monitoring.SessionStore("recoverable", {}, self.temp / "sessions")
+        original_event = store.event
+        captured = []
+
+        def fail_once(message, detail=None, timestamp=None):
+            if not captured:
+                captured.append(timestamp)
+                raise OSError("temporary disk fault")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_once):
+            with self.assertRaises(OSError):
+                store.enqueue_event("keep original", {"source": "test"})
+            store.enqueue_event("later event", {"source": "test"})
+        self.assertFalse(store.flush())
+        self.assertTrue(store.write_errors)
+
+        with patch.object(store, "event", side_effect=original_event):
+            self.assertTrue(store.retry())
+            self.assertTrue(store.flush(timeout=2))
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([record["message"] for record in records], ["keep original", "later event"])
+        self.assertEqual(records[0]["detail"], {"source": "test"})
+        self.assertEqual(records[0]["timestamp"], captured[0])
+        self.assertFalse(store.write_errors)
+        self.assertTrue(store.write_history)
+
+    def test_session_retry_failure_keeps_original_ahead_of_later_retained_writes(self):
+        store = log_monitoring.SessionStore("retry-order", {}, self.temp / "sessions")
+        original_event = store.event
+        initial_timestamp = []
+
+        def fail_initial(message, detail=None, timestamp=None):
+            if message == "first event":
+                initial_timestamp.append(timestamp)
+                raise OSError("first append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_initial):
+            with self.assertRaises(OSError):
+                store.enqueue_event("first event", {"order": "first"})
+            store.enqueue_event("second event", {"order": "second"})
+
+        retry_attempts = []
+
+        def fail_first_retry(message, detail=None, timestamp=None):
+            if message == "first event" and not retry_attempts:
+                retry_attempts.append(timestamp)
+                raise OSError("retry still unavailable")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_first_retry):
+            self.assertTrue(store.retry())
+            self.assertFalse(store.flush(timeout=2))
+            self.assertTrue(store.retry())
+            self.assertTrue(store.flush(timeout=2))
+
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([record["message"] for record in records],
+                         ["first event", "second event"])
+        self.assertEqual(records[0]["timestamp"], initial_timestamp[0])
+        self.assertEqual(records[0]["detail"], {"order": "first"})
+        self.assertEqual(records[1]["detail"], {"order": "second"})
+
+    def test_session_flush_waits_for_writes_added_during_repeated_retry(self):
+        store = log_monitoring.SessionStore("retry-pending", {}, self.temp / "sessions")
+        original_event = store.event
+
+        def fail_initial(message, detail=None, timestamp=None):
+            if message == "first event":
+                raise OSError("initial append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_initial):
+            with self.assertRaises(OSError):
+                store.enqueue_event("first event")
+            store.enqueue_event("second event")
+
+        first_retry_entered = threading.Event()
+        release_first_retry = threading.Event()
+
+        def fail_first_retry(message, detail=None, timestamp=None):
+            if message == "first event":
+                first_retry_entered.set()
+                release_first_retry.wait(2)
+                raise OSError("retry append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_first_retry):
+            self.assertTrue(store.retry())
+            self.assertTrue(first_retry_entered.wait(2))
+            store.enqueue_event("third event")
+            release_first_retry.set()
+            self.assertFalse(store.flush(timeout=2))
+
+        third_retry_entered = threading.Event()
+        release_third_retry = threading.Event()
+
+        def block_third_retry(message, detail=None, timestamp=None):
+            if message == "third event":
+                third_retry_entered.set()
+                release_third_retry.wait(2)
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=block_third_retry):
+            self.assertTrue(store.retry())
+            self.assertTrue(third_retry_entered.wait(2))
+            self.assertFalse(store.flush(timeout=0.05))
+            release_third_retry.set()
+            self.assertTrue(store.flush(timeout=2))
+
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([record["message"] for record in records],
+                         ["first event", "second event", "third event"])
+
+    def test_session_retry_from_failure_callback_keeps_a_worker_for_retained_write(self):
+        failure_reported = threading.Event()
+        retries = []
+        store_holder = {}
+
+        def retry_from_callback(_label, _error):
+            retries.append(store_holder["store"].retry())
+            failure_reported.set()
+
+        store = log_monitoring.SessionStore(
+            "retry-callback", {}, self.temp / "sessions", on_error=retry_from_callback,
+            async_writes=True)
+        store_holder["store"] = store
+        original_event = store.event
+        write_attempts = []
+
+        def fail_once(message, detail=None, timestamp=None):
+            write_attempts.append(message)
+            if len(write_attempts) == 1:
+                raise OSError("background append failed")
+            return original_event(message, detail, timestamp)
+
+        with patch.object(store, "event", side_effect=fail_once):
+            store.enqueue_event("recover from callback")
+            self.assertTrue(failure_reported.wait(2))
+            self.assertTrue(store.flush(timeout=2))
+
+        records = [json.loads(line) for line in
+                   (store.path / "events.log").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(retries, [True])
+        self.assertEqual([record["message"] for record in records], ["recover from callback"])
+
+    def test_session_background_failure_retains_work_until_retry(self):
+        failed = threading.Event()
+        store = log_monitoring.SessionStore(
+            "async-recoverable", {}, self.temp / "sessions",
+            on_error=lambda _label, _error: failed.set(), async_writes=True)
+        original_event = store.event
+
+        def fail_once(_message, _detail=None, _timestamp=None):
+            raise OSError("temporary background disk fault")
+
+        with patch.object(store, "event", side_effect=fail_once):
+            store.enqueue_event("background work", {"id": "original"})
+            self.assertTrue(failed.wait(2))
+            self.assertFalse(store.flush(timeout=1))
+
+        with patch.object(store, "event", side_effect=original_event):
+            self.assertTrue(store.retry())
+            self.assertTrue(store.flush(timeout=2))
+        record = json.loads((store.path / "events.log").read_text(encoding="utf-8"))
+        self.assertEqual(record["message"], "background work")
+        self.assertEqual(record["detail"], {"id": "original"})
+        self.assertTrue(store.write_history)
+
+    def test_session_initialization_failure_is_recoverable_after_location_repair(self):
+        root = self.temp / "blocked-root"
+        root.write_text("not a directory", encoding="utf-8")
+        store = log_monitoring.SessionStore("init-recovery", {}, root)
+        self.assertTrue(store.write_errors)
+        self.assertFalse(store.flush())
+
+        root.unlink()
+        self.assertTrue(store.retry())
+        self.assertTrue(store.flush(timeout=2))
+        self.assertTrue((store.path / "session.json").is_file())
+        self.assertTrue(store.write_history)
 
     def test_fct_latches_active_sn_then_reads_unit_archive(self):
         active, final = self.temp / "active", self.temp / "unit-archive"

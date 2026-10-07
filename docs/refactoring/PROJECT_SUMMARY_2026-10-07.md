@@ -11,8 +11,10 @@
 - 前次完成時已核對 Gitea／GitHub 主線 refs 均為 e19fc7f，本地及兩個遠端 `round/ticket-01` 與失效 tracking refs 已清理；工作目錄停在乾淨的 `B518-Log-Solution`。2026-10-07 本次讀取時本地仍為 e19fc7f，工作樹乾淨；遠端歷史同步結果不當作本日實作基準的即時查核。
 - 完整證據見 [Ticket 01 本機驗收紀錄](evidence/ticket-01/local-validation.md)。上述測試是前次結果，本日沒有重新執行產品測試。
 
-## Ticket 02 指令準備
+## Ticket 02 實作與驗收
 
-- 使用者本次要求整理 `$implement` 執行 [Ticket 02：本輪保存復原](round-record-lifecycle-tickets/02-current-round-save-recovery.md) 的可貼上指令，指定分支 `round/ticket-02`，沿用逐批提交／推送、全部必要驗收與審查通過才合併及清理的規則。
-- Ticket 02 交付單輪 Session／audit 故障保留、有序重試、完整保存判定與真正 Tk 非阻塞重試操作；跨輪追蹤、正常關閉協調、封存及到期清理分屬後續票。
-- 本次僅建立跨日摘要與提供執行指令，尚未建立 `round/ticket-02` 或開始產品實作。
+- 使用者授權在 `round/ticket-02` 完整執行 [Ticket 02：本輪保存復原](round-record-lifecycle-tickets/02-current-round-save-recovery.md)，逐批驗證、commit／push；全部驗收與固定基準 Standards／Spec 審查通過後合併至 `B518-Log-Solution`，確認所有目的地同步再安全清理分支。
+- 已接續 Ticket 01 的 audit writer 生命週期，完成單輪 Session／audit 故障保留與有序重試、audit 初始化失敗重建、保存狀態及真正 Tk 非阻塞重試操作。沒有擴張至跨輪追蹤、正常關閉協調、封存或到期清理。
+- 七項驗收均有證據並已勾選。最終完整套件 213 tests 通過，包含真實 Tk、暫存磁碟及重建；聚焦 Session 21、audit 28 tests 通過，`compileall`／`git diff --check` 通過。repository 未配置型別檢查器，未宣稱型別檢查通過。Standards／Spec 雙軸複審無未解問題。
+- 固定 code-review 基準 `68b31d5ada3e67e29f04336a7738654f585d4fa0`；最後實作 commit `1b4c8322065a0e390e62a6651a21e41369883b07`。所有五個程式提交均推送至 Gitea 與 GitHub。即時 refs 查核時兩個 Ticket 分支相同為 `1b4c832`，兩個主線均仍為基準 `68b31d5`；合併和分支清理待下一步執行。
+- 完整逐項驗收、TDD 證據、實際命令、環境及同步狀態見 [Ticket 02 本機驗收紀錄](evidence/ticket-02/local-validation.md)。

@@ -278,9 +278,16 @@ class B518LogSolutionApp:
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 4))
-        self.stop_button = ttk.Button(controls, text="停止監控", command=self.stop_monitor,
+        save_controls = ttk.Frame(controls)
+        save_controls.pack(fill="x")
+        self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
                                       style="Main.TButton", state="disabled")
-        self.stop_button.pack(fill="x")
+        self.stop_button.pack(side="left")
+        self.save_status = ttk.Label(save_controls, text="等待保存")
+        self.save_status.pack(side="left", fill="x", expand=True)
+        self.retry_save_button = ttk.Button(save_controls, text="重試保存", command=self.retry_saves,
+                                            state="disabled")
+        self.retry_save_button.pack(side="right")
         self._render_rows()
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
@@ -354,10 +361,36 @@ class B518LogSolutionApp:
                     self._log("稽核紀錄不完整：{}".format(error))
                     reported.add(error)
             self._reported_audit_errors = reported
+        save_state = getattr(snapshot, "save_state", "saving")
+        save_errors = getattr(snapshot, "save_errors", ())
+        reported_save_errors = getattr(self, "_reported_save_errors", set())
+        for error in save_errors:
+            if error not in reported_save_errors:
+                self._log("本輪保存失敗：{}".format(error))
+                reported_save_errors.add(error)
+        self._reported_save_errors = reported_save_errors
+        status_text = {
+            "waiting": "等待保存",
+            "saving": "保存中",
+            "failed": "保存失敗",
+            "complete": "完整保存",
+        }.get(save_state, "保存中")
+        if hasattr(self, "save_status"):
+            self.save_status.configure(text=status_text)
+        if hasattr(self, "retry_save_button"):
+            self.retry_save_button.configure(
+                state="normal" if save_state == "failed" else "disabled")
         for result in snapshot.results:
             self._set_row(result.slot, result.sn, result.status)
         self._render_layout_marker(self._display_capacity())
         self._render_state_marker(snapshot)
+
+    def retry_saves(self) -> None:
+        """Ask the shared round coordinator to retry in a background worker."""
+        started = self.rounds.retry_saves()
+        if started:
+            self.save_status.configure(text="保存狀態：保存中")
+            self.retry_save_button.configure(state="disabled")
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)

@@ -7,6 +7,7 @@ import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import audit_records
@@ -109,6 +110,13 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertLessEqual(threading.active_count(), baseline,
                              "completed rounds retained audit writer threads")
 
+    def wait_for_retry_to_finish(self, timeout=3):
+        deadline = time.monotonic() + timeout
+        while self.coordinator.snapshot().retry_in_progress and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.coordinator.snapshot().retry_in_progress,
+                         "current-round save retry did not finish")
+
     def test_normal_round_can_be_rebuilt_from_a_fresh_disk_reader(self):
         started = self.start_round()
         monitor = self.monitors[0]
@@ -163,6 +171,255 @@ class RoundAuditRecordTests(unittest.TestCase):
         kinds = [event["kind"] for event in rebuilt["events"]]
         self.assertLess(kinds.index("collection_stopped"), kinds.index("round_alarm_acknowledged"))
         self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
+
+    def test_transient_audit_append_failure_retries_original_record_from_public_coordinator(self):
+        wall_clock = [datetime(2026, 10, 7, 12, 0, 0)]
+        self.coordinator = RoundCoordinator(
+            monotonic=lambda: self.clock[0], audit_root=self.audit_root,
+            wall_clock=lambda: wall_clock[0])
+        started = self.start_round()
+        original_write = audit_records.os.write
+        failed = threading.Event()
+
+        def fail_one_append(descriptor, content):
+            if not failed.is_set() and b"recovery_probe" in content:
+                failed.set()
+                raise OSError("temporary disk fault")
+            return original_write(descriptor, content)
+
+        with patch.object(audit_records.os, "write", side_effect=fail_one_append):
+            self.monitors[0].callback(MonitorEvent(
+                "recovery_probe", "preserve this", detail={"original": "payload"}))
+            deadline = time.monotonic() + 2
+            while not failed.is_set() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(failed.is_set())
+            self.assertFalse(self.coordinator.flush_audit(timeout=0.2))
+            self.assertFalse(self.coordinator.snapshot().audit_complete)
+
+        wall_clock[0] = datetime(2026, 10, 7, 12, 30, 0)
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+        self.assertTrue(self.coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        event = next(item for item in rebuilt["events"] if item["kind"] == "recovery_probe")
+        live = next(item for item in self.coordinator.snapshot().events
+                    if item.event.kind == "recovery_probe")
+        self.assertEqual(event["sequence"], live.sequence)
+        self.assertEqual(event["observed_at"], "2026-10-07T12:00:00")
+        self.assertEqual(event["detail"], {"original": "payload"})
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+        self.assertTrue(self.coordinator.snapshot().audit_complete)
+
+    def test_audit_store_initialization_failure_is_retained_and_rebuilt_after_retry(self):
+        original_store = RoundAuditStore
+        attempts = [0]
+
+        def fail_initialization_once(*args, **kwargs):
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise OSError("temporary audit directory failure")
+            return original_store(*args, **kwargs)
+
+        self.coordinator = RoundCoordinator(monotonic=lambda: self.clock[0],
+                                            audit_root=self.audit_root)
+        with patch("monitoring_round.RoundAuditStore", side_effect=fail_initialization_once):
+            started = self.start_round()
+        self.monitors[0].callback(MonitorEvent(
+            "initialization_recovery_probe", "retain before store exists"))
+        self.coordinator.stop()
+
+        failed = self.coordinator.snapshot()
+        self.assertEqual(failed.save_state, "failed")
+        self.assertFalse(failed.audit_complete)
+        self.assertIn("temporary audit directory failure", failed.save_errors[0])
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        probe = next(event for event in rebuilt["events"]
+                     if event["kind"] == "initialization_recovery_probe")
+        self.assertEqual(probe["message"], "retain before store exists")
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
+        self.assertEqual(self.coordinator.snapshot().save_state, "complete")
+
+    def test_monitor_startup_failure_is_not_mislabeled_as_persistence_failure(self):
+        start_failed = threading.Event()
+
+        def observe(round_event):
+            if round_event.event.kind == "start_failed":
+                start_failed.set()
+
+        coordinator = RoundCoordinator(on_event=observe, audit_root=self.audit_root)
+
+        def broken_factory(_callback):
+            raise RuntimeError("monitor source is unavailable")
+
+        started = coordinator.start("FCT", broken_factory, run_async=True, capacity=1)
+        self.assertTrue(start_failed.wait(2))
+        snapshot = coordinator.snapshot()
+        self.assertEqual(snapshot.save_state, "waiting")
+        self.assertEqual(snapshot.save_errors, ())
+        self.assertTrue(coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        self.assertTrue(any(event["kind"] == "start_failed" for event in rebuilt["events"]))
+
+    def test_append_completed_before_error_report_is_not_duplicated_on_retry(self):
+        started = self.start_round()
+        original_write = audit_records.os.write
+        reported = threading.Event()
+
+        def append_then_report_error(descriptor, content):
+            written = original_write(descriptor, content)
+            if b"durable_before_error" in content:
+                reported.set()
+                raise OSError("acknowledgement lost after append")
+            return written
+
+        with patch.object(audit_records.os, "write", side_effect=append_then_report_error), \
+                patch.object(audit_records.os, "ftruncate", side_effect=OSError("cannot roll back")):
+            self.monitors[0].callback(MonitorEvent("durable_before_error", "exactly once"))
+            self.assertTrue(reported.wait(2))
+            self.assertFalse(self.coordinator.flush_audit(timeout=0.2))
+
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+        self.assertTrue(self.coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        events = [item for item in rebuilt["events"] if item["kind"] == "durable_before_error"]
+        self.assertEqual(len(events), 1)
+        self.assertTrue(rebuilt["audit_complete"])
+
+    def test_partial_audit_append_is_repaired_without_overwriting_valid_records(self):
+        started = self.start_round()
+        original_write = audit_records.os.write
+        failed = threading.Event()
+
+        def partial_then_fail(descriptor, content):
+            if b"partial_probe" in content and not failed.is_set():
+                failed.set()
+                original_write(descriptor, content[:max(1, len(content) // 2)])
+                raise OSError("partial disk write")
+            return original_write(descriptor, content)
+
+        with patch.object(audit_records.os, "write", side_effect=partial_then_fail), \
+                patch.object(audit_records.os, "ftruncate", side_effect=OSError("rollback unavailable")):
+            self.monitors[0].callback(MonitorEvent("partial_probe", "repair only trailing bytes"))
+            self.assertTrue(failed.wait(2))
+            self.assertFalse(self.coordinator.flush_audit(timeout=1))
+
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+        self.assertTrue(self.coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        self.assertEqual(len([event for event in rebuilt["events"] if event["kind"] == "partial_probe"]), 1)
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
+
+    def test_synchronous_audit_enqueue_failure_preserves_order_after_recovery(self):
+        started = self.start_round()
+        original_append = RoundAuditStore.append_event
+        failed = threading.Event()
+
+        def fail_before_enqueue(store, event, observed_at, elapsed_seconds):
+            if event.kind == "sync_enqueue_probe" and not failed.is_set():
+                failed.set()
+                raise OSError("temporary enqueue failure")
+            return original_append(store, event, observed_at, elapsed_seconds)
+
+        with patch.object(RoundAuditStore, "append_event", new=fail_before_enqueue):
+            self.monitors[0].callback(MonitorEvent("sync_enqueue_probe", "first"))
+            self.assertTrue(failed.is_set())
+            later = threading.Thread(target=self.monitors[0].callback,
+                                     args=(MonitorEvent("after_sync_enqueue", "second"),))
+            later.start()
+            later.join(2)
+            self.assertFalse(later.is_alive(), "saving failure blocked event collection")
+
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+        later.join(2)
+        self.assertFalse(later.is_alive())
+        self.assertTrue(self.coordinator.flush_audit(timeout=2))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        kinds = [event["kind"] for event in rebuilt["events"]]
+        self.assertLess(kinds.index("sync_enqueue_probe"), kinds.index("after_sync_enqueue"))
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+
+    def test_audit_events_arriving_during_retry_are_drained_before_complete(self):
+        started = self.start_round()
+        original_append = RoundAuditStore.append_event
+        failed = threading.Event()
+
+        def fail_first_enqueue(store, event, observed_at, elapsed_seconds):
+            if event.kind == "retry_gap" and not failed.is_set():
+                failed.set()
+                raise OSError("temporary synchronous append failure")
+            return original_append(store, event, observed_at, elapsed_seconds)
+
+        with patch.object(RoundAuditStore, "append_event", new=fail_first_enqueue):
+            self.monitors[0].callback(MonitorEvent("retry_gap", "first"))
+            self.coordinator.stop()
+            self.assertTrue(failed.is_set())
+
+        retry_entered = threading.Event()
+        release_retry = threading.Event()
+
+        def hold_recovery(store, event, observed_at, elapsed_seconds):
+            if event.kind == "retry_gap":
+                retry_entered.set()
+                release_retry.wait(2)
+            return original_append(store, event, observed_at, elapsed_seconds)
+
+        with patch.object(RoundAuditStore, "append_event", new=hold_recovery):
+            self.assertTrue(self.coordinator.retry_saves())
+            self.assertTrue(retry_entered.wait(2))
+            self.monitors[0].callback(MonitorEvent("arrived_during_retry", "must be drained"))
+            release_retry.set()
+
+        self.wait_for_retry_to_finish()
+        self.assertEqual(self.coordinator.snapshot().save_state, "complete")
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        kinds = [event["kind"] for event in rebuilt["events"]]
+        self.assertIn("arrived_during_retry", kinds)
+        self.assertEqual(kinds[-1], "save_recovered")
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+
+    def test_audit_session_path_association_failure_is_retried_through_coordinator(self):
+        blocked_path = Path(self.temp.name) / "blocked-session-path"
+        blocked_path.write_text("temporary obstruction", encoding="utf-8")
+
+        def factory(callback):
+            monitor = AuditFakeMonitor(callback, lambda: self.clock[0])
+            monitor.session = SimpleNamespace(path=blocked_path)
+            self.monitors.append(monitor)
+            return monitor
+
+        started = self.coordinator.start("FCT", factory, run_async=False, capacity=2)
+        self.assertEqual(self.coordinator.snapshot().save_state, "failed")
+        self.assertTrue(self.coordinator.snapshot().save_errors)
+
+        blocked_path.unlink()
+        self.assertTrue(self.coordinator.retry_saves())
+        deadline = time.monotonic() + 2
+        while self.coordinator.snapshot().retry_in_progress and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.coordinator.snapshot().save_state, "saving")
+        self.assertFalse(self.coordinator.snapshot().save_errors)
+        self.coordinator.stop()
+        self.assertTrue(self.coordinator.flush_audit(timeout=2))
+        self.assertEqual(self.coordinator.session_path, blocked_path)
+        rebuilt = read_round_audit(blocked_path / "audit.jsonl")
+        self.assertEqual(rebuilt["round"]["round_id"], started.round_id)
+        self.assertTrue(rebuilt["audit_complete"])
+        self.assertFalse(self.coordinator.snapshot().save_errors)
+        self.assertEqual(self.coordinator.snapshot().save_state, "complete")
 
     def test_conflict_resolution_after_manual_stop_and_idle_exit_is_reconstructable(self):
         thread_baseline = threading.active_count()
@@ -387,7 +644,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(completed.result_available)
         self.assertFalse(completed.audit_complete)
         self.assertTrue(completed.audit_errors)
-        self.assertIn("audit_write_failed", [event.event.kind for event in completed.events])
+        self.assertTrue(any("稽核紀錄保存失敗" in message for message in completed.save_history))
         self.assertTrue(self.coordinator.flush_audit())
 
     def test_background_disk_failure_is_visible_without_blocking_release(self):
@@ -407,7 +664,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertTrue(completed.result_available)
         self.assertFalse(completed.audit_complete)
         self.assertTrue(completed.audit_errors)
-        self.assertIn("audit_write_failed", [event.event.kind for event in completed.events])
+        self.assertTrue(any("稽核紀錄保存失敗" in message for message in completed.save_history))
 
     def test_atomic_legacy_result_update_keeps_previous_complete_file_on_failure(self):
         store = SessionStore("atomic-session", {}, Path(self.temp.name) / "legacy")
@@ -426,7 +683,7 @@ class RoundAuditRecordTests(unittest.TestCase):
         entered = threading.Event()
         release = threading.Event()
 
-        def slow_event(_message, _detail=None):
+        def slow_event(_message, _detail=None, _timestamp=None):
             entered.set()
             release.wait(2)
 

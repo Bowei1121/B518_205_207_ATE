@@ -119,6 +119,10 @@ class RoundSnapshot:
     audit_complete: bool = True
     audit_errors: Tuple[str, ...] = ()
     audit_pending: bool = False
+    save_state: str = "waiting"
+    save_errors: Tuple[str, ...] = ()
+    save_history: Tuple[str, ...] = ()
+    retry_in_progress: bool = False
 
 
 class MonitoringRound:
@@ -166,17 +170,32 @@ class MonitoringRound:
         self._monitor: Optional[RoundMonitor] = None
         self._monitor_persistence_ready = False
         self._audit_errors = []  # type: list[str]
+        self._save_errors = []  # type: list[str]
+        self._save_history = []  # type: list[str]
+        self._retry_in_progress = False
+        self._audit_attach_target: Optional[Path] = None
         self._audit_store = None
+        self._audit_root = Path(audit_root) if audit_root is not None else None
+        self._audit_context = audit_context
         self._audit_condition = threading.Condition()
         self._audit_next_sequence = 1
-        if audit_root is not None:
+        self._audit_recovery_events = []
+        self._audit_recovery_replaying = False
+        if self._audit_root is not None:
             try:
-                self._audit_store = RoundAuditStore(
-                    Path(audit_root), self.round_id, station, self._accepted_start_at,
-                    self._started_monotonic, audit_context, on_error=self._audit_write_failed,
-                )
+                self._audit_store = self._create_audit_store()
             except (OSError, AuditRecordError, TypeError, ValueError) as error:
-                self._audit_errors.append(str(error))
+                message = "稽核紀錄初始化失敗：{}".format(error)
+                self._audit_errors.append(message)
+                self._save_errors.append(message)
+                self._save_history.append(message)
+
+    def _create_audit_store(self) -> RoundAuditStore:
+        assert self._audit_root is not None
+        return RoundAuditStore(
+            self._audit_root, self.round_id, self.station, self._accepted_start_at,
+            self._started_monotonic, self._audit_context, on_error=self._audit_write_failed,
+        )
 
     def start(self, run_async: bool = True) -> RoundSnapshot:
         with self._lock:
@@ -347,22 +366,139 @@ class MonitoringRound:
             return self.snapshot()
 
     def snapshot(self) -> RoundSnapshot:
+        with self._audit_condition:
+            audit_recovery_pending = bool(self._audit_recovery_events or
+                                          self._audit_recovery_replaying)
         with self._lock:
             results = tuple(
                 RoundResult(result.slot, result.sn, result.status, result.source, result.updated_at)
                 for result in sorted(self._monitor.round_results(), key=lambda result: result.slot)
             ) if self._monitor is not None and self._monitor_persistence_ready else self._preparation_results
+            monitor = self._monitor
+            session = getattr(monitor, "session", None)
+            session_pending = bool(getattr(session, "pending", False))
+            session_errors = tuple(getattr(session, "write_errors", ()))
+            current_errors = tuple(dict.fromkeys(self._save_errors + list(session_errors)))
+            audit_pending = self._audit_store.pending if self._audit_store is not None else False
+            if self._retry_in_progress:
+                save_state = "saving"
+            elif current_errors or audit_recovery_pending or (
+                    self._audit_store is not None and self._audit_store.error):
+                save_state = "failed"
+            elif not self._monitor_persistence_ready:
+                save_state = "waiting"
+            elif audit_pending or session_pending:
+                save_state = "saving"
+            elif self._collection_stopped:
+                save_state = "complete"
+            else:
+                save_state = "saving"
             return RoundSnapshot(
                 self.round_id, self.station, self._state, results,
                 self._state == RoundState.COMPLETED, self._events[-1].sequence if self._events else 0,
                 tuple(self._events), self._collection_stopped, self._completion_reason,
                 tuple(self._pending_conflicts.values()), self._round_alarm, self._round_alarm_ready,
                 not self._monitor_persistence_ready,
-                self._audit_store is not None and not self._audit_errors and
+                self._audit_store is not None and not self._save_errors and
+                not session_errors and not audit_recovery_pending and
                 self._audit_store.error is None and not self._audit_store.pending,
                 tuple(self._audit_errors),
-                self._audit_store.pending if self._audit_store is not None else False,
+                audit_pending,
+                save_state,
+                current_errors + ((self._audit_store.error,) if self._audit_store and
+                                  self._audit_store.error else ()),
+                tuple(self._save_history),
+                self._retry_in_progress,
             )
+
+    def retry_saves(self) -> bool:
+        """Retry retained current-round Session and audit work without blocking the caller."""
+        with self._lock:
+            if self._retry_in_progress:
+                return False
+            monitor = self._monitor
+            session = getattr(monitor, "session", None)
+            self._retry_in_progress = True
+        with self._audit_condition:
+            self._audit_recovery_replaying = True
+        worker = threading.Thread(target=self._retry_saves_worker, args=(session,), daemon=True)
+        worker.start()
+        return True
+
+    def _retry_saves_worker(self, session) -> None:
+        try:
+            retry_session = getattr(session, "retry", None)
+            if callable(retry_session):
+                retry_session()
+            store = self._audit_store
+            if store is None and self._audit_root is not None:
+                store = self._create_audit_store()
+                self._audit_store = store
+            if store is not None and store.error is not None:
+                store.retry()
+            while True:
+                with self._audit_condition:
+                    recovery = (self._audit_recovery_events[0]
+                                if self._audit_recovery_events else None)
+                if recovery is None:
+                    break
+                round_event, observed_at, elapsed_seconds = recovery
+                event = round_event.event
+                store.append_event(
+                    AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
+                               event.sn, event.status, event.source, dict(event.detail)),
+                    observed_at, elapsed_seconds,
+                )
+                with self._audit_condition:
+                    if self._audit_recovery_events and self._audit_recovery_events[0] == recovery:
+                        self._audit_recovery_events.pop(0)
+                    if self._audit_next_sequence == round_event.sequence:
+                        self._audit_next_sequence += 1
+                    self._audit_condition.notify_all()
+            session_flush = getattr(session, "flush", None)
+            session_ok = session_flush(30.0) if callable(session_flush) else True
+            audit_ok = store.flush(30.0) if store is not None else True
+            target = self._audit_attach_target
+            if audit_ok and store is not None and target is not None:
+                store.attach_session(target)
+                self._audit_attach_target = None
+                audit_ok = store.flush(30.0)
+            recovered = session_ok and audit_ok and not self._audit_attach_target
+            if recovered:
+                with self._audit_condition:
+                    self._audit_recovery_replaying = False
+                    if self._audit_recovery_events:
+                        recovered = False
+                if recovered:
+                    with self._lock:
+                        recovered_errors = tuple(self._save_history)
+                        self._save_errors.clear()
+                        self._audit_errors.clear()
+                    self._append_event(MonitorEvent(
+                        "save_recovered", "本輪 Session 與稽核紀錄已完成保存復原",
+                        detail={"round_id": self.round_id,
+                                "recovered_errors": list(recovered_errors)},
+                    ))
+                session_ok = session_flush(30.0) if callable(session_flush) else True
+                audit_ok = store.flush(30.0) if store is not None else True
+                recovered = recovered and session_ok and audit_ok
+            with self._lock:
+                if recovered:
+                    self._save_errors.clear()
+                elif not self._save_errors:
+                    self._save_errors.append("本輪保存仍未完整；請檢查磁碟及保存位置後重試")
+                self._save_history.append(
+                    "本輪保存復原成功" if recovered else "本輪保存復原未完成")
+        except (OSError, AuditRecordError, TypeError, ValueError) as error:
+            with self._lock:
+                message = "本輪保存復原失敗：{}".format(error)
+                self._save_errors.append(message)
+                self._save_history.append(message)
+        finally:
+            with self._lock:
+                self._retry_in_progress = False
+            with self._audit_condition:
+                self._audit_recovery_replaying = False
 
     def flush_audit(self, timeout: Optional[float] = 10.0) -> bool:
         """Wait for the ordered audit writer at explicit read/close boundaries."""
@@ -389,14 +525,16 @@ class MonitoringRound:
         with self._lock:
             if message not in self._audit_errors:
                 self._audit_errors.append(message)
+            if message not in self._save_errors:
+                self._save_errors.append(message)
+            self._save_history.append(message)
             failure = RoundEvent(
-                self.round_id, len(self._events) + 1,
+                self.round_id, 0,
                 MonitorEvent("audit_write_failed", message,
                              detail={"round_id": self.round_id,
                                      "failed_event_sequence": str(record.get("sequence", "unknown")),
                                      "audit_complete": "false"}),
             )
-            self._events.append(failure)
         self._on_event(failure)
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
@@ -431,10 +569,15 @@ class MonitoringRound:
             stop_requested = self._stop_requested
         session_path = getattr(getattr(monitor, "session", None), "path", None)
         if self._audit_store is not None and isinstance(session_path, (str, Path)):
+            self._audit_attach_target = Path(session_path)
             try:
                 self._audit_store.attach_session(Path(session_path))
+                self._audit_attach_target = None
             except (OSError, AuditRecordError) as error:
-                self._audit_errors.append("無法關聯傳統 Session 紀錄：{}".format(error))
+                message = "無法關聯傳統 Session 紀錄：{}".format(error)
+                self._audit_errors.append(message)
+                self._save_errors.append(message)
+                self._save_history.append(message)
         monitor.update_round_settings({"accepted_start_at": self._accepted_start_at,
                                        "accepted_start_monotonic": self._started_monotonic,
                                        "round_id": self.round_id,
@@ -712,6 +855,9 @@ class MonitoringRound:
             message = event.message
             if message not in self._audit_errors:
                 self._audit_errors.append(message)
+            if message not in self._save_errors:
+                self._save_errors.append(message)
+            self._save_history.append(message)
         with self._lock:
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()
@@ -739,40 +885,48 @@ class MonitoringRound:
 
     def _persist_audit_event(self, round_event: RoundEvent) -> None:
         store = self._audit_store
-        if store is None:
+        if store is None and self._audit_root is None:
             return
         event = round_event.event
         failure_message = None
+        observed_at = self._wall_clock().isoformat(timespec="seconds")
+        elapsed_seconds = self._monotonic() - self._started_monotonic
         with self._audit_condition:
             while round_event.sequence != self._audit_next_sequence:
                 self._audit_condition.wait()
-            try:
-                store.append_event(
-                    AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
-                               event.sn, event.status, event.source, dict(event.detail)),
-                    self._wall_clock().isoformat(timespec="seconds"),
-                    self._monotonic() - self._started_monotonic,
-                )
-            except (OSError, AuditRecordError, TypeError, ValueError) as error:
-                failure_message = "輪次稽核紀錄保存失敗：{}".format(error)
+            if store is None:
+                failure_message = "稽核紀錄尚未初始化；本筆已依序保留"
+            elif self._audit_recovery_events or self._audit_recovery_replaying:
+                failure_message = "前筆輪次稽核紀錄尚待復原；本筆已依序保留"
+            else:
+                try:
+                    store.append_event(
+                        AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
+                                   event.sn, event.status, event.source, dict(event.detail)),
+                        observed_at, elapsed_seconds,
+                    )
+                except (OSError, AuditRecordError, TypeError, ValueError) as error:
+                    failure_message = "輪次稽核紀錄保存失敗：{}".format(error)
+            if failure_message:
                 if failure_message not in self._audit_errors:
                     self._audit_errors.append(failure_message)
-            # Actual I/O errors are reported by the writer callback, outside Tk.
-            self._audit_next_sequence = round_event.sequence + (2 if failure_message else 1)
+                if failure_message not in self._save_errors:
+                    self._save_errors.append(failure_message)
+                self._save_history.append(failure_message)
+                self._audit_recovery_events.append((round_event, observed_at, elapsed_seconds))
+            self._audit_next_sequence = round_event.sequence + 1
             self._audit_condition.notify_all()
         if failure_message:
             self._publish_audit_failure(round_event, failure_message)
 
     def _publish_audit_failure(self, failed_event: RoundEvent, message: str) -> None:
-        with self._lock:
-            failure = RoundEvent(
-                self.round_id, len(self._events) + 1,
-                MonitorEvent("audit_write_failed", message,
-                             detail={"round_id": self.round_id,
-                                     "failed_event_sequence": str(failed_event.sequence),
-                                     "audit_complete": "false"}),
-            )
-            self._events.append(failure)
+        failure = RoundEvent(
+            self.round_id, 0,
+            MonitorEvent("audit_write_failed", message,
+                         detail={"round_id": self.round_id,
+                                 "failed_event_sequence": str(failed_event.sequence),
+                                 "audit_complete": "false"}),
+        )
         self._on_event(failure)
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:
@@ -978,6 +1132,12 @@ class RoundCoordinator:
         with self._lock:
             current = self._current
         return current.flush_session(timeout) if current is not None else True
+
+    def retry_saves(self) -> bool:
+        """Start one nonblocking recovery attempt for the current round."""
+        with self._lock:
+            current = self._current
+        return current.retry_saves() if current is not None else False
 
     def stop(self) -> Optional[RoundSnapshot]:
         with self._lock:
