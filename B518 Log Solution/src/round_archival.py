@@ -28,6 +28,13 @@ class ArchiveComponent:
 
 
 @dataclass(frozen=True)
+class ArchiveLocation:
+    audit_path: Path
+    session_path: Path
+    station: str
+
+
+@dataclass(frozen=True)
 class ArchiveSnapshot:
     round_id: str
     status: str
@@ -47,6 +54,13 @@ def _aware_timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("封存時間必須包含時區")
     return value.isoformat(timespec="seconds")
+
+
+def normalize_archive_time(value: datetime) -> datetime:
+    """Attach the local timezone to a naive injected wall-clock value."""
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.astimezone()
+    return value
 
 
 def _component(path: Path) -> ArchiveComponent:
@@ -162,10 +176,13 @@ def _manifest_digest(payload: dict) -> str:
 
 
 def write_round_archive(audit_path: Path, session_path: Path,
-                        archived_at: datetime) -> ArchiveSnapshot:
+                        archived_at: datetime,
+                        expected_round_id: Optional[str] = None) -> ArchiveSnapshot:
     """Validate all durable round parts, then atomically write and reread the seal."""
     timestamp = _aware_timestamp(archived_at)
     round_id, components = _validate_round_components(audit_path, session_path)
+    if expected_round_id is not None and round_id != expected_round_id:
+        raise ValueError("封存輪次身分不一致")
     manifest_path = Path(audit_path).resolve().parent / "round-archive.json"
     previous = read_round_archive(manifest_path, expected_round_id=round_id)
     if (previous.cleanup_eligible and

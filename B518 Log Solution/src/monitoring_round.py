@@ -14,7 +14,8 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
-from round_archival import ArchiveSnapshot, write_round_archive
+from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
+                            write_round_archive)
 
 
 class RoundMonitor(Protocol):
@@ -558,12 +559,13 @@ class MonitoringRound:
         return getattr(session, "path", None)
 
     @property
-    def archive_paths(self) -> Tuple[Optional[Path], Optional[Path]]:
+    def archive_location(self) -> Optional[ArchiveLocation]:
         """Return the durable audit and Session locations needed for revalidation."""
         audit_path = getattr(self._audit_store, "audit_path", None)
         session_path = self.session_path
-        return (Path(audit_path) if audit_path is not None else None,
-                Path(session_path) if session_path is not None else None)
+        if audit_path is None or session_path is None:
+            return None
+        return ArchiveLocation(Path(audit_path), Path(session_path), self.station)
 
     def flush_session(self, timeout: Optional[float] = 10.0) -> bool:
         """Wait for the current adapter Session writer at read/close boundaries."""
@@ -600,7 +602,8 @@ class MonitoringRound:
             if audit_path is None or session_path is None:
                 return status("protected", "缺少可驗證的 Session 或 audit 位置")
             try:
-                archived = write_round_archive(audit_path, session_path, archived_at)
+                archived = write_round_archive(
+                    audit_path, session_path, archived_at, expected_round_id=self.round_id)
             except OSError as error:
                 return ArchiveSnapshot(self.round_id, "failed", message=str(error),
                                        path=Path(audit_path).parent / "round-archive.json",
@@ -1188,7 +1191,7 @@ class RoundCoordinator:
         self._close_status = CloseSnapshot()
         self._close_worker_active = False
         self._archive_states: Dict[str, ArchiveSnapshot] = {}
-        self._archive_locations: Dict[str, Tuple[Path, Path, str]] = {}
+        self._archive_locations: Dict[str, ArchiveLocation] = {}
         self._archive_locks: Dict[str, threading.Lock] = {}
         self._archive_queue = Queue()
         self._archive_queued = set()
@@ -1316,9 +1319,8 @@ class RoundCoordinator:
                 location = self._archive_locations.get(round_id)
             retry_after_save = False
             if round_ is not None:
-                audit_path, session_path = round_.archive_paths
-                if audit_path is not None and session_path is not None:
-                    location = (audit_path, session_path, round_.station)
+                location = round_.archive_location
+                if location is not None:
                     with self._lock:
                         self._archive_locations[round_id] = location
                 snapshot = round_.snapshot()
@@ -1352,7 +1354,7 @@ class RoundCoordinator:
                     self._queue_archive_check_locked(round_id)
 
     def _archive_from_location(self, round_id: str,
-                               location: Tuple[Path, Path, str]) -> ArchiveSnapshot:
+                               location: ArchiveLocation) -> ArchiveSnapshot:
         """Revalidate a saved round after its live monitor has been released."""
         with self._lock:
             archive_lock = self._archive_locks.setdefault(round_id, threading.Lock())
@@ -1360,13 +1362,13 @@ class RoundCoordinator:
             return self._write_archive_from_location(round_id, location)
 
     def _write_archive_from_location(self, round_id: str,
-                                     location: Tuple[Path, Path, str]) -> ArchiveSnapshot:
-        audit_path, session_path, station = location
-        now = self._wall_clock()
-        if now.tzinfo is None or now.utcoffset() is None:
-            now = now.astimezone()
+                                     location: ArchiveLocation) -> ArchiveSnapshot:
+        audit_path, session_path, station = (
+            location.audit_path, location.session_path, location.station)
+        now = normalize_archive_time(self._wall_clock())
         try:
-            archived = write_round_archive(audit_path, session_path, now)
+            archived = write_round_archive(
+                audit_path, session_path, now, expected_round_id=round_id)
         except OSError as error:
             return ArchiveSnapshot(round_id, "failed", message=str(error),
                                    path=audit_path.parent / "round-archive.json",
@@ -1383,10 +1385,7 @@ class RoundCoordinator:
         with self._lock:
             archive_lock = self._archive_locks.setdefault(round_id, threading.Lock())
         with archive_lock:
-            now = self._wall_clock()
-            if now.tzinfo is None or now.utcoffset() is None:
-                now = now.astimezone()
-            return round_.archive_status(now)
+            return round_.archive_status(normalize_archive_time(self._wall_clock()))
 
     def request_close(self) -> CloseSnapshot:
         """Stop new rounds and durably flush all current-run records in a worker."""
@@ -1413,7 +1412,7 @@ class RoundCoordinator:
                            if round_.snapshot().save_state == "failed")
             failed_archive_ids = tuple(
                 round_id for round_id, status in self._archive_states.items()
-                if status.status == "failed")
+                if not status.cleanup_eligible)
         for round_ in failed:
             round_.retry_saves()
         with self._lock:
@@ -1479,10 +1478,12 @@ class RoundCoordinator:
                             with self._lock:
                                 round_ = self._tracked_rounds.get(round_id)
                                 location = self._archive_locations.get(round_id)
+                                prior_archive = self._archive_states.get(round_id)
+                                previously_archived = prior_archive is not None and (
+                                    prior_archive.cleanup_eligible or prior_archive.status == "failed")
                             if round_ is not None:
-                                paths = round_.archive_paths
-                                if paths[0] is not None and paths[1] is not None:
-                                    location = (paths[0], paths[1], round_.station)
+                                location = round_.archive_location
+                                if location is not None:
                                     with self._lock:
                                         self._archive_locations[round_id] = location
                                 archive = self._archive_tracked_round(round_id, round_)
@@ -1494,7 +1495,8 @@ class RoundCoordinator:
                                     self._archive_states[round_id] = archive
                             else:
                                 continue
-                            if archive.status == "failed":
+                            if (previously_archived and not archive.cleanup_eligible and
+                                    location is not None):
                                 archive_failures.append("{}：{}".format(
                                     round_id[:10], archive.message or "封存資訊尚未完整保存"))
                     if archive_failures:

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import tempfile
 import threading
 import time
@@ -437,6 +438,84 @@ class RoundArchivalTests(unittest.TestCase):
                             audit_path, session_path,
                             datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
                         )
+
+    def test_archive_writer_requires_the_coordinators_expected_round_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            audit_path, session_path = self.create_complete_round(Path(temporary), "round-a")
+            with self.assertRaisesRegex(ValueError, "輪次身分不一致"):
+                write_round_archive(
+                    audit_path, session_path,
+                    datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
+                    expected_round_id="round-b",
+                )
+
+    def test_detached_retry_rejects_a_consistent_replacement_from_another_round(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            first = rounds.start("FCT", lambda callback: CompletingMonitor(
+                callback, root / "sessions", lambda: now[0]), run_async=False)
+            rounds.poll_once()
+            first_archive = self.wait_for_archive(rounds, first.round_id)
+            self.assertEqual(first_archive.status, "archived")
+            first_audit = next(item.path for item in first_archive.components
+                               if item.name == "audit.jsonl")
+            first_session = next(item.path.parent for item in first_archive.components
+                                 if item.name == "session.json")
+
+            now[0] += timedelta(seconds=1)
+            rounds.start("FCT", lambda callback: CompletingMonitor(
+                callback, root / "sessions", lambda: now[0]), run_async=False)
+            self.assertIsNone(rounds.round_snapshot(first.round_id))
+
+            replacement_audit, replacement_session = self.create_complete_round(
+                root / "replacement", "replacement-round")
+            shutil.copyfile(replacement_audit, first_audit)
+            for name in ("session.json", "events.log", "results.csv"):
+                shutil.copyfile(replacement_session / name, first_session / name)
+
+            self.assertTrue(rounds.retry_archival(first.round_id))
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                status = rounds.archive_status(first.round_id)
+                if status and status.status == "protected" and "身分不一致" in status.message:
+                    break
+                time.sleep(0.01)
+            self.assertEqual(status.status, "protected")
+            self.assertIn("身分不一致", status.message)
+
+    def test_close_stays_open_when_a_detached_round_fails_disk_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            started = rounds.start("FCT", lambda callback: CompletingMonitor(
+                callback, root / "sessions", lambda: now[0]), run_async=False)
+            rounds.poll_once()
+            archived = self.wait_for_archive(rounds, started.round_id)
+            self.assertEqual(archived.status, "archived")
+            now[0] += timedelta(seconds=1)
+            rounds.start("FCT", lambda callback: CompletingMonitor(
+                callback, root / "sessions", lambda: now[0]), run_async=False)
+            self.assertIsNone(rounds.round_snapshot(started.round_id))
+            audit_component = next(item for item in archived.components if item.name == "audit.jsonl")
+            audit_bytes = audit_component.path.read_bytes()
+            audit_component.path.unlink()
+
+            rounds.request_close()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and rounds.close_status().status not in {"complete", "failed"}:
+                time.sleep(0.01)
+            self.assertEqual(rounds.close_status().status, "failed")
+            self.assertIn("封存", rounds.close_status().message)
+
+            audit_component.path.write_bytes(audit_bytes)
+            rounds.retry_close_saves()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and rounds.close_status().status != "complete":
+                time.sleep(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
 
 
 if __name__ == "__main__":
