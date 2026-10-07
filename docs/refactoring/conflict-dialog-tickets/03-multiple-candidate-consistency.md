@@ -2,7 +2,7 @@
 
 ## Parent
 
-Part of GitHub 規格 Issue #9。草案，待使用者確認後發布。
+Part of [規格 Issue #9](https://github.com/Bowei1121/B518_205_207_ATE/issues/9)。依已確認的彈窗規格及拆票方案實作。
 
 ## What to build
 
@@ -20,4 +20,4 @@ Part of GitHub 規格 Issue #9。草案，待使用者確認後發布。
 
 ## Blocked by
 
-- C2：差異兩側紅色粗體並辨識同名不同來源。
+- [#11：差異兩側紅色粗體並辨識同名不同來源](https://github.com/Bowei1121/B518_205_207_ATE/issues/11)

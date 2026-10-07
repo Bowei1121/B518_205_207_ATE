@@ -15,6 +15,8 @@
 
 使用者再要求 to-tickets 拆分彈窗規格；[3 張票草案及驗收覆蓋](conflict-dialog-tickets/README.md) 採 C1 基本精簡／詳細分區 → C2 差異與同名來源辨識 → C3 多候選動態一致性。待使用者確認粒度及直接阻擋關係後發布，C1～C3 尚非 GitHub 票號；Issue #9 未修改或關閉，產品程式未因本次拆票改動。
 
+使用者確認「很適當」後，全部三票已發布，C1～C3 對應 GitHub #10／#11／#12，皆 ready-for-agent；#11 原生 blocked-by #10、#12 原生 blocked-by #11，正文及本機也記錄真實票號。完整內容與標籤已核對，原規格 Issue #9 更新時間及狀態未改變。可先執行 #10，尚未認領或實作；最新票號及覆蓋見上述對照表。
+
 ## 前次討論與 Ticket 01 交付
 
 - 使用者授權在 `round/ticket-01` 執行生命週期 Ticket 01，逐批驗證、commit／push，必要驗收與 Standards／Spec 審查均通過後自動合併及安全清理分支。

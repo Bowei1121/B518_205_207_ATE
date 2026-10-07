@@ -1,14 +1,16 @@
-# 人工衝突彈窗拆票草案
+# 人工衝突彈窗票號與依賴
 
 來源：[正式規格](../CONFLICT_DIALOG_SPEC_2026-10-07.md)，對應 [GitHub 規格 Issue #9](https://github.com/Bowei1121/B518_205_207_ATE/issues/9)。已查核遠端完整正文與本機一致，無留言。
 
-狀態：待使用者確認拆票粒度及阻擋關係，尚未發布。C1～C3 為本機草案代號，不是 GitHub 票號；確認後逐票發布、設定 ready-for-agent 及原生 blocked-by。原規格 Issue #9 不修改或關閉。
+狀態：使用者已確認拆票方案，C1～C3 已發布為 GitHub #10～#12，全部標記 ready-for-agent，正文及原生 blocked-by 皆使用真實票號。原規格 Issue #9 僅於正文作 Parent 參考，沒有修改、關閉或增加其原生子議題關係。
 
-| 草案 | 交付 | 直接阻擋 |
-| --- | --- | --- |
-| [C1](01-summary-detail-split.md) | 操作員可在可拖曳上下分區閱讀四項精簡對照及原完整細節 | 無 |
-| [C2](02-difference-and-source-disambiguation.md) | 差異兩側紅色粗體，同名不同路徑以短目錄提示辨識 | C1 |
-| [C3](03-multiple-candidate-consistency.md) | 多候選、持續刷新、裁決移除與重開時，上下資訊及樣式一致 | C2 |
+| 本機票 | GitHub | 交付 | 直接阻擋 |
+| --- | --- | --- | --- |
+| [C1](01-summary-detail-split.md) | [#10](https://github.com/Bowei1121/B518_205_207_ATE/issues/10) | 操作員可在可拖曳上下分區閱讀四項精簡對照及原完整細節 | 無 |
+| [C2](02-difference-and-source-disambiguation.md) | [#11](https://github.com/Bowei1121/B518_205_207_ATE/issues/11) | 差異兩側紅色粗體，同名不同路徑以短目錄提示辨識 | #10 |
+| [C3](03-multiple-candidate-consistency.md) | [#12](https://github.com/Bowei1121/B518_205_207_ATE/issues/12) | 多候選、持續刷新、裁決移除與重開時，上下資訊及樣式一致 | #11 |
+
+目前可開工為 #10，接續 #11、#12；發布不代表已認領或開始產品實作。內容、標籤及原生依賴已核對，原規格 Issue #9 保持原狀態及更新時間。
 
 每票皆包含真實衝突捕捉到 Tk 顯示／操作的完整路徑與必要測試。C1 先交付可用的基本對照與分區；C2 增加差異辨識，不另拆 formatter 或 widget 票；C3 完成新雙區與樣式在多候選動態流程中的同步行為，不是僅補測試的橫向票。沒有必須先獨立發布的大範圍重構；局部顯示組裝整理放在 C1。
 

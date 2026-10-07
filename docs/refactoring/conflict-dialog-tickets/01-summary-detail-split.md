@@ -2,7 +2,7 @@
 
 ## Parent
 
-Part of GitHub 規格 Issue #9。草案，待使用者確認後發布。
+Part of [規格 Issue #9](https://github.com/Bowei1121/B518_205_207_ATE/issues/9)。依已確認的彈窗規格及拆票方案實作。
 
 ## What to build
 
