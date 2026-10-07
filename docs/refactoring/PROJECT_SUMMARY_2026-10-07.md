@@ -41,3 +41,13 @@
 - 五項 Ticket 03 驗收均已勾選並有證據。聚焦輪次及 UI 77 tests 通過；最終程式 HEAD `64e903e` 的完整套件 218 tests 通過，包含在桌面工作階段實際執行的 Tk 跨輪重試及磁碟重建。語法編譯和 `git diff --check` 通過；repository 未發現型別檢查設定，未宣稱型別檢查通過。逐項命令與證據見 [Ticket 03 本機驗收紀錄](evidence/ticket-03/local-validation.md)。
 - 實作提交 `abc5a8b152d56e7daf4ae60d1fee9049aae66fbe`、狀態標籤審查修正 `64e903e`、驗收文件提交 `3168ec7`／`1b2fb51` 均已推送至 `origin` 的 Gitea、GitHub 兩個 push URL；Standards／Spec 雙軸複審均無未解問題。確認最新主線 `e9a1008232448d34a05f5528ff7af6576d19aa48` 為固定基準的後續文件提交且工作樹乾淨後，建立 Ticket 03 merge commit `d4244701656c4b2daef17ba9daece3db8e0d1856`。合併後完整套件 218 tests 通過（32.157 秒），`git diff --check` 通過。合併 commit 後的驗收文件提交 `946fcbd5a945b526b99309b8da13a1e6866e9682` 已推送至兩個目的地，並即時核對 refs 相同；本地與兩遠端 `round/ticket-03` 已安全刪除，tracking refs 已 prune。最後工作樹乾淨並停在 `B518-Log-Solution`。
 - 開始時原專案工作樹的 `docs/refactoring/CONFLICT_DIALOG_DISCUSSION_2026-10-07.md` 有未提交修改；Ticket 03 使用獨立 worktree，未觸碰該修改。合併前即時查核時，該文件更新已由主線提交 `e9a1008` 收錄，主線工作樹乾淨，因此沒有 stash 或把未提交資料納入本票。
+
+## Ticket 04 正常關閉協調（本日後續）
+
+- 使用者授權在 `round/ticket-04` 接續 Ticket 01～03，完成正常關閉時停止新增監控、背景協調本次執行全部輪次保存、顯示狀態及錯誤、支援重試／取消，只有全部必要 Session 與 audit 完整保存後才銷毀視窗。沒有擴張至可信封存、期限或到期清理。
+- 固定 code-review 基準 `ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5`，Ticket 01～03 已包含於此工作基準。開始前另在隔離 worktree 即時核對本地及 Gitea／GitHub refs；當時兩遠端主線均為固定基準，專用分支不存在。
+- App 現透過 `RoundCoordinator` 公開關閉狀態與請求入口，在背景等待來源準備、停止交接、每輪 Session／audit flush，失敗可重試或取消。關閉中允許人工衝突裁決及警報確認；完整保存快照會原子凍結已完成輪次的人工操作，避免最後檢查與視窗銷毀之間新增未保存紀錄。取消不重啟來源、保存工作繼續，熱鍵只在成功關閉後釋放。歷史 Session 不會被掃描。
+- Ticket 04 六項驗收皆已以暫存磁碟及真正 Tk 案例驗證。以 Event 控制來源準備、audit 故障／重試與人工操作交錯；延遲超過原兩秒界線時視窗及 `after` 事件仍可用。跨輪恢復、取消後再次關閉、衝突及警報人工操作後的 audit 由磁碟讀取器重建，確認內容及 round ID 正確。
+- 聚焦 `PYTHONPATH=src:tests python3 -m unittest test_monitoring_round test_log_solution_ui`：85 tests 通過（24.022 秒）；完整 `python3 scripts/run_tests.py`：225 tests 通過（34.943 秒）；`python3 -m compileall -q src tests` 與 `git diff --check` 通過。Tk 測試在可存取桌面圖形工作階段實際執行。Repository 沒有型別檢查器設定，未宣稱型別檢查通過。初次完整套件曾因既有平台啟動測試等待 3 秒逾時；該測試單獨通過，來源啟動等待改為 8 秒並補診斷後，完整套件通過。
+- Standards 首審的準備事件私有存取已改由公開 `wait_until_prepared()`；close status 重複 predicate 改為共用判定，`CloseSnapshot.error` 改名 `message`。Spec 複審指出快照與人工操作可能競爭；以輪次完成凍結及 Event 競爭測試修正。固定基準 Standards／Spec 最終複審均無未解問題。最後程式提交 `7a241be380b55cd237908554d60fcb584f3ebfc8` 已同步至 Gitea、GitHub；實際命令與逐項證據見 [Ticket 04 驗收紀錄](evidence/ticket-04/local-validation.md)。
+- Ticket 04 尚未合併。合併前會即時確認主線工作樹乾淨、納入 Gitea 與 GitHub 最新提交且沒有程式分歧；合併後需重跑驗證、同步兩個 push 目的地，安全清理本地及遠端 `round/ticket-04` 後再補記合併 SHA 與清理結果。未使用強制推送或強制刪除。
