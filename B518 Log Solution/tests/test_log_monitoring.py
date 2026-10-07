@@ -1,7 +1,9 @@
 import csv
+import json
 import log_monitoring
 import shutil
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -55,6 +57,67 @@ class LogMonitoringTests(unittest.TestCase):
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))
         self.assertEqual(parse_archive_timestamp("20220618_02-28-01.374-any"), datetime(2022, 6, 18, 2, 28, 1, 374000))
+
+    def test_session_sync_failure_retains_original_event_for_nonblocking_retry(self):
+        store = log_monitoring.SessionStore("recoverable", {}, self.temp / "sessions")
+        original_event = store.event
+        captured = []
+
+        def fail_once(message, detail=None, timestamp=None):
+            captured.append(timestamp)
+            raise OSError("temporary disk fault")
+
+        with patch.object(store, "event", side_effect=fail_once):
+            with self.assertRaises(OSError):
+                store.enqueue_event("keep original", {"source": "test"})
+        self.assertFalse(store.flush())
+        self.assertTrue(store.write_errors)
+
+        with patch.object(store, "event", side_effect=original_event):
+            self.assertTrue(store.retry())
+            self.assertTrue(store.flush(timeout=2))
+        record = json.loads((store.path / "events.log").read_text(encoding="utf-8"))
+        self.assertEqual(record["message"], "keep original")
+        self.assertEqual(record["detail"], {"source": "test"})
+        self.assertEqual(record["timestamp"], captured[0])
+        self.assertFalse(store.write_errors)
+        self.assertTrue(store.write_history)
+
+    def test_session_background_failure_retains_work_until_retry(self):
+        failed = threading.Event()
+        store = log_monitoring.SessionStore(
+            "async-recoverable", {}, self.temp / "sessions",
+            on_error=lambda _label, _error: failed.set(), async_writes=True)
+        original_event = store.event
+
+        def fail_once(_message, _detail=None, _timestamp=None):
+            raise OSError("temporary background disk fault")
+
+        with patch.object(store, "event", side_effect=fail_once):
+            store.enqueue_event("background work", {"id": "original"})
+            self.assertTrue(failed.wait(2))
+            self.assertFalse(store.flush(timeout=1))
+
+        with patch.object(store, "event", side_effect=original_event):
+            self.assertTrue(store.retry())
+            self.assertTrue(store.flush(timeout=2))
+        record = json.loads((store.path / "events.log").read_text(encoding="utf-8"))
+        self.assertEqual(record["message"], "background work")
+        self.assertEqual(record["detail"], {"id": "original"})
+        self.assertTrue(store.write_history)
+
+    def test_session_initialization_failure_is_recoverable_after_location_repair(self):
+        root = self.temp / "blocked-root"
+        root.write_text("not a directory", encoding="utf-8")
+        store = log_monitoring.SessionStore("init-recovery", {}, root)
+        self.assertTrue(store.write_errors)
+        self.assertFalse(store.flush())
+
+        root.unlink()
+        self.assertTrue(store.retry())
+        self.assertTrue(store.flush(timeout=2))
+        self.assertTrue((store.path / "session.json").is_file())
+        self.assertTrue(store.write_history)
 
     def test_fct_latches_active_sn_then_reads_unit_archive(self):
         active, final = self.temp / "active", self.temp / "unit-archive"

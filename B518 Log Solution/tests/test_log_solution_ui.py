@@ -4,6 +4,7 @@ import json
 import queue
 import tkinter as tk
 import time
+import threading
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -20,7 +21,10 @@ from b518_log_solution import (
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
+from log_monitoring import SessionStore, SlotResult
 from monitoring_round import RoundCoordinator, RoundEvent
+import audit_records
+from audit_records import read_round_audit
 from machine_profiles import MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 
 
@@ -73,6 +77,109 @@ class LogSolutionUiTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail("Timed out waiting for asynchronous monitor preparation")
+
+    def test_real_tk_retry_button_recovers_disk_record_once_without_blocking_ui(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=Path(temporary) / "sessions")
+            coordinator = RoundCoordinator(app.events.put, audit_root=Path(temporary) / "sessions")
+            holder = {}
+
+            class Monitor:
+                def __init__(self, callback):
+                    self.callback = callback
+                    self.session = SessionStore("tk-round", {}, Path(temporary) / "sessions")
+                    self.results = (SlotResult(1),)
+
+                def round_results(self):
+                    return self.results
+
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 10}[kind]
+
+                def update_round_settings(self, settings):
+                    self.session.update_settings(settings)
+
+                def publish_round_event(self, event):
+                    self.session.enqueue_event(event.message, event.detail)
+                    self.callback(event)
+
+                def start(self):
+                    pass
+
+                def stop_collection(self):
+                    pass
+
+                def finish(self):
+                    self.session.enqueue_finish()
+
+                def stop(self):
+                    self.callback(MonitorEvent("stopped", "stopped"))
+
+                def poll_once(self):
+                    pass
+
+            try:
+                app.rounds = coordinator
+                started = coordinator.start("FCT", lambda callback: holder.setdefault(
+                    "monitor", Monitor(callback)), run_async=False, capacity=1)
+                app.active_round_id = started.round_id
+                app._apply_round_snapshot(coordinator.snapshot())
+                monitor = holder["monitor"]
+                original_write = audit_records.os.write
+                failed = threading.Event()
+                retry_entered = threading.Event()
+                release_retry = threading.Event()
+                write_number = [0]
+
+                def inject_fault(descriptor, content):
+                    if b"tk_retry_probe" in content:
+                        write_number[0] += 1
+                        if write_number[0] == 1:
+                            failed.set()
+                            raise OSError("temporary disk fault")
+                        retry_entered.set()
+                        release_retry.wait(2)
+                    return original_write(descriptor, content)
+
+                with patch.object(audit_records.os, "write", side_effect=inject_fault):
+                    monitor.callback(MonitorEvent("tk_retry_probe", "persist from Tk"))
+                    self.assertTrue(failed.wait(2))
+                    deadline = time.monotonic() + 2
+                    while coordinator.snapshot().save_state != "failed" and time.monotonic() < deadline:
+                        root.update()
+                    self.assertEqual(coordinator.snapshot().save_state, "failed")
+                    self.assertEqual(str(app.retry_save_button["state"]), "normal")
+                    coordinator.stop()
+
+                    app.retry_save_button.invoke()
+                    self.assertTrue(retry_entered.wait(2))
+                    self.assertEqual(str(app.retry_save_button["state"]), "disabled")
+                    ui_tick = threading.Event()
+                    root.after(0, ui_tick.set)
+                    root.update()
+                    self.assertTrue(ui_tick.is_set())
+                    app.retry_save_button.invoke()
+                    self.assertEqual(write_number[0], 2)
+                    release_retry.set()
+                    deadline = time.monotonic() + 3
+                    while coordinator.snapshot().save_state != "complete" and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+
+                self.assertEqual(coordinator.snapshot().save_state, "complete")
+                self.assertTrue(coordinator.flush_session(timeout=2))
+                rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
+                self.assertEqual(len([event for event in rebuilt["events"]
+                                      if event["kind"] == "tk_retry_probe"]), 1)
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertTrue(coordinator.snapshot().save_history)
+            finally:
+                app.hotkey.close()
+                root.destroy()
 
     def test_running_round_keeps_its_capacity_and_mapping_after_profile_update(self):
         with TemporaryDirectory() as temporary, \
