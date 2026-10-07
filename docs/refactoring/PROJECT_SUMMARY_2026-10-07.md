@@ -1,5 +1,13 @@
 # 專案摘要：2026-10-07
 
+## Ticket 07 開發記錄（本對話）
+
+- 實際 Git 根目錄為 `B518 Log Solution/`，程式與測試目錄在該根下同名子目錄 `B518 Log Solution/src`、`B518 Log Solution/tests`。本次主線基準 `56f895af0b5bceab73582ab8fec95417068b468e`。Ticket 分支已有子提交 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`（multilingual 文件草稿）且已同步遠端；保留未改寫，Ticket 07 固定雙軸審查基準為 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`。由於該提交仍是分支祖先，合併前須處理其無關文件內容，不能宣稱它未包含於分支歷史。
+- 新增背景輪次清理服務，從可信封存 manifest 驗證完整組件、時間與 App 管理路徑；Coordinator 管理 startup／每日／設定變更觸發、保護、重疊合併及關閉協調。持久 ledger 記錄摘要與逐檔刪除意圖，部分刪除可在新 Coordinator 重讀後續作；復原時發現新檔即停止該輪；設定畫面顯示摘要及原因。
+- `python3 scripts/run_tests.py test_round_retention`：15 項隔離真實暫存磁碟測試通過。`B518_TK_TESTS=1 python3 scripts/run_tests.py`：264 項完整套件通過（46.081 秒），包含可存取桌面的真正 Tk 設定、期限變更、背景清理、摘要檢視與磁碟資料保護驗收。`compileall`、`git diff --check` 通過。
+- macOS Darwin 24.6.0 x86_64、Python 3.8.10、Tk 8.6。Repository 未配置型別檢查工具；不把 compileall 當型別檢查。Ticket 07 雙軸審查、覆蓋複核、主線整合及分支清理尚待完成；不得沿用前次遠端同步紀錄代替本次即時查核。
+- 完整實際命令、母規格覆蓋和限制見 [Ticket 07 本機驗收紀錄](evidence/ticket-07/local-validation.md)。
+
 ## 多語言訪談共識
 
 後續依 to-tickets 形成 [10 張多語言拆票草案與驗收覆蓋](multilingual-tickets/README.md)，待確認後發布。M1 建立可用主頁切換，M2 相容事件擴充，其他票按來源、App 診斷及操作流程逐批接入；M9 另由既有清理 Issue #8 阻擋，M10 統一發布驗收。M1～M10 尚非 GitHub 票號，原規格 Issue #13 未修改或關閉；本次未實作產品程式。
