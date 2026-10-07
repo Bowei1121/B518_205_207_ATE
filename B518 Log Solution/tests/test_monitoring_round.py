@@ -1,15 +1,20 @@
 import csv
+import gc
 import io
 import tempfile
 import threading
 import time
 import unittest
+import weakref
+from unittest.mock import patch
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from log_monitoring import BtLogMonitor, MonitorEvent, SlotResult
 from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor
+import audit_records
+from audit_records import read_round_audit
 
 
 class FakeMonitor:
@@ -301,7 +306,6 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertNotIn("reason", rejected.detail)
 
             self.assertTrue(rounds.flush_audit())
-            from audit_records import read_round_audit
             audit_path = next((root / "audit").rglob("audit.jsonl"))
             audit = read_round_audit(audit_path)
             stored = next(item for item in audit["events"]
@@ -1472,6 +1476,151 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertFalse(snapshot.result_available)
         self.assertTrue(snapshot.collection_stopped)
         self.assertEqual(snapshot.completion_reason, "manual_stop")
+
+    def test_failed_previous_round_remains_queryable_and_retriable_after_new_round_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            monitors = []
+
+            def create(callback):
+                monitor = FakeMonitor(callback)
+                monitors.append(monitor)
+                return monitor
+
+            rounds = RoundCoordinator(audit_root=Path(temporary))
+            first = rounds.start("FCT", create, run_async=False)
+            self.assertTrue(rounds.flush_audit())
+            original_write = audit_records.os.write
+            injected = threading.Event()
+
+            def fail_probe(descriptor, content):
+                if b"cross_round_failure_probe" in content:
+                    injected.set()
+                    raise OSError("temporary previous-round disk fault")
+                return original_write(descriptor, content)
+
+            with patch.object(audit_records.os, "write", side_effect=fail_probe):
+                monitors[0].callback(MonitorEvent(
+                    "cross_round_failure_probe", "preserve with original round identity"))
+                self.assertTrue(injected.wait(2))
+                self.assertFalse(rounds.flush_audit(timeout=2))
+                rounds.stop()
+                second = rounds.start("FCT", create, run_async=False)
+
+            self.assertNotEqual(first.round_id, second.round_id)
+            unsaved = rounds.unsaved_rounds()
+            by_id = {item.round_id: item for item in unsaved}
+            self.assertEqual(set(by_id), {first.round_id, second.round_id})
+            self.assertIn("temporary previous-round disk fault", by_id[first.round_id].save_errors[0])
+            self.assertTrue(rounds.has_unsaved_rounds)
+            self.assertTrue(rounds.retry_saves(first.round_id))
+
+            deadline = time.monotonic() + 3
+            recovered = None
+            while time.monotonic() < deadline:
+                candidates = {item.round_id: item for item in rounds.unsaved_rounds()}
+                recovered = candidates.get(first.round_id)
+                if recovered is None:
+                    break
+                time.sleep(0.01)
+
+            rebuilt = read_round_audit(Path(temporary) / first.round_id / "audit.jsonl")
+            probe = [event for event in rebuilt["events"]
+                     if event["kind"] == "cross_round_failure_probe"]
+            self.assertTrue(rebuilt["audit_complete"])
+            self.assertEqual(len(probe), 1)
+            self.assertEqual(probe[0]["round_id"], first.round_id)
+            self.assertEqual(probe[0]["message"], "preserve with original round identity")
+            self.assertNotIn(first.round_id, {item.round_id for item in rounds.unsaved_rounds()})
+            rounds.stop()
+            self.assertTrue(rounds.flush_audit())
+            self.assertFalse(rounds.has_unsaved_rounds)
+
+    def test_multiple_failed_rounds_recover_independently_without_cross_round_records(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            monitors = []
+
+            def create(callback):
+                monitor = FakeMonitor(callback)
+                monitors.append(monitor)
+                return monitor
+
+            rounds = RoundCoordinator(audit_root=root)
+            failed_rounds = []
+            for index in range(2):
+                snapshot = rounds.start("FCT", create, run_async=False)
+                self.assertTrue(rounds.flush_audit())
+                rounds.stop()
+                marker = "old_round_probe_{}".format(index)
+                original_write = audit_records.os.write
+
+                def fail_marker(descriptor, content, marker=marker):
+                    if marker.encode("utf-8") in content:
+                        raise OSError("disk fault for {}".format(marker))
+                    return original_write(descriptor, content)
+
+                with patch.object(audit_records.os, "write", side_effect=fail_marker):
+                    monitors[index].callback(MonitorEvent(marker, marker))
+                    deadline = time.monotonic() + 2
+                    while rounds.round_snapshot(snapshot.round_id).save_state != "failed" and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                failed_rounds.append(snapshot.round_id)
+
+            current = rounds.start("FCT", create, run_async=False)
+            self.assertEqual({item.round_id for item in rounds.unsaved_rounds()},
+                             set(failed_rounds) | {current.round_id})
+            for index, round_id in enumerate(failed_rounds):
+                self.assertTrue(rounds.retry_saves(round_id))
+                deadline = time.monotonic() + 3
+                while rounds.round_snapshot(round_id) is not None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                rebuilt = read_round_audit(root / round_id / "audit.jsonl")
+                marker = "old_round_probe_{}".format(index)
+                saved = [event for event in rebuilt["events"] if event["kind"] == marker]
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertEqual(len(saved), 1)
+                self.assertEqual(saved[0]["round_id"], round_id)
+                other_marker = "old_round_probe_{}".format(1 - index)
+                self.assertFalse(any(event["kind"] == other_marker for event in rebuilt["events"]))
+
+    def test_completed_round_objects_are_released_as_new_rounds_replace_them(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            rounds = RoundCoordinator(audit_root=Path(temporary))
+            monitor_refs = []
+
+            def create(callback):
+                monitor = FakeMonitor(callback)
+                monitor_refs.append(weakref.ref(monitor))
+                return monitor
+
+            for _ in range(6):
+                rounds.start("FCT", create, run_async=False)
+                rounds.stop()
+                self.assertTrue(rounds.flush_audit())
+                self.assertEqual(rounds.snapshot().save_state, "complete")
+
+            rounds.start("FCT", create, run_async=False)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and any(ref() is not None for ref in monitor_refs[:-1]):
+                gc.collect()
+                time.sleep(0.05)
+            gc.collect()
+            self.assertTrue(all(ref() is None for ref in monitor_refs[:-1]))
+            self.assertEqual(len(rounds.unsaved_rounds()), 1)
+
+    def test_unsaved_tracking_is_limited_to_rounds_created_in_this_coordinator_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            historical = root / "historical-session-from-last-run"
+            historical.mkdir()
+            (historical / "audit.jsonl").write_text("not loaded by current-run tracking\n",
+                                                     encoding="utf-8")
+            rounds = RoundCoordinator(audit_root=root)
+            current = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+
+            tracked = rounds.unsaved_rounds()
+            self.assertEqual([snapshot.round_id for snapshot in tracked], [current.round_id])
+            self.assertFalse(any(snapshot.round_id == historical.name for snapshot in tracked))
 
 
 if __name__ == "__main__":

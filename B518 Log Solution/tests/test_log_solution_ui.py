@@ -207,6 +207,143 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_real_tk_can_select_and_retry_previous_round_without_changing_current_board(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            coordinator = RoundCoordinator(app.events.put, audit_root=session_root)
+            app.rounds = coordinator
+            monitors = []
+
+            class Monitor:
+                def __init__(self, callback, index):
+                    self.callback = callback
+                    self.session = SessionStore("tk-round-{}".format(index), {}, session_root)
+                    self.results = (SlotResult(1),)
+
+                def round_results(self):
+                    return self.results
+
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 10}[kind]
+
+                def update_round_settings(self, settings):
+                    self.session.update_settings(settings)
+
+                def publish_round_event(self, event):
+                    self.session.enqueue_event(event.message, event.detail)
+                    self.callback(event)
+
+                def start(self):
+                    pass
+
+                def stop_collection(self):
+                    pass
+
+                def finish(self):
+                    self.session.enqueue_finish()
+
+                def stop(self):
+                    self.callback(MonitorEvent("stopped", "stopped"))
+
+                def poll_once(self):
+                    pass
+
+            def create(callback):
+                monitor = Monitor(callback, len(monitors))
+                monitors.append(monitor)
+                return monitor
+
+            def pump_until(predicate, timeout=4):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return True
+                    time.sleep(0.01)
+                return predicate()
+
+            try:
+                previous = coordinator.start("FCT", create, run_async=False, capacity=1)
+                app.active_round_id = previous.round_id
+                app._apply_round_snapshot(previous)
+                self.assertTrue(coordinator.flush_audit())
+                self.assertTrue(coordinator.flush_session())
+                original_write = audit_records.os.write
+                first_failure = threading.Event()
+
+                def fail_once(descriptor, content):
+                    if b"cross_round_ui_probe" in content:
+                        first_failure.set()
+                        raise OSError("temporary previous round UI fault")
+                    return original_write(descriptor, content)
+
+                with patch.object(audit_records.os, "write", side_effect=fail_once):
+                    monitors[0].callback(MonitorEvent("cross_round_ui_probe", "old result only"))
+                    self.assertTrue(first_failure.wait(2))
+                    self.assertTrue(pump_until(lambda: coordinator.round_snapshot(
+                        previous.round_id).save_state == "failed"))
+
+                coordinator.stop()
+                current = coordinator.start("FCT", create, run_async=False, capacity=1)
+                app.active_round_id = current.round_id
+                app._apply_round_snapshot(current)
+                app._refresh_unsaved_rounds()
+                label = next(label for label, round_id in app._unsaved_round_ids.items()
+                             if round_id == previous.round_id)
+                app.unsaved_round_choice.set(label)
+                app._update_selected_round_retry()
+                self.assertEqual(str(app.unsaved_round_retry_button["state"]), "normal")
+                self.assertIn("temporary previous round UI fault",
+                              app.unsaved_round_detail.cget("text"))
+
+                retry_entered = threading.Event()
+                release_retry = threading.Event()
+                attempts = []
+
+                def pause_old_retry(descriptor, content):
+                    if b"cross_round_ui_probe" in content:
+                        attempts.append(content)
+                        retry_entered.set()
+                        release_retry.wait(3)
+                    return original_write(descriptor, content)
+
+                with patch.object(audit_records.os, "write", side_effect=pause_old_retry):
+                    app.unsaved_round_retry_button.invoke()
+                    self.assertTrue(retry_entered.wait(2))
+                    self.assertEqual(str(app.unsaved_round_retry_button["state"]), "disabled")
+                    ui_tick = threading.Event()
+                    root.after(0, ui_tick.set)
+                    root.update()
+                    self.assertTrue(ui_tick.is_set())
+                    app.unsaved_round_retry_button.invoke()
+                    self.assertEqual(len(attempts), 1)
+                    release_retry.set()
+                    self.assertTrue(pump_until(
+                        lambda: coordinator.round_snapshot(previous.round_id) is None and
+                        previous.round_id not in app._unsaved_round_ids.values()))
+
+                rebuilt = read_round_audit(monitors[0].session.path / "audit.jsonl")
+                probe = [event for event in rebuilt["events"]
+                         if event["kind"] == "cross_round_ui_probe"]
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertEqual(len(probe), 1)
+                self.assertEqual(probe[0]["round_id"], previous.round_id)
+                self.assertEqual(app.active_round_id, current.round_id)
+                self.assertEqual(coordinator.snapshot().round_id, current.round_id)
+                self.assertTrue(all(result.status == "WAITING"
+                                    for result in coordinator.snapshot().results))
+                self.assertNotIn(previous.round_id, app._unsaved_round_ids.values())
+            finally:
+                coordinator.stop()
+                coordinator.flush_audit()
+                coordinator.flush_session()
+                app.hotkey.close()
+                root.destroy()
+
     def test_running_round_keeps_its_capacity_and_mapping_after_profile_update(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
