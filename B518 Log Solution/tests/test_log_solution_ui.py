@@ -1346,6 +1346,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.callback = callback
                     self.session = SessionStore("close-round", {}, session_root)
                     self.results = (SlotResult(1),)
+                    self.start_count = 0
 
                 def round_results(self):
                     return self.results
@@ -1361,7 +1362,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.callback(event)
 
                 def start(self):
-                    pass
+                    self.start_count += 1
 
                 def stop_collection(self):
                     pass
@@ -1415,8 +1416,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(app._close_window.winfo_exists())
 
                     app.cancel_close()
+                    self.assertFalse(app.hotkey.closed)
                     release.set()
                     self.wait_for(lambda: rounds.round_snapshot(started.round_id).save_state == "complete")
+                    self.assertEqual(monitor_holder["monitor"].start_count, 1)
                     self.assertTrue(root.winfo_exists())
 
                 app.close()
@@ -1425,6 +1428,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 while root_is_alive() and time.monotonic() < deadline:
                     root.update()
                 self.assertFalse(root_is_alive())
+                self.assertTrue(app.hotkey.closed)
                 rebuilt = read_round_audit(monitor_holder["monitor"].session.path / "audit.jsonl")
                 self.assertTrue(rebuilt["audit_complete"])
                 self.assertTrue(any(event["kind"] == "collection_stopped"
@@ -1488,9 +1492,15 @@ class LogSolutionUiTests(unittest.TestCase):
 
             original_write = audit_records.os.write
             fault_enabled = [True]
+            retry_blocked = [False]
+            retry_entered = threading.Event()
+            release_retry = threading.Event()
 
             def persistent_fault(descriptor, content):
                 if fault_enabled[0] and b"collection_stopped" in content:
+                    if retry_blocked[0]:
+                        retry_entered.set()
+                        release_retry.wait(4)
                     raise OSError("persistent close audit fault")
                 return original_write(descriptor, content)
 
@@ -1527,10 +1537,23 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("persistent close audit fault", app._close_error_label.cget("text"))
 
                     failed_generation = rounds.close_status().generation
+                    retry_blocked[0] = True
                     app._close_retry_button.invoke()
                     app._close_retry_button.invoke()
-                    pump_until(lambda: rounds.close_status().status == "failed" and
+                    pump_until(lambda: rounds.close_status().status == "saving" and
                                rounds.close_status().generation > failed_generation and
+                               retry_entered.is_set())
+                    app.cancel_close()
+                    release_retry.set()
+                    cancelled_generation = rounds.close_status().generation
+                    self.assertEqual(rounds.close_status().status, "cancelled")
+                    self.assertFalse(app.hotkey.closed)
+                    self.assertTrue(root_is_alive())
+                    pump_until(lambda: all(not rounds.round_snapshot(round_id).retry_in_progress
+                                           for round_id in (previous.round_id, current.round_id)))
+                    app.close()
+                    pump_until(lambda: rounds.close_status().status == "failed" and
+                               rounds.close_status().generation > cancelled_generation and
                                str(app._close_retry_button["state"]) == "normal")
                     self.assertTrue(root_is_alive())
                     ui_tick = []

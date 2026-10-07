@@ -249,6 +249,10 @@ class MonitoringRound:
             self._finish_if_terminal()
             return self.snapshot()
 
+    def wait_until_prepared(self, timeout: Optional[float] = None) -> bool:
+        """Wait until source setup has either completed or failed."""
+        return self._prepared_event.wait(timeout)
+
     def stop(self) -> RoundSnapshot:
         with self._poll_lock:
             with self._lock:
@@ -1247,7 +1251,7 @@ class RoundCoordinator:
                     round_ids = tuple(round_id for round_id, _round in rounds)
                 waiting_for_preparation = False
                 for _round_id, round_ in rounds:
-                    if not round_._prepared_event.wait(0.05):
+                    if not round_.wait_until_prepared(0.05):
                         waiting_for_preparation = True
                         break
                     if not self._close_attempt_is_current(generation):
