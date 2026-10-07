@@ -363,6 +363,12 @@ class B518LogSolutionApp:
             self._reported_audit_errors = reported
         save_state = getattr(snapshot, "save_state", "saving")
         save_errors = getattr(snapshot, "save_errors", ())
+        reported_save_errors = getattr(self, "_reported_save_errors", set())
+        for error in save_errors:
+            if error not in reported_save_errors:
+                self._log("本輪保存失敗：{}".format(error))
+                reported_save_errors.add(error)
+        self._reported_save_errors = reported_save_errors
         status_text = {
             "waiting": "等待保存",
             "saving": "保存中",

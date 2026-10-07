@@ -142,8 +142,10 @@ class LogSolutionUiTests(unittest.TestCase):
                         if write_number[0] == 1:
                             failed.set()
                             raise OSError("temporary disk fault")
-                        retry_entered.set()
-                        release_retry.wait(2)
+                        if write_number[0] == 2:
+                            retry_entered.set()
+                            release_retry.wait(2)
+                            raise OSError("disk still unavailable")
                     return original_write(descriptor, content)
 
                 with patch.object(audit_records.os, "write", side_effect=inject_fault):
@@ -155,6 +157,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         root.update()
                     self.assertEqual(coordinator.snapshot().save_state, "failed")
                     self.assertEqual(str(app.retry_save_button["state"]), "normal")
+                    self.assertTrue(any("temporary disk fault" in line for line in app.event_lines))
                     coordinator.stop()
 
                     app.retry_save_button.invoke()
@@ -167,6 +170,18 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.retry_save_button.invoke()
                     self.assertEqual(write_number[0], 2)
                     release_retry.set()
+                    deadline = time.monotonic() + 3
+                    while (coordinator.snapshot().save_state != "failed" or
+                           str(app.retry_save_button["state"]) != "normal") and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+                    self.assertEqual(coordinator.snapshot().save_state, "failed")
+                    self.assertEqual(str(app.retry_save_button["state"]), "normal")
+                    ui_tick.clear()
+                    root.after(0, ui_tick.set)
+                    root.update()
+                    self.assertTrue(ui_tick.is_set())
+                    app.retry_save_button.invoke()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "complete" or
                            "完整保存" not in app.save_status.cget("text")) and time.monotonic() < deadline:

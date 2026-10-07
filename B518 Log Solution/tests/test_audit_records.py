@@ -212,6 +212,40 @@ class RoundAuditRecordTests(unittest.TestCase):
                          list(range(1, len(rebuilt["events"]) + 1)))
         self.assertTrue(self.coordinator.snapshot().audit_complete)
 
+    def test_audit_store_initialization_failure_is_retained_and_rebuilt_after_retry(self):
+        original_store = RoundAuditStore
+        attempts = [0]
+
+        def fail_initialization_once(*args, **kwargs):
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise OSError("temporary audit directory failure")
+            return original_store(*args, **kwargs)
+
+        self.coordinator = RoundCoordinator(monotonic=lambda: self.clock[0],
+                                            audit_root=self.audit_root)
+        with patch("monitoring_round.RoundAuditStore", side_effect=fail_initialization_once):
+            started = self.start_round()
+        self.monitors[0].callback(MonitorEvent(
+            "initialization_recovery_probe", "retain before store exists"))
+        self.coordinator.stop()
+
+        failed = self.coordinator.snapshot()
+        self.assertEqual(failed.save_state, "failed")
+        self.assertFalse(failed.audit_complete)
+        self.assertIn("temporary audit directory failure", failed.save_errors[0])
+        self.assertTrue(self.coordinator.retry_saves())
+        self.wait_for_retry_to_finish()
+
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        probe = next(event for event in rebuilt["events"]
+                     if event["kind"] == "initialization_recovery_probe")
+        self.assertEqual(probe["message"], "retain before store exists")
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
+        self.assertEqual(self.coordinator.snapshot().save_state, "complete")
+
     def test_append_completed_before_error_report_is_not_duplicated_on_retry(self):
         started = self.start_round()
         original_write = audit_records.os.write
@@ -293,6 +327,46 @@ class RoundAuditRecordTests(unittest.TestCase):
         rebuilt = read_round_audit(self.audit_path(started.round_id))
         kinds = [event["kind"] for event in rebuilt["events"]]
         self.assertLess(kinds.index("sync_enqueue_probe"), kinds.index("after_sync_enqueue"))
+        self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+
+    def test_audit_events_arriving_during_retry_are_drained_before_complete(self):
+        started = self.start_round()
+        original_append = RoundAuditStore.append_event
+        failed = threading.Event()
+
+        def fail_first_enqueue(store, event, observed_at, elapsed_seconds):
+            if event.kind == "retry_gap" and not failed.is_set():
+                failed.set()
+                raise OSError("temporary synchronous append failure")
+            return original_append(store, event, observed_at, elapsed_seconds)
+
+        with patch.object(RoundAuditStore, "append_event", new=fail_first_enqueue):
+            self.monitors[0].callback(MonitorEvent("retry_gap", "first"))
+            self.coordinator.stop()
+            self.assertTrue(failed.is_set())
+
+        retry_entered = threading.Event()
+        release_retry = threading.Event()
+
+        def hold_recovery(store, event, observed_at, elapsed_seconds):
+            if event.kind == "retry_gap":
+                retry_entered.set()
+                release_retry.wait(2)
+            return original_append(store, event, observed_at, elapsed_seconds)
+
+        with patch.object(RoundAuditStore, "append_event", new=hold_recovery):
+            self.assertTrue(self.coordinator.retry_saves())
+            self.assertTrue(retry_entered.wait(2))
+            self.monitors[0].callback(MonitorEvent("arrived_during_retry", "must be drained"))
+            release_retry.set()
+
+        self.wait_for_retry_to_finish()
+        self.assertEqual(self.coordinator.snapshot().save_state, "complete")
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        kinds = [event["kind"] for event in rebuilt["events"]]
+        self.assertIn("arrived_during_retry", kinds)
+        self.assertEqual(kinds[-1], "save_recovered")
         self.assertEqual([event["sequence"] for event in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
 

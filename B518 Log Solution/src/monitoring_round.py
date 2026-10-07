@@ -175,17 +175,27 @@ class MonitoringRound:
         self._retry_in_progress = False
         self._audit_attach_target: Optional[Path] = None
         self._audit_store = None
+        self._audit_root = Path(audit_root) if audit_root is not None else None
+        self._audit_context = audit_context
         self._audit_condition = threading.Condition()
         self._audit_next_sequence = 1
         self._audit_recovery_events = []
-        if audit_root is not None:
+        self._audit_recovery_replaying = False
+        if self._audit_root is not None:
             try:
-                self._audit_store = RoundAuditStore(
-                    Path(audit_root), self.round_id, station, self._accepted_start_at,
-                    self._started_monotonic, audit_context, on_error=self._audit_write_failed,
-                )
+                self._audit_store = self._create_audit_store()
             except (OSError, AuditRecordError, TypeError, ValueError) as error:
-                self._audit_errors.append(str(error))
+                message = "稽核紀錄初始化失敗：{}".format(error)
+                self._audit_errors.append(message)
+                self._save_errors.append(message)
+                self._save_history.append(message)
+
+    def _create_audit_store(self) -> RoundAuditStore:
+        assert self._audit_root is not None
+        return RoundAuditStore(
+            self._audit_root, self.round_id, self.station, self._accepted_start_at,
+            self._started_monotonic, self._audit_context, on_error=self._audit_write_failed,
+        )
 
     def start(self, run_async: bool = True) -> RoundSnapshot:
         with self._lock:
@@ -356,6 +366,9 @@ class MonitoringRound:
             return self.snapshot()
 
     def snapshot(self) -> RoundSnapshot:
+        with self._audit_condition:
+            audit_recovery_pending = bool(self._audit_recovery_events or
+                                          self._audit_recovery_replaying)
         with self._lock:
             results = tuple(
                 RoundResult(result.slot, result.sn, result.status, result.source, result.updated_at)
@@ -369,7 +382,8 @@ class MonitoringRound:
             audit_pending = self._audit_store.pending if self._audit_store is not None else False
             if self._retry_in_progress:
                 save_state = "saving"
-            elif current_errors or (self._audit_store is not None and self._audit_store.error) or (
+            elif current_errors or audit_recovery_pending or (
+                    self._audit_store is not None and self._audit_store.error) or (
                     self._collection_stopped and not self._monitor_persistence_ready):
                 save_state = "failed"
             elif not self._monitor_persistence_ready:
@@ -387,7 +401,7 @@ class MonitoringRound:
                 tuple(self._pending_conflicts.values()), self._round_alarm, self._round_alarm_ready,
                 not self._monitor_persistence_ready,
                 self._audit_store is not None and not self._save_errors and
-                not session_errors and
+                not session_errors and not audit_recovery_pending and
                 self._audit_store.error is None and not self._audit_store.pending,
                 tuple(self._audit_errors),
                 audit_pending,
@@ -406,6 +420,8 @@ class MonitoringRound:
             monitor = self._monitor
             session = getattr(monitor, "session", None)
             self._retry_in_progress = True
+        with self._audit_condition:
+            self._audit_recovery_replaying = True
         worker = threading.Thread(target=self._retry_saves_worker, args=(session,), daemon=True)
         worker.start()
         return True
@@ -416,11 +432,18 @@ class MonitoringRound:
             if callable(retry_session):
                 retry_session()
             store = self._audit_store
+            if store is None and self._audit_root is not None:
+                store = self._create_audit_store()
+                self._audit_store = store
             if store is not None and store.error is not None:
                 store.retry()
-            with self._audit_condition:
-                recovery_events = tuple(self._audit_recovery_events)
-            for round_event, observed_at, elapsed_seconds in recovery_events:
+            while True:
+                with self._audit_condition:
+                    recovery = (self._audit_recovery_events[0]
+                                if self._audit_recovery_events else None)
+                if recovery is None:
+                    break
+                round_event, observed_at, elapsed_seconds = recovery
                 event = round_event.event
                 store.append_event(
                     AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
@@ -428,7 +451,8 @@ class MonitoringRound:
                     observed_at, elapsed_seconds,
                 )
                 with self._audit_condition:
-                    self._audit_recovery_events.remove((round_event, observed_at, elapsed_seconds))
+                    if self._audit_recovery_events and self._audit_recovery_events[0] == recovery:
+                        self._audit_recovery_events.pop(0)
                     if self._audit_next_sequence == round_event.sequence:
                         self._audit_next_sequence += 1
                     self._audit_condition.notify_all()
@@ -442,17 +466,23 @@ class MonitoringRound:
                 audit_ok = store.flush(30.0)
             recovered = session_ok and audit_ok and not self._audit_attach_target
             if recovered:
-                with self._lock:
-                    recovered_errors = tuple(self._save_history)
-                    self._save_errors.clear()
-                self._append_event(MonitorEvent(
-                    "save_recovered", "本輪 Session 與稽核紀錄已完成保存復原",
-                    detail={"round_id": self.round_id,
-                            "recovered_errors": list(recovered_errors)},
-                ))
+                with self._audit_condition:
+                    self._audit_recovery_replaying = False
+                    if self._audit_recovery_events:
+                        recovered = False
+                if recovered:
+                    with self._lock:
+                        recovered_errors = tuple(self._save_history)
+                        self._save_errors.clear()
+                        self._audit_errors.clear()
+                    self._append_event(MonitorEvent(
+                        "save_recovered", "本輪 Session 與稽核紀錄已完成保存復原",
+                        detail={"round_id": self.round_id,
+                                "recovered_errors": list(recovered_errors)},
+                    ))
                 session_ok = session_flush(30.0) if callable(session_flush) else True
                 audit_ok = store.flush(30.0) if store is not None else True
-                recovered = session_ok and audit_ok
+                recovered = recovered and session_ok and audit_ok
             with self._lock:
                 if recovered:
                     self._save_errors.clear()
@@ -468,6 +498,8 @@ class MonitoringRound:
         finally:
             with self._lock:
                 self._retry_in_progress = False
+            with self._audit_condition:
+                self._audit_recovery_replaying = False
 
     def flush_audit(self, timeout: Optional[float] = 10.0) -> bool:
         """Wait for the ordered audit writer at explicit read/close boundaries."""
@@ -854,7 +886,7 @@ class MonitoringRound:
 
     def _persist_audit_event(self, round_event: RoundEvent) -> None:
         store = self._audit_store
-        if store is None:
+        if store is None and self._audit_root is None:
             return
         event = round_event.event
         failure_message = None
@@ -863,7 +895,9 @@ class MonitoringRound:
         with self._audit_condition:
             while round_event.sequence != self._audit_next_sequence:
                 self._audit_condition.wait()
-            if self._audit_recovery_events:
+            if store is None:
+                failure_message = "稽核紀錄尚未初始化；本筆已依序保留"
+            elif self._audit_recovery_events or self._audit_recovery_replaying:
                 failure_message = "前筆輪次稽核紀錄尚待復原；本筆已依序保留"
             else:
                 try:

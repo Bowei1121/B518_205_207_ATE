@@ -111,6 +111,16 @@ class SessionStore:
 
     def _enqueue_write(self, operation: str, arguments: tuple, label: str) -> None:
         if not self._async_writes:
+            with self._write_condition:
+                worker_active = self._write_thread is not None and self._write_thread.is_alive()
+                if self._write_errors or self._recovery_writes:
+                    self._recovery_writes.append((operation, arguments, label))
+                    return
+                if worker_active or self._write_pending:
+                    self._write_pending += 1
+                    self._write_queue.put((operation, arguments, label))
+                    self._ensure_write_worker_locked()
+                    return
             try:
                 getattr(self, operation)(*arguments)
             except OSError as error:
@@ -120,11 +130,14 @@ class SessionStore:
         with self._write_condition:
             self._write_pending += 1
             self._write_queue.put((operation, arguments, label))
-            if self._write_thread is None or not self._write_thread.is_alive():
-                self._write_thread = threading.Thread(target=self._write_worker,
-                                                      name="session-store-{}".format(self.path.name),
-                                                      daemon=True)
-                self._write_thread.start()
+            self._ensure_write_worker_locked()
+
+    def _ensure_write_worker_locked(self) -> None:
+        if self._write_thread is None or not self._write_thread.is_alive():
+            self._write_thread = threading.Thread(target=self._write_worker,
+                                                  name="session-store-{}".format(self.path.name),
+                                                  daemon=True)
+            self._write_thread.start()
 
     def _write_worker(self) -> None:
         while True:
@@ -150,11 +163,16 @@ class SessionStore:
             try:
                 getattr(self, operation)(*arguments)
             except OSError as error:
-                self._remember_failed_write(operation, arguments, label, error)
+                self._remember_failed_write(operation, arguments, label, error,
+                                             prepend=not queued)
                 if queued:
                     self._write_queue.task_done()
                 with self._write_condition:
                     self._write_pending -= 1
+                    if not queued:
+                        # The current and remaining retained writes are excluded from
+                        # pending while a failed recovery waits for the next retry.
+                        self._write_pending -= max(0, len(self._recovery_writes) - 1)
                     self._write_thread = None
                     self._write_condition.notify_all()
                 return
@@ -169,12 +187,17 @@ class SessionStore:
         self.path.mkdir(parents=True, exist_ok=True)
         self._write_metadata()
 
-    def _remember_failed_write(self, operation, arguments, label, error, notify=True):
+    def _remember_failed_write(self, operation, arguments, label, error, notify=True,
+                               prepend=False):
         message = "{}：{}".format(label, error)
         with self._write_condition:
             self._write_errors.append(message)
             self._write_history.append(message)
-            self._recovery_writes.append((operation, arguments, label))
+            failed_write = (operation, arguments, label)
+            if prepend:
+                self._recovery_writes.appendleft(failed_write)
+            else:
+                self._recovery_writes.append(failed_write)
             self._write_condition.notify_all()
         if notify and self._on_write_error is not None:
             self._on_write_error(label, error)
@@ -201,11 +224,7 @@ class SessionStore:
                 return True
             self._write_errors = []
             self._write_pending += len(self._recovery_writes)
-            if self._write_thread is None or not self._write_thread.is_alive():
-                self._write_thread = threading.Thread(target=self._write_worker,
-                                                      name="session-store-{}".format(self.path.name),
-                                                      daemon=True)
-                self._write_thread.start()
+            self._ensure_write_worker_locked()
             self._write_condition.notify_all()
         return True
 
