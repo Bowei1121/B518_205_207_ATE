@@ -1444,12 +1444,13 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             rounds = RoundCoordinator(app.events.put, audit_root=session_root)
             app.rounds = rounds
-            holder = {}
+            monitors = []
 
             class Monitor:
                 def __init__(self, callback):
                     self.callback = callback
-                    self.session = SessionStore("failed-close-round", {}, session_root)
+                    self.session = SessionStore("failed-close-round-{}".format(len(monitors)),
+                                                {}, session_root)
                     self.results = (SlotResult(1),)
 
                 def round_results(self):
@@ -1481,16 +1482,16 @@ class LogSolutionUiTests(unittest.TestCase):
                     pass
 
             def create(callback):
-                holder["monitor"] = Monitor(callback)
-                return holder["monitor"]
+                monitor = Monitor(callback)
+                monitors.append(monitor)
+                return monitor
 
             original_write = audit_records.os.write
-            failed = [False]
+            fault_enabled = [True]
 
-            def fail_once(descriptor, content):
-                if b"collection_stopped" in content and not failed[0]:
-                    failed[0] = True
-                    raise OSError("temporary close audit fault")
+            def persistent_fault(descriptor, content):
+                if fault_enabled[0] and b"collection_stopped" in content:
+                    raise OSError("persistent close audit fault")
                 return original_write(descriptor, content)
 
             def pump_until(predicate, timeout=4):
@@ -1509,24 +1510,47 @@ class LogSolutionUiTests(unittest.TestCase):
                     return False
 
             try:
-                started = rounds.start("FCT", create, run_async=False, capacity=1)
-                with patch.object(audit_records.os, "write", side_effect=fail_once):
+                previous = rounds.start("FCT", create, run_async=False, capacity=1)
+                with patch.object(audit_records.os, "write", side_effect=persistent_fault):
+                    rounds.stop()
+                    pump_until(lambda: rounds.round_snapshot(previous.round_id).save_state == "failed")
+                    current = rounds.start("FCT", create, run_async=False, capacity=1)
+                    self.assertNotEqual(previous.round_id, current.round_id)
+                    app.active_round_id = current.round_id
                     app.close()
                     pump_until(lambda: rounds.close_status().status == "failed" and
                                str(app._close_retry_button["state"]) == "normal")
-                    snapshot = rounds.round_snapshot(started.round_id)
-                    self.assertFalse(snapshot.audit_complete)
+                    self.assertFalse(rounds.round_snapshot(previous.round_id).audit_complete)
+                    self.assertFalse(rounds.round_snapshot(current.round_id).audit_complete)
                     self.assertTrue(root_is_alive())
                     self.assertEqual(str(app._close_retry_button["state"]), "normal")
-                    self.assertIn("temporary close audit fault", app._close_error_label.cget("text"))
+                    self.assertIn("persistent close audit fault", app._close_error_label.cget("text"))
+
+                    failed_generation = rounds.close_status().generation
+                    app._close_retry_button.invoke()
+                    app._close_retry_button.invoke()
+                    pump_until(lambda: rounds.close_status().status == "failed" and
+                               rounds.close_status().generation > failed_generation and
+                               str(app._close_retry_button["state"]) == "normal")
+                    self.assertTrue(root_is_alive())
+                    ui_tick = []
+                    root.after(0, lambda: ui_tick.append(True))
+                    root.update()
+                    self.assertEqual(ui_tick, [True])
+                    fault_enabled[0] = False
 
                 app._close_retry_button.invoke()
                 pump_until(lambda: rounds.close_status().status == "complete")
                 pump_until(lambda: not root_is_alive())
-                rebuilt = read_round_audit(holder["monitor"].session.path / "audit.jsonl")
-                self.assertTrue(rebuilt["audit_complete"])
-                self.assertEqual([event["kind"] for event in rebuilt["events"]].count("collection_stopped"), 1)
-                self.assertTrue(any(event["kind"] == "save_recovered" for event in rebuilt["events"]))
+                for round_id, monitor in zip((previous.round_id, current.round_id), monitors):
+                    rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                    self.assertTrue(rebuilt["audit_complete"])
+                    self.assertEqual([event["kind"] for event in rebuilt["events"]].count(
+                        "collection_stopped"), 1)
+                    self.assertTrue(any(event["kind"] == "save_recovered"
+                                        for event in rebuilt["events"]))
+                    self.assertTrue(all(event["detail"].get("round_id", round_id) == round_id
+                                        for event in rebuilt["events"]))
             finally:
                 if root_is_alive():
                     app.hotkey.close()

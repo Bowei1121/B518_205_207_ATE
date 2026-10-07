@@ -1626,7 +1626,12 @@ class MonitoringRoundTests(unittest.TestCase):
 
     def test_graceful_close_waits_for_every_current_run_round_to_be_durable(self):
         with tempfile.TemporaryDirectory() as temporary:
-            rounds = RoundCoordinator(audit_root=Path(temporary))
+            root = Path(temporary)
+            historical = root / "prior-run-session"
+            historical.mkdir()
+            (historical / "audit.jsonl").write_text("historical data remains untouched\n",
+                                                     encoding="utf-8")
+            rounds = RoundCoordinator(audit_root=root)
             factory = lambda callback: FakeMonitor(callback)
             first = rounds.start("FCT", factory, run_async=False)
             rounds.stop()
@@ -1644,6 +1649,9 @@ class MonitoringRoundTests(unittest.TestCase):
             closed = rounds.close_status()
             self.assertEqual(closed.status, "complete")
             self.assertIn(second.round_id, closed.round_ids)
+            self.assertNotIn(historical.name, closed.round_ids)
+            self.assertEqual((historical / "audit.jsonl").read_text(encoding="utf-8"),
+                             "historical data remains untouched\n")
             for round_id in {first.round_id, second.round_id}:
                 snapshot = rounds.round_snapshot(round_id)
                 audit = read_round_audit(Path(temporary) / round_id / "audit.jsonl")
@@ -1678,6 +1686,27 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(rounds.close_status().status, "complete")
             self.assertEqual(rounds.close_status().round_ids, (started.round_id,))
             self.assertTrue(rounds.round_snapshot(started.round_id).audit_complete)
+
+    def test_source_preparation_failure_is_audited_before_close_completes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            entered = threading.Event()
+            rounds = RoundCoordinator(audit_root=Path(temporary))
+
+            def fail_preparation(_callback):
+                entered.set()
+                raise RuntimeError("source setup fault")
+
+            started = rounds.start("FCT", fail_preparation, run_async=True)
+            self.assertTrue(entered.wait(2))
+            rounds.request_close()
+
+            deadline = time.monotonic() + 3
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+            rebuilt = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
+            self.assertTrue(rebuilt["audit_complete"])
+            self.assertTrue(any(event["kind"] == "start_failed" for event in rebuilt["events"]))
 
     def test_close_recovers_a_failed_previous_round_and_current_round_without_crossing_events(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1730,6 +1759,7 @@ class MonitoringRoundTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             stop_entered = threading.Event()
             release_stop = threading.Event()
+            stop_finished = threading.Event()
             holder = {}
 
             class SlowStopMonitor(FakeMonitor):
@@ -1737,6 +1767,7 @@ class MonitoringRoundTests(unittest.TestCase):
                     stop_entered.set()
                     release_stop.wait(3)
                     super().stop()
+                    stop_finished.set()
 
             rounds = RoundCoordinator(audit_root=Path(temporary))
             first = rounds.start("FCT", lambda callback: holder.setdefault(
@@ -1750,10 +1781,26 @@ class MonitoringRoundTests(unittest.TestCase):
             deadline = time.monotonic() + 2
             while rounds.snapshot().state.value == "RUNNING" and time.monotonic() < deadline:
                 threading.Event().wait(0.01)
+            self.assertTrue(stop_finished.wait(2))
             self.assertTrue(rounds.flush_audit())
             next_round = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
             self.assertNotEqual(next_round.round_id, first.round_id)
             self.assertTrue(accepted.generation < rounds.close_status().generation)
+
+    def test_successful_flush_does_not_allow_close_when_audit_is_incomplete(self):
+        rounds = RoundCoordinator()
+        started = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+        rounds.stop()
+        self.assertTrue(rounds.flush_audit())
+        self.assertFalse(rounds.round_snapshot(started.round_id).audit_complete)
+
+        rounds.request_close()
+
+        deadline = time.monotonic() + 2
+        while rounds.close_status().status != "failed" and time.monotonic() < deadline:
+            threading.Event().wait(0.01)
+        self.assertEqual(rounds.close_status().status, "failed")
+        self.assertIn("audit_complete 仍為 false", rounds.close_status().error)
 
 
 if __name__ == "__main__":

@@ -556,10 +556,24 @@ class MonitoringRound:
             self._prepare_monitor()
         except Exception as error:
             with self._lock:
+                monitor = self._monitor
+            session = getattr(monitor, "session", None)
+            session_flush = getattr(session, "flush", None)
+            try:
+                session_saved = session_flush(None) if callable(session_flush) else True
+            except (OSError, RuntimeError, TypeError, ValueError):
+                session_saved = False
+            with self._lock:
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
                 self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
+                if session_saved:
+                    self._monitor_persistence_ready = True
+                else:
+                    message = "啟動失敗後 Session 尚未完整保存"
+                    self._save_errors.append(message)
+                    self._save_history.append(message)
             self._append_event(MonitorEvent(
                 "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
                 detail={"round_id": self.round_id, "reason": "start_failed",
@@ -1257,6 +1271,15 @@ class RoundCoordinator:
                         "{}：{}".format(snapshot.round_id[:10],
                                         snapshot.save_errors[0] if snapshot.save_errors else "保存尚未完整")
                         for snapshot in failed)
+                    self._set_close_failure(generation, round_ids, details)
+                    return
+                audit_incomplete = tuple(snapshot for snapshot in incomplete
+                                         if snapshot.save_state == "complete" and
+                                         not snapshot.audit_complete)
+                if audit_incomplete:
+                    details = "; ".join(
+                        "{}：audit_complete 仍為 false".format(snapshot.round_id[:10])
+                        for snapshot in audit_incomplete)
                     self._set_close_failure(generation, round_ids, details)
                     return
                 threading.Event().wait(0.05)
