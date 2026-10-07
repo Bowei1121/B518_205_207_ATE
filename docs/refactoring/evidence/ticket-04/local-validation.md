@@ -41,4 +41,4 @@
 
 固定基準 `ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5` 的 Standards／Spec 雙軸複審已完成，均無未解問題。Standards 初審指出 coordinator 直接使用準備事件私有欄位，改以 `MonitoringRound.wait_until_prepared()` 公開能力處理；複審指出 operator 狀態判定重複及 `CloseSnapshot.error` 名稱不符合 waiting 訊息，已抽出共用判定並改名 `message`。Spec 初審指出關閉完成快照與人工操作間有競爭，及缺少真正 Tk 來源準備案例；已加入輪次原子完成凍結、Event 控制的競爭回歸與真正 Tk 準備案例，Spec 最終複審確認已解決且無其他發現。
 
-目前最新實作 commit `7a241be380b55cd237908554d60fcb584f3ebfc8` 及測試 fixture follow-up `60ddc79c27c1517b416b2748729b4e23784d2ab2` 已同步至 Gitea、GitHub；最終雙軸複審涵蓋此 branch HEAD，無未解問題。初次合併後完整套件發現上述測試 fixture 隔離問題，故分支保留並補上修正；Ticket 分支完整測試現已通過。最終合併後驗證、合併 SHA、同步 refs 與分支清理結果將在此處追加。
+最終雙軸複審涵蓋 Ticket branch HEAD `faf0c4cae281150d7d8620ed1ac1e74821012c61`，無未解問題。第一次合併 commit `3e4f0c7921125f07ab6bb740184d4932c282a638` 後，完整套件發現共享測試偏好檔污染；保留分支、修復 fixture，並在 branch HEAD `60ddc79` 執行完整 225 tests 通過後重新合併。重新 fetch 確認主線工作樹乾淨且 Gitea／GitHub refs 一致於 `9bbedf0809545193a4df388a865f5f1e71e3617d`，該主線是固定基準的文件更新，沒有程式分歧。最終合併 commit `2172f8f3603532122edbc82fc370c79222318840`（合併主線 `3e4f0c7` 與 branch `faf0c4c`）。合併後 `python3 scripts/run_tests.py` 再次通過 225 tests（41.980 秒）；`compileall`、`git diff --check` 通過。合併推送至兩個目的地及安全清理本地／遠端 `round/ticket-04` 待完成。

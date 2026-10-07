@@ -17,7 +17,7 @@ Part of [規格 Issue #1](https://github.com/Bowei1121/B518_205_207_ATE/issues/1
 - [x] 明確提供關閉保存狀態供後續清理協調，關閉不掃描歷史 Session，不變更產品結果放行條件。
 - [x] 真正 Tk 驗證成功、暫時／持續失敗、跨輪失敗、取消與再次關閉全部流程。
 
-驗收證據：見 [Ticket 04 本機驗收紀錄](../evidence/ticket-04/local-validation.md)。固定 review 基準 `ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5`；225 項完整套件與 Standards／Spec 雙軸複審通過。實作提交 `7a241be` 及測試 fixture follow-up `60ddc79` 已推送至 Gitea 與 GitHub；合併後 SHA 及分支清理結果待追加。
+驗收證據：見 [Ticket 04 本機驗收紀錄](../evidence/ticket-04/local-validation.md)。固定 review 基準 `ddd19f979dc1d241e3bf66c45f15ff4c0e831bb5`；225 項完整套件與 Standards／Spec 雙軸複審通過。最終合併 commit `2172f8f3603532122edbc82fc370c79222318840`，合併後 225 項完整套件通過；主線推送同步及分支清理結果見驗收紀錄。
 
 ## Blocked by
 
