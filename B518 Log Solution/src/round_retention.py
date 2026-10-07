@@ -168,11 +168,14 @@ class RoundRetentionStore:
 
         try:
             self._resume_active_plan(results, retention_days)
+            resumed_round_ids = set(self._load_ledger().get("active_plans", {}))
             candidates, rejected = self._discover()
             results.extend(rejected)
             now = normalize_archive_time(self._wall_clock())
             cutoff = now - timedelta(days=retention_days)
             for round_id, manifests, components in candidates:
+                if round_id in resumed_round_ids:
+                    continue
                 if not self._cleanup_allowed():
                     results.append(RetentionRoundResult(round_id, "skipped", "關閉保存期間暫停清理"))
                     continue
@@ -295,7 +298,8 @@ class RoundRetentionStore:
             "run_id": run_id, "round_id": round_id,
             "retention_days": retention_days, "paths": expected,
             "path_order": list(paths), "next_index": 0,
-            "archived_at": min(item.archived_at for item in fresh)}
+            "archived_at": min(item.archived_at for item in fresh),
+            "staged_name": None, "staged_index": None, "staged_state": None}
         self._write_ledger(ledger)
         for index, raw_path in enumerate(paths):
             if not self._cleanup_allowed():
@@ -308,11 +312,19 @@ class RoundRetentionStore:
             path = Path(raw_path)
             record = expected[raw_path]
             ledger = self._load_ledger()
-            ledger["active_plans"][round_id]["next_index"] = index
-            self._write_ledger(ledger)
-            self._unlink_managed_file(path, record, archived)
+            plan = ledger["active_plans"][round_id]
+            staged_name = plan.get("staged_name") if plan.get("staged_index") == index else None
+            if staged_name is None:
+                staged_name = ".round-retention-{}".format(uuid.uuid4().hex)
+                plan.update(staged_name=staged_name, staged_index=index, staged_state="planned")
+                self._write_ledger(ledger)
+            self._unlink_managed_file(
+                path, record, archived, staged_name=staged_name,
+                stage_verified=lambda: self._mark_stage_verified(round_id, index))
             ledger = self._load_ledger()
-            ledger["active_plans"][round_id]["next_index"] = index + 1
+            plan = ledger["active_plans"][round_id]
+            plan["next_index"] = index + 1
+            plan.update(staged_name=None, staged_index=None, staged_state=None)
             self._write_ledger(ledger)
         ledger = self._load_ledger()
         ledger["active_plans"][round_id]["deletion_complete"] = True
@@ -333,18 +345,22 @@ class RoundRetentionStore:
                 continue
             try:
                 archived_at = datetime.fromisoformat(plan["archived_at"])
-                current = normalize_archive_time(self._wall_clock())
-                current_days = self._effective_retention_days()
-                if (archived_at.tzinfo is None or archived_at.utcoffset() is None or
-                        archived_at + timedelta(days=current_days) > current):
-                    raise ValueError("目前保存期限不再允許繼續中斷的刪除計畫")
                 paths = plan["path_order"]
                 expected = plan["paths"]
                 next_index = plan["next_index"]
+                staged_name = plan.get("staged_name")
+                staged_index = plan.get("staged_index")
+                staged_state = plan.get("staged_state")
                 if (not isinstance(paths, list) or not isinstance(expected, dict) or
                         not isinstance(next_index, int) or not 0 <= next_index <= len(paths) or
                         plan.get("round_id") != round_id or
                         set(paths) != set(expected) or
+                        ((staged_name is None) != (staged_index is None)) or
+                        (staged_name is not None and
+                         (not isinstance(staged_name, str) or
+                          not staged_name.startswith(".round-retention-") or
+                          staged_state not in {"planned", "verified"} or
+                          staged_index != next_index)) or
                         any(Path(raw_path).name not in {
                             "audit.jsonl", "session.json", "events.log", "results.csv",
                         "round-archive.json"} for raw_path in paths)):
@@ -356,7 +372,26 @@ class RoundRetentionStore:
                     results.append(RetentionRoundResult(round_id, "deleted",
                                                         "刪除已完成，補寫先前中斷的摘要"))
                     continue
-                self._validate_resume_directories(paths, next_index)
+                staged_path = (Path(paths[staged_index]).with_name(staged_name)
+                               if staged_name is not None else None)
+                current = normalize_archive_time(self._wall_clock())
+                current_days = self._effective_retention_days()
+                still_expired = (archived_at.tzinfo is not None and
+                                 archived_at.utcoffset() is not None and
+                                 archived_at + timedelta(days=current_days) <= current)
+                if not still_expired:
+                    if staged_path is not None:
+                        original_path = Path(paths[staged_index])
+                        self._restore_staged_file(
+                            original_path, staged_path, expected[str(original_path)])
+                        plan.update(staged_name=None, staged_index=None, staged_state=None)
+                        ledger["active_plans"][round_id] = plan
+                        self._write_ledger(ledger)
+                    results.append(RetentionRoundResult(
+                        round_id, "skipped",
+                        "目前保存期限尚未到期；已還原中斷時的暫置資料並保留其餘進度"))
+                    continue
+                self._validate_resume_directories(paths, next_index, staged_path)
                 for index, raw_path in enumerate(paths):
                     current_days = self._effective_retention_days()
                     if archived_at + timedelta(days=current_days) > normalize_archive_time(
@@ -367,6 +402,9 @@ class RoundRetentionStore:
                         raise ValueError("復原計畫路徑已越界或含符號連結：{}（管理根目錄 {}）".format(
                             path, self.root))
                     current_record = self._managed_file_record(path)
+                    stage = (Path(raw_path).with_name(staged_name)
+                             if staged_name is not None and staged_index == index else None)
+                    staged_record = self._managed_file_record(stage) if stage is not None else None
                     if current_record is not None:
                         if current_record != expected[raw_path]:
                             raise ValueError("復原計畫中的剩餘檔案內容已變更")
@@ -374,12 +412,42 @@ class RoundRetentionStore:
                             raise ValueError("已完成的刪除步驟意外重新出現")
                         if index > next_index:
                             raise ValueError("中斷進度與剩餘檔案不一致")
-                        plan["next_index"] = index
-                        ledger["active_plans"][round_id] = plan
-                        self._write_ledger(ledger)
-                        self._unlink_managed_file(path, expected[raw_path], archived_at)
+                        if staged_record is not None:
+                            raise ValueError("原檔與持久暫置檔同時存在，停止復原")
+                        if stage is None:
+                            stage = path.with_name(".round-retention-{}".format(uuid.uuid4().hex))
+                            staged_name = stage.name
+                            staged_index = index
+                            staged_state = "planned"
+                            plan.update(staged_name=staged_name, staged_index=index,
+                                        staged_state=staged_state)
+                            ledger["active_plans"][round_id] = plan
+                            self._write_ledger(ledger)
+                        self._unlink_managed_file(
+                            path, expected[raw_path], archived_at, staged_name=stage.name,
+                            stage_verified=lambda rid=round_id, idx=index:
+                                self._mark_stage_verified(rid, idx))
                         plan["next_index"] = index + 1
                         next_index = index + 1
+                        plan.update(staged_name=None, staged_index=None, staged_state=None)
+                        staged_name = staged_index = staged_state = None
+                        ledger["active_plans"][round_id] = plan
+                        self._write_ledger(ledger)
+                    elif staged_record is not None:
+                        if staged_record != expected[raw_path]:
+                            raise ValueError("持久暫置檔內容或身分已變更")
+                        if staged_state != "verified":
+                            plan["staged_state"] = "verified"
+                            ledger["active_plans"][round_id] = plan
+                            self._write_ledger(ledger)
+                        self._unlink_managed_file(
+                            path, expected[raw_path], archived_at, staged_name=stage.name,
+                            stage_verified=lambda rid=round_id, idx=index:
+                                self._mark_stage_verified(rid, idx))
+                        plan["next_index"] = index + 1
+                        next_index = index + 1
+                        plan.update(staged_name=None, staged_index=None, staged_state=None)
+                        staged_name = staged_index = staged_state = None
                         ledger["active_plans"][round_id] = plan
                         self._write_ledger(ledger)
                     elif index > next_index:
@@ -387,8 +455,11 @@ class RoundRetentionStore:
                     elif index == next_index:
                         # The durable intent was written immediately before unlink.
                         # A crash may have occurred after unlink and before progress update.
+                        if staged_state != "verified":
+                            raise ValueError("原檔與暫置檔均缺少，無法證明刪除已完成")
                         plan["next_index"] = index + 1
                         next_index = index + 1
+                        plan.update(staged_name=None, staged_index=None, staged_state=None)
                         ledger["active_plans"][round_id] = plan
                         self._write_ledger(ledger)
                 plan["deletion_complete"] = True
@@ -399,12 +470,14 @@ class RoundRetentionStore:
             except Exception as error:
                 results.append(RetentionRoundResult(round_id, "failed", "中斷刪除復原失敗：{}".format(error)))
 
-    def _validate_resume_directories(self, paths, next_index: int) -> None:
+    def _validate_resume_directories(self, paths, next_index: int, staged_path=None) -> None:
         """Reject new or unknown files before resuming an interrupted round delete."""
         remaining = {}
         for raw_path in paths[next_index:]:
             path = Path(raw_path)
             remaining.setdefault(path.parent, set()).add(path.name)
+        if staged_path is not None:
+            remaining.setdefault(staged_path.parent, set()).add(staged_path.name)
         for directory in {Path(raw_path).parent for raw_path in paths}:
             if not self._safe_target(directory):
                 raise ValueError("復原計畫目錄已越界或含符號連結")
@@ -452,8 +525,66 @@ class RoundRetentionStore:
         finally:
             os.close(descriptor)
 
+    def _mark_stage_verified(self, round_id: str, index: int) -> None:
+        ledger = self._load_ledger()
+        plan = ledger.get("active_plans", {}).get(round_id)
+        if plan is None or plan.get("staged_index") != index:
+            raise ValueError("持久暫置進度已變更")
+        plan["staged_state"] = "verified"
+        self._write_ledger(ledger)
+
+    def _restore_staged_file(self, original_path: Path, staged_path: Path,
+                             expected: dict) -> None:
+        """Restore a verified quarantine entry when a newer deadline protects it."""
+        if not self._safe_target(original_path) or not self._safe_target(staged_path):
+            raise ValueError("期限更新後無法安全還原越界或含符號連結的暫置資料")
+        descriptor, original_name = self._managed_parent_fd(original_path)
+        existing = None
+        staged_fd = None
+        try:
+            try:
+                try:
+                    existing = _openat(
+                        descriptor, original_name,
+                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                        getattr(os, "O_NONBLOCK", 0))
+                except FileNotFoundError:
+                    existing = None
+                try:
+                    staged_fd = _openat(
+                        descriptor, staged_path.name,
+                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                        getattr(os, "O_NONBLOCK", 0))
+                except FileNotFoundError:
+                    staged_fd = None
+                if existing is not None:
+                    opened = os.fstat(existing)
+                    if not stat.S_ISREG(opened.st_mode) or _hash_fd(existing) != expected:
+                        raise ValueError("期限更新時原路徑內容或身分已變更")
+                    if staged_fd is not None:
+                        raise ValueError("期限更新時原路徑與暫置檔同時存在，保留資料")
+                    # Handles interruption before rename and after restore but
+                    # before the cleared intent reaches the durable ledger.
+                else:
+                    if staged_fd is None:
+                        raise ValueError("期限更新時原路徑與暫置檔均缺少，無法安全還原")
+                    opened = os.fstat(staged_fd)
+                    if not stat.S_ISREG(opened.st_mode) or _hash_fd(staged_fd) != expected:
+                        raise ValueError("期限更新時暫置資料完整性驗證失敗")
+            finally:
+                if existing is not None:
+                    os.close(existing)
+                if staged_fd is not None:
+                    os.close(staged_fd)
+            if existing is None:
+                _rename_exclusive(descriptor, staged_path.name, original_name)
+        finally:
+            os.close(descriptor)
+
     def _unlink_managed_file(self, path: Path, expected: dict,
-                             archived_at: Optional[datetime] = None) -> None:
+                             archived_at: Optional[datetime] = None,
+                             staged_name: Optional[str] = None,
+                             stage_verified=None) -> None:
         descriptor, name = self._managed_parent_fd(path)
         file_descriptor = None
         try:
@@ -462,26 +593,40 @@ class RoundRetentionStore:
                     descriptor, name,
                     os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
             except FileNotFoundError:
+                file_descriptor = None
+            staged_name = staged_name or ".round-retention-{}".format(uuid.uuid4().hex)
+            try:
+                staged_fd = _openat(descriptor, staged_name,
+                                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                                    getattr(os, "O_NONBLOCK", 0))
+                os.close(staged_fd)
+                staged_fd = None
+                staged_exists = True
+            except FileNotFoundError:
+                staged_exists = False
+            if file_descriptor is None and not staged_exists:
                 return
-            original = os.fstat(file_descriptor)
-            if not stat.S_ISREG(original.st_mode):
+            original = os.fstat(file_descriptor) if file_descriptor is not None else None
+            if original is not None and not stat.S_ISREG(original.st_mode):
                 raise ValueError("清理目標不是一般檔案或已成為符號連結")
-            if _hash_fd(file_descriptor) != expected:
+            if original is not None and _hash_fd(file_descriptor) != expected:
                 raise ValueError("刪除前檔案內容或身分已變更")
-
-            staged_name = ".round-retention-{}".format(uuid.uuid4().hex)
-            _rename_exclusive(descriptor, name, staged_name)
+            if not staged_exists:
+                _rename_exclusive(descriptor, name, staged_name)
             staged_fd = _openat(descriptor, staged_name,
                                 os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
                                 getattr(os, "O_NONBLOCK", 0))
             try:
                 opened = os.fstat(staged_fd)
-                if (opened.st_dev, opened.st_ino) != (original.st_dev, original.st_ino):
+                if (original is not None and
+                        (opened.st_dev, opened.st_ino) != (original.st_dev, original.st_ino)):
                     raise ValueError("刪除目標在驗證後被替換")
                 if _hash_fd(staged_fd) != expected:
                     raise ValueError("刪除目標在驗證後內容已變更")
             finally:
                 os.close(staged_fd)
+            if stage_verified is not None:
+                stage_verified()
 
             def unlink_stage():
                 _unlinkat(descriptor, staged_name)

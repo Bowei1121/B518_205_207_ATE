@@ -83,3 +83,11 @@
 - Ticket 06 五項驗收均有真實暫存偏好檔、新 Store 磁碟重讀、真正 Tk Entry／Button 操作及 Session 檔案前後比對證據。舊格式缺少欄位及全新偏好檔均預設 365；測試涵蓋 180、730、無效輸入、原子替換失敗、profile save/import/export、跨重啟與設定失敗。最終程式／測試 commit `70db40709ade55d4605959df4207afaccce3ebed` 完整 `python3 scripts/run_tests.py` 248 tests 通過（38.673 秒），`compileall`、`git diff --check` 通過。Repository 無型別檢查設定，未宣稱型別檢查通過。真正 Tk 測試於 macOS 15.7.9、Python 3.8.10 桌面工作階段執行。
 - Standards／Spec 固定基準雙軸複審均無未解問題。首輪 Standards 指出正整數驗證重複，已改由 Store 作唯一規則來源並重跑受影響測試及完整套件。Ticket 06 本機驗收文件見 [Ticket 06 驗收紀錄](evidence/ticket-06/local-validation.md)。
 - 程式／測試 commits `475a4e4`、`5e3a962`、`32ceaf8`、`70db407` 及分支驗收文件 commit `b3d1796` 均已推送至 Gitea 與 GitHub。一般合併 commit `2c75f07f44b0b3dee9eff22d387b0385ababc3eb` 合併 Ticket branch `b3d1796` 至固定基準 `f1d6e47`；合併後完整套件 248 tests 通過（44.394 秒），compileall 與 diff-check 通過。主線合併 SHA 已同步至兩遠端並經即時 refs 查核；確認同步後刪除兩遠端及本地 `round/ticket-06` 並 prune，移除合併 worktree，最後停在 `B518-Log-Solution`。原有未提交 `CONTEXT.md` 修改與兩個未追蹤文件均保持未提交。完整證據見 [Ticket 06 驗收紀錄](evidence/ticket-06/local-validation.md)。
+
+## Ticket 07：背景輪次保存清理（2026-10-07）
+
+- 使用者授權在 `round/ticket-07` 完成母規格 Ticket 07；開始前固定審查基準 `495e8aaf84ce1af50bbcfd9bace793f955c67b22`，其父提交為主線 `56f895af0b5bceab73582ab8fec95417068b468e`。專用分支原已存在票前文件草稿提交 `495e8aa`，未改寫；其無關 multilingual 文件內容在整合時須避免混入本票提交。
+- 以 `RoundCoordinator` 公開入口及背景 worker 實作啟動／每日／設定變更排程、同輪可信完整性驗證、跨目錄整輪刪除、保護狀態及持久摘要。stage 名稱和刪除步驟會在改名前持久化；崩潰、保存期限延長或寫入錯誤時依雜湊驗證續作或還原；摘要在輪次檔案刪除後仍可由新 Coordinator 讀取。UI 操作設定與摘要，Tk 執行緒不負責掃描或刪除。
+- Ticket 07 八項驗收及規格母表 16 項覆蓋逐案查核完成。`python3 scripts/run_tests.py test_round_retention`：25 tests 通過；桌面工作階段 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：274 tests 通過（42.825 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 測試操作設定保存／失敗、設定觸發清理、摘要檢視、暫存輪次刪除及外部來源／匯出保護，並確認 `after` 心跳。repository 未配置型別檢查器，未宣稱型別檢查通過；受控測試不代表現場設備驗收。
+- 固定基準 Standards／Spec 雙軸複審通過，最終沒有未解問題。審查找到 stage rename 崩潰復原、期限延長後還原冪等性、重複摘要及檔案／目錄 FD 洩漏；均以 Event／故障注入測試修正，聚焦測試與完整套件在修正後重跑。
+- Ticket 分支已有提交 `8806602`、`dad978b`、`dee5cfe`，已同步至 origin 設定的 Gitea 與 GitHub 兩個 push URL。最後一批 crash-recovery／FD 修正與本摘要更新仍待 commit/push。整合前需再次即時 fetch 確認主線工作樹、Gitea／GitHub refs 與 push 目的地；驗收、審查雖通過，未完成整合及同步前保留 `round/ticket-07`。細節及命令見 [Ticket 07 驗收紀錄](evidence/ticket-07/local-validation.md)。

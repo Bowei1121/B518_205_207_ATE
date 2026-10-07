@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -11,7 +12,7 @@ from unittest.mock import patch
 from log_monitoring import BaseMonitor
 from monitoring_round import RoundCoordinator
 import round_retention
-from round_archival import write_round_archive
+from round_archival import read_round_archive, write_round_archive
 
 
 class CompleteMonitor(BaseMonitor):
@@ -145,6 +146,218 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(any(item.outcome == "deleted" for item in
                                 recovered.retention_cleanup_summaries()[-1].results))
 
+    def test_crash_after_staging_rename_resumes_from_fresh_coordinator(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            original_openat = round_retention._openat
+            interrupted = threading.Event()
+
+            def simulate_process_exit(directory_fd, name, flags):
+                descriptor = original_openat(directory_fd, name, flags)
+                if name.startswith(".round-retention-") and not interrupted.is_set():
+                    interrupted.set()
+                    os.close(descriptor)
+                    raise SystemExit("simulated interruption after durable staging")
+                return descriptor
+
+            with patch.object(round_retention, "_openat", side_effect=simulate_process_exit):
+                rounds.request_retention_cleanup(365)
+                self.wait_until(lambda: interrupted.is_set())
+
+            ledger_path = root / "round-retention-ledger.json"
+            deadline = time.monotonic() + 3
+            plan = {}
+            while time.monotonic() < deadline:
+                plan = json.loads(ledger_path.read_text(encoding="utf-8"))[
+                    "active_plans"][round_id]
+                if plan.get("staged_state") == "planned":
+                    break
+                time.sleep(0.01)
+            self.assertEqual(plan.get("staged_state"), "planned", plan)
+            interrupted_path = Path(plan["path_order"][plan["staged_index"]])
+            staged_path = interrupted_path.with_name(plan["staged_name"])
+            self.assertTrue(staged_path.exists())
+            self.assertFalse(interrupted_path.exists())
+
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            previous_count = len(recovered.retention_cleanup_summaries())
+            recovered.request_retention_cleanup(365)
+            self.wait_until(lambda: len(recovered.retention_cleanup_summaries()) > previous_count and
+                            recovered.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertEqual(recovered.retention_cleanup_status().status, "complete",
+                             recovered.retention_cleanup_status())
+            self.assertFalse(staged_path.exists())
+            reader = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0],
+                                      retention_ledger_path=ledger_path)
+            self.assertEqual(reader.retention_cleanup_summaries()[-1].deleted_round_ids,
+                             (round_id,))
+
+    def test_staged_file_is_restored_when_deadline_extends_before_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=200)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            original_openat = round_retention._openat
+            interrupted = threading.Event()
+
+            def crash_after_rename(directory_fd, name, flags):
+                descriptor = original_openat(directory_fd, name, flags)
+                if name.startswith(".round-retention-") and not interrupted.is_set():
+                    interrupted.set()
+                    os.close(descriptor)
+                    raise SystemExit("simulated interruption after staging")
+                return descriptor
+
+            with patch.object(round_retention, "_openat", side_effect=crash_after_rename):
+                rounds.request_retention_cleanup(180)
+                self.wait_until(lambda: interrupted.is_set())
+
+            ledger_path = root / "round-retention-ledger.json"
+            deadline = time.monotonic() + 3
+            plan = {}
+            while time.monotonic() < deadline:
+                plan = json.loads(ledger_path.read_text(encoding="utf-8"))[
+                    "active_plans"][round_id]
+                if plan.get("staged_state") == "planned":
+                    break
+                time.sleep(0.01)
+            self.assertEqual(plan.get("staged_state"), "planned", plan)
+            original_path = Path(plan["path_order"][plan["staged_index"]])
+            staged_path = original_path.with_name(plan["staged_name"])
+            self.assertTrue(staged_path.exists())
+            self.assertFalse(original_path.exists())
+            expected_bytes = staged_path.read_bytes()
+
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            previous_count = len(recovered.retention_cleanup_summaries())
+            recovered.request_retention_cleanup(365)
+            self.wait_until(lambda: len(recovered.retention_cleanup_summaries()) > previous_count and
+                            recovered.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertEqual(recovered.retention_cleanup_status().status, "complete",
+                             recovered.retention_cleanup_status())
+            self.assertTrue(original_path.exists())
+            self.assertEqual(original_path.read_bytes(), expected_bytes)
+            self.assertFalse(staged_path.exists())
+            self.assertEqual(read_round_archive(archive.path).status, "archived")
+            result = next(item for item in recovered.retention_cleanup_summaries()[-1].results
+                          if item.round_id == round_id)
+            self.assertEqual(result.outcome, "skipped")
+
+    def test_unstarted_staging_intent_is_cleared_after_deadline_extension(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=200)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            interrupted = threading.Event()
+
+            def crash_before_rename(directory_fd, source, destination):
+                interrupted.set()
+                raise SystemExit("simulated interruption after intent, before rename")
+
+            with patch.object(round_retention, "_rename_exclusive", side_effect=crash_before_rename):
+                rounds.request_retention_cleanup(180)
+                self.wait_until(lambda: interrupted.is_set())
+
+            ledger_path = root / "round-retention-ledger.json"
+            deadline = time.monotonic() + 3
+            plan = {}
+            while time.monotonic() < deadline:
+                plan = json.loads(ledger_path.read_text(encoding="utf-8"))[
+                    "active_plans"][round_id]
+                if plan.get("staged_state") == "planned":
+                    break
+                time.sleep(0.01)
+            original_path = Path(plan["path_order"][plan["staged_index"]])
+            staged_path = original_path.with_name(plan["staged_name"])
+            self.assertTrue(original_path.exists())
+            self.assertFalse(staged_path.exists())
+
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            previous_count = len(recovered.retention_cleanup_summaries())
+            recovered.request_retention_cleanup(365)
+            self.wait_until(lambda: len(recovered.retention_cleanup_summaries()) > previous_count and
+                            recovered.retention_cleanup_status().status in {"complete", "failed"})
+
+            self.assertEqual(recovered.retention_cleanup_status().status, "complete",
+                             recovered.retention_cleanup_status())
+            self.assertTrue(original_path.exists())
+            self.assertFalse(staged_path.exists())
+            self.assertEqual(read_round_archive(archive.path).status, "archived")
+            cleared = json.loads(ledger_path.read_text(encoding="utf-8"))[
+                "active_plans"][round_id]
+            self.assertIsNone(cleared.get("staged_name"))
+
+    def test_failed_stage_open_closes_original_descriptor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            writer, round_id = self.make_archived_round(root, now)
+            archive = writer.archive_status(round_id)
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=200)
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            interrupted = threading.Event()
+
+            def crash_before_stage(directory_fd, source, destination):
+                interrupted.set()
+                raise SystemExit("leave a durable staged intent")
+
+            with patch.object(round_retention, "_rename_exclusive", side_effect=crash_before_stage):
+                rounds.request_retention_cleanup(180)
+                self.wait_until(lambda: interrupted.is_set())
+
+            ledger_path = root / "round-retention-ledger.json"
+            plan = json.loads(ledger_path.read_text(encoding="utf-8"))["active_plans"][round_id]
+            original_path = Path(plan["path_order"][plan["staged_index"]])
+            stage_name = plan["staged_name"]
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            original_openat = round_retention._openat
+            original_parent_fd = round_retention.RoundRetentionStore._managed_parent_fd
+            captured = []
+            captured_directories = []
+
+            def fail_stage_open(directory_fd, name, flags):
+                if name == stage_name:
+                    raise PermissionError("injected stage open failure")
+                descriptor = original_openat(directory_fd, name, flags)
+                if name == original_path.name:
+                    captured.append(descriptor)
+                return descriptor
+
+            def capture_parent_fd(store, path):
+                descriptor, name = original_parent_fd(store, path)
+                if Path(path) == original_path:
+                    captured_directories.append(descriptor)
+                return descriptor, name
+
+            previous_count = len(recovered.retention_cleanup_summaries())
+            with patch.object(round_retention, "_openat", side_effect=fail_stage_open):
+                with patch.object(round_retention.RoundRetentionStore, "_managed_parent_fd",
+                                  capture_parent_fd):
+                    recovered.request_retention_cleanup(365)
+                    self.wait_until(lambda: len(recovered.retention_cleanup_summaries()) > previous_count and
+                                    recovered.retention_cleanup_status().status == "failed")
+
+            self.assertTrue(original_path.exists())
+            self.assertEqual(len(captured), 1)
+            with self.assertRaises(OSError):
+                os.fstat(captured[0])
+            self.assertEqual(len(captured_directories), 1)
+            with self.assertRaises(OSError):
+                os.fstat(captured_directories[0])
+
     def test_final_summary_failure_keeps_completed_plan_for_fresh_reader(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -197,8 +410,8 @@ class RoundRetentionTests(unittest.TestCase):
             original_unlink = round_retention.RoundRetentionStore._unlink_managed_file
             created = []
 
-            def inject_unknown_after_unlink(store, path, expected, archived_at=None):
-                original_unlink(store, path, expected, archived_at)
+            def inject_unknown_after_unlink(store, path, expected, archived_at=None, **kwargs):
+                original_unlink(store, path, expected, archived_at, **kwargs)
                 if not created:
                     unknown = session_path / "new-operator-data.json"
                     unknown.write_text('{"keep": true}', encoding="utf-8")
@@ -235,12 +448,12 @@ class RoundRetentionTests(unittest.TestCase):
             release = threading.Event()
             original_unlink = round_retention.RoundRetentionStore._unlink_managed_file
 
-            def controlled_unlink(store, path, expected, archived_at=None):
+            def controlled_unlink(store, path, expected, archived_at=None, **kwargs):
                 if not entered.is_set():
                     entered.set()
                     if not release.wait(3):
                         raise RuntimeError("test did not release cleanup")
-                return original_unlink(store, path, expected, archived_at)
+                return original_unlink(store, path, expected, archived_at, **kwargs)
 
             previous_count = len(rounds.retention_cleanup_summaries())
             with patch.object(round_retention.RoundRetentionStore, "_unlink_managed_file",
@@ -255,6 +468,13 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(archive.path.parent.exists())
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
             self.assertIn("保存期限", rounds.retention_cleanup_summaries()[0].results[0].reason)
+            self.assertEqual(rounds.retention_cleanup_status().status, "complete",
+                             rounds.retention_cleanup_status())
+            self.assertEqual(read_round_archive(archive.path).status, "archived")
+            plan = json.loads((root / "round-retention-ledger.json").read_text())[
+                "active_plans"][round_id]
+            self.assertIsNone(plan.get("staged_name"))
+            self.assertEqual(len(rounds.retention_cleanup_summaries()[-1].results), 1)
 
     def test_new_retention_days_win_race_at_final_unlink_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
