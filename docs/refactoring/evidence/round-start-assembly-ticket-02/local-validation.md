@@ -88,7 +88,7 @@ The focused 136-test run preceded the two separately passing tests listed afterw
 ## Final review and delivery record
 
 - Full Tk suite after final fix: **289 tests passed in 60.505s**.
-- Initial fixed-base Standards review: no documented-standard violations; one non-blocking judgement-call smell noted similar `pump_until` helpers in Tk tests. Initial Spec review had no blocking findings. Both used `b2816400415364bd033bd4f784bfebf3cda58b2b`; **re-review of `20d3874` is pending**.
+- Fixed-base re-review through `5db46d3`: Standards found no documented-standard violations. The duplicated local `pump_until` loops remain a non-blocking judgement-call smell. Spec found no blocking issues and confirmed the `completion_reason` guard is the minimal fix for the tested close/preparation race. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
 - Final validated code/test SHA: `20d3874`.
 - Merge SHA, live push destination verification, and branch cleanup: **pending**.
 
