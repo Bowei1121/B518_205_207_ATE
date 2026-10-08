@@ -222,6 +222,7 @@ class RoundStartPreparationTests(unittest.TestCase):
             (source / "events.jsonl").write_text("", encoding="utf-8")
             factory_entered = threading.Event()
             release_factory = threading.Event()
+            stop_callback_entered = threading.Event()
             failure_reported = threading.Event()
 
             def failing_factory(**_context):
@@ -231,6 +232,16 @@ class RoundStartPreparationTests(unittest.TestCase):
                 raise OSError("controlled source creation failure")
 
             def on_event(event):
+                if (event.event.kind == "collection_stopped" and
+                        event.event.detail.get("reason") == "manual_stop"):
+                    stop_callback_entered.set()
+                    release_factory.set()
+                    deadline = time.monotonic() + 3
+                    while (coordinator.snapshot().completion_reason != "start_failed" and
+                           time.monotonic() < deadline):
+                        threading.Event().wait(0.01)
+                    if coordinator.snapshot().completion_reason != "start_failed":
+                        raise AssertionError("The controlled source failure was never recorded.")
                 if event.event.kind == "start_failed":
                     failure_reported.set()
 
@@ -254,7 +265,7 @@ class RoundStartPreparationTests(unittest.TestCase):
             self.assertEqual(closing.status, "saving")
             self.assertFalse(failure_reported.is_set())
 
-            release_factory.set()
+            self.assertTrue(stop_callback_entered.wait(2))
             self.assertTrue(failure_reported.wait(2))
             deadline = time.monotonic() + 3
             while coordinator.close_status().status not in {"complete", "failed"}:

@@ -2257,7 +2257,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 while time.monotonic() < deadline:
                     root.update()
                     snapshot = app.rounds.snapshot()
-                    if snapshot.result_available:
+                    if (snapshot.result_available and all(
+                            app.status_rows[slot]["status"].cget("text") == "PASS"
+                            for slot in range(1, 5))):
                         break
                     time.sleep(0.1)
                 else:
