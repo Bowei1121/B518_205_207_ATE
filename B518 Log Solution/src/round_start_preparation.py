@@ -146,7 +146,7 @@ class RoundStartPreparation:
                 async_session_writes: bool = True, now: Optional[Callable] = None,
                 monotonic: Optional[Callable] = None) -> PreparedRoundStart:
         """Validate source access and capture all values needed for one round."""
-        validate_profile(profile)
+        validate_profile(profile, self._registry)
         fixed_profile = _fixed_profile(profile)
         definition = self._registry.get(fixed_profile.platform)
         resolved_paths = {}

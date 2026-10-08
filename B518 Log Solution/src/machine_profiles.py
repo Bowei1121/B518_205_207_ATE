@@ -336,13 +336,13 @@ def _profile_from_dict(record: object) -> MachineProfile:
     return profile
 
 
-def validate_profile(profile: MachineProfile) -> None:
+def validate_profile(profile: MachineProfile, registry=DEFAULT_PLATFORM_REGISTRY) -> None:
     if not isinstance(profile.project, str) or not profile.project.strip():
         raise ProfileError("project 不可空白。")
     if profile.machine not in SUPPORTED_MACHINES:
         raise ProfileError("未知機型：{}。".format(profile.machine))
     try:
-        platform = DEFAULT_PLATFORM_REGISTRY.get(profile.platform)
+        platform = registry.get(profile.platform)
     except ValueError as error:
         raise ProfileError(str(error))
     if profile.machine not in platform.machines:

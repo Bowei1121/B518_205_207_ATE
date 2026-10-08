@@ -16,6 +16,24 @@ from round_start_preparation import RoundStartPreparation
 
 
 class RoundStartPreparationTests(unittest.TestCase):
+    def test_profile_validation_uses_the_same_platform_registry_as_adapter_preparation(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            selected_definition = replace(
+                DEFAULT_PLATFORM_REGISTRY.get("sample-json"), source_positions=(40,))
+            registry = PlatformRegistry()
+            registry.register(selected_definition)
+            profile = MachineProfile(
+                "SAMPLE", "FCT", "sample-json", 1, {"active": str(source)},
+                ((40, 1),), {"start": 30, "test": 60, "round": 600},
+            )
+
+            prepared = RoundStartPreparation(registry).prepare(profile, root / "sessions")
+
+            self.assertEqual(prepared.capacity, 1)
+
     def wait_for_archive_write(self, coordinator, round_id):
         deadline = time.monotonic() + 3
         stable_since = None
