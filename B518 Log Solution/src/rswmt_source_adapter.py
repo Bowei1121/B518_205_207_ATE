@@ -62,6 +62,7 @@ class RsWmtObservation:
     message: str = ""
     stable: bool = False
     evidence: Optional[Dict[str, str]] = None
+    message_id: str = ""
 
 
 def csv_time(value, reference):
@@ -78,7 +79,7 @@ def csv_time(value, reference):
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
-def parse_rswmt_csv(path):
+def parse_rswmt_csv(path, on_error: Optional[Callable[[Exception], None]] = None):
     """Parse one complete per-DUT final result; partial and summary files are ignored."""
     path = Path(path)
     match = RESULT_NAME.fullmatch(path.name)
@@ -90,7 +91,9 @@ def parse_rswmt_csv(path):
         if not text.endswith(('\n', '\r')):
             return None
         rows = list(csv.reader(io.StringIO(text), strict=True))
-    except (OSError, UnicodeError, ValueError, csv.Error):
+    except (OSError, UnicodeError, ValueError, csv.Error) as error:
+        if on_error is not None:
+            on_error(error)
         return None
     headers = [i for i, row in enumerate(rows) if row and row[0].strip() == "Serial Number"]
     if len(headers) != 1:
@@ -202,7 +205,8 @@ class RsWmtSourceAdapter:
         if key in self.announced:
             return []
         self.announced.add(key)
-        return [RsWmtObservation("warning", str(path), message=message)]
+        return [RsWmtObservation("warning", str(path), message=message,
+                                 message_id="platform.rswmt.warning")]
 
     def _round_evidence(self, record: RsWmtRecord) -> Optional[List[RsWmtObservation]]:
         if record.slot not in self.slots or record.started < self.round_started - timedelta(seconds=30):
@@ -217,6 +221,7 @@ class RsWmtSourceAdapter:
                 "warning", record.source,
                 message="RS-WMT: different test start time; start a new monitoring round.",
                 record=record, evidence=record.evidence(),
+                message_id="platform.rswmt.warning",
             )]
         return []
 
@@ -227,7 +232,10 @@ class RsWmtSourceAdapter:
                 continue
             try:
                 signature = file_signature(path)
-            except OSError:
+            except OSError as error:
+                observations.extend(self._warning(
+                    path, "RS-WMT: source file could not be inspected: {}".format(error),
+                ))
                 continue
             key = str(path.resolve())
             if self.csv_baseline.get(key) == signature:
@@ -236,10 +244,13 @@ class RsWmtSourceAdapter:
             changed = previous is None or previous[0] != signature
             stable_since = previous[1] if previous and not changed else self.monotonic()
             self.csv_signatures[key] = (signature, stable_since)
-            record = parse_rswmt_csv(path)
+            parse_errors = []
+            record = parse_rswmt_csv(path, parse_errors.append)
             if record is None:
                 if self.monotonic() - stable_since >= 5:
-                    observations.extend(self._warning(path, 'RS-WMT: incomplete or unsupported CSV; result not accepted.'))
+                    message = (str(parse_errors[-1]) if parse_errors else
+                               'RS-WMT: incomplete or unsupported CSV; result not accepted.')
+                    observations.extend(self._warning(path, message))
                 continue
             batch_events = self._round_evidence(record)
             if batch_events is None:
@@ -260,7 +271,10 @@ class RsWmtSourceAdapter:
                 if self.log_baseline.get(key) == signature or self.log_signatures.get(key) == signature:
                     continue
                 text = path.read_text(encoding='utf-8-sig')
-            except (OSError, UnicodeError):
+            except (OSError, UnicodeError) as error:
+                observations.extend(self._warning(
+                    path, "RS-WMT: source log could not be read: {}".format(error),
+                ))
                 continue
             self.log_signatures[key] = signature
             record = parse_rswmt_log(text, path)
@@ -273,7 +287,7 @@ class RsWmtSourceAdapter:
                     observations.append(RsWmtObservation(
                         "warning", str(path),
                         message="RS-WMT: source round is incomplete or ambiguous; evidence retained for review.",
-                        evidence=evidence,
+                        evidence=evidence, message_id="platform.rswmt.warning",
                     ))
                     self.log_candidate_evidence[key] = evidence
                 continue

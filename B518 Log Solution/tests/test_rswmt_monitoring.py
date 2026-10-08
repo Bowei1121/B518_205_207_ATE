@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from rswmt_monitoring import RsWmtLogMonitor, parse_rswmt_csv, parse_rswmt_log
 from monitoring_round import RoundCoordinator
@@ -81,6 +82,66 @@ class RsWmtTests(unittest.TestCase):
                      result_text(sn='OTHER000001'), result_text(status='Pass', sn='')):
             path.write_text(text)
             self.assertIsNone(parse_rswmt_csv(path))
+
+    def test_stable_unsupported_source_warning_has_bilingual_message_and_diagnostic(self):
+        monitor = self.monitor()
+        path = self.output / '2026-09-11_05-45-44' / 'TESTSERIAL0001_2026-09-11_05-45-44.csv'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('partial,unsupported\n')
+        monitor.poll_once()
+        self.seconds = 5.1
+        monitor.poll_once()
+
+        warning = next(event for event in self.events if event.kind == 'warning')
+        self.assertEqual(warning.localized_message.message_id, 'platform.rswmt.warning')
+        self.assertEqual(warning.localized_message.as_record()['parameters']['source_filename'], path.name)
+        self.assertIn('incomplete or unsupported CSV', warning.localized_message.diagnostic)
+        self.assertEqual(warning.detail['raw_diagnostic'], warning.message)
+
+    def test_rs_wmt_batch_producer_captures_stable_message_id(self):
+        monitor = self.monitor()
+        self.write_result(start=START.strftime('%Y/%m/%d %H:%M:%S'))
+        monitor.poll_once()
+
+        event = next(item for item in self.events
+                     if item.localized_message and
+                     item.localized_message.message_id == 'platform.rswmt.batch')
+        self.assertEqual(event.localized_message.as_record()['parameters'], {'station': 'BT'})
+        self.assertIn('batch_evidence', event.detail)
+
+    def test_malformed_csv_warning_preserves_parser_diagnostic(self):
+        monitor = self.monitor()
+        path = self.output / '2026-09-11_05-45-44' / 'TESTSERIAL0001_2026-09-11_05-45-44.csv'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('"unterminated\n', encoding='utf-8')
+
+        monitor.poll_once()
+        self.seconds = 5.1
+        monitor.poll_once()
+
+        warning = next(event for event in self.events if event.kind == 'warning')
+        self.assertEqual(warning.localized_message.message_id, 'platform.rswmt.warning')
+        self.assertIn('unexpected end of data', warning.localized_message.diagnostic)
+        self.assertEqual(warning.detail['raw_diagnostic'], warning.localized_message.diagnostic)
+
+    def test_unreadable_source_log_is_reported_with_bilingual_message(self):
+        monitor = self.monitor()
+        path = self.output / 'source.log'
+        path.write_text(log_text())
+        original_read_text = Path.read_text
+
+        def fail_source_log(source, *args, **kwargs):
+            if source == path:
+                raise OSError('controlled source log failure')
+            return original_read_text(source, *args, **kwargs)
+
+        with patch.object(Path, 'read_text', fail_source_log):
+            monitor.poll_once()
+
+        warning = next(event for event in self.events if event.kind == 'warning')
+        self.assertEqual(warning.localized_message.message_id, 'platform.rswmt.warning')
+        self.assertIn('controlled source log failure', warning.localized_message.diagnostic)
+        self.assertEqual(warning.detail['raw_diagnostic'], warning.message)
 
     def test_header_and_limit_rows_are_not_results(self):
         path = self.write_result()

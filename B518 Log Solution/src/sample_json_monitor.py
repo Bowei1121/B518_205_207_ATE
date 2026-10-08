@@ -21,6 +21,7 @@ class SampleObservation:
     source_time: str
     batch_id: str
     message: str = ""
+    message_id: str = ""
 
     def evidence(self) -> Dict[str, str]:
         evidence = {
@@ -47,6 +48,7 @@ class SampleJsonLinesSource:
         self.slots = set(slots)
         self._offsets = {}
         self._line_numbers = {}
+        self._read_failures = {}
         if self.root.is_dir():
             for path in self.root.glob("*.jsonl"):
                 try:
@@ -64,8 +66,16 @@ class SampleJsonLinesSource:
                     offset = self._offsets.get(path, 0)
                     handle.seek(offset)
                     content = handle.read()
-            except OSError:
+            except OSError as error:
+                failure = str(error)
+                if self._read_failures.get(path) != failure:
+                    self._read_failures[path] = failure
+                    observations.append(self._warning(
+                        path, path.name, "{}: {}".format(path.name, failure),
+                        "platform.sample_json.unreadable",
+                    ))
                 continue
+            self._read_failures.pop(path, None)
             last_newline = content.rfind(b"\n")
             if last_newline < 0:
                 continue
@@ -81,7 +91,8 @@ class SampleJsonLinesSource:
                     observation = self._parse(value, path, source_id)
                 except (UnicodeDecodeError, json.JSONDecodeError) as error:
                     observation = self._warning(path, source_id,
-                                                "JSON Lines 記錄格式錯誤：{}".format(error))
+                                                "JSON Lines 記錄格式錯誤：{}".format(error),
+                                                "platform.sample_json.invalid_record")
                 if observation is not None:
                     observations.append(observation)
             self._line_numbers[path] = self._line_numbers.get(path, 0) + len(complete.splitlines())
@@ -93,28 +104,34 @@ class SampleJsonLinesSource:
 
     def _parse(self, value, path: Path, source_id: str) -> Optional[SampleObservation]:
         if not isinstance(value, dict):
-            return self._warning(path, source_id, "JSON Lines 記錄必須是物件。")
+            return self._warning(path, source_id, "JSON Lines 記錄必須是物件。",
+                                 "platform.sample_json.invalid_record")
         kind = value.get("kind")
         position = value.get("position")
         if kind not in {"activity", "final"} or type(position) is not int or not 1 <= position <= 20:
-            return self._warning(path, source_id, "JSON Lines 記錄的 kind／position 不受支援。")
+            return self._warning(path, source_id, "JSON Lines 記錄的 kind／position 不受支援。",
+                                 "platform.sample_json.unsupported_record")
         sn = value.get("sn", "")
         source_time = value.get("source_time", "")
         batch_id = value.get("batch_id", "")
         if not all(isinstance(item, str) for item in (sn, source_time, batch_id)):
-            return self._warning(path, source_id, "JSON Lines 的 SN、時間與批次識別必須是文字。")
+            return self._warning(path, source_id, "JSON Lines 的 SN、時間與批次識別必須是文字。",
+                                 "platform.sample_json.invalid_fields")
         if kind == "activity":
             status = "TESTING"
         else:
             status = value.get("status")
             if status not in {"PASS", "FAIL", "NOTEST"}:
-                return self._warning(path, source_id, "JSON Lines final 狀態不受支援。")
+                return self._warning(path, source_id, "JSON Lines final 狀態不受支援。",
+                                     "platform.sample_json.invalid_status")
         return SampleObservation(kind, position, sn, status, str(path), source_id,
                                  source_time, batch_id)
 
     @staticmethod
-    def _warning(path: Path, source_id: str, message: str) -> SampleObservation:
-        return SampleObservation("warning", 0, "", "", str(path), source_id, "", "", message)
+    def _warning(path: Path, source_id: str, message: str,
+                 message_id: str) -> SampleObservation:
+        return SampleObservation("warning", 0, "", "", str(path), source_id, "", "",
+                                 message, message_id)
 
 
 class SampleJsonLogMonitor(BaseMonitor):
@@ -131,8 +148,13 @@ class SampleJsonLogMonitor(BaseMonitor):
         for observation in self.source.poll():
             evidence = observation.evidence()
             if observation.kind == "warning":
+                evidence["raw_diagnostic"] = observation.message
                 self.emit(MonitorEvent("warning", observation.message,
-                                       source=observation.source, detail=evidence))
+                                       source=observation.source, detail=evidence,
+                                       message_id=observation.message_id,
+                                       message_parameters={"source_filename": Path(
+                                           observation.source).name},
+                                       diagnostic=observation.message))
                 continue
             if observation.position not in self.results:
                 candidate = MonitorEvent(

@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import shutil
 import tkinter as tk
 import time
 import threading
@@ -332,6 +333,37 @@ class LogSolutionUiTests(unittest.TestCase):
                 )))
 
                 with events_path.open("a", encoding="utf-8") as event_file:
+                    event_file.write("{invalid json}\n")
+                deadline = time.monotonic() + 3
+                while (not any("Sample JSON 來源記錄無效" in line for line in app.event_lines)
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertTrue(any("Sample JSON 來源記錄無效" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Expecting property name" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                platform_audit_bytes = (session_path / "audit.jsonl").read_bytes()
+                platform_audit = read_round_audit(session_path / "audit.jsonl")
+                platform_warning = next(event for event in platform_audit["events"]
+                                        if event.get("localized_message", {}).get("message_id") ==
+                                        "platform.sample_json.invalid_record")
+                self.assertEqual(platform_warning["round_id"], round_id)
+                self.assertEqual(platform_warning["localized_message"]["diagnostic"],
+                                 platform_warning["detail"]["raw_diagnostic"])
+                self.assertIn("Expecting property name", platform_warning["detail"]["raw_diagnostic"])
+                platform_session_warning = next(
+                    event for event in (json.loads(line) for line in
+                                        (session_path / "events.log").read_text(
+                                            encoding="utf-8").splitlines())
+                    if event.get("localized_message", {}).get("message_id") ==
+                    "platform.sample_json.invalid_record")
+                self.assertEqual(platform_session_warning["localized_message"],
+                                 platform_warning["localized_message"])
+
+                with events_path.open("a", encoding="utf-8") as event_file:
                     event_file.write(json.dumps({
                         "kind": "activity", "position": 4, "sn": "LANG000002",
                         "source_time": "2026-10-08T10:00:01+08:00", "batch_id": "language-ui",
@@ -369,6 +401,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 reloaded.load()
                 self.assertEqual(reloaded.language, TRADITIONAL_CHINESE)
 
+                platform_audit_before_language_refresh = (session_path / "audit.jsonl").read_bytes()
                 app.language_button.event_generate("<space>")
                 root.update()
                 app.language_menu.event_generate("<Escape>")
@@ -382,6 +415,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
                 self.assertTrue(any("same-round result conflict" in line
                                     for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Sample JSON source record is invalid" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Expecting property name" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual((session_path / "audit.jsonl").read_bytes(),
+                                 platform_audit_before_language_refresh)
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "Slot 1")
                 self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
                 saved_bytes = preferences.read_bytes()
@@ -1204,7 +1243,7 @@ class LogSolutionUiTests(unittest.TestCase):
             scenarios = (
                 ("B518", "DFU", "atlas", {"active": "active", "final": "final"}),
                 ("B518", "FCT", "atlas", {"active": "active", "final": "final"}),
-                ("B482", "BT", "b482", {"final": "final", "caseinfo": ""}),
+                ("B482", "BT", "b482", {"final": "final", "caseinfo": "caseinfo"}),
                 ("B518", "BT", "rswmt", {"final": "final", "caseinfo": ""}),
                 ("SAMPLE", "FCT", "sample-json", {"active": "active"}),
             )
@@ -1261,6 +1300,35 @@ class LogSolutionUiTests(unittest.TestCase):
                                           project, machine, app.rounds.snapshot(), app.event_lines,
                                           app.profile_error))
 
+                        def select_language(label):
+                            app.language_button.event_generate("<Button-1>")
+                            root.update()
+                            menu_index = next(
+                                item for item in range(app.language_menu.index("end") + 1)
+                                if app.language_menu.entrycget(item, "label") == label
+                            )
+                            app.language_menu.invoke(menu_index)
+                            root.update()
+
+                        def verify_round_event_language_refresh(event_record):
+                            localized = event_record["localized_message"]
+                            pump_until(lambda: any(localized["en"] in line
+                                                   for line in app.event_lines))
+                            state_before = app.rounds.snapshot()
+                            audit_before = (session_path / "audit.jsonl").read_bytes()
+                            select_language("繁體中文")
+                            self.assertTrue(any(localized["zh-TW"] in line
+                                                for line in app.event_lines), app.event_lines)
+                            self.assertEqual(app.rounds.snapshot().round_id, state_before.round_id)
+                            self.assertEqual(app.rounds.snapshot().results, state_before.results)
+                            self.assertEqual(app.rounds.snapshot().events, state_before.events)
+                            self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before)
+                            select_language("English")
+                            self.assertTrue(any(localized["en"] in line
+                                                for line in app.event_lines), app.event_lines)
+                            self.assertEqual(app.rounds.snapshot().events, state_before.events)
+                            self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before)
+
                         try:
                             selected_profile = app.profiles.get(project, machine)
                             self.assertEqual(app._display_capacity(), selected_profile.capacity)
@@ -1287,13 +1355,173 @@ class LogSolutionUiTests(unittest.TestCase):
                             self.assertEqual(audit_config["config_snapshot"], session_profile)
                             self.assertEqual(audit_config["platform"], platform)
                             self.assertEqual(audit_config["mapping"], session_profile["mapping"])
+                            if platform in {"atlas", "b482", "rswmt", "sample-json"}:
+                                diagnostic = "controlled {} source diagnostic".format(platform)
+                                if platform == "atlas":
+                                    import monitoring_files
+
+                                    source_file = (Path(paths["active"]) / "group0-slot1" /
+                                                   "system" / "records.csv")
+                                    source_file.parent.mkdir(parents=True)
+                                    source_file.write_text("MLB_SN,status\n", encoding="utf-8")
+                                    failure = patch.object(
+                                        monitoring_files.csv, "DictReader",
+                                        side_effect=csv.Error(diagnostic),
+                                    )
+                                    expected_message_id = "platform.atlas.source_error"
+                                elif platform == "b482":
+                                    import b482_source_adapter
+
+                                    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                                    source_file = (Path(paths["final"]) /
+                                                   datetime.now().strftime("%Y-%m-%d") /
+                                                   "PASSED" /
+                                                   "[Thread0][cfg][B482SAMPLE0001]"
+                                                   "[PASSED][{}].csv".format(stamp))
+                                    source_file.parent.mkdir(parents=True)
+                                    source_file.write_text(
+                                        "SerialNumber,Unit Number,Test Pass/Fail Status,"
+                                        "StartTime,EndTime\n"
+                                        "B482SAMPLE0001,0,PASSED,start,end\n",
+                                        encoding="utf-8",
+                                    )
+                                    original_signature = b482_source_adapter.file_signature
+
+                                    def fail_b482_signature(path):
+                                        if path == source_file:
+                                            raise OSError(diagnostic)
+                                        return original_signature(path)
+
+                                    failure = patch(
+                                        "b482_source_adapter.file_signature",
+                                        side_effect=fail_b482_signature,
+                                    )
+                                    expected_message_id = "platform.b482.source_error"
+                                elif platform == "rswmt":
+                                    source_file = Path(paths["final"]) / "controlled-source.log"
+                                    source_file.write_text("controlled source\n", encoding="utf-8")
+                                    original_read_text = Path.read_text
+
+                                    def fail_rswmt_diagnostic(path, *args, **kwargs):
+                                        if path == source_file:
+                                            raise OSError(diagnostic)
+                                        return original_read_text(path, *args, **kwargs)
+
+                                    failure = patch.object(
+                                        Path, "read_text", fail_rswmt_diagnostic,
+                                    )
+                                    expected_message_id = "platform.rswmt.warning"
+                                else:
+                                    source_file = Path(paths["active"]) / "events.jsonl"
+                                    original_open = Path.open
+
+                                    def fail_sample_json_read(path, *args, **kwargs):
+                                        mode = kwargs.get("mode", args[0] if args else "r")
+                                        if path == source_file and mode == "rb":
+                                            raise OSError(diagnostic)
+                                        return original_open(path, *args, **kwargs)
+
+                                    failure = patch.object(Path, "open", fail_sample_json_read)
+                                    expected_message_id = "platform.sample_json.unreadable"
+
+                                with failure:
+                                    pump_until(lambda: any(
+                                        diagnostic in line for line in app.event_lines
+                                    ))
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                event_records = read_round_audit(
+                                    session_path / "audit.jsonl")["events"]
+                                platform_event = next(
+                                    event for event in event_records
+                                    if event.get("localized_message", {}).get("message_id") ==
+                                    expected_message_id
+                                )
+                                self.assertEqual(platform_event["round_id"], round_id)
+                                self.assertIn(
+                                    diagnostic,
+                                    platform_event["localized_message"]["diagnostic"],
+                                )
+                                raw_diagnostic = platform_event["detail"].get(
+                                    "raw_diagnostic", platform_event["detail"].get("raw_error", ""),
+                                )
+                                self.assertIn(diagnostic, raw_diagnostic)
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["en"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                session_event = next(
+                                    event for event in (json.loads(line) for line in
+                                        (session_path / "events.log").read_text(
+                                            encoding="utf-8").splitlines())
+                                    if event.get("localized_message", {}).get("message_id") ==
+                                    expected_message_id
+                                )
+                                self.assertEqual(
+                                    session_event["localized_message"],
+                                    platform_event["localized_message"],
+                                )
+                                before_language_refresh = (
+                                    session_path / "audit.jsonl").read_bytes()
+                                state_before_language_refresh = app.rounds.snapshot()
+                                app.language_button.event_generate("<Button-1>")
+                                root.update()
+                                chinese_index = next(
+                                    menu_index for menu_index in range(
+                                        app.language_menu.index("end") + 1)
+                                    if app.language_menu.entrycget(menu_index, "label") ==
+                                    "繁體中文"
+                                )
+                                app.language_menu.invoke(chinese_index)
+                                root.update()
+                                self.assertEqual(
+                                    app.rounds.snapshot().round_id, round_id,
+                                )
+                                self.assertEqual(
+                                    app.rounds.snapshot().results,
+                                    state_before_language_refresh.results,
+                                )
+                                self.assertEqual(
+                                    app.rounds.snapshot().events,
+                                    state_before_language_refresh.events,
+                                )
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["zh-TW"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                self.assertEqual(
+                                    (session_path / "audit.jsonl").read_bytes(),
+                                    before_language_refresh,
+                                )
+                                app.language_button.event_generate("<Button-1>")
+                                root.update()
+                                english_index = next(
+                                    menu_index for menu_index in range(
+                                        app.language_menu.index("end") + 1)
+                                    if app.language_menu.entrycget(menu_index, "label") ==
+                                    "English"
+                                )
+                                app.language_menu.invoke(english_index)
+                                root.update()
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["en"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                self.assertEqual(
+                                    app.rounds.snapshot().events,
+                                    state_before_language_refresh.events,
+                                )
+                                self.assertEqual(
+                                    (session_path / "audit.jsonl").read_bytes(),
+                                    before_language_refresh,
+                                )
                             if platform == "b482":
                                 created_at = datetime.now().replace(microsecond=0)
                                 stamp = created_at.strftime("%Y%m%d%H%M%S")
                                 date_folder = created_at.strftime("%Y-%m-%d")
                                 result = (Path(paths["final"]) / date_folder / "PASSED" /
                                           "[Thread0][cfg][B482SAMPLE0001][PASSED][{}].csv".format(stamp))
-                                result.parent.mkdir(parents=True)
+                                result.parent.mkdir(parents=True, exist_ok=True)
                                 result.write_text(
                                     "SerialNumber,Unit Number,Test Pass/Fail Status,StartTime,EndTime\n"
                                     "B482SAMPLE0001,0,PASSED,start,end\n", encoding="utf-8",
@@ -1309,18 +1537,101 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertTrue(app.rounds.flush_audit(timeout=3))
                                 rebuilt = read_round_audit(session_path / "audit.jsonl")
                                 self.assertEqual(rebuilt["results"][3]["status"], "PASS")
-                            if platform == "sample-json":
-                                sample_time = datetime.now().isoformat(timespec="seconds")
-                                (Path(paths["active"]) / "events.jsonl").write_text(
-                                    json.dumps({
-                                        "kind": "final", "position": 20,
-                                        "sn": "SAMPLE000020", "status": "PASS",
-                                        "source_time": sample_time, "batch_id": "tk-round-fixture",
-                                    }) + "\n", encoding="utf-8",
+                            if platform == "atlas":
+                                active_record = (Path(paths["active"]) / "group0-slot1" /
+                                                 "system" / "records.csv")
+                                active_record.parent.mkdir(parents=True, exist_ok=True)
+                                active_record.write_text("MLB_SN,status\n", encoding="utf-8")
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "TESTING")
+                                active_record.write_text(
+                                    "MLB_SN,status\nATLAS00000001,PASS\n", encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[0].sn ==
+                                           "ATLAS00000001")
+                                shutil.rmtree(active_record.parents[1])
+                                archive = (Path(paths["final"]) / "ATLAS00000001" /
+                                           datetime.now().strftime("%Y%m%d_%H-%M-%S.000-round") /
+                                           "system" / "records.csv")
+                                archive.parent.mkdir(parents=True)
+                                archive.write_text(
+                                    "MLB_SN,status\nATLAS00000001,PASS\n", encoding="utf-8",
                                 )
                                 pump_until(lambda: app.rounds.snapshot().results[0].status == "PASS" and
                                            app.status_rows[1]["status"].cget("text") == "PASS")
+                                self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                                result_event = next(event for event in rebuilt["events"]
+                                                    if event["kind"] == "result")
+                                self.assertEqual(result_event["round_id"], round_id)
+                                self.assertEqual(result_event["localized_message"]["message_id"],
+                                                 "round.result")
+                                verify_round_event_language_refresh(result_event)
+                                audit_bytes = (session_path / "audit.jsonl").read_bytes()
+                                state = app.rounds.snapshot()
+                                select_language("繁體中文")
+                                self.assertTrue(any("結果：PASS" in line for line in app.event_lines))
+                                self.assertEqual(app.rounds.snapshot().results, state.results)
+                                self.assertEqual((session_path / "audit.jsonl").read_bytes(),
+                                                 audit_bytes)
+                                select_language("English")
+                            if platform == "b482":
+                                caseinfo_path = Path(paths["caseinfo"]) / (
+                                    "thread2CaseInfo_{}.txt".format(datetime.now().strftime("%Y-%m-%d"))
+                                )
+                                caseinfo_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S:100")
+                                prefix = ("{}, 4,InitResource,SNRead,--,SNRead,"
+                                          "B482PARTIAL0001").format(caseinfo_time)
+                                caseinfo_path.write_text(prefix, encoding="utf-8")
+                                root.update()
+                                app.rounds.poll_once()
+                                self.assertEqual(app.rounds.snapshot().results[1].status, "WAITING")
+                                with caseinfo_path.open("a", encoding="utf-8") as caseinfo_file:
+                                    caseinfo_file.write(",NA,NA,NA,Passed,11.94\r\n")
+                                pump_until(lambda: any(
+                                    event.event.kind == "result" and
+                                    event.event.sn == "B482PARTIAL0001"
+                                    for event in app.rounds.snapshot().events
+                                ))
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                                partial_event = next(
+                                    event for event in rebuilt["events"]
+                                    if event.get("sn") == "B482PARTIAL0001"
+                                )
+                                self.assertEqual(partial_event["round_id"], round_id)
+                                self.assertEqual(partial_event["localized_message"]["message_id"],
+                                                 "round.result")
+                                verify_round_event_language_refresh(partial_event)
+                            if platform == "sample-json":
+                                sample_time = datetime.now().isoformat(timespec="seconds")
+                                event_path = Path(paths["active"]) / "events.jsonl"
+                                sample_line = json.dumps({
+                                    "kind": "final", "position": 20,
+                                    "sn": "SAMPLE000020", "status": "PASS",
+                                    "source_time": sample_time, "batch_id": "tk-round-fixture",
+                                })
+                                event_path.write_text(sample_line, encoding="utf-8")
+                                root.update()
+                                app.rounds.poll_once()
+                                self.assertEqual(app.rounds.snapshot().results[0].status, "WAITING")
+                                event_path.write_text(sample_line + "\n", encoding="utf-8")
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS")
                                 running_round_id = app.rounds.snapshot().round_id
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                                sample_event = next(
+                                    event for event in rebuilt["events"]
+                                    if event.get("sn") == "SAMPLE000020"
+                                )
+                                self.assertEqual(sample_event["round_id"], running_round_id)
+                                self.assertEqual(sample_event["localized_message"]["message_id"],
+                                                 "round.result")
+                                verify_round_event_language_refresh(sample_event)
                                 app.start_button.invoke()
                                 root.event_generate("<Command-Shift-M>")
                                 app.hotkey.callback()
@@ -1328,6 +1639,62 @@ class LogSolutionUiTests(unittest.TestCase):
                                 pump_until(lambda: app.rounds.snapshot().round_id == running_round_id and
                                            app.rounds.snapshot().results[0].status == "PASS" and
                                            app.status_rows[1]["status"].cget("text") == "PASS")
+                            if platform == "rswmt":
+                                partial_log = Path(paths["final"]) / "partial-live.log"
+                                log_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+                                partial_log.write_text(
+                                    "{} STATE:TestRunner Add-in 'initialize'...".format(log_time),
+                                    encoding="utf-8",
+                                )
+                                root.update()
+                                app.rounds.poll_once()
+                                self.assertEqual(app.rounds.snapshot().results[0].status, "WAITING")
+                                partial_log.write_text(
+                                    "{} STATE:TestRunner Add-in 'initialize'...\n"
+                                    "{} VARiable:DEFine \"instance_active_1\", 1\n"
+                                    "{} DEBUG:HciCommunication << MLB#.."
+                                    "RSWMT000001 05 5B\n".format(log_time, log_time, log_time),
+                                    encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "TESTING")
+                                created_at = datetime.strptime(
+                                    log_time, "%Y-%m-%d %H:%M:%S,%f",
+                                ).replace(microsecond=0)
+                                start = created_at.strftime("%Y/%d/%m %H:%M:%S")
+                                stopped = (created_at + timedelta(seconds=1)).strftime(
+                                    "%Y/%d/%m %H:%M:%S",
+                                )
+                                filename_time = (created_at + timedelta(seconds=1)).strftime(
+                                    "%Y-%m-%d_%H-%M-%S",
+                                )
+                                result = Path(paths["final"]) / (
+                                    "RSWMT000001_{}.csv".format(filename_time)
+                                )
+                                result.write_text(
+                                    "Overlay,SmtCal,,,,,,\n"
+                                    "Serial Number,Test Pass/Fail Status,List of Failing Tests,"
+                                    "Error Description,Test Start Time,Test Stop Time,PRODUCT,"
+                                    "tc=Slot:tech=None:band=None;subtc=None:rate=None:freq=None;pwr=None;\n"
+                                    "RSWMT000001,Pass,[],{}, {},{},B518,1\n".format(
+                                        "", start, stopped,
+                                    ),
+                                    encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS",
+                                           timeout=12)
+                                self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                                self.assertTrue(rebuilt["audit_complete"])
+                                self.assertEqual(rebuilt["results"][1]["sn"], "RSWMT000001")
+                                rswmt_result = next(
+                                    event for event in rebuilt["events"]
+                                    if event.get("sn") == "RSWMT000001" and
+                                    event.get("status") == "PASS"
+                                )
+                                verify_round_event_language_refresh(rswmt_result)
                         finally:
                             app.rounds.stop()
                             app.rounds.flush_session(timeout=3)
@@ -1653,6 +2020,45 @@ class LogSolutionUiTests(unittest.TestCase):
                     font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
                 )
                 self.assertEqual(difference_font.actual("weight"), "bold")
+
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = app.rounds.session_path / "audit.jsonl"
+                audit_bytes_before_refresh = audit_path.read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+                selected_conflict_id = second_conflict.conflict_id
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertTrue(any(
+                    event.event.localized_message and
+                    event.event.localized_message.traditional_chinese in line
+                    for event in state_before_refresh.events for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                 state_before_refresh.pending_conflicts)
+                self.assertEqual(app.conflict_list.curselection(), (1,))
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                self.assertIn(selected_conflict_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][1:],
+                                 ("SN-ORIGINAL", "SN-CANDIDATE-2"))
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                 state_before_refresh.pending_conflicts)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
 
                 app.conflict_close_button.invoke()
                 root.update_idletasks()
@@ -2308,6 +2714,43 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(audit_event["operation_at"])
                 self.assertEqual(audit_event["detail"]["candidate_sn"], "SERIAL00000002")
                 self.assertNotIn("reason", audit_event["detail"])
+                self.assertIsNotNone(rejected.localized_message)
+                audit_bytes_before_refresh = (app.rounds.session_path / "audit.jsonl").read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+
+                self.assertTrue(any(
+                    rejected.localized_message.traditional_chinese in line
+                    for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().round_id, state_before_refresh.round_id)
+                self.assertEqual(app.rounds.snapshot().results, state_before_refresh.results)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual((app.rounds.session_path / "audit.jsonl").read_bytes(),
+                                 audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertTrue(any(
+                    rejected.localized_message.english in line for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual((app.rounds.session_path / "audit.jsonl").read_bytes(),
+                                 audit_bytes_before_refresh)
             finally:
                 if app._round_is_active():
                     app.rounds.stop()
@@ -2316,6 +2759,106 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
+
+    def test_real_tk_timeout_event_language_refresh_preserves_round_and_audit(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            sources = []
+
+            class ControlledTimeoutMonitor(BaseMonitor):
+                def poll_once(self):
+                    return
+
+            def source_factory(callback):
+                source = ControlledTimeoutMonitor(
+                    "FCT", {}, (1, 2), callback=callback,
+                    session_root=Path(temporary) / "sessions",
+                )
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for the shared timeout event")
+
+            try:
+                started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                app.active_round_id = started.round_id
+                pump_until(lambda: sources and app.rounds.session_path is not None)
+                pump_until(lambda: any(
+                    event.event.kind == "round_ready"
+                    for event in app.rounds.snapshot().events
+                ))
+                sources[0].publish_round_event(MonitorEvent(
+                    "timeout", "FCT 尚未開始測試逾時", status="TIMEOUT",
+                    detail={"kind": "start"},
+                ))
+                def timeout_is_visible():
+                    event = next((event.event for event in app.rounds.snapshot().events
+                                  if event.event.kind == "timeout"), None)
+                    return (event is not None and event.localized_message is not None and
+                            any(event.localized_message.english in line
+                                for line in app.event_lines))
+
+                pump_until(timeout_is_visible)
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                session_path = app.rounds.session_path
+                audit_path = session_path / "audit.jsonl"
+                pump_until(audit_path.is_file)
+                audit_bytes_before_refresh = audit_path.read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+                timeout_event = next(event.event for event in state_before_refresh.events
+                                     if event.event.kind == "timeout")
+                self.assertIsNotNone(timeout_event.localized_message)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertTrue(any(timeout_event.localized_message.traditional_chinese in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().round_id, started.round_id)
+                self.assertEqual(app.rounds.snapshot().results, state_before_refresh.results)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertTrue(any(timeout_event.localized_message.english in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                close_status = app.rounds.close_status().status
+                app.hotkey.close()
+                root.destroy()
+                self.assertEqual(close_status, "complete")
 
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \

@@ -70,6 +70,153 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(record["localized_message"]["en"], "FCT Slot 3 result: PASS")
         self.assertEqual(record["localized_message"]["zh-TW"], "FCT 通道 3 結果：PASS")
 
+    def test_platform_message_is_captured_before_session_persistence(self):
+        monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "platform-events",
+                              now=lambda: self.now)
+        event = MonitorEvent(
+            "warning", "legacy warning", source="/tmp/bad.jsonl",
+            detail={"source_id": "bad.jsonl#1", "raw_error": "invalid token"},
+            message_id="platform.sample_json.invalid_record",
+            message_parameters={"source_filename": "bad.jsonl"},
+            diagnostic="invalid token",
+        )
+        monitor.emit(event)
+        self.assertTrue(monitor.session.flush())
+
+        saved = json.loads((monitor.session.path / "events.log").read_text(encoding="utf-8"))
+        localized = saved["localized_message"]
+        self.assertEqual(localized["message_id"], "platform.sample_json.invalid_record")
+        self.assertEqual(localized["en"], "Sample JSON source record is invalid: bad.jsonl")
+        self.assertEqual(localized["zh-TW"], "Sample JSON 來源記錄無效：bad.jsonl")
+        self.assertEqual(localized["diagnostic"], "invalid token")
+        self.assertEqual(saved["detail"]["raw_error"], "invalid token")
+
+    def test_atlas_and_b482_producers_capture_platform_message_ids(self):
+        atlas_events = []
+        atlas = AtlasActiveArchiveMonitor(
+            "FCT", self.temp / "atlas-active", self.temp / "atlas-final", (1,),
+            now=lambda: self.now, session_root=self.temp / "sessions", callback=atlas_events.append,
+        )
+        atlas.poll_once()
+        self.assertEqual(atlas_events[0].localized_message.message_id,
+                         "platform.atlas.source_prepared")
+
+        clock = [0.0]
+        source = self.temp / "b482"
+        b482_events = []
+        b482 = BtLogMonitor(
+            source, (1,), now=lambda: self.now, monotonic=lambda: clock[0],
+            session_root=self.temp / "sessions", callback=b482_events.append,
+        )
+        write_bt(source / "2022-06-18" / "PASSED" /
+                 "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv",
+                 "HK5HUX6STQ800003YV", "PASSED", "0")
+        b482.poll_once()
+        clock[0] = 5.1
+        b482.poll_once()
+        self.assertEqual(b482_events[0].localized_message.message_id, "platform.b482.batch")
+        self.assertEqual(b482_events[0].localized_message.as_record()["parameters"]["batch_id"],
+                         "20220618022901")
+
+    def test_atlas_csv_read_failure_is_a_bilingual_app_event_with_raw_diagnostic(self):
+        active, final = self.temp / "atlas-active-read-error", self.temp / "atlas-final-read-error"
+        target = active / "group0-slot1" / "system" / "records.csv"
+        target.parent.mkdir(parents=True)
+        events = []
+        monitor = AtlasActiveArchiveMonitor(
+            "FCT", active, final, (1,), now=lambda: self.now,
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        write_records(target, "HK5HUX6STQ800003YV")
+        original_open = Path.open
+
+        def fail_source_read(path, *args, **kwargs):
+            if path == target and kwargs.get("mode", args[0] if args else "r") == "r":
+                raise OSError("controlled source read failure")
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", fail_source_read):
+            monitor.poll_once()
+
+        warning = next(event for event in events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.atlas.source_error")
+        self.assertEqual(warning.localized_message.as_record()["parameters"]["source_filename"],
+                         "records.csv")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled source read failure")
+
+        b482_root = self.temp / "b482-read-error"
+        b482_target = b482_root / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv")
+        b482_target.parent.mkdir(parents=True)
+        b482_events = []
+        b482 = BtLogMonitor(
+            b482_root, (1,), now=lambda: self.now, monotonic=lambda: 1,
+            session_root=self.temp / "sessions", callback=b482_events.append,
+        )
+        write_bt(b482_target, "HK5HUX6STQ800003YV", "PASSED", "0")
+
+        def fail_b482_read(path, *args, **kwargs):
+            if path == b482_target and kwargs.get("mode", args[0] if args else "r") == "r":
+                raise OSError("controlled source read failure")
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", fail_b482_read):
+            b482.poll_once()
+        warning = next(event for event in b482_events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.b482.source_error")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled source read failure")
+
+    def test_atlas_csv_parse_failure_is_reported_without_changing_source_result_policy(self):
+        active, final = self.temp / "atlas-active-parse-error", self.temp / "atlas-final-parse-error"
+        target = active / "group0-slot1" / "system" / "records.csv"
+        target.parent.mkdir(parents=True)
+        events = []
+        monitor = AtlasActiveArchiveMonitor(
+            "FCT", active, final, (1,), now=lambda: self.now,
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        target.write_text("MLB_SN,status\nHK5HUX6STQ800003YV,PASS\n", encoding="utf-8")
+
+        with patch("monitoring_files.csv.DictReader", side_effect=csv.Error("controlled CSV parse error")):
+            monitor.poll_once()
+
+        warning = next(event for event in events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.atlas.source_error")
+        self.assertEqual(warning.localized_message.diagnostic, "controlled CSV parse error")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled CSV parse error")
+        self.assertEqual(monitor.results[1].status, "TESTING")
+
+    def test_b482_file_signature_failure_is_reported_as_bilingual_source_error(self):
+        import b482_source_adapter
+
+        source = self.temp / "b482-signature-error"
+        events = []
+        monitor = BtLogMonitor(
+            source, (1,), now=lambda: self.now, monotonic=lambda: 6,
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        target = source / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv")
+        write_bt(target, "HK5HUX6STQ800003YV", "PASSED", "0")
+        original_signature = b482_source_adapter.file_signature
+        signatures = 0
+
+        def fail_when_stability_is_checked(path):
+            nonlocal signatures
+            if path == target:
+                signatures += 1
+                if signatures == 2:
+                    raise OSError("controlled signature failure")
+            return original_signature(path)
+
+        with patch("b482_source_adapter.file_signature", side_effect=fail_when_stability_is_checked):
+            monitor.poll_once()
+
+        warning = next(event for event in events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.b482.source_error")
+        self.assertEqual(warning.localized_message.diagnostic, "controlled signature failure")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled signature failure")
+
     def test_legacy_session_adapter_keeps_its_existing_event_call_shape(self):
         monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "legacy")
         captured = []
@@ -383,6 +530,31 @@ class LogMonitoringTests(unittest.TestCase):
         evidence = {item.sn: item.evidence()["round_evidence_id"] for item in observations}
         self.assertEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ900003YV"])
         self.assertNotEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ700003YV"])
+
+    def test_b482_batch_mismatch_producer_captures_localized_slot_and_diagnostic(self):
+        clock = [0.0]
+        root = self.temp / "B482-TestData"
+        events = []
+        monitor = BtLogMonitor(
+            root, (1,), now=lambda: self.now, monotonic=lambda: clock[0],
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        first = root / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv")
+        other = root / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ700003YV][PASSED][20220618023001].csv")
+        write_bt(first, "HK5HUX6STQ800003YV", "PASSED", "0")
+        write_bt(other, "HK5HUX6STQ700003YV", "PASSED", "0")
+        monitor.poll_once()
+        clock[0] = 5.1
+        monitor.poll_once()
+
+        event = next(item for item in events
+                     if item.localized_message and
+                     item.localized_message.message_id == "platform.b482.batch_mismatch")
+        record = event.localized_message.as_record()
+        self.assertEqual(record["parameters"], {"slot": 1, "station": "BT"})
+        self.assertIn("20220618023001", record["diagnostic"])
 
     def test_bt_caseinfo_reports_testing_before_final_csv(self):
         root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"

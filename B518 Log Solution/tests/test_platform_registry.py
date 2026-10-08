@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from configured_monitor import ConfiguredMonitor
 from machine_profiles import MachineProfile, ProfileCatalog, ProfileError
@@ -11,6 +12,87 @@ from sample_json_monitor import SampleJsonLinesSource
 
 
 class PlatformRegistryTests(unittest.TestCase):
+    def test_sample_json_source_read_failure_is_reported_once_and_keeps_filename(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "events.jsonl"
+            path.write_text("", encoding="utf-8")
+            source = SampleJsonLinesSource(path.parent, (1,))
+            original_open = Path.open
+
+            def fail_source_read(source_path, *args, **kwargs):
+                if source_path == path and kwargs.get("mode", args[0] if args else "r") == "rb":
+                    raise OSError("controlled JSON read failure")
+                return original_open(source_path, *args, **kwargs)
+
+            with patch.object(Path, "open", fail_source_read):
+                first = source.poll()
+                second = source.poll()
+
+            self.assertEqual(len(first), 1)
+            self.assertEqual(first[0].message_id, "platform.sample_json.unreadable")
+            self.assertEqual(first[0].source_id, path.name)
+            self.assertIn("controlled JSON read failure", first[0].message)
+            self.assertEqual(second, ())
+
+    def test_sample_json_warning_producers_capture_ids_parameters_and_raw_diagnostics(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "events.jsonl"
+            path.write_text("", encoding="utf-8")
+            events = []
+            monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
+                "sample-json", station="FCT", paths={"active": root},
+                source_slots=(1,), callback=events.append,
+                timeouts={"start": 30, "test": 60, "round": 600},
+                session_root=root / "sessions", async_session_writes=False,
+            )
+            path.write_text(
+                '{"kind":"unknown","position":1,"sn":"SAMPLE000001"}\n'
+                '{"kind":"activity","position":1,"sn":42}\n'
+                '{"kind":"final","position":1,"sn":"SAMPLE000001",'
+                '"status":"MYSTERY"}\n'
+                'not-json\n', encoding="utf-8")
+            monitor.poll_once()
+
+            original_open = Path.open
+
+            def fail_source_read(source_path, *args, **kwargs):
+                if source_path == path and kwargs.get("mode", args[0] if args else "r") == "rb":
+                    raise OSError("controlled Sample JSON read failure")
+                return original_open(source_path, *args, **kwargs)
+
+            with patch.object(Path, "open", fail_source_read):
+                monitor.poll_once()
+
+            by_id = {event.localized_message.message_id: event
+                     for event in events if event.localized_message}
+            self.assertEqual(set(by_id), {
+                "platform.sample_json.invalid_record",
+                "platform.sample_json.unsupported_record",
+                "platform.sample_json.invalid_fields",
+                "platform.sample_json.invalid_status",
+                "platform.sample_json.unreadable",
+            })
+            for message_id, event in by_id.items():
+                record = event.localized_message.as_record()
+                self.assertEqual(record["parameters"], {
+                    "source_filename": path.name, "station": "FCT",
+                })
+                self.assertTrue(record["en"])
+                self.assertTrue(record["zh-TW"])
+                self.assertEqual(record["diagnostic"], event.detail["raw_diagnostic"])
+            self.assertIn("kind／position", by_id[
+                "platform.sample_json.unsupported_record"].detail["raw_diagnostic"])
+            self.assertIn("必須是文字", by_id[
+                "platform.sample_json.invalid_fields"].detail["raw_diagnostic"])
+            self.assertIn("狀態不受支援", by_id[
+                "platform.sample_json.invalid_status"].detail["raw_diagnostic"])
+            self.assertIn("JSON Lines 記錄格式錯誤", by_id[
+                "platform.sample_json.invalid_record"].detail["raw_diagnostic"])
+            self.assertIn("controlled Sample JSON read failure", by_id[
+                "platform.sample_json.unreadable"].detail["raw_diagnostic"])
+            self.assertTrue(monitor.session.flush())
+
     def test_registry_preserves_injected_replay_clocks_for_registered_adapters(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
