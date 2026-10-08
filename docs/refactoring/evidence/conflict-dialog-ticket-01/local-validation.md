@@ -14,6 +14,8 @@ Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
 
 最後已驗證測試提交：`c0ed2dc`（加入啟動清理 teardown 同步；其後沒有程式或測試修改）
 
+最終 Ticket 01 合併提交：`d7d82e8405ef8839820cc727b15f256c24353389`
+
 ## 交付內容
 
 右側彈窗新增固定「結果、SN、來源時間、來源檔名」四列摘要表格與顯示位置，左側衝突清單選取時摘要與原完整詳細資訊同步更新。上下使用可拖曳垂直分隔，首次配置約 40%／60%。摘要與詳細文字均取自同一 `RoundConflict` 快照；檔名只取快照來源路徑 basename，未知值顯示「未知」，完整路徑與來源識別仍由舊 formatter 呈現。長檔名採可水平捲動欄位。裁決按鈕、非模態視窗及既有輪次/audit 行為沿用。
@@ -54,6 +56,8 @@ python3 scripts/run_tests.py test_verify_macos_bundle test_log_monitoring test_a
 合併後第一次全套測試發現既有 `test_operator_selects_project_and_machine_and_choice_survives_restart` 會在啟動清理背景工作寫入時刪除暫存目錄。測試現在透過公開 `RoundCoordinator.retention_cleanup_status()` 等待兩個 App 執行個體的啟動清理各自完成，再銷毀視窗。該測試單獨連續 3 次通過。
 
 修正後最終完整套件以桌面存取權限執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，結果 **275 tests passed（54.894 秒）**，含完整 `test_log_solution_ui`。一般沙盒中的 Tk 建窗會以 SIGABRT 結束；使用已核准的桌面執行權限後，真 Tk 測試及完整套件均通過。早期 `python3 scripts/run_tests.py test_conflict` 不是有效測試識別，已確認 runner 要求 unittest module 名稱；不列為產品測試結果。
+
+最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 驗證再次執行相同完整套件：**275 tests passed（52.689 秒）**。合併樹的產品程式與測試內容均與上述已審查、測試的 `ebe7364`／`c0ed2dc` 一致。
 
 
 ## 固定基準審查
