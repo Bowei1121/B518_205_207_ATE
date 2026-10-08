@@ -1090,6 +1090,109 @@ class LogSolutionUiTests(unittest.TestCase):
                 coordinator.request_close()
                 root.destroy()
 
+    def test_atlas_conflict_with_same_filename_from_new_archive_path_shows_real_tk_hint(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+
+            def wait_ui(predicate, timeout=6):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.02)
+                self.fail("Timed out waiting for the controlled Atlas path-conflict flow: {} / {}"
+                          .format(app.rounds.snapshot(), app.event_lines[-8:]))
+
+            def write_records(path, serial, status):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("MLB_SN,status\n{},{}\n".format(serial, status),
+                                encoding="utf-8")
+
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("2")
+                app.profile_editor_mapping.set("1:1, 2:2")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_monitor()
+                wait_ui(lambda: app.rounds.session_path is not None)
+
+                serial = "SERIAL00000091"
+                active_record = active / "group0-slot1" / "system" / "records.csv"
+                second_active_record = active / "group0-slot2" / "system" / "records.csv"
+                write_records(active_record, serial, "Pass")
+                write_records(second_active_record, "SERIAL00000092", "Pass")
+                wait_ui(lambda: len(app.rounds.snapshot().results) == 2 and all(
+                    result.status == "TESTING" for result in app.rounds.snapshot().results))
+                first_stamp = (datetime.now() + timedelta(seconds=1)).strftime(
+                    "%Y%m%d_%H-%M-%S.000-run",
+                )
+                first_archive = final / serial / first_stamp / "system" / "records.csv"
+                active_record.unlink()
+                active_record.parent.rmdir()
+                (active / "group0-slot1").rmdir()
+                write_records(first_archive, serial, "Pass")
+                wait_ui(lambda: app.rounds.snapshot().results and
+                        app.rounds.snapshot().results[0].status == "PASS")
+
+                second_stamp = (datetime.now() + timedelta(seconds=3)).strftime(
+                    "%Y%m%d_%H-%M-%S.000-run",
+                )
+                second_archive = final / serial / second_stamp / "system" / "records.csv"
+                write_records(second_archive, serial, "Fail")
+                wait_ui(lambda: app.rounds.snapshot().pending_conflicts, timeout=8)
+                wait_ui(lambda: app.conflict_window and app.conflict_window.winfo_viewable())
+                root.update_idletasks()
+
+                conflict = app.rounds.snapshot().pending_conflicts[0]
+                self.assertEqual(conflict.original.source, str(first_archive))
+                self.assertEqual(conflict.candidate.source, str(second_archive))
+                self.assertEqual(Path(conflict.original.source).name,
+                                 Path(conflict.candidate.source).name)
+                rows = conflict_summary_rows(app)
+                self.assertEqual(rows[4], (
+                    "來源檔名", "records.csv · {}/system".format(first_stamp),
+                    "records.csv · {}/system".format(second_stamp),
+                ))
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in app._conflict_value_ranges["來源檔名"]],
+                                 [True, True])
+                detail = app.conflict_details.get("1.0", "end")
+                self.assertIn(str(first_archive), detail)
+                self.assertIn(str(second_archive), detail)
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(difference_font.actual("weight"), "bold")
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                app.rounds.request_close()
+                root.destroy()
+
     def test_unknown_atlas_identity_change_is_visible_as_fail_and_audited_without_reason(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
