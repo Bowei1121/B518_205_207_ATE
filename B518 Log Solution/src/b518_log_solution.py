@@ -130,6 +130,7 @@ class B518LogSolutionApp:
         self.event_lines: list[str] = []
         self._event_records: list[tuple[str, object, Optional[str]]] = []
         self._app_event_ids = set()
+        self._last_app_event_revision: Optional[int] = None
         self.app_diagnostics_window = None
         self.app_diagnostics_list = None
         self.app_diagnostics_detail = None
@@ -437,7 +438,7 @@ class B518LogSolutionApp:
         if self._close_window and self._close_window.winfo_exists():
             self._render_close_status(self.rounds.close_status())
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
-            self._refresh_app_event_records()
+            self._refresh_app_event_records(force=True)
 
     def _restore_captured_round_messages_for_display(self) -> None:
         """Reuse captured round messages when an early callback reached the UI first."""
@@ -552,9 +553,16 @@ class B518LogSolutionApp:
             self.app_diagnostics_retry_button.configure(
                 state="normal" if status.status == "failed" else "disabled")
 
-    def _refresh_app_event_records(self) -> None:
+    def _refresh_app_event_records(self, force: bool = False) -> None:
+        if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
+            return
+        revision = self.rounds.app_event_revision()
+        if not force and revision == self._last_app_event_revision:
+            return
+        records = self.rounds.app_event_records()
+        self._last_app_event_revision = revision
         added_to_main_log = False
-        for record in self.rounds.app_event_records():
+        for record in records:
             event_id = record.get("event_id")
             if not isinstance(event_id, str) or event_id in self._app_event_ids:
                 continue
@@ -569,7 +577,6 @@ class B518LogSolutionApp:
             selected = self.app_diagnostics_list.curselection()
             prior_id = getattr(self, "_selected_app_event_id", None)
             self.app_diagnostics_list.delete(0, "end")
-            records = self.rounds.app_event_records()
             for record in records:
                 self.app_diagnostics_list.insert(
                     "end", "{} · {}".format(record.get("occurred_at", ""),
@@ -619,7 +626,7 @@ class B518LogSolutionApp:
     def open_app_diagnostics(self) -> None:
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self.app_diagnostics_window.lift()
-            self._refresh_app_event_records()
+            self._refresh_app_event_records(force=True)
             return
         window = tk.Toplevel(self.root)
         self.app_diagnostics_window = window

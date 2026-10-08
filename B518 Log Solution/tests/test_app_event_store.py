@@ -47,6 +47,15 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(record["localized_message"]["zh-TW"], "全域快捷鍵無法使用")
         self.assertEqual(record["diagnostic"], "OS permission denied")
 
+    def test_public_revision_changes_when_events_are_captured_not_when_pending_drains(self):
+        initial_revision = self.store.revision
+        event = self.store.record("app.hotkey.unavailable", {}, "permission denied")
+        captured_revision = self.store.revision
+        self.assertGreater(captured_revision, initial_revision)
+        self.assertTrue(self.store.flush())
+        self.assertEqual(self.store.revision, captured_revision)
+        self.assertEqual(self.store.records[-1]["event_id"], event.event_id)
+
     def test_failed_write_keeps_same_event_for_ordered_retry_and_disk_rebuild(self):
         entered = threading.Event()
         release = threading.Event()

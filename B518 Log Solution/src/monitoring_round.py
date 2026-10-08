@@ -1349,6 +1349,12 @@ class RoundCoordinator:
             store = self._app_event_store
         return store.records if store is not None else ()
 
+    def app_event_revision(self) -> int:
+        """Return a cheap token for App diagnostic presentation changes."""
+        with self._lock:
+            store = self._app_event_store
+        return store.revision if store is not None else 0
+
     def retry_app_event_saves(self) -> bool:
         """Request a nonblocking retry of App-owned records."""
         with self._lock:

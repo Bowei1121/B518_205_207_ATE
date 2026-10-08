@@ -135,6 +135,7 @@ class AppEventStore:
         self._condition = threading.Condition()
         self._pending: Deque[AppEvent] = deque()
         self._events = []
+        self._revision = 0
         self._error = ""
         self._error_history = []
         self._worker_active = False
@@ -142,6 +143,7 @@ class AppEventStore:
         try:
             if self.path.exists():
                 self._events = read_app_event_store(self.path)["events"]
+                self._revision = len(self._events)
         except Exception as error:
             self._error = str(error)
             self._error_history.append(self._error)
@@ -155,6 +157,12 @@ class AppEventStore:
     def events(self) -> Tuple[AppEvent, ...]:
         with self._condition:
             return tuple(self._pending)
+
+    @property
+    def revision(self) -> int:
+        """Return a cheap token that changes when a new event is captured."""
+        with self._condition:
+            return self._revision
 
     @property
     def records(self) -> Tuple[dict, ...]:
@@ -178,6 +186,7 @@ class AppEventStore:
             event = AppEvent(uuid.uuid4().hex, sequence, moment.isoformat(timespec="microseconds"),
                              kind, message, diagnostic)
             self._pending.append(event)
+            self._revision += 1
             self._ensure_worker_locked()
             return event
 
