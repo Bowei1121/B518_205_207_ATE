@@ -6,7 +6,7 @@
 
 M3 五項驗收已由完整 producer 清單（含共同加入的 `station` 參數）、B482／RS-WMT／Sample JSON producer 斷言、四平台真 Tk 正常／部分／讀取錯誤矩陣、雙語刷新與磁碟重建證據覆蓋；完整含 Tk 套件在測試 SHA `9d35db3` 通過 317 tests（88.328 秒），合併後於主線再次通過 317 tests（89.830 秒）。Sample JSON 五種警告均有 ID／參數／診斷斷言。固定基準 `c87c7bcefa334b96c420f255e8c1bf99e7a97370` 的最終 Standards／Spec 複審至 `99556a784a50e91262cb340ba89fcb8cfccd5555` 無未解規格缺口或硬性標準違反；Standards 留一項非阻擋重複錯誤追蹤氣味。GitHub 合併 SHA `fb4ffb2286d9c113511482b738a101a11616bd14` 與 M3 票分支 `c4f89723fe9bf0389b8df947c940eeeef2b2e537` 均已直接查證。公司 Gitea 依使用者指示週一同步；M2／M3 票分支在 Gitea 直接確認前保留。細節見 [M3 本機驗收紀錄](../evidence/multilingual-ticket-03/local-validation.md)。
 
-M4 六項本機驗收及完整含 Tk 套件已通過：最終程式／測試提交 `7990759` 的 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 328 tests（83.591 秒），並通過 compileall 與 `git diff --check`。已建立無輪次 App 事件雙語持久格式、公開重試／狀態及正常關閉協調；真 Tk 覆蓋診斷詳細區、熱鍵／配置／語言偏好故障、保存重試及完整關閉。M4 固定基準 Standards／Spec 雙軸審查及其後的 GitHub 主線合併驗證尚待完成。GitHub 票分支依每批提交推送；公司 Gitea 仍按使用者指示週一同步，Gitea 直接查證前保留 M4 本地與遠端分支。細節見 [M4 本機驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md)。
+M4 六項本機驗收及完整含 Tk 套件已通過：最終程式／測試提交 `be4f091` 的 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（92.409 秒），並通過 compileall 與 `git diff --check`。已建立無輪次 App 事件雙語持久格式、公開重試／狀態及正常關閉協調；真 Tk 覆蓋初始化、語言／配置／匯入匯出／熱鍵失敗、原始診斷、歷史錯誤復原、耐久性重試及完整關閉。固定基準 `648b0c2126aaa6ab29016f2f95deb24ca7c8145f` 的 Standards／Spec 複審至 `be4f091` 無未解問題；GitHub 主線合併與合併後驗證待辦。GitHub 票分支已逐批推送；公司 Gitea 依使用者指示週一同步，Gitea 直接查證前保留 M4 本地與遠端分支。細節見 [M4 本機驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md)。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |

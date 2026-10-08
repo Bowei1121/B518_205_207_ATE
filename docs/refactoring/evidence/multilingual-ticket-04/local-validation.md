@@ -35,6 +35,8 @@ The App store snapshots nested parameters at event creation. It writes ordered s
 
 The App diagnostics window keeps the current save state separate from historical journal errors. After a successful retry it displays the recovered current state and retains the original failure reason for review; journal failures do not recursively generate more journal events.
 
+The store exposes a lightweight revision token that advances when an event is captured. The Tk loop reads the full event history only while the diagnostics window is open and only when the revision changes; opening the window and switching language force one refresh. Save-status polling remains independent, so failure history and current state stay current without copying the persistent event journal every 150 ms.
+
 `RoundCoordinator` exposes App record/status/list/retry operations and includes App save state in its existing close worker. Close completion checks all tracked round Session/audit work and the App journal; events arriving during close are serialized against the final completion decision. Failed App saves keep the window open and allow retry; cancellation invalidates the close generation without cancelling writes. Tk status, details, retry and destruction stay on the Tk event loop. This does not introduce product-result blocking or App event deletion.
 
 ## Acceptance evidence
@@ -46,9 +48,9 @@ The App diagnostics window keeps the current save state separate from historical
 | 3. Ordered, complete retry without loss/duplication or recursive failure events | `tests/test_app_event_store.py`: ordered retry, initialization recovery, replace-after-success detection, and directory-fsync failure; `tests/test_monitoring_round.py`: App event during close and retry after directory-fsync failure; true Tk retry case with historical error shown after recovery |
 | 4. App work participates in normal save/close; no-round and round work both required | `tests/test_monitoring_round.py`: `test_close_waits_for_no_round_app_events_and_retries_failed_app_store` injects parent-directory fsync failure and proves close remains failed until retry confirms durability; `test_app_event_arriving_during_close_is_included_before_complete`; `tests/test_log_solution_ui.py`: true Tk failure-keeps-open and retry-to-destroy case |
 | 5. Current-language explanation plus inspectable raw diagnostic and stable error identity | `tests/test_log_solution_ui.py`: real Tk App diagnostics, preference-save failure, hotkey/profile failures, details selection, fresh disk reader |
-| 6. True Tk, temporary disk, injected initialization/write failures, retry and complete save | `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` (final result recorded below); M4-specific UI cases use temporary preference, App event and Session paths and actual Tk pointer events for language, settings, import/export, diagnostics, retry and close. |
+| 6. True Tk, temporary disk, injected initialization/write failures, retry and complete save | `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` (final result recorded below); M4-specific UI cases use temporary preference, App event and Session paths and actual Tk pointer events for language, settings, import/export, diagnostics, retry and close. The full suite includes the App event revision contract and verifies live diagnostics refresh under the real Tk event loop. |
 
-Final complete-suite command: `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` — **328 tests passed** in 83.591 seconds, with the final real-Tk hotkey/profile coverage and temporary-root cleanup guard included. `python3 -m compileall -q src tests` and `git diff --check` also passed.
+Final complete-suite command: `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` — **330 tests passed** in 92.409 seconds at validation commit `be4f091`. This includes real Tk cases for hotkey/profile/language failures, import/export failures, visible historical journal errors after recovery, durable close retry, and the complete round regression suite. `python3 -m compileall -q src tests` and `git diff --check` also passed.
 
 The sandboxed Tk attempt aborted with exit 134 before reporting assertions. The same focused cases and full suite passed with access to the desktop graphical session. No type-check configuration (`pyproject.toml`, mypy/pyright, setup/tox, pre-commit, Ruff config or Makefile) was found; no type-check pass is claimed.
 
@@ -57,8 +59,8 @@ The earliest M4 UI test runs occurred before all legacy UI tests were redirected
 ## Review and delivery tracking
 
 - Standards/Spec review baseline remains `648b0c2126aaa6ab29016f2f95deb24ca7c8145f`.
-- Final program/test validation SHA: `7990759` (`test: isolate app diagnostic UI recovery cases`).
-- Review results and any follow-up validation: pending final fixed-baseline dual-axis review; update before merge.
+- Final program/test validation SHA: `be4f091` (`perf: refresh app diagnostics only when records change`).
+- Fixed-baseline dual-axis re-review (`648b0c2126aaa6ab29016f2f95deb24ca7c8145f` → `be4f091`): Standards found no actionable issues; Spec found no remaining blocking gaps. The re-reviews verified directory-fsync/close retry, visible error history after recovery, real Tk import/export diagnostics, and revision-token refresh behavior.
 - GitHub ticket branch / main synchronization: verify by direct remote SHA query after push/merge.
 - Gitea synchronization is pending Monday and is not claimed here. Do not remove the local or GitHub ticket branch until Gitea is directly confirmed.
 - No remote issue status was changed.
