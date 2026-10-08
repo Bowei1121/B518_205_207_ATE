@@ -28,6 +28,7 @@ from monitoring_round import (
 )
 import audit_records
 from audit_records import read_round_audit
+from app_event_store import AppEventStore, read_app_event_store
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE
 
@@ -143,6 +144,38 @@ def conflict_summary_rows(app):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def setUp(self):
+        self._isolated_app_root = TemporaryDirectory()
+        self._app_event_stores = []
+        app_root = Path(self._isolated_app_root.name)
+        app_root_patcher = patch("b518_log_solution.APP_ROOT", app_root)
+        preferences_patcher = patch("b518_log_solution.PREFS_PATH", app_root / "preferences.json")
+        real_store = AppEventStore
+
+        def create_store(*args, **kwargs):
+            store = real_store(*args, **kwargs)
+            self._app_event_stores.append(store)
+            return store
+
+        store_patcher = patch("b518_log_solution.AppEventStore", side_effect=create_store)
+        app_root_patcher.start()
+        preferences_patcher.start()
+        store_patcher.start()
+        self.addCleanup(app_root_patcher.stop)
+        self.addCleanup(preferences_patcher.stop)
+        self.addCleanup(store_patcher.stop)
+        self.addCleanup(self._isolated_app_root.cleanup)
+        self.addCleanup(self._settle_app_event_writes)
+
+    def _settle_app_event_writes(self):
+        for store in self._app_event_stores:
+            deadline = time.monotonic() + 5
+            while store.status().status == "saving" and time.monotonic() < deadline:
+                time.sleep(.01)
+            self.assertNotEqual(store.status().status, "saving",
+                                "App event write must finish before temporary data cleanup")
+            store.stop()
+
     def wait_for(self, predicate, timeout=3):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -161,6 +194,328 @@ class LogSolutionUiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Timed out waiting for public round archive statuses: {}".format(
             coordinator.archive_statuses()))
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_app_diagnostic_is_bilingual_inspectable_and_saved_before_close(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            preferences = Path(temporary) / "preferences.json"
+            profile_store = MachineProfileStore(preferences)
+            profile_store.load()
+            profile_store.save_language(ENGLISH)
+            app_path = Path(temporary) / "app-events.json"
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+                app_event_clock=lambda: datetime(2026, 10, 9, 2, 3, 4, tzinfo=timezone.utc),
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping App event save UI")
+
+            def root_destroyed():
+                try:
+                    return not root.winfo_exists()
+                except tk.TclError:
+                    return True
+
+            try:
+                root.update()
+                original_preferences = preferences.read_bytes()
+                x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
+                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                with patch("machine_profiles._atomic_write_text", side_effect=OSError("preference disk full")), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIn("繁體中文", app.language_button.cget("text"))
+                self.assertEqual(preferences.read_bytes(), original_preferences)
+                self.assertIn("preference disk full", app.event_lines[-1])
+
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                app.app_diagnostics_button.invoke()
+                root.update()
+                self.assertIsNotNone(app.app_diagnostics_window)
+                detail_text = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("原始診斷", detail_text)
+                self.assertIn("preference disk full", detail_text)
+                saved = read_app_event_store(app_path)["events"]
+                language_failure = next(item for item in saved
+                                        if item["localized_message"]["message_id"] ==
+                                        "app.language.preference_save_failed")
+                self.assertEqual(language_failure["localized_message"]["en"],
+                                 "Language changed for this session but could not be saved: preference disk full")
+                self.assertEqual(language_failure["localized_message"]["zh-TW"],
+                                 "語言已切換供本次使用，但保存失敗：preference disk full")
+                self.assertNotIn("round_id", language_failure)
+
+                app.close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+                pump_until(root_destroyed)
+                self.assertTrue(root_destroyed())
+                rebuilt = read_app_event_store(app_path)
+                self.assertTrue(any(item["event_id"] == language_failure["event_id"]
+                                    for item in rebuilt["events"]))
+            finally:
+                if not root_destroyed():
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_close_keeps_app_write_failure_open_and_retries_it(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping App save-before-close UI")
+
+            def root_destroyed():
+                try:
+                    return not root.winfo_exists()
+                except tk.TclError:
+                    return True
+
+            try:
+                root.update()
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                def fail_app_store(_path, _content):
+                    raise OSError("app journal unavailable")
+
+                with patch("app_event_store._atomic_replace", side_effect=fail_app_store):
+                    x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
+                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                    root.update()
+                    chinese_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    with patch("machine_profiles._atomic_write_text",
+                               side_effect=OSError("preference disk full")), \
+                            patch("b518_log_solution.messagebox.showerror"):
+                        app.language_menu.invoke(chinese_index)
+                    event_record = next(item for item in app.rounds.app_event_records()
+                                        if item["localized_message"]["message_id"] ==
+                                        "app.language.preference_save_failed")
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+                    app.close()
+                    pump_until(lambda: app.rounds.close_status().status == "failed")
+                    pump_until(lambda: "app journal unavailable" in
+                               app._close_error_label.cget("text"))
+                    self.assertIn("App 診斷", app._close_status_label.cget("text"))
+                    self.assertTrue(root.winfo_exists())
+                    self.assertTrue(app._close_window.winfo_exists())
+
+                button = app._close_retry_button
+                x, y = button.winfo_width() // 2, button.winfo_height() // 2
+                button.event_generate("<ButtonPress-1>", x=x, y=y)
+                button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+                pump_until(root_destroyed)
+                self.assertTrue(root_destroyed())
+                events = read_app_event_store(app_path)["events"]
+                self.assertEqual([item["localized_message"]["message_id"] for item in events],
+                                 ["app.startup.started", "app.language.preference_save_failed"])
+                self.assertEqual(events[1]["event_id"], event_record["event_id"])
+                self.assertEqual(events[1]["diagnostic"], "preference disk full")
+            finally:
+                if not root_destroyed():
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_hotkey_and_profile_failures_are_saved_and_inspectable(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=lambda _callback: UnavailableHotkey("shortcut already used"),
+                session_root=Path(temporary) / "sessions", app_event_path=app_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping App diagnostic UI")
+
+            def click(widget):
+                x, y = widget.winfo_width() // 2, widget.winfo_height() // 2
+                widget.event_generate("<ButtonPress-1>", x=x, y=y)
+                widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            def find_button(parent, label):
+                for child in parent.winfo_children():
+                    if isinstance(child, ttk.Button) and child.cget("text") == label:
+                        return child
+                    found = find_button(child, label)
+                    if found is not None:
+                        return found
+                return None
+
+            def root_destroyed():
+                try:
+                    return not root.winfo_exists()
+                except tk.TclError:
+                    return True
+
+            try:
+                with patch("b518_log_solution.messagebox.showwarning") as warning:
+                    pump_until(lambda: warning.called)
+                self.assertEqual(app.current_language, ENGLISH)
+                self.assertTrue(any(
+                    item.get("localized_message", {}).get("message_id") == "app.hotkey.unavailable"
+                    for item in app.rounds.app_event_records()
+                ))
+
+                click(app.settings_button)
+                app.profile_editor_project.set("Unsaved")
+                with patch.object(app.profile_store, "save", side_effect=OSError("profile disk full")):
+                    apply_button = find_button(app.settings_window, "套用並保存")
+                    self.assertIsNotNone(apply_button)
+                    click(apply_button)
+                self.assertIn("active configuration remains unchanged",
+                              app.profile_editor_status.get())
+
+                original_catalog = app.profiles.to_dict()
+                original_selection = (app.project.get(), app.station.get())
+                invalid_import = Path(temporary) / "invalid-profile.json"
+                invalid_import.write_text("{", encoding="utf-8")
+                import_button = find_button(app.settings_window, "匯入配置")
+                export_button = find_button(app.settings_window, "匯出配置")
+                self.assertIsNotNone(import_button)
+                self.assertIsNotNone(export_button)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                with patch("b518_log_solution.filedialog.askopenfilename",
+                           return_value=str(invalid_import)), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    click(import_button)
+                self.assertEqual(app.profiles.to_dict(), original_catalog)
+                self.assertEqual((app.project.get(), app.station.get()), original_selection)
+                self.assertIn("saved configuration remains unchanged",
+                              app.profile_editor_status.get())
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(Path(temporary) / "missing" / "export.json")), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    click(export_button)
+                self.assertIn("could not be exported", app.profile_editor_status.get())
+                app._close_settings()
+
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                click(app.app_diagnostics_button)
+                self.assertIsNotNone(app.app_diagnostics_window)
+                rows = tuple(app.app_diagnostics_list.get(0, "end"))
+                self.assertTrue(any("Global hotkey is unavailable" in row for row in rows), rows)
+                self.assertTrue(any("active configuration remains unchanged" in row
+                                    for row in rows), rows)
+                stored = read_app_event_store(app_path)["events"]
+                ids = [item["localized_message"]["message_id"] for item in stored]
+                self.assertIn("app.startup.started", ids)
+                self.assertIn("app.hotkey.unavailable", ids)
+                self.assertIn("app.profile.save_failed", ids)
+                self.assertIn("app.profile.import_failed", ids)
+                self.assertIn("app.profile.export_failed", ids)
+                self.assertTrue(all("round_id" not in item for item in stored))
+
+                profile_index = next(index for index, row in enumerate(rows)
+                                     if "active configuration remains unchanged" in row)
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(profile_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("Configuration preferences could not be saved", detail)
+                self.assertIn("profile disk full", detail)
+
+                import_index = next(index for index, row in enumerate(rows)
+                                    if "Configuration could not be imported" in row)
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(import_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                import_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("Configuration could not be imported", import_detail)
+                self.assertIn("JSON", import_detail)
+
+                export_index = next(index for index, row in enumerate(rows)
+                                    if "Configuration could not be exported" in row)
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(export_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                export_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("Configuration could not be exported", export_detail)
+                self.assertIn("missing", export_detail)
+
+                # The journal's own failure is exposed in the real diagnostics window
+                # after recovery, while complete remains the current save state.
+                app._close_settings()
+                click(app.settings_button)
+                export_button = find_button(app.settings_window, "匯出配置")
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(Path(temporary) / "missing-again" / "export.json")), \
+                        patch("b518_log_solution.messagebox.showerror"), \
+                        patch("app_event_store._atomic_replace",
+                              side_effect=OSError("diagnostic journal disk full")):
+                    click(export_button)
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+                pump_until(lambda: "diagnostic journal disk full" in
+                           app.app_diagnostics_history.cget("text"))
+                click(app.app_diagnostics_retry_button)
+                pump_until(lambda: "diagnostic journal disk full" in
+                           app.app_diagnostics_history.cget("text"))
+                pump_until(lambda: app.rounds.app_event_status().complete and
+                           "current status: complete" in
+                           app.app_diagnostics_history.cget("text").lower())
+                self.assertIn("complete", app.app_diagnostics_history.cget("text").lower())
+
+                app.close()
+
+                app.close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+                pump_until(root_destroyed)
+                rebuilt = read_app_event_store(app_path)["events"]
+                self.assertEqual([item["sequence"] for item in rebuilt],
+                                 list(range(1, len(rebuilt) + 1)))
+            finally:
+                if not root_destroyed():
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -312,13 +667,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 )
                 app.language_menu.invoke(chinese_index)
                 root.update()
+                deadline = time.monotonic() + 2
+                while (not any("FCT 已接受開始本輪" in line for line in app.event_lines)
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                 self.assertEqual(app.language_button.cget("text"), "繁體中文 ▾")
                 self.assertEqual(app.settings_button.cget("text"), "設定")
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
-                self.assertIn("FCT 已接受開始本輪", app.event_lines)
+                self.assertTrue(any("FCT 已接受開始本輪" in line
+                                    for line in app.event_lines),
+                              (app.current_language, [
+                                  (record[0], getattr(record[1], "message_id", None),
+                                   app._render_event_record(record))
+                                  for record in app._event_records
+                              ], [(item.sequence, item.event.kind,
+                                   getattr(item.event.localized_message, "message_id", None))
+                                  for item in app.rounds.snapshot().events]))
                 self.assertIn("FCT 已接受開始本輪",
                               app.settings_log.get("1.0", "end-1c"))
                 after_switch = app.rounds.snapshot()
@@ -2789,7 +3157,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     if predicate():
                         return
                     time.sleep(0.01)
-                self.fail("Timed out waiting for the shared timeout event")
+                self.fail("Timed out waiting for the shared timeout event: {} {}".format(
+                    app.current_language, (app.event_lines, [
+                        (record[0], getattr(record[1], "message_id", None))
+                        for record in app._event_records
+                    ], [(item.sequence, item.event.kind,
+                         getattr(item.event.localized_message, "message_id", None))
+                        for item in app.rounds.snapshot().events])))
 
             try:
                 started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
@@ -2828,9 +3202,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     if app.language_menu.entrycget(index, "label") == "繁體中文"
                 )
                 app.language_menu.invoke(chinese_index)
-                root.update()
-                self.assertTrue(any(timeout_event.localized_message.traditional_chinese in line
-                                    for line in app.event_lines), app.event_lines)
+                pump_until(lambda: any(
+                    timeout_event.localized_message.traditional_chinese in line
+                    for line in app.event_lines
+                ))
                 self.assertEqual(app.rounds.snapshot().round_id, started.round_id)
                 self.assertEqual(app.rounds.snapshot().results, state_before_refresh.results)
                 self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
@@ -2843,9 +3218,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     if app.language_menu.entrycget(index, "label") == "English"
                 )
                 app.language_menu.invoke(english_index)
-                root.update()
-                self.assertTrue(any(timeout_event.localized_message.english in line
-                                    for line in app.event_lines), app.event_lines)
+                pump_until(lambda: any(
+                    timeout_event.localized_message.english in line for line in app.event_lines
+                ))
                 self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
                 self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
             finally:
@@ -3016,7 +3391,8 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 self.assertEqual(app.profiles.to_dict(), original_catalog)
                 self.assertEqual((app.project.get(), app.station.get()), original_selection)
-                self.assertIn("原配置仍有效", app.profile_editor_status.get())
+                self.assertIn("active configuration remains unchanged",
+                              app.profile_editor_status.get())
             finally:
                 app._close_settings()
                 app.hotkey.close()
@@ -3083,7 +3459,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                return_value=str(invalid_export)):
                         deployed._import_profiles()
                     self.assertEqual(deployed.profiles.to_dict(), original)
-                    self.assertIn("原配置保留", deployed.profile_editor_status.get())
+                    self.assertIn("saved configuration remains unchanged",
+                                  deployed.profile_editor_status.get())
 
                     replacement = deployed.profiles.with_profile(replace(
                         deployed.profiles.get("Demo", "DFU"),
@@ -3344,6 +3721,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(label.cget("text"), status)
                 self.assertEqual(label.cget("background"), STATUS_COLOURS[status])
         finally:
+            cleanup_deadline = time.monotonic() + 5
+            while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                   and time.monotonic() < cleanup_deadline):
+                root.update()
+                time.sleep(.01)
+            self.assertIn(app.rounds.retention_cleanup_status().status, {"complete", "failed"})
             app.hotkey.close()
             root.destroy()
 
@@ -3361,10 +3744,17 @@ class LogSolutionUiTests(unittest.TestCase):
             monitor_type.assert_not_called()
             show_error.assert_called_once()
             self.assertEqual(show_error.call_args.args[:2], (
-                "路徑錯誤", "請設定存在且可讀取的Atlas 即時 Log 路徑。",
+                "Configuration Error",
+                "The selected configuration is invalid: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
             ))
             self.assertIsNone(app.rounds.snapshot())
         finally:
+            cleanup_deadline = time.monotonic() + 5
+            while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                   and time.monotonic() < cleanup_deadline):
+                root.update()
+                time.sleep(.01)
+            self.assertIn(app.rounds.retention_cleanup_status().status, {"complete", "failed"})
             app.hotkey.close()
             root.destroy()
 
@@ -3398,7 +3788,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.monitor_state.cget("text"), "Standby")
                 self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
                 self.assertEqual(show_error.call_args.args[:2], (
-                    "監控啟動失敗", "無法開始監控：disk full",
+                    "Configuration Save Failed",
+                    "Configuration preferences could not be saved; the active configuration remains unchanged: disk full",
                 ))
                 self.assertFalse((Path(temporary) / "sessions").exists())
             finally:
@@ -3503,26 +3894,37 @@ class LogSolutionUiTests(unittest.TestCase):
                     restarted_root.destroy()
 
     def test_monitor_creation_error_is_visible_and_returns_to_standby(self):
-        root = tk.Tk()
-        root.withdraw()
-        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
-        app.station.set("DFU")
-        try:
-            with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
-                       side_effect=PermissionError("denied")), \
-                    patch("b518_log_solution.messagebox.showerror") as show_error:
-                app.start_monitor()
-                deadline = time.monotonic() + 3
-                while not show_error.called and time.monotonic() < deadline:
-                    root.update()
-                    time.sleep(0.01)
-            self.assertFalse(app._round_is_active())
-            self.assertEqual(app.monitor_state.cget("text"), "Start Failed")
-            self.assertIn("denied", app.event_lines[-1])
-            show_error.assert_called_once()
-        finally:
-            app.hotkey.close()
-            root.destroy()
+        with TemporaryDirectory() as temporary:
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            app.station.set("FCT")
+            app.open_settings()
+            app.profile_editor_machine.set("FCT")
+            app.profile_editor_paths["active"].set(str(active))
+            app.profile_editor_paths["final"].set(str(final))
+            app._apply_profile_editor()
+            app._close_settings()
+            try:
+                with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
+                           side_effect=PermissionError("denied")), \
+                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                    app.start_monitor()
+                    deadline = time.monotonic() + 3
+                    while not show_error.called and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+                self.assertFalse(app._round_is_active())
+                self.assertEqual(app.monitor_state.cget("text"), "Start Failed")
+                self.assertIn("denied", app.event_lines[-1])
+                show_error.assert_called_once()
+            finally:
+                app.hotkey.close()
+                root.destroy()
 
     def test_settings_expose_profile_editor_and_session_log_without_legacy_monitor_tab(self):
         root = tk.Tk()

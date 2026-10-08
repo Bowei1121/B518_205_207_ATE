@@ -1,6 +1,7 @@
 import csv
 import gc
 import io
+import os
 import tempfile
 import threading
 import time
@@ -13,7 +14,9 @@ from pathlib import Path
 from log_monitoring import BtLogMonitor, MonitorEvent, SlotResult
 from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor
+import app_event_store
 import audit_records
+from app_event_store import AppEventStore, read_app_event_store
 from audit_records import read_round_audit
 
 
@@ -1723,6 +1726,89 @@ class MonitoringRoundTests(unittest.TestCase):
             count_at_close = len(rebuilt["events"])
             rounds.resolve_review(conflict_id, "accept_candidate")
             self.assertEqual(len(read_round_audit(audit_path)["events"]), count_at_close)
+
+    def test_close_waits_for_no_round_app_events_and_retries_failed_app_store(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = AppEventStore(Path(temporary) / "app-events.json")
+            rounds = RoundCoordinator()
+            rounds.register_app_event_store(store)
+            event = rounds.record_app_event(
+                "app.profile.save_failed", {"reason": "read-only"}, "read-only")
+            deadline = time.monotonic() + 2
+            while store.status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(.01)
+            self.assertEqual(store.status().status, "complete")
+            self.assertIsNone(read_app_event_store(Path(temporary) / "app-events.json")["events"][0].get("round_id"))
+
+            failed_event = rounds.record_app_event(
+                "app.hotkey.unavailable", {}, "permission denied")
+            failed = threading.Event()
+            real_fsync = os.fsync
+            fsync_calls = [0]
+
+            def fail_directory_fsync_once(descriptor):
+                fsync_calls[0] += 1
+                if fsync_calls[0] == 2:
+                    failed.set()
+                    raise OSError("app directory fsync fault")
+                return real_fsync(descriptor)
+
+            with patch.object(app_event_store.os, "fsync", side_effect=fail_directory_fsync_once):
+                self.assertTrue(failed.wait(2))
+                deadline = time.monotonic() + 2
+                while store.status().status != "failed" and time.monotonic() < deadline:
+                    threading.Event().wait(.01)
+                close = rounds.request_close()
+                deadline = time.monotonic() + 2
+                while rounds.close_status().status != "failed" and time.monotonic() < deadline:
+                    threading.Event().wait(.01)
+                self.assertEqual(rounds.close_status().status, "failed")
+                self.assertIn("app directory fsync fault", rounds.close_status().message)
+                self.assertEqual(close.round_ids, ())
+
+            rounds.retry_close_saves()
+            deadline = time.monotonic() + 3
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+            events = read_app_event_store(Path(temporary) / "app-events.json")["events"]
+            self.assertEqual([item["event_id"] for item in events], [event.event_id, failed_event.event_id])
+            self.assertEqual([item["sequence"] for item in events], [1, 2])
+            self.assertIsNone(rounds.record_app_event("app.hotkey.unavailable", {}))
+            store.stop()
+
+    def test_app_event_arriving_during_close_is_included_before_complete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "app-events.json"
+            store = AppEventStore(path)
+            rounds = RoundCoordinator()
+            rounds.register_app_event_store(store)
+            entered = threading.Event()
+            release = threading.Event()
+            original_replace = app_event_store._atomic_replace
+
+            def blocked_replace(target, content):
+                if not entered.is_set():
+                    entered.set()
+                    release.wait(3)
+                return original_replace(target, content)
+
+            with patch.object(app_event_store, "_atomic_replace", side_effect=blocked_replace):
+                first = rounds.record_app_event("app.hotkey.unavailable", {}, "first")
+                self.assertTrue(entered.wait(2))
+                rounds.request_close()
+                second = rounds.record_app_event(
+                    "app.profile.save_failed", {"reason": "second"}, "second")
+                self.assertIsNotNone(second)
+                release.set()
+                deadline = time.monotonic() + 3
+                while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                    threading.Event().wait(.01)
+                self.assertEqual(rounds.close_status().status, "complete")
+            events = read_app_event_store(path)["events"]
+            self.assertEqual([item["event_id"] for item in events],
+                             [first.event_id, second.event_id])
+            store.stop()
 
     def test_close_waits_for_source_preparation_and_restarts_after_cancel(self):
         with tempfile.TemporaryDirectory() as temporary:
