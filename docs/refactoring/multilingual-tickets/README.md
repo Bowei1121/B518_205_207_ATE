@@ -4,7 +4,7 @@
 
 狀態：使用者已確認十張拆票，M1～M10 已發布為 GitHub #14～#23。M1 六項驗收與審查已通過並合併至主線 `83d8a68`。M2 六項驗收、完整含 Tk 套件及固定基準 Standards／Spec 審查均已完成，程式／測試 SHA `1d036f0339c2d37ac7907e46c31f92708909ea38` 已推送；合併提交 `f128d9f963f60d416d0eaf5917fa5eda87408280` 已推送至 GitHub 的 `B518-Log-Solution` 並直接確認。完整證據見[本機驗收紀錄](../evidence/multilingual-ticket-02/local-validation.md)。內部 Gitea 將於週一同步；在直接確認同步前保留 `Multilingual/ticket-02` 分支。M3～M10 依下列範圍與依賴另行交付。Issue #13 僅作 Parent 參考；本次不修改遠端議題狀態。M1／M2 的本機證據不代表全 App 多語言完成。
 
-M3 的五項驗收已由完整 producer 清單（含共同加入的 `station` 參數）、B482／RS-WMT／Sample JSON producer 斷言、四平台真 Tk 正常／部分／讀取錯誤矩陣、雙語刷新與磁碟重建證據覆蓋；完整含 Tk 套件於 `9d35db3` 後通過 317 tests（88.328 秒），Sample JSON 五種警告均有 ID／參數／診斷斷言。固定基準 Standards／Spec 沒有未解規格缺口；最新完整 diff 複審正在進行。GitHub 分支已直接確認在 `9d35db36af225ce6faf56eafbe2e8554917e1a66`；公司 Gitea 依使用者指示週一同步，且在 Gitea 直接確認前保留票分支。細節見 [M3 本機驗收紀錄](../evidence/multilingual-ticket-03/local-validation.md)。
+M3 的五項驗收已由完整 producer 清單（含共同加入的 `station` 參數）、B482／RS-WMT／Sample JSON producer 斷言、四平台真 Tk 正常／部分／讀取錯誤矩陣、雙語刷新與磁碟重建證據覆蓋；完整含 Tk 套件於 `9d35db3` 後通過 317 tests（88.328 秒），Sample JSON 五種警告均有 ID／參數／診斷斷言。固定基準 `c87c7bcefa334b96c420f255e8c1bf99e7a97370` 的最終 Standards／Spec 複審至 `99556a784a50e91262cb340ba89fcb8cfccd5555` 無未解規格缺口或硬性標準違反；Standards 留一項非阻擋重複錯誤追蹤氣味。GitHub 分支已直接確認在 `99556a784a50e91262cb340ba89fcb8cfccd5555`；公司 Gitea 依使用者指示週一同步，且在 Gitea 直接確認前保留票分支。細節見 [M3 本機驗收紀錄](../evidence/multilingual-ticket-03/local-validation.md)。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |
