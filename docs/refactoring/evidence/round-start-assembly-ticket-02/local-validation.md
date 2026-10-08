@@ -14,7 +14,7 @@ Date: 2026-10-08 (Asia/Taipei)
 
 `B518LogSolutionApp.start_monitor` now validates/fixes the selected profile and paths through `RoundStartPreparation`, then keeps the existing Tk responsibilities and order: show busy state, synchronously persist preferences, and hand the prepared request to `RoundCoordinator`. Tk no longer assembles callback holders, adapters, source-slot mappings, or Session/audit evidence. `RoundStartPathError` preserves the existing path-error dialog while distinguishing path failures from other profile errors. The original registry remains the source of profile choices.
 
-The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. Post-merge full runs exposed synchronization gaps: a Tk test asserted rendered rows before the next event-loop delivery, a delayed close `stopped` event could overwrite a source-preparation failure, and teardown needed to wait for successful close completion before removing temporary data. These were addressed by `9cd6b4e`, `20d3874`, `36cfc6e`, and `c17e6dc`; latest validated code/test SHA is `c17e6dca00e1483fe4590834add656e386c4b5f1`.
+The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. Post-merge full runs exposed synchronization gaps: a Tk test asserted rendered rows before the next event-loop delivery, a delayed close `stopped` event could overwrite a source-preparation failure, and teardown needed to wait for archive workers before removing temporary data. These were addressed by `9cd6b4e`, `20d3874`, `36cfc6e`, `c17e6dc`, `8289563`, and `88b4484`; latest validated code/test SHA is `88b448438564e55f0ef57457b05b855bb30ea67c`.
 
 ## R2 acceptance results
 
@@ -79,6 +79,15 @@ Ran 289 tests in 59.525s — OK (final branch verification in accessible desktop
 B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild
 Ran 1 test in 3.830s — OK (final successful-close teardown assertion)
 
+B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_running_round_keeps_its_capacity_and_mapping_after_profile_update test_log_solution_ui.LogSolutionUiTests.test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence test_log_solution_ui.LogSolutionUiTests.test_real_tk_start_button_prepares_every_registered_platform_profile test_log_solution_ui.LogSolutionUiTests.test_app_completes_rswmt_final_only_round_through_shared_entry
+Ran 4 tests in 17.229s — OK (archive-status synchronization before temporary-data cleanup)
+
+B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_running_round_keeps_its_capacity_and_mapping_after_profile_update
+Ran 1 test in 3.267s — OK (requires archived status before cleanup)
+
+B518_TK_TESTS=1 python3 scripts/run_tests.py
+Ran 289 tests in 69.410s — OK (final branch verification at `88b4484`, accessible desktop session)
+
 python3 -m compileall -q src tests
 OK (syntax/bytecode compilation only)
 
@@ -90,9 +99,9 @@ The focused 136-test run preceded the two separately passing tests listed afterw
 
 ## Final review and delivery record
 
-- Full Tk suite after final test fixes: **289 tests passed in 59.525s**; the focused successful-close teardown case passed in 3.830s.
-- Fixed-base re-review through `c17e6dca`: Standards found no documented-standard violations. The duplicated local `pump_until` loops and assertion placement in `finally` remain non-blocking test-maintainability suggestions. Spec found no unresolved issues after the teardown was changed to require `close_status == "complete"`. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
-- Final validated code/test SHA: `c17e6dca00e1483fe4590834add656e386c4b5f1`.
+- Final complete Tk suite: **289 tests passed in 69.410s** at `88b448438564e55f0ef57457b05b855bb30ea67c`; the four archive-synchronized Tk cases passed in 17.229s and the final profile-update archive assertion passed in 3.267s.
+- Fixed-base re-review through `88b4484`: Standards found no documented-standard violations. Assertions in `finally` may mask an earlier test failure if teardown also fails; this remains a non-blocking maintainability suggestion. Spec found no unresolved implementation or scope issues. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
+- Final validated code/test SHA: `88b448438564e55f0ef57457b05b855bb30ea67c`.
 - Merge SHA, live push destination verification, and branch cleanup: **pending**.
 
 Any Tk test temporary directory is isolated. Existing production round data, exports and source logs were not used for failure injection or cleanup.
