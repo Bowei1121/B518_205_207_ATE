@@ -14,7 +14,7 @@ Date: 2026-10-08 (Asia/Taipei)
 
 `B518LogSolutionApp.start_monitor` now validates/fixes the selected profile and paths through `RoundStartPreparation`, then keeps the existing Tk responsibilities and order: show busy state, synchronously persist preferences, and hand the prepared request to `RoundCoordinator`. Tk no longer assembles callback holders, adapters, source-slot mappings, or Session/audit evidence. `RoundStartPathError` preserves the existing path-error dialog while distinguishing path failures from other profile errors. The original registry remains the source of profile choices.
 
-The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. A post-merge full run exposed two synchronization gaps: a Tk test asserted rendered rows before the next event-loop delivery, and a delayed close `stopped` event could overwrite a source-preparation failure. Both are covered by the fixes in `20d3874`; latest validated code/test SHA is `20d3874`.
+The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. Post-merge full runs exposed synchronization gaps: a Tk test asserted rendered rows before the next event-loop delivery, a delayed close `stopped` event could overwrite a source-preparation failure, and teardown needed to wait for successful close completion before removing temporary data. These were addressed by `9cd6b4e`, `20d3874`, `36cfc6e`, and `c17e6dc`; latest validated code/test SHA is `c17e6dca00e1483fe4590834add656e386c4b5f1`.
 
 ## R2 acceptance results
 
@@ -28,7 +28,7 @@ The initial R2 implementation was committed as `6429a87`; the fixed review base 
 | 6 | Background source failure preserves existing UI recovery and durable failed round; slow preparation counts toward deadline; stop/timeout does not restart | **Pass.** Existing R1 `Event`-controlled coordinator tests and actual Tk failure/close regression tests are included in the full suite; preparation remains on coordinator's existing accepted-round background path. |
 | 7 | RUNNING repeat start preserves round/result; start is refused while close-save is active | **Pass.** `test_real_tk_start_button_prepares_every_registered_platform_profile` exercises repeated button/local/global requests while RUNNING and checks the active result/round. Existing true-Tk closing-save guard regression is part of the full suite. |
 | 8 | AWAITING_REVIEW direct start and both shortcuts preserve distinct baseline side effects | **Pass.** `test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects` drives a real Tk App and real coordinator into review; it separately operates direct start, local shortcut, and the global callback/Tk handoff, checking preference and round state for each. |
-| 9 | Delayed old-round events cannot overwrite the new UI; close during preparation waits for source handoff and complete save | **Pass.** Existing true-Tk stale-round isolation and preparation-close/coordinator persistence regressions run in the complete suite; R1 controlled handoff tests are retained. |
+| 9 | Delayed old-round events cannot overwrite the new UI; close during preparation waits for source handoff and complete save | **Pass.** Existing true-Tk stale-round isolation and preparation-close/coordinator persistence regressions run in the complete suite. The true-Tk teardown waits through the public close status and requires `complete` before temporary data is removed. |
 | 10 | Preserve parser/mapping, unknown-source FAIL, conflicts, product release and KVM | **Pass as regression coverage.** Existing platform, configured-monitor, round, conflict, result release and KVM tests are included in the complete suite; no policy or lifecycle implementation was changed. |
 | 11 | Each migration has behavior evidence and existing tests pass; formal overall release remains R3 | **Pass for R2 scope.** Evidence is linked above and in the scenario matrix below. R3's old-path removal and overall release checklist remain outstanding. |
 
@@ -47,7 +47,7 @@ The initial R2 implementation was committed as `6429a87`; the fixed review base 
 | 9 | Stop/deadline during preparation | R1 Event-controlled stop/timeout/late-source tests retained. |
 | 10 | Repeated start while RUNNING | New R2 actual Tk button/local/global entry check preserves round and result. |
 | 11 | Repeated start while AWAITING_REVIEW | New R2 actual Tk test separately verifies direct, local and global-to-Tk entry behavior and baseline side-effect differences. |
-| 12 | Start during close-save / close during preparation | Existing Tk closing guard and coordinator preparation-close tests retained; full suite required for final sign-off. |
+| 12 | Start during close-save / close during preparation | Existing Tk closing guard and coordinator preparation-close tests retained. The final true-Tk suite also waits for successful close completion before temporary-data cleanup. |
 | 13 | Stale old-round events / unmapped sources | Existing round/Tk stale-event and configured-monitor unmapped-source regressions retained. |
 | 14 | Save, archive and retention regression | Existing lifecycle, archival and retention tests retained; R2 changes only start composition. |
 
@@ -74,7 +74,10 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py test_round_start_preparation.RoundS
 Ran 2 tests in 6.883s — OK (after final race fix)
 
 B518_TK_TESTS=1 python3 scripts/run_tests.py
-Ran 289 tests in 60.505s — OK (final branch verification in accessible desktop session)
+Ran 289 tests in 59.525s — OK (final branch verification in accessible desktop session, including successful close assertion)
+
+B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild
+Ran 1 test in 3.830s — OK (final successful-close teardown assertion)
 
 python3 -m compileall -q src tests
 OK (syntax/bytecode compilation only)
@@ -87,9 +90,9 @@ The focused 136-test run preceded the two separately passing tests listed afterw
 
 ## Final review and delivery record
 
-- Full Tk suite after final fix: **289 tests passed in 60.505s**.
-- Fixed-base re-review through `5db46d3`: Standards found no documented-standard violations. The duplicated local `pump_until` loops remain a non-blocking judgement-call smell. Spec found no blocking issues and confirmed the `completion_reason` guard is the minimal fix for the tested close/preparation race. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
-- Final validated code/test SHA: `20d3874`.
+- Full Tk suite after final test fixes: **289 tests passed in 59.525s**; the focused successful-close teardown case passed in 3.830s.
+- Fixed-base re-review through `c17e6dca`: Standards found no documented-standard violations. The duplicated local `pump_until` loops and assertion placement in `finally` remain non-blocking test-maintainability suggestions. Spec found no unresolved issues after the teardown was changed to require `close_status == "complete"`. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
+- Final validated code/test SHA: `c17e6dca00e1483fe4590834add656e386c4b5f1`.
 - Merge SHA, live push destination verification, and branch cleanup: **pending**.
 
 Any Tk test temporary directory is isolated. Existing production round data, exports and source logs were not used for failure injection or cleanup.

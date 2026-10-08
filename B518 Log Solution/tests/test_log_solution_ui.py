@@ -1374,9 +1374,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                close_status = app.rounds.close_status().status
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
+                self.assertEqual(close_status, "complete")
 
     def test_atlas_round_shows_nonblocking_conflict_and_releases_after_other_slot_finishes(self):
         with TemporaryDirectory() as temporary, \
