@@ -61,3 +61,10 @@
 - 呼叫端查核確認正式 Tk 已只呼叫 `RoundStartPreparation`。移除 `start_monitor` 對不完整 App 的 fallback 準備器與推測 Session 路徑；配置編輯／匯入匯出仍用的驗證、PlatformRegistry 建立責任及 ConfiguredMonitor 映射均保留。刪除三個由 `object.__new__` 與 mock factory 組裝的舊測試，改以真 Tk 全平台開始、兩輪舊事件隔離，以及實際 B482 重啟配置後的 Session／audit 磁碟讀取保留行為證據。
 - 程式／測試提交 `26960a1f18c3e28d06484d30e6c28e19598ac10d`、`8f9b293ec7c90595c4bcd443daabf26e72049f0b` 已推送到 Gitea 與 GitHub。桌面真 Tk 聚焦套件 46 tests 通過（14.590 秒）；實際 B482 配置重啟測試 1 test 通過（1.202 秒）。最終完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 286 tests（63.304 秒）。`compileall` 與 `git diff --check` 通過；型別檢查設定不存在，沒有宣稱通過。
 - 十一項驗收與母規格十四組情境見 [R3 本機驗收紀錄](evidence/round-start-assembly-ticket-03/local-validation.md)，可填寫的實際設備驗收表見[現場清單](evidence/round-start-assembly-ticket-03/field-acceptance-checklist.md)。固定基準 Standards 審查無規範違反、Spec 審查無阻擋缺口；Standards 留有一項非阻擋測試維護觀察。主線合併 SHA `98fa01e20dd883fc6a9d6c3c25fbc764e5c3cd7e` 的完整 Tk 套件再次通過 286 tests（63.224 秒）。合併後證據與安全清理紀錄及最後文件更新均直接確認同步至 Gitea／GitHub；本地及兩個遠端票分支已移除。現場設備驗收另階段安排，未宣稱完成。遠端議題未操作。
+
+## M1 主頁語言選單（GitHub #14，母規格 #13）
+
+- 以本次即時查核主線 `dd81e4dcef781ef4c29a3310a2650827e45d0609` 建立 `Multilingual/ticket-01`；該 SHA 固定為本票 Standards／Spec 審查基準。起始工作樹乾淨，兩個既有 push 目的地主線同 SHA，票分支原先不存在。前述多語言拆票 README 的「尚未認領或開始」狀態已過時，已依目前程式提交與測試證據更新。
+- 集中新增 English／繁體中文資源、穩定訊息 ID／參數、英文回退和 CONTEXT 核准的七組共用術語；全域 `language` 持久欄位沿用現有 preferences 與可靠原子寫入。主監控頁右上原生選單支援滑鼠、鍵盤與取消，切換不重建監控或改寫 audit／Session。偏好不隨 profile 配置保存／匯入而抹除；未知值回英文並提示，寫入失敗明確呈現。
+- 真 Tk 透過 sample-json 實際來源及 RoundCoordinator 操作選單，驗證 RUNNING／AWAITING_REVIEW 切換、目前候選與結果、暫存磁碟內容、重啟讀回、設定寫入故障及未知語言診斷。程式提交 `0a346544fa65a4dd31f6c3194d61a04514e2d6e8`、額外 Tk 回歸提交 `3a613f9` 已推送至 origin 設定的 Gitea 與 GitHub 兩個 push URL；遠端票分支直接查核 SHA 與 `3a613f9` 相同。固定基準 `dd81e4d...` 的雙軸審查及主線合併尚待完成。
+- 從 Python 程式目錄執行最後完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，297 tests 通過（64.846 秒）；`python3 -m compileall -q src tests` 與 `git diff --check` 通過。真 Tk 使用已授權桌面工作階段；一般沙盒 Tk 建窗曾以 exit 134 中止，桌面執行通過。專案未找到既有型別檢查設定，未宣稱型別檢查通過。驗收逐項與 M2～M10 邊界見 [M1 本機驗收紀錄](evidence/multilingual-ticket-01/local-validation.md)。未修改 Issue #14 或母規格 #13。
