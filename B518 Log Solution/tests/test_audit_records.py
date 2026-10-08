@@ -180,7 +180,7 @@ class RoundAuditRecordTests(unittest.TestCase):
             self_outer = self
             monitor = SessionBackedMonitor()
             self.monitors.append(monitor)
-            return monitor
+            return ConfiguredMonitor(monitor, {2: 1, 4: 2})
 
         started = self.coordinator.start(
             "FCT", factory, run_async=False, round_timeout_seconds=10, capacity=2,

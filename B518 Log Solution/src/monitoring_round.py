@@ -999,6 +999,13 @@ class MonitoringRound:
             self._prepare_monitor_event_locked(event)
 
     def _prepare_monitor_event_locked(self, event: MonitorEvent) -> None:
+        # Source candidates are Session evidence, not accepted common-round
+        # events. The coordinator may reject or defer them without writing an
+        # audit row, so they must not consume the audit sequence space.
+        if event.kind in {"result_candidate", "unresolved_source_conflict"}:
+            if event.observed_at is None:
+                event.observed_at = self._wall_clock().isoformat(timespec="seconds")
+            return
         if event.sequence is None:
             event.sequence = self._next_event_sequence
             self._next_event_sequence += 1

@@ -62,6 +62,12 @@ class ConfiguredMonitor:
     def update_round_settings(self, settings):
         self._monitor.update_round_settings(settings)
 
+    def set_event_context_provider(self, provider):
+        """Forward round identity assignment to the wrapped event producer."""
+        set_provider = getattr(self._monitor, "set_event_context_provider", None)
+        if callable(set_provider):
+            set_provider(provider)
+
     def publish_round_event(self, event):
         if event.slot is None:
             self._monitor.publish_round_event(event)

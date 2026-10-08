@@ -479,13 +479,14 @@ class BaseMonitor:
         try:
             enqueue = getattr(self.session, "enqueue_event", None)
             if callable(enqueue) and _accepts_event_identity(enqueue):
+                context = {
+                    "timestamp": event.observed_at,
+                    "sequence": event.sequence,
+                    "round_id": event.detail.get("round_id"),
+                }
                 if event.localized_message is not None:
-                    enqueue(event.message, event.detail, event.localized_message,
-                            event.observed_at, event.sequence,
-                            event.detail.get("round_id"))
-                else:
-                    enqueue(event.message, event.detail, timestamp=event.observed_at,
-                            sequence=event.sequence, round_id=event.detail.get("round_id"))
+                    context["localized_message"] = event.localized_message
+                enqueue(event.message, event.detail, **context)
             elif callable(enqueue):
                 if (event.localized_message is not None and
                         _accepts_keyword(enqueue, "localized_message")):
