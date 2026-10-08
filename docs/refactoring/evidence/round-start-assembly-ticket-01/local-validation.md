@@ -69,4 +69,4 @@ Fixed Standards/Spec base: `c71fb5583364f0a7c4e71d9806cfdec04160cb11`. Final Sta
 
 Implementation batches: `a9fc77c`, `8a7a46c`, `1b23bc5`, `1ca7533`, `f5e3ff5`. The ticket branch was pushed to both configured destinations (Gitea and GitHub) after each validated implementation batch. No remote issue was edited.
 
-After merge, `B518-Log-Solution` is at `90e7c276f3ae28167f75d50a11b78cb973a061aa`; `B518_TK_TESTS=1 python3 scripts/run_tests.py` passed 287 tests in 49.445 seconds at that SHA. Main push synchronization and branch cleanup are being completed after this evidence update.
+After merge, `B518-Log-Solution` at `90e7c276f3ae28167f75d50a11b78cb973a061aa` passed `B518_TK_TESTS=1 python3 scripts/run_tests.py` with 287 tests in 49.445 seconds. Gitea and GitHub were then directly verified at main SHA `8fddfab1762b1563c66e2b53b0eb2637fb709411`; at that point both ticket refs were `0321288a2a057772f97c4f237c812f0cf08d102c`. After confirming the main SHA on both destinations, the local ticket branch and both remote ticket branches were safely deleted. The final repository state is recorded on `B518-Log-Solution` after this evidence update.
