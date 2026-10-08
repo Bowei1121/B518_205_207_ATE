@@ -1477,6 +1477,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(app.profiles.get("B482", "BT").timeouts["round"], 6300)
                     app._save_preferences()
                 finally:
+                    self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                        "complete", "failed",
+                    })
                     app.hotkey.close()
                     root.destroy()
 
@@ -1491,6 +1494,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(monitor_factory.call_args.args[0], "b482")
                     self.assertEqual(monitor_factory.call_args.kwargs["timeouts"]["round"], 6300)
                 finally:
+                    self.wait_for(lambda: restarted.rounds.retention_cleanup_status().status in {
+                        "complete", "failed",
+                    })
                     restarted.hotkey.close()
                     restarted_root.destroy()
 
