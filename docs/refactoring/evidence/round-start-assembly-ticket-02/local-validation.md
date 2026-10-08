@@ -82,7 +82,8 @@ The focused 136-test run preceded the two separately passing tests listed afterw
 ## Final review and delivery record
 
 - Full Tk suite: **289 tests passed in 65.224s**.
-- Fixed-base Standards / Spec review: **pending**; base remains `b2816400415364bd033bd4f784bfebf3cda58b2b`.
+- Fixed-base Standards review: **no documented-standard violations**. One non-blocking judgement-call smell was noted: similar `pump_until` polling helpers are repeated across new Tk tests; consolidation is optional if diagnostics remain clear.
+- Fixed-base Spec review: **no blocking findings**. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b` and reviewed the final implementation and evidence diff.
 - Final validated code/test SHA: `9cd6b4e` unless changed after review.
 - Merge SHA, live push destination verification, and branch cleanup: **pending**.
 
