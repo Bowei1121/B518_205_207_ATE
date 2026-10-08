@@ -62,6 +62,7 @@ class RsWmtObservation:
     message: str = ""
     stable: bool = False
     evidence: Optional[Dict[str, str]] = None
+    message_id: str = ""
 
 
 def csv_time(value, reference):
@@ -202,7 +203,8 @@ class RsWmtSourceAdapter:
         if key in self.announced:
             return []
         self.announced.add(key)
-        return [RsWmtObservation("warning", str(path), message=message)]
+        return [RsWmtObservation("warning", str(path), message=message,
+                                 message_id="platform.rswmt.warning")]
 
     def _round_evidence(self, record: RsWmtRecord) -> Optional[List[RsWmtObservation]]:
         if record.slot not in self.slots or record.started < self.round_started - timedelta(seconds=30):
@@ -217,6 +219,7 @@ class RsWmtSourceAdapter:
                 "warning", record.source,
                 message="RS-WMT: different test start time; start a new monitoring round.",
                 record=record, evidence=record.evidence(),
+                message_id="platform.rswmt.warning",
             )]
         return []
 
@@ -227,7 +230,10 @@ class RsWmtSourceAdapter:
                 continue
             try:
                 signature = file_signature(path)
-            except OSError:
+            except OSError as error:
+                observations.extend(self._warning(
+                    path, "RS-WMT: source file could not be inspected: {}".format(error),
+                ))
                 continue
             key = str(path.resolve())
             if self.csv_baseline.get(key) == signature:
@@ -260,7 +266,10 @@ class RsWmtSourceAdapter:
                 if self.log_baseline.get(key) == signature or self.log_signatures.get(key) == signature:
                     continue
                 text = path.read_text(encoding='utf-8-sig')
-            except (OSError, UnicodeError):
+            except (OSError, UnicodeError) as error:
+                observations.extend(self._warning(
+                    path, "RS-WMT: source log could not be read: {}".format(error),
+                ))
                 continue
             self.log_signatures[key] = signature
             record = parse_rswmt_log(text, path)
@@ -273,7 +282,7 @@ class RsWmtSourceAdapter:
                     observations.append(RsWmtObservation(
                         "warning", str(path),
                         message="RS-WMT: source round is incomplete or ambiguous; evidence retained for review.",
-                        evidence=evidence,
+                        evidence=evidence, message_id="platform.rswmt.warning",
                     ))
                     self.log_candidate_evidence[key] = evidence
                 continue

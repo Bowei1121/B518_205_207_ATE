@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from configured_monitor import ConfiguredMonitor
 from machine_profiles import MachineProfile, ProfileCatalog, ProfileError
@@ -11,6 +12,28 @@ from sample_json_monitor import SampleJsonLinesSource
 
 
 class PlatformRegistryTests(unittest.TestCase):
+    def test_sample_json_source_read_failure_is_reported_once_and_keeps_filename(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "events.jsonl"
+            path.write_text("", encoding="utf-8")
+            source = SampleJsonLinesSource(path.parent, (1,))
+            original_open = Path.open
+
+            def fail_source_read(source_path, *args, **kwargs):
+                if source_path == path and kwargs.get("mode", args[0] if args else "r") == "rb":
+                    raise OSError("controlled JSON read failure")
+                return original_open(source_path, *args, **kwargs)
+
+            with patch.object(Path, "open", fail_source_read):
+                first = source.poll()
+                second = source.poll()
+
+            self.assertEqual(len(first), 1)
+            self.assertEqual(first[0].message_id, "platform.sample_json.unreadable")
+            self.assertEqual(first[0].source_id, path.name)
+            self.assertIn("controlled JSON read failure", first[0].message)
+            self.assertEqual(second, ())
+
     def test_registry_preserves_injected_replay_clocks_for_registered_adapters(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

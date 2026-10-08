@@ -35,7 +35,7 @@ from atlas_source_adapter import (
     records_status,
     trusted_sn_from_records,
 )
-from language_catalog import BilingualMessage, capture_round_event_message
+from language_catalog import BilingualMessage, capture_round_event_message, make_bilingual_message
 from monitoring_files import (
     file_signature,
     is_trusted_sn,
@@ -85,6 +85,9 @@ class MonitorEvent:
     localized_message: Optional[BilingualMessage] = None
     sequence: Optional[int] = None
     observed_at: Optional[str] = None
+    message_id: Optional[str] = None
+    message_parameters: Dict[str, object] = field(default_factory=dict)
+    diagnostic: str = ""
 
 
 @dataclass
@@ -448,10 +451,19 @@ class BaseMonitor:
         if event.localized_message is None:
             mapper = getattr(self, "_event_display_position_mapper", lambda slot: slot)
             display_slot = mapper(event.slot)
-            event.localized_message = capture_round_event_message(
-                event.kind, self.station, event.slot, event.status, event.detail,
-                event.message, display_slot,
-            )
+            if event.message_id is not None:
+                parameters = dict(event.message_parameters)
+                parameters.setdefault("station", self.station)
+                if event.slot is not None and "slot" in parameters:
+                    parameters["slot"] = display_slot if display_slot is not None else "unknown"
+                event.localized_message = make_bilingual_message(
+                    event.message_id, parameters, event.diagnostic,
+                )
+            else:
+                event.localized_message = capture_round_event_message(
+                    event.kind, self.station, event.slot, event.status, event.detail,
+                    event.message, display_slot,
+                )
         context_provider = getattr(self, "_event_context_provider", None)
         if context_provider is not None:
             context_provider(event)
@@ -611,7 +623,19 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
             return
         for observation in self.source.poll():
             if observation.kind == AtlasObservationKind.SOURCE_PREPARED:
-                self.emit(MonitorEvent("source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。"))
+                self.emit(MonitorEvent(
+                    "source_prepared", "Atlas 來源啟動前快照完成，監控準備就緒。",
+                    message_id="platform.atlas.source_prepared",
+                ))
+            elif observation.kind == AtlasObservationKind.SOURCE_ERROR:
+                diagnostic = observation.detail.get("raw_diagnostic", "")
+                self.emit(MonitorEvent(
+                    "warning", "Atlas source read failed: {}".format(diagnostic),
+                    source=observation.source, detail=observation.detail or {},
+                    message_id="platform.atlas.source_error",
+                    message_parameters={"source_filename": Path(observation.source).name},
+                    diagnostic=diagnostic,
+                ))
             elif observation.kind == AtlasObservationKind.SN_LOCKED:
                 self.set_result(observation.slot, observation.status, observation.sn, observation.source,
                                 observation.detail)
@@ -619,6 +643,8 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                     "sn_locked", "slot{} 已鎖定可信 SN".format(observation.slot),
                     observation.slot, observation.sn, observation.status, observation.source,
                     observation.detail or {},
+                    message_id="platform.atlas.sn_locked",
+                    message_parameters={"slot": observation.slot},
                 ))
             elif observation.kind == AtlasObservationKind.ACTIVITY:
                 self.set_result(observation.slot, observation.status, observation.sn, observation.source,
@@ -635,6 +661,8 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                     "final", "slot{} 最終 {}".format(observation.slot, observation.status),
                     observation.slot, observation.sn, observation.status, observation.source,
                     observation.detail or {},
+                    message_id="platform.atlas.final",
+                    message_parameters={"slot": observation.slot, "status": observation.status},
                 ))
             elif observation.kind == AtlasObservationKind.UNRESOLVED_CONFLICT:
                 self.emit(MonitorEvent(
@@ -643,6 +671,9 @@ class AtlasActiveArchiveMonitor(BaseMonitor):
                     .format(observation.slot),
                     observation.slot, observation.sn, observation.status, observation.source,
                     observation.detail or {},
+                    message_id="platform.atlas.unresolved_conflict",
+                    message_parameters={"slot": observation.slot},
+                    diagnostic=str(observation.detail or {}),
                 ))
 
 
@@ -666,6 +697,17 @@ class BtLogMonitor(BaseMonitor):
             self._process_observation(observation)
 
     def _process_observation(self, observation) -> None:
+        if observation.kind == B482ObservationKind.SOURCE_ERROR:
+            diagnostic = observation.diagnostic
+            detail = {"source_id": observation.source_id, "raw_diagnostic": diagnostic}
+            self.emit(MonitorEvent(
+                "warning", "B482 source read failed: {}".format(diagnostic),
+                source=observation.source, detail=detail,
+                message_id="platform.b482.source_error",
+                message_parameters={"source_filename": observation.source_id},
+                diagnostic=diagnostic,
+            ))
+            return
         if observation.kind == B482ObservationKind.CASEINFO_ACTIVITY:
             if observation.slot not in self.results:
                 return
@@ -677,12 +719,17 @@ class BtLogMonitor(BaseMonitor):
             self.emit(MonitorEvent(
                 "batch", "BT 觀察批次 {}".format(self.batch_stamp), source=observation.source,
                 detail=observation.evidence(),
+                message_id="platform.b482.batch",
+                message_parameters={"batch_id": self.batch_stamp},
             ))
         elif observation.batch_id != self.batch_stamp:
             self.emit(MonitorEvent(
                 "batch_observed", "BT 觀察到不同批次證據，保留來源供共同輪次判定",
                 observation.slot, observation.sn, observation.status, observation.source,
                 observation.evidence(),
+                message_id="platform.b482.batch_mismatch",
+                message_parameters={"slot": observation.slot},
+                diagnostic=str(observation.evidence()),
             ))
         slot = observation.slot
         if slot in self.results:

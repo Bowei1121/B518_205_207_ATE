@@ -441,6 +441,52 @@ class RoundStartPreparationTests(unittest.TestCase):
             self.assertEqual(session_result["localized_message"],
                              audit_result["localized_message"])
 
+    def test_sample_json_parse_error_is_bilingual_in_session_and_audit(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            event_file = source / "bad-record.jsonl"
+            event_file.write_text("", encoding="utf-8")
+            sessions = root / "sessions"
+            profile = MachineProfile(
+                "SAMPLE", "FCT", "sample-json", 1, {"active": str(source)},
+                ((1, 1),), {"start": 30, "test": 60, "round": 600},
+            )
+            prepared = RoundStartPreparation().prepare(profile, sessions)
+            coordinator = RoundCoordinator(audit_root=sessions)
+            started = prepared.start(coordinator, run_async=False)
+            event_file.write_text("{invalid json}\n", encoding="utf-8")
+
+            coordinator.poll_once()
+            self.assertTrue(coordinator.flush_session(timeout=2))
+            self.assertTrue(coordinator.flush_audit(timeout=2))
+
+            session_path = coordinator.session_path
+            session_events = [json.loads(line) for line in
+                              (session_path / "events.log").read_text(
+                                  encoding="utf-8").splitlines()]
+            session_warning = next(event for event in session_events
+                                   if event.get("localized_message", {}).get("message_id") ==
+                                   "platform.sample_json.invalid_record")
+            audit = read_round_audit(session_path / "audit.jsonl")
+            audit_warning = next(event for event in audit["events"]
+                                 if event.get("localized_message", {}).get("message_id") ==
+                                 "platform.sample_json.invalid_record")
+
+            self.assertEqual(session_warning["round_id"], started.round_id)
+            self.assertEqual(session_warning["localized_message"],
+                             audit_warning["localized_message"])
+            self.assertEqual(audit_warning["localized_message"]["en"],
+                             "Sample JSON source record is invalid: bad-record.jsonl")
+            self.assertIn("Expecting property name", audit_warning["detail"]["raw_diagnostic"])
+            self.assertIn("Expecting property name",
+                          audit_warning["localized_message"]["diagnostic"])
+
+            coordinator.stop()
+            self.assertTrue(coordinator.flush_session(timeout=2))
+            self.assertTrue(coordinator.flush_audit(timeout=2))
+
 
 if __name__ == "__main__":
     unittest.main()

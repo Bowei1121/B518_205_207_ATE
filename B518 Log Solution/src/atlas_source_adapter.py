@@ -38,8 +38,8 @@ def parse_archive_timestamp(name: str) -> Optional[datetime]:
         return None
 
 
-def trusted_sn_from_records(path: Path) -> str:
-    for row in read_csv_rows(path):
+def trusted_sn_from_records(path: Path, on_error=None) -> str:
+    for row in read_csv_rows(path, on_error):
         for key, value in row.items():
             if key.strip().lower().replace(" ", "_") in TRUSTED_SN_FIELDS and is_trusted_sn(value):
                 return normalise_sn(value)
@@ -50,10 +50,10 @@ def trusted_sn_from_records(path: Path) -> str:
     return ""
 
 
-def records_status(path: Path) -> str:
+def records_status(path: Path, on_error=None) -> str:
     statuses = [
         value.strip().upper()
-        for row in read_csv_rows(path)
+        for row in read_csv_rows(path, on_error)
         for key, value in row.items()
         if key.strip().lower() == "status" and value.strip()
     ]
@@ -75,6 +75,7 @@ class AtlasObservationKind(str, Enum):
     FINAL = "final"
     NOTEST = "notest"
     UNRESOLVED_CONFLICT = "unresolved_conflict"
+    SOURCE_ERROR = "source_error"
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,14 @@ class AtlasSourceAdapter:
         self._prepared_reported = False
         self._final_signatures: Dict[str, Tuple[int, int]] = {}
         self._delivered_final_signatures: Dict[str, Tuple[int, int]] = {}
+        self._pending_source_errors = []
+        self._reported_source_errors = set()
+
+    def _record_source_error(self, path: Path, error: OSError) -> None:
+        key = (str(path), str(error))
+        if key not in self._reported_source_errors:
+            self._reported_source_errors.add(key)
+            self._pending_source_errors.append((path, error))
 
     def poll(self) -> Tuple[AtlasObservation, ...]:
         observations: List[AtlasObservation] = []
@@ -131,7 +140,9 @@ class AtlasSourceAdapter:
                 if self._active_signatures.get(key) == signature:
                     continue
                 self._active_signatures[key] = signature
-                sn = trusted_sn_from_records(record)
+                sn = trusted_sn_from_records(
+                    record, lambda error, source=record: self._record_source_error(source, error),
+                )
                 if sn and slot not in self._locked_sn:
                     self._locked_sn[slot] = sn
                     self._locked_source[slot] = str(record)
@@ -181,7 +192,9 @@ class AtlasSourceAdapter:
                 self._completion_reported_slots.add(slot)
             candidate = self._final_csv(sn)
             if candidate:
-                state = records_status(candidate)
+                state = records_status(
+                    candidate, lambda error, source=candidate: self._record_source_error(source, error),
+                )
                 if state in {"PASS", "FAIL"}:
                     key = str(candidate.resolve())
                     signature = file_signature(candidate)
@@ -195,6 +208,11 @@ class AtlasSourceAdapter:
                             AtlasObservationKind.FINAL, slot, sn, state, str(candidate), detail,
                         ))
 
+        observations.extend(AtlasObservation(
+            AtlasObservationKind.SOURCE_ERROR, source=str(path),
+            detail={"raw_diagnostic": str(error), "source_id": path.name},
+        ) for path, error in self._pending_source_errors)
+        self._pending_source_errors.clear()
         return tuple(observations)
 
     @staticmethod

@@ -35,6 +35,7 @@ CASEINFO_TIMESTAMP = re.compile(
 class B482ObservationKind(str, Enum):
     CASEINFO_ACTIVITY = "caseinfo_activity"
     TESTDATA_RESULT = "testdata_result"
+    SOURCE_ERROR = "source_error"
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class B482Observation:
     source_time: str
     batch_id: str = ""
     batch_evidence: str = ""
+    diagnostic: str = ""
 
     def evidence(self) -> Dict[str, str]:
         fields = {
@@ -76,14 +78,14 @@ def parse_bt_filename(path: Path) -> Optional[Dict[str, str]]:
     return result
 
 
-def parse_bt_csv(path: Path) -> Optional[Dict[str, str]]:
+def parse_bt_csv(path: Path, on_error=None) -> Optional[Dict[str, str]]:
     name = parse_bt_filename(path)
     if not name:
         return None
     folder_status = path.parent.name.upper()
     if folder_status not in {"PASSED", "FAILED"} or folder_status != name["status"].upper():
         return None
-    rows = read_csv_rows(path)
+    rows = read_csv_rows(path, on_error)
     values: Dict[str, str] = {}
     for row in rows:
         values.update({key.strip().lower(): value.strip() for key, value in row.items() if key})
@@ -145,6 +147,14 @@ class B482SourceAdapter:
         self._seen_signatures: Dict[str, Tuple[int, int, float]] = {}
         self._caseinfo_offsets = self._snapshot_caseinfo_offsets()
         self._caseinfo_tails: Dict[str, str] = {}
+        self._pending_source_errors = []
+        self._reported_source_errors = set()
+
+    def _record_source_error(self, path: Path, error: OSError) -> None:
+        key = (str(path), str(error))
+        if key not in self._reported_source_errors:
+            self._reported_source_errors.add(key)
+            self._pending_source_errors.append((path, error))
 
     def _snapshot_caseinfo_offsets(self) -> Dict[str, int]:
         if not self.caseinfo_root or not self.caseinfo_root.is_dir():
@@ -161,6 +171,11 @@ class B482SourceAdapter:
 
     def poll(self) -> Tuple[B482Observation, ...]:
         observations = self._caseinfo_observations() + self._testdata_observations()
+        observations.extend(B482Observation(
+            B482ObservationKind.SOURCE_ERROR, 0, "", "", str(path), path.name, "",
+            diagnostic=str(error),
+        ) for path, error in self._pending_source_errors)
+        self._pending_source_errors.clear()
         return tuple(sorted(observations, key=lambda item: (
             item.source_time, item.source_id, item.slot, item.kind.value,
         )))
@@ -195,7 +210,9 @@ class B482SourceAdapter:
         observations = []
         threshold = self.started - timedelta(seconds=30)
         for path in self._csv_candidates():
-            parsed = parse_bt_csv(path)
+            parsed = parse_bt_csv(
+                path, lambda error, source=path: self._record_source_error(source, error),
+            )
             if not parsed:
                 continue
             source_time = datetime.strptime(parsed["stamp"], "%Y%m%d%H%M%S")
@@ -224,7 +241,8 @@ class B482SourceAdapter:
                 continue
             try:
                 content = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
+            except OSError as error:
+                self._record_source_error(path, error)
                 continue
             key = str(path)
             offset = self._caseinfo_offsets.get(key, 0)

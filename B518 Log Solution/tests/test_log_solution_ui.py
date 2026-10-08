@@ -332,6 +332,35 @@ class LogSolutionUiTests(unittest.TestCase):
                 )))
 
                 with events_path.open("a", encoding="utf-8") as event_file:
+                    event_file.write("{invalid json}\n")
+                deadline = time.monotonic() + 3
+                while (not any("Sample JSON 來源記錄無效" in line for line in app.event_lines)
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertTrue(any("Sample JSON 來源記錄無效" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                platform_audit_bytes = (session_path / "audit.jsonl").read_bytes()
+                platform_audit = read_round_audit(session_path / "audit.jsonl")
+                platform_warning = next(event for event in platform_audit["events"]
+                                        if event.get("localized_message", {}).get("message_id") ==
+                                        "platform.sample_json.invalid_record")
+                self.assertEqual(platform_warning["round_id"], round_id)
+                self.assertEqual(platform_warning["localized_message"]["diagnostic"],
+                                 platform_warning["detail"]["raw_diagnostic"])
+                self.assertIn("Expecting property name", platform_warning["detail"]["raw_diagnostic"])
+                platform_session_warning = next(
+                    event for event in (json.loads(line) for line in
+                                        (session_path / "events.log").read_text(
+                                            encoding="utf-8").splitlines())
+                    if event.get("localized_message", {}).get("message_id") ==
+                    "platform.sample_json.invalid_record")
+                self.assertEqual(platform_session_warning["localized_message"],
+                                 platform_warning["localized_message"])
+
+                with events_path.open("a", encoding="utf-8") as event_file:
                     event_file.write(json.dumps({
                         "kind": "activity", "position": 4, "sn": "LANG000002",
                         "source_time": "2026-10-08T10:00:01+08:00", "batch_id": "language-ui",
@@ -382,6 +411,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
                 self.assertTrue(any("same-round result conflict" in line
                                     for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Sample JSON source record is invalid" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual((session_path / "audit.jsonl").read_bytes(), platform_audit_bytes)
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "Slot 1")
                 self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
                 saved_bytes = preferences.read_bytes()

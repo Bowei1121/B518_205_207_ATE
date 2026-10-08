@@ -25,8 +25,15 @@ class RsWmtLogMonitor(BaseMonitor):
             self.output_root, self.slots, self.started, self.progress_root, self.now, self.monotonic,
         )
 
-    def _notice(self, source: str, message: str, detail=None) -> None:
-        self.emit(MonitorEvent('warning', message, source=source, detail=detail or {}))
+    def _notice(self, source: str, message: str, detail=None, message_id: str = "") -> None:
+        evidence = dict(detail or {})
+        evidence["raw_diagnostic"] = message
+        self.emit(MonitorEvent(
+            'warning', message, source=source, detail=evidence,
+            message_id=message_id or "platform.rswmt.warning",
+            message_parameters={"source_filename": Path(source).name},
+            diagnostic=message,
+        ))
 
     def _accept_final(self, record: RsWmtRecord, stable: bool) -> None:
         current = self.results[record.slot]
@@ -54,11 +61,13 @@ class RsWmtLogMonitor(BaseMonitor):
                 evidence = observation.evidence
                 if evidence is None and observation.record is not None:
                     evidence = observation.record.evidence()
-                self._notice(observation.source, observation.message, evidence)
+                self._notice(observation.source, observation.message, evidence,
+                             observation.message_id)
             elif observation.kind == 'batch' and observation.record:
                 self.emit(MonitorEvent(
                     'batch', 'RS-WMT batch {}'.format(observation.record.started),
                     source=observation.record.source, detail=observation.record.evidence(),
+                    message_id="platform.rswmt.batch",
                 ))
             elif observation.kind == 'final' and observation.record:
                 self._accept_final(observation.record, observation.stable)
