@@ -112,3 +112,24 @@
 | 7：拖曳、最小尺寸及長檔名 | 通過：C1 真 Tk 拖曳流程回歸；C2 最小尺寸保留按鈕可見，長值可水平捲動 | 同上 |
 
 其他案例 8～12 的完整動態刷新、裁決移除／空狀態／重開等責任仍屬 C3；C2 僅保留既有行為並驗證一般選取同步，不將 C3 宣告為完成。
+
+### 2026-10-08 C3 本機覆蓋紀錄
+
+以下依目前整合 ancestry 及真實測試證據彙整 C3 對十二組案例的覆蓋；C1／C2 的舊證據分別由前票驗收紀錄提供，本票新增案例以 C3 驗收紀錄及最後完整含 Tk 套件驗證。完整命令、SHA 與審查結果見 [C3 本機驗收紀錄](evidence/conflict-dialog-ticket-03/local-validation.md)。
+
+| 母規格案例 | 本地結果與證據 | 來源票／測試 |
+| --- | --- | --- |
+| 1：四欄、標題、位置與完整詳細內容 | 通過；真 Tk 驗證固定四欄、所選位置與同一衝突詳情 | C1 聚焦 Atlas Tk；C3 `test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild` |
+| 2：差異兩側紅色粗體、相同一般、切換無殘留 | 通過；C2 真 Tk 覆蓋逐欄差異／相同／未知，C3 驗證動態候選實際字色與粗體及空狀態清除 | C2 `local-validation.md`；C3 `test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild`、`test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen` |
+| 3：檔名、完整路徑與原識別 | 通過；精簡檔名與詳細來源路徑／識別保留 | C1／C2 `local-validation.md` |
+| 4：同名不同路徑與同名尾端目錄 | 通過；短目錄提示逐層消歧，詳細區保留完整路徑 | C2 `local-validation.md` |
+| 5：相同來源路徑而其他欄位改變 | 通過；來源欄一般文字，差異結果欄維持突出 | C2 `local-validation.md` |
+| 6：缺值及來源時間不補造 | 通過；未知值與兩側樣式由 C1／C2 真 Tk 案例驗證 | C1／C2 `local-validation.md` |
+| 7：分隔拖曳、最小尺寸、長檔名與按鈕可用 | 通過；既有 40%／60%、拖曳及尺寸證據仍適用，C3 無 widget 幾何變更；完整套件回歸 | C1／C2 `local-validation.md`；C3 完整套件 |
+| 8：同／跨位置多候選與持續刷新 | 通過；平台來源產生兩個同位置衝突，選取第二項後跨位置候選加入仍保持相同 conflict ID、兩區內容及位置 | C3 `test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild`；Event 控制案例 `test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen` |
+| 9：裁決移除、空狀態與隱藏重開 | 通過；真實按鈕逐項裁決、移除後沿既有順序選取，全部完成清空並禁用操作；隱藏後重開顯示目前集合 | C3 上述兩個 Tk 測試 |
+| 10：來源捕捉後修改不改寫快照 | 通過；改動暫存來源 JSONL 後，已捕捉的 SN／狀態及詳情不變；C1／C2 另有來源改名驗證 | C1／C2 `local-validation.md`；C3 sample-platform Tk 測試 |
+| 11：既有按鈕、非模態、其他位置收集及未知來源政策 | 通過；真實保留原／採用新／關閉入口逐項作用，第三位置在彈窗存在期間仍可收集；未知同輪來源維持 FAIL 且無採用入口 | C1／C2 `local-validation.md`；C3 sample-platform Tk 測試及 `test_unknown_atlas_identity_change_is_visible_as_fail_and_audited_without_reason` |
+| 12：audit／Session 重建、放行與 KVM 契約 | 通過；新磁碟讀取器重建三筆衝突及裁決，Session `results.csv` 與輪次結果一致；KVM 及完整回歸套件通過 | C3 sample-platform Tk 測試；`test_kvm_display_contract.py`；完整含 Tk 套件 |
+
+以上是受控測試與已合併前票證據，不代表現場設備驗收；C3 不擴張來源解析、裁決政策或輪次生命週期功能。
