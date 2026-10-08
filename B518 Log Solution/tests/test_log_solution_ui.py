@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
-    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS, configured_directory,
+    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
 )
@@ -28,7 +28,7 @@ from monitoring_round import (
 )
 import audit_records
 from audit_records import read_round_audit
-from machine_profiles import MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
+from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 
 
 class FakeHotkey:
@@ -668,7 +668,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_paths["active"].set(str(active))
                 app.profile_editor_paths["final"].set(str(final))
                 app._apply_profile_editor()
-                app.start_monitor()
+                app.start_button.invoke()
 
                 preparation_deadline = time.monotonic() + 3
                 while app.rounds.session_path is None and time.monotonic() < preparation_deadline:
@@ -676,11 +676,31 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(0.01)
 
                 self.assertIsNotNone(app.rounds.session_path)
+                while (app.rounds.snapshot().source_preparation_pending and
+                       time.monotonic() < preparation_deadline):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertFalse(app.rounds.snapshot().source_preparation_pending)
+                while (not (app.rounds.session_path / "audit.jsonl").is_file() and
+                       time.monotonic() < preparation_deadline):
+                    root.update()
+                    time.sleep(0.01)
                 self.assertEqual(app.active_profile_snapshot.capacity, 3)
                 self.assertEqual(len(app.status_rows), 3)
                 session_metadata = json.loads((app.rounds.session_path / "session.json").read_text(
                     encoding="utf-8"))
                 self.assertEqual(session_metadata["settings"]["profile_snapshot"]["profile"]["mapping"], [
+                    {"source": 1, "display": 3},
+                    {"source": 2, "display": 2},
+                    {"source": 3, "display": 1},
+                ])
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                rebuilt_audit = read_round_audit(app.rounds.session_path / "audit.jsonl")
+                self.assertTrue(rebuilt_audit["audit_complete"])
+                profile_snapshot = session_metadata["settings"]["profile_snapshot"]["profile"]
+                audit_config = rebuilt_audit["round"]["config"]
+                self.assertEqual(audit_config["config_snapshot"], profile_snapshot)
+                self.assertEqual(audit_config["mapping"], [
                     {"source": 1, "display": 3},
                     {"source": 2, "display": 2},
                     {"source": 3, "display": 1},
@@ -759,6 +779,219 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
+
+    def test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            app.open_settings()
+            app.profile_editor_machine.set("FCT")
+            app.profile_editor_paths["active"].set(str(active))
+            app.profile_editor_paths["final"].set(str(final))
+            app._apply_profile_editor()
+            app._close_settings()
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for the Tk start entry")
+
+            def verify_started_round(previous_round_id):
+                pump_until(lambda: app.rounds.snapshot() is not None and
+                           app.rounds.snapshot().round_id != previous_round_id and
+                           app.rounds.session_path is not None)
+                pump_until(lambda: not app.rounds.snapshot().source_preparation_pending and
+                           (app.rounds.session_path / "audit.jsonl").is_file())
+                snapshot = app.rounds.snapshot()
+                session_path = app.rounds.session_path
+                session_metadata = json.loads((session_path / "session.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(snapshot.station, "FCT")
+                self.assertEqual(app._display_capacity(), 6)
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                session_profile = session_metadata["settings"]["profile_snapshot"]["profile"]
+                audit_config = rebuilt["round"]["config"]
+                self.assertEqual(audit_config["config_snapshot"], session_profile)
+                self.assertEqual(audit_config["mapping"], session_profile["mapping"])
+                return snapshot.round_id
+
+            try:
+                prior = app.rounds.snapshot()
+                previous_round_id = prior.round_id if prior else None
+                root.event_generate("<Command-Shift-M>")
+                first_round_id = verify_started_round(previous_round_id)
+                app.rounds.stop()
+                pump_until(lambda: app.rounds.snapshot().state == RoundState.STOPPED)
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+
+                app.hotkey.callback()
+                second_round_id = verify_started_round(first_round_id)
+                self.assertNotEqual(first_round_id, second_round_id)
+                app.rounds.stop()
+                pump_until(lambda: app.rounds.snapshot().state == RoundState.STOPPED)
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+            finally:
+                app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_real_tk_start_button_prepares_every_registered_platform_profile(self):
+        with TemporaryDirectory() as temporary:
+            scenarios = (
+                ("B518", "DFU", "atlas", {"active": "active", "final": "final"}),
+                ("B518", "FCT", "atlas", {"active": "active", "final": "final"}),
+                ("B482", "BT", "b482", {"final": "final", "caseinfo": ""}),
+                ("B518", "BT", "rswmt", {"final": "final", "caseinfo": ""}),
+                ("SAMPLE", "FCT", "sample-json", {"active": "active"}),
+            )
+            for index, (project, machine, platform, configured_paths) in enumerate(scenarios):
+                with self.subTest(project=project, machine=machine, platform=platform):
+                    case_root = Path(temporary) / str(index)
+                    paths = {}
+                    for field, relative in configured_paths.items():
+                        if not relative:
+                            paths[field] = relative
+                            continue
+                        path = case_root / relative
+                        path.mkdir(parents=True)
+                        if platform == "sample-json":
+                            (path / "events.jsonl").write_text("", encoding="utf-8")
+                        paths[field] = str(path)
+                    with patch("b518_log_solution.PREFS_PATH", case_root / "preferences.json"):
+                        root = tk.Tk()
+                        root.deiconify()
+                        app = B518LogSolutionApp(
+                            root, hotkey_factory=FakeHotkey, session_root=case_root / "sessions",
+                        )
+                        if platform == "sample-json":
+                            app.profiles = app.profiles.with_profile(replace(
+                                app.profiles.get("B518", "FCT"), project=project,
+                                platform=platform, capacity=2, paths=paths,
+                                mapping=((20, 1), (4, 2)),
+                            ))
+                            app.project_choice.configure(values=app.profiles.projects)
+                        else:
+                            existing = app.profiles.get(project, machine)
+                            updates = {"paths": paths}
+                            if platform == "b482":
+                                updates["mapping"] = ((1, 3), (2, 2), (3, 1), (4, 4))
+                            app.profiles = app.profiles.with_profile(replace(
+                                existing, **updates,
+                            ))
+                        app.project.set(project)
+                        app._project_changed()
+                        app.station.set(machine)
+                        app._profile_changed()
+                        root.update_idletasks()
+
+                        def pump_until(predicate, timeout=5):
+                            deadline = time.monotonic() + timeout
+                            while time.monotonic() < deadline:
+                                root.update()
+                                if predicate():
+                                    return
+                                time.sleep(0.01)
+                            self.fail("Timed out preparing {} / {} through Tk; snapshot={!r}; "
+                                      "events={!r}; profile_error={!r}".format(
+                                          project, machine, app.rounds.snapshot(), app.event_lines,
+                                          app.profile_error))
+
+                        try:
+                            selected_profile = app.profiles.get(project, machine)
+                            self.assertEqual(app._display_capacity(), selected_profile.capacity)
+                            app.start_button.invoke()
+                            pump_until(lambda: app.rounds.snapshot() is not None and
+                                       app.rounds.session_path is not None and
+                                       not app.rounds.snapshot().source_preparation_pending)
+                            snapshot = app.rounds.snapshot()
+                            session_path = app.rounds.session_path
+                            session_metadata = json.loads((session_path / "session.json").read_text(
+                                encoding="utf-8"))
+                            session_profile = session_metadata["settings"]["profile_snapshot"]["profile"]
+                            self.assertEqual(session_profile["platform"], platform)
+                            self.assertEqual(snapshot.station, machine)
+                            self.assertEqual(app._display_capacity(), session_profile["capacity"])
+                            self.assertEqual(tuple(app.status_rows),
+                                             tuple(range(1, session_profile["capacity"] + 1)))
+                            self.assertTrue(app.rounds.flush_audit(timeout=3))
+                            pump_until(lambda: (session_path / "audit.jsonl").is_file())
+                            rebuilt = read_round_audit(session_path / "audit.jsonl")
+                            self.assertTrue(rebuilt["audit_complete"])
+                            audit_config = rebuilt["round"]["config"]
+                            self.assertEqual(audit_config["config_snapshot"], session_profile)
+                            self.assertEqual(audit_config["platform"], platform)
+                            self.assertEqual(audit_config["mapping"], session_profile["mapping"])
+                            if platform == "b482":
+                                created_at = datetime.now().replace(microsecond=0)
+                                stamp = created_at.strftime("%Y%m%d%H%M%S")
+                                date_folder = created_at.strftime("%Y-%m-%d")
+                                result = (Path(paths["final"]) / date_folder / "PASSED" /
+                                          "[Thread0][cfg][B482SAMPLE0001][PASSED][{}].csv".format(stamp))
+                                result.parent.mkdir(parents=True)
+                                result.write_text(
+                                    "SerialNumber,Unit Number,Test Pass/Fail Status,StartTime,EndTime\n"
+                                    "B482SAMPLE0001,0,PASSED,start,end\n", encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[2].status == "PASS" and
+                                           app.status_rows[3]["status"].cget("text") == "PASS" and
+                                           app.status_rows[3]["sn"].cget("text") == "B482SAMPLE0001",
+                                           timeout=10)
+                                self.assertEqual(app.status_rows[3]["sn"].cget("text"),
+                                                 "B482SAMPLE0001")
+                                self.assertEqual(app.status_rows[3]["status"].cget("text"), "PASS")
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                                self.assertEqual(rebuilt["results"][3]["status"], "PASS")
+                            if platform == "sample-json":
+                                sample_time = datetime.now().isoformat(timespec="seconds")
+                                (Path(paths["active"]) / "events.jsonl").write_text(
+                                    json.dumps({
+                                        "kind": "final", "position": 20,
+                                        "sn": "SAMPLE000020", "status": "PASS",
+                                        "source_time": sample_time, "batch_id": "tk-round-fixture",
+                                    }) + "\n", encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS")
+                                running_round_id = app.rounds.snapshot().round_id
+                                app.start_button.invoke()
+                                root.event_generate("<Command-Shift-M>")
+                                app.hotkey.callback()
+                                root.update()
+                                pump_until(lambda: app.rounds.snapshot().round_id == running_round_id and
+                                           app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS")
+                        finally:
+                            app.rounds.stop()
+                            app.rounds.flush_session(timeout=3)
+                            app.rounds.flush_audit(timeout=3)
+                            cleanup_deadline = time.monotonic() + 5
+                            while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                                   and time.monotonic() < cleanup_deadline):
+                                root.update()
+                                time.sleep(0.01)
+                            app.hotkey.close()
+                            root.destroy()
 
     def test_conflict_review_disables_resolution_when_selection_is_cleared(self):
         with TemporaryDirectory() as temporary, \
@@ -1974,32 +2207,31 @@ class LogSolutionUiTests(unittest.TestCase):
                     deploy_root.destroy()
 
     def test_app_completes_rswmt_final_only_round_through_shared_entry(self):
-        with TemporaryDirectory() as temporary:
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             output = Path(temporary) / "output" / "SmtCal"
             output.mkdir(parents=True)
-            app = object.__new__(B518LogSolutionApp)
-            app.root = MagicMock()
-            app.events = queue.Queue()
-            app.rounds = RoundCoordinator(app.events.put)
-            app.active_round_id = None
-            install_test_profile(app, "BT", "rswmt", final=str(output))
-            profile = app.profiles.get("B518", "BT")
-            app.profiles = app.profiles.with_profile(replace(
-                profile, paths=dict(profile.paths, final=str(output)),
-                timeouts=dict(profile.timeouts, start=240),
-            ))
-            app.start_button = MagicMock()
-            app.monitor_state = MagicMock()
-            app.event_lines = []
-            app.settings_log = None
-            app._save_preferences = MagicMock()
-            app._reset_rows = MagicMock()
-            app._set_monitor_controls = MagicMock()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("BT")
+                app._load_profile_editor_selection()
+                app.profile_editor_paths["final"].set(str(output))
+                app.profile_editor_timeouts["start"].set("240")
+                app._apply_profile_editor()
+                app._close_settings()
+                app.station.set("BT")
+                app._profile_changed()
+                app.start_button.invoke()
 
-            with patch("log_monitoring.SessionStore"):
-                app.start_monitor()
-                prepare_deadline = time.monotonic() + 3
-                while app.rounds.session_path is None and time.monotonic() < prepare_deadline:
+                prepare_deadline = time.monotonic() + 5
+                while (app.rounds.session_path is None and time.monotonic() < prepare_deadline):
+                    root.update()
                     time.sleep(0.01)
                 self.assertIsNotNone(app.rounds.session_path)
                 start = datetime.now().replace(microsecond=0)
@@ -2023,6 +2255,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 deadline = time.monotonic() + 12
                 while time.monotonic() < deadline:
+                    root.update()
                     snapshot = app.rounds.snapshot()
                     if snapshot.result_available:
                         break
@@ -2031,11 +2264,103 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                     self.fail("RS-WMT final-only files did not complete the App round")
                 app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
 
-            snapshot = app.rounds.snapshot()
-            self.assertEqual(snapshot.station, "BT")
-            self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
-            self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
+                snapshot = app.rounds.snapshot()
+                self.assertEqual(snapshot.station, "BT")
+                self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
+                self.assertTrue(all(app.status_rows[slot]["status"].cget("text") == "PASS"
+                                    for slot in range(1, 5)))
+                self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
+                session_path = app.rounds.session_path
+                session_metadata = json.loads((session_path / "session.json").read_text(
+                    encoding="utf-8"))
+                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertEqual(rebuilt["round"]["config"]["config_snapshot"],
+                                 session_metadata["settings"]["profile_snapshot"]["profile"])
+            finally:
+                app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                deadline = time.monotonic() + 5
+                while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                app.hotkey.close()
+                root.destroy()
+
+    def test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            dfu_profile = app.profiles.get("B518", "DFU")
+            app.profiles = app.profiles.with_profile(replace(
+                dfu_profile, paths={"active": temporary, "final": temporary, "caseinfo": ""},
+            ))
+            sources = []
+
+            def source_factory(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for the controlled awaiting-review round")
+
+            try:
+                app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                pump_until(lambda: bool(sources) and app.rounds.snapshot().state == RoundState.RUNNING)
+                sources[0].offer_candidate(
+                    1, "SN-BASE", "FAIL", "/controlled/slot1/candidate.csv",
+                    "base-candidate", "2026-10-08T10:00:02",
+                )
+                pump_until(lambda: app.rounds.snapshot().state == RoundState.AWAITING_REVIEW)
+                original_round_id = app.rounds.snapshot().round_id
+
+                # The direct start method historically saves the newly selected profile
+                # and resets the board before RoundCoordinator returns the existing round.
+                app.station.set("DFU")
+                app._profile_changed()
+                app.start_monitor()
+                saved = json.loads((Path(temporary) / "preferences.json").read_text(encoding="utf-8"))
+                self.assertEqual(saved["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+
+                # Both shortcut paths reject AWAITING_REVIEW before saving preferences.
+                app.station.set("FCT")
+                root.event_generate("<Command-Shift-M>")
+                root.update()
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(unchanged["machine"], "DFU")
+
+                app.station.set("DFU")
+                app.hotkey.callback()
+                root.update()
+                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
+            finally:
+                app.rounds.stop()
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
 
     def test_legacy_profile_migration_preserves_valid_default_capacities(self):
         profiles, _project, _machine = migrate_legacy_preferences({})
@@ -2128,20 +2453,55 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.start_monitor()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
+            self.assertEqual(show_error.call_args.args[:2], (
+                "路徑錯誤", "請設定存在且可讀取的Atlas 即時 Log 路徑。",
+            ))
             self.assertIsNone(app.rounds.snapshot())
         finally:
             app.hotkey.close()
             root.destroy()
 
-    def test_configured_directory_never_treats_blank_as_current_directory(self):
-        self.assertIsNone(configured_directory(""))
-        self.assertIsNone(configured_directory("   "))
-        self.assertIsNone(configured_directory("/path/that/does/not/exist"))
-        self.assertEqual(configured_directory("."), Path("."))
+    def test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                preferences_before = app.profile_store.path.read_bytes()
 
-    def test_configured_directory_rejects_a_directory_without_read_access(self):
-        with patch("b518_log_solution.os.access", return_value=False):
-            self.assertIsNone(configured_directory("."))
+                with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
+                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                    app.start_button.invoke()
+
+                self.assertIsNone(app.rounds.snapshot())
+                self.assertEqual(str(app.start_button.cget("state")), "normal")
+                self.assertEqual(app.monitor_state.cget("text"), "待命")
+                self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
+                self.assertEqual(show_error.call_args.args[:2], (
+                    "監控啟動失敗", "無法開始監控：disk full",
+                ))
+                self.assertFalse((Path(temporary) / "sessions").exists())
+            finally:
+                deadline = time.monotonic() + 5
+                while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                app.hotkey.close()
+                root.destroy()
 
     def test_operator_selects_project_and_machine_and_choice_survives_restart(self):
         with TemporaryDirectory() as temporary:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import queue
 import sys
 import subprocess
@@ -15,11 +14,11 @@ from typing import Dict, Optional
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
-from configured_monitor import ConfiguredMonitor
 from machine_profiles import (
     MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
+from round_start_preparation import RoundStartPathError, RoundStartPreparation
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
     KVM_FIRST_ROW_Y, KVM_ROW_STEP,
@@ -87,18 +86,6 @@ def sn_font_size(_sn: str, _column_width: int = 188) -> int:
     return MAIN_FONT_SIZE
 
 
-def configured_directory(value: str) -> Optional[Path]:
-    """Return an existing configured directory; never treat blank as cwd."""
-    text = value.strip()
-    if not text:
-        return None
-    path = Path(text).expanduser()
-    try:
-        return path if path.is_dir() and os.access(str(path), os.R_OK | os.X_OK) else None
-    except OSError:
-        return None
-
-
 class B518LogSolutionApp:
     def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey,
                  session_root: Optional[Path] = None):
@@ -123,6 +110,7 @@ class B518LogSolutionApp:
         self.active_round_id: Optional[str] = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
+        self.round_start_preparation = RoundStartPreparation()
         self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
         self.project = tk.StringVar(value=selected_project)
         self.station = tk.StringVar(value=selected_machine)
@@ -700,85 +688,29 @@ class B518LogSolutionApp:
         except (AttributeError, ProfileError) as error:
             messagebox.showerror("配置錯誤", str(error), parent=self.root)
             return
-        timeouts = dict(profile.timeouts)
-        platform = profile.platform
         try:
-            platform_definition = DEFAULT_PLATFORM_REGISTRY.get(platform)
-        except ValueError as error:
+            preparation = getattr(self, "round_start_preparation", None)
+            if preparation is None:
+                preparation = RoundStartPreparation()
+            prepared = preparation.prepare(
+                profile,
+                getattr(self, "session_root", APP_ROOT / "sessions"),
+                async_session_writes=True,
+            )
+        except RoundStartPathError as error:
+            messagebox.showerror("路徑錯誤", str(error), parent=self.root)
+            return
+        except (AttributeError, ProfileError, ValueError) as error:
             messagebox.showerror("配置錯誤", str(error), parent=self.root)
             return
-        # Freeze the selected versioned profile before adapter preparation.
-        profile_paths = dict(profile.paths)
-        resolved_paths = {}
-        for field in platform_definition.required_paths:
-            directory = configured_directory(profile_paths.get(field, ""))
-            if directory is None:
-                messagebox.showerror(
-                    "路徑錯誤", "請設定存在且可讀取的{}。".format(
-                        platform_definition.path_labels.get(field, field)), parent=self.root,
-                )
-                return
-            resolved_paths[field] = directory
-        for field in platform_definition.optional_paths:
-            configured = profile_paths.get(field, "")
-            directory = configured_directory(configured) if configured.strip() else None
-            if configured.strip() and directory is None:
-                messagebox.showerror(
-                    "路徑錯誤", "{} 不存在或無法讀取。".format(
-                        platform_definition.path_labels.get(field, field)), parent=self.root,
-                )
-                return
-            resolved_paths[field] = directory
-        self.active_profile_snapshot = profile
+
+        self.active_profile_snapshot = prepared.profile
         self.start_button.configure(state="disabled")
         self.monitor_state.configure(text="啟動中")
         self.root.update_idletasks()
         try:
-            def monitor_factory(on_event):
-                capacity = profile.capacity
-                mapping = dict(profile.mapping)
-                source_slots = tuple(mapping)
-                view_holder = {}
-
-                def deliver(event):
-                    view = view_holder.get("view")
-                    if view is not None:
-                        return view.deliver(event, on_event)
-                    else:
-                        return on_event(event)
-
-                monitor = DEFAULT_PLATFORM_REGISTRY.create_monitor(
-                    platform, station=station, paths=resolved_paths, source_slots=source_slots,
-                    callback=deliver, timeouts=timeouts,
-                    session_root=getattr(self, "session_root", APP_ROOT / "sessions"),
-                    async_session_writes=True,
-                )
-                configured = ConfiguredMonitor(monitor, mapping)
-                configured.update_round_settings({
-                    "profile_snapshot": {
-                        "schema_version": 1,
-                        "profile": profile.to_dict(),
-                    },
-                })
-                view_holder["view"] = configured
-                return configured
-
             self._save_preferences()
-            snapshot = self.rounds.start(station, monitor_factory, run_async=True,
-                                         round_timeout_seconds=timeouts["round"],
-                                         capacity=profile.capacity,
-                                         audit_context={
-                                             "project": profile.project,
-                                             "machine": profile.machine,
-                                             "platform": platform,
-                                             "profile_version": 1,
-                                             "config_snapshot": profile.to_dict(),
-                                             "capacity": profile.capacity,
-                                             "mapping": [{"source": source, "display": display}
-                                                         for source, display in profile.mapping],
-                                             "paths": dict(profile.paths),
-                                             "timeouts": dict(timeouts),
-                                         })
+            snapshot = prepared.start(self.rounds, run_async=True)
             self.active_round_id = snapshot.round_id
             self._reset_rows()
             self._apply_round_snapshot(snapshot)

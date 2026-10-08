@@ -48,3 +48,9 @@
 - 使用真實暫存來源／Session／audit、PlatformRegistry 實際 adapters、Event 控制來源延遲及可注入時鐘驗證。Spec 審查曾指出注入 registry 與全域 validator 不一致，新增反例後已修正為用選定 registry 驗證；來源準備失敗且 Session 未建立時，也修正為 audit 完整落盤後不再永久停在等待狀態。
 - 最新程式提交 `f5e3ff5`；聚焦 PlatformRegistry／mapping／profile／RoundCoordinator 與準備測試共 88 tests 通過。最終完整含 Tk 套件於桌面環境通過 287 tests（50.528 秒）。型別檢查設定查無；compileall 不視為型別檢查。固定基準複審與文件提交完成後才合併。
 - 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。固定基準 Standards／Spec 複審無未解問題；非阻擋建議為新舊入口間重複的路徑 helper。合併 SHA `90e7c276f3ae28167f75d50a11b78cb973a061aa` 的主線完整含 Tk 套件通過 287 tests（49.445 秒）。Gitea 與 GitHub 主線均已同步，且確認後本地及兩個遠端的 `RoundStartAssembly/ticket-01` 均已安全刪除；最終文件提交後再即時確認一次同步。未修改遠端議題狀態。
+
+## R2 桌面開始操作接入（GitHub #26）
+
+- R2 以固定審查基準 `b2816400415364bd033bd4f784bfebf3cda58b2b` 從 `B518-Log-Solution` 建立 `RoundStartAssembly/ticket-02`。起始工作樹乾淨；本次即時查核的 Gitea 與 GitHub 主線均在同一基準，票分支起初不存在。R1 實作與驗收證據均已在基準中。
+- 正式 Tk 開始入口改用公開 `RoundStartPreparation`，介面保留既有驗證／提示、忙碌狀態、同步偏好保存與輪次協調順序。UI 不再組裝 callback holder、adapter、來源位置映射或 Session/audit 配置證據。各平台按鈕開始、兩種快捷鍵交接、AWAITING_REVIEW 基準差異、RUNNING 保護和偏好替換失敗均補上真 Tk 行為證據。
+- R2 11 項驗收及母規格 14 組情境對照記於 [R2 本機驗收紀錄](evidence/round-start-assembly-ticket-02/local-validation.md)。固定基準雙軸審查（`b2816400415364bd033bd4f784bfebf3cda58b2b`）無未解問題；Standards 僅記一項非阻擋測試 helper 重複建議。完整含 Tk 套件於桌面工作階段通過 289 tests（65.224 秒）；一次先前間歇性協調測試失敗後，單獨與完整套件重跑均通過。合併、雙遠端即時同步及分支清理完成後續補記；本票不取代 R3 整體正式交付或設備現場驗收。

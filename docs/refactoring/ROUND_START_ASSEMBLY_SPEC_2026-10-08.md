@@ -115,6 +115,8 @@
 
 R1 is implemented without switching the formal Tk entry point. Its current-run preparation, platform, disk, timing, and failure evidence is recorded in [R1 local validation](evidence/round-start-assembly-ticket-01/local-validation.md). The 14 scenario groups in the R1 ticket are mapped there to new R1 tests, inherited regression tests, or work explicitly left to R2/R3; this coverage does not claim desktop migration or field-device acceptance.
 
+R2 connects the formal Tk button and keyboard entry paths to the R1 public preparation interface. Its 14-scenario coverage and R2 acceptance evidence are tracked in [R2 local validation](evidence/round-start-assembly-ticket-02/local-validation.md). The R2 tests distinguish newly added desktop coverage from inherited R1/coordinator regression evidence; they do not claim R3's old-path cleanup, complete release sign-off, OS-level global-hotkey field acceptance, or physical factory-device acceptance.
+
 - 日期：2026-10-08。來源：`ROUND_START_ASSEMBLY_DISCUSSION_2026-10-08.md` 的 A1–A7；使用者已同意完整結論並要求轉為規格。
 - 討論事實查證基準為 4d7754c；制定規格時 HEAD 為 332a451，新增提交為 C1 合併驗證文件。開始實作前須再次核對最新程式，遇到契約差異先記錄，不暗中改變已確認需求。
 - 遠端規格議題：[GitHub #24](https://github.com/Bowei1121/B518_205_207_ATE/issues/24)，標籤為 ready-for-agent。本次不拆開發票、不直接實作程式。
