@@ -215,6 +215,9 @@ class RoundAuditRecordTests(unittest.TestCase):
         session_result = next(item for item in session_events if item["message"] == "slot1 PASS")
         self.assertEqual(session_result["localized_message"], localized)
         self.assertEqual(session_result["detail"]["round_id"], started.round_id)
+        self.assertEqual(session_result["round_id"], event["round_id"])
+        self.assertEqual(session_result["sequence"], event["sequence"])
+        self.assertEqual(session_result["timestamp"], event["observed_at"])
         self.assertEqual([item["sequence"] for item in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
         self.assertTrue(rebuilt["audit_complete"])

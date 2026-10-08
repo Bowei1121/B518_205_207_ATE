@@ -60,6 +60,8 @@ class MonitorEvent:
     source: str = ""
     detail: Dict[str, str] = field(default_factory=dict)
     localized_message: Optional[BilingualMessage] = None
+    sequence: Optional[int] = None
+    observed_at: Optional[str] = None
 
 
 @dataclass
@@ -98,10 +100,17 @@ class SessionStore:
             self._remember_failed_write("initialize", (), "Session 初始化保存失敗", error)
 
     def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None,
-                      localized_message: Optional[BilingualMessage] = None) -> None:
-        arguments = (message, dict(detail or {}), datetime.now().isoformat(timespec="seconds"))
+                      localized_message: Optional[BilingualMessage] = None,
+                      timestamp: Optional[str] = None, sequence: Optional[int] = None,
+                      round_id: Optional[str] = None) -> None:
+        arguments = (message, dict(detail or {}), timestamp or datetime.now().isoformat(
+            timespec="seconds"))
         if localized_message is not None:
             arguments += (localized_message,)
+        if sequence is not None or round_id is not None:
+            if localized_message is None:
+                arguments += (None,)
+            arguments += (sequence, round_id)
         self._enqueue_write("event", arguments, "Session 事件保存失敗")
 
     def enqueue_source(self, path: Path) -> None:
@@ -286,12 +295,17 @@ class SessionStore:
 
     def event(self, message: str, detail: Optional[Dict[str, str]] = None,
               timestamp: Optional[str] = None,
-              localized_message: Optional[BilingualMessage] = None) -> None:
+              localized_message: Optional[BilingualMessage] = None,
+              sequence: Optional[int] = None, round_id: Optional[str] = None) -> None:
         payload = {
             "timestamp": timestamp or datetime.now().isoformat(timespec="seconds"),
             "message": message,
             "detail": detail or {},
         }
+        if sequence is not None:
+            payload["sequence"] = sequence
+        if round_id is not None:
+            payload["round_id"] = round_id
         if localized_message is not None:
             payload["localized_message"] = localized_message.as_record()
         record = json.dumps(payload, ensure_ascii=False) + "\n"
@@ -402,20 +416,8 @@ class BaseMonitor:
                 event.kind, self.station, event.slot, event.status, event.detail,
                 event.message, display_slot,
             )
-        try:
-            enqueue = getattr(self.session, "enqueue_event", None)
-            if callable(enqueue):
-                if event.localized_message is not None:
-                    enqueue(event.message, event.detail, event.localized_message)
-                else:
-                    enqueue(event.message, event.detail)
-            elif event.localized_message is not None:
-                self.session.event(event.message, event.detail,
-                                   localized_message=event.localized_message)
-            else:
-                self.session.event(event.message, event.detail)
-        except OSError as error:
-            self._report_session_write_failure("Session 事件保存失敗", error)
+        # The common-round callback assigns the canonical sequence and time before
+        # this Session mirror is queued, so Session and audit can be correlated on disk.
         if event.source:
             try:
                 enqueue = getattr(self.session, "enqueue_source", None)
@@ -427,6 +429,27 @@ class BaseMonitor:
                 self._report_session_write_failure("Session 來源保存失敗", error)
         if self.callback:
             self.callback(event)
+        try:
+            enqueue = getattr(self.session, "enqueue_event", None)
+            if callable(enqueue):
+                if event.localized_message is not None:
+                    enqueue(event.message, event.detail, event.localized_message,
+                            event.observed_at, event.sequence,
+                            event.detail.get("round_id"))
+                else:
+                    enqueue(event.message, event.detail, timestamp=event.observed_at,
+                            sequence=event.sequence, round_id=event.detail.get("round_id"))
+            elif event.localized_message is not None:
+                self.session.event(event.message, event.detail, timestamp=event.observed_at,
+                                   localized_message=event.localized_message,
+                                   sequence=event.sequence,
+                                   round_id=event.detail.get("round_id"))
+            else:
+                self.session.event(event.message, event.detail, timestamp=event.observed_at,
+                                   sequence=event.sequence,
+                                   round_id=event.detail.get("round_id"))
+        except OSError as error:
+            self._report_session_write_failure("Session 事件保存失敗", error)
 
     def _report_session_write_failure(self, operation: str, error: OSError) -> None:
         if self.callback:

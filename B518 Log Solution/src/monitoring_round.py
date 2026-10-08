@@ -983,7 +983,9 @@ class MonitoringRound:
                 self._collection_stopped = True
                 if self._completion_reason != "start_failed":
                     self._completion_reason = "manual_stop"
-            round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
+            event.sequence = len(self._events) + 1
+            event.observed_at = self._wall_clock().isoformat(timespec="seconds")
+            round_event = RoundEvent(self.round_id, event.sequence, event)
             self._events.append(round_event)
         self._persist_audit_event(round_event)
         self._on_event(round_event)
@@ -1002,7 +1004,7 @@ class MonitoringRound:
             return
         event = round_event.event
         failure_message = None
-        observed_at = self._wall_clock().isoformat(timespec="seconds")
+        observed_at = event.observed_at or self._wall_clock().isoformat(timespec="seconds")
         elapsed_seconds = self._monotonic() - self._started_monotonic
         with self._audit_condition:
             while round_event.sequence != self._audit_next_sequence:

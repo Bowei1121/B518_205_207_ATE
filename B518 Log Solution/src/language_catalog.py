@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from string import Formatter
-from typing import Dict, Mapping, Tuple
+from typing import Dict, Mapping, Optional, Tuple
 
 ENGLISH = "en"
 TRADITIONAL_CHINESE = "zh-TW"
@@ -232,7 +232,7 @@ def make_bilingual_message(message_id: str, parameters: Mapping[str, object],
 
 def capture_round_event_message(kind: str, station: str, slot: object, status: str,
                                 detail: Mapping[str, object], legacy_message: str,
-                                display_slot: object = None) -> BilingualMessage:
+                                display_slot: object = None) -> Optional[BilingualMessage]:
     """Capture the bilingual description for one supported shared-round event."""
     message_id = None
     parameters = {"station": station}
