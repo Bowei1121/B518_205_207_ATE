@@ -2037,6 +2037,77 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
             self.assertFalse(any(event.event.status == "TESTING" for event in snapshot.events))
 
+    def test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            dfu_profile = app.profiles.get("B518", "DFU")
+            app.profiles = app.profiles.with_profile(replace(
+                dfu_profile, paths={"active": temporary, "final": temporary, "caseinfo": ""},
+            ))
+            sources = []
+
+            def source_factory(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for the controlled awaiting-review round")
+
+            try:
+                app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                pump_until(lambda: bool(sources) and app.rounds.snapshot().state == RoundState.RUNNING)
+                sources[0].offer_candidate(
+                    1, "SN-BASE", "FAIL", "/controlled/slot1/candidate.csv",
+                    "base-candidate", "2026-10-08T10:00:02",
+                )
+                pump_until(lambda: app.rounds.snapshot().state == RoundState.AWAITING_REVIEW)
+                original_round_id = app.rounds.snapshot().round_id
+
+                # The direct start method historically saves the newly selected profile
+                # and resets the board before RoundCoordinator returns the existing round.
+                app.station.set("DFU")
+                app._profile_changed()
+                app.start_monitor()
+                saved = json.loads((Path(temporary) / "preferences.json").read_text(encoding="utf-8"))
+                self.assertEqual(saved["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+
+                # Both shortcut paths reject AWAITING_REVIEW before saving preferences.
+                app.station.set("FCT")
+                root.event_generate("<Command-Shift-M>")
+                root.update()
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(unchanged["machine"], "DFU")
+
+                app.station.set("DFU")
+                app.hotkey.callback()
+                pump_until(lambda: not app.hotkey_events.empty())
+                pump_until(lambda: app.rounds.snapshot().round_id == original_round_id)
+                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
+                    encoding="utf-8"))
+                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
+            finally:
+                app.rounds.stop()
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_legacy_profile_migration_preserves_valid_default_capacities(self):
         profiles, _project, _machine = migrate_legacy_preferences({})
         self.assertEqual(profiles.get("B518", "DFU").capacity, 7)
