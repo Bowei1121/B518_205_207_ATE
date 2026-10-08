@@ -17,6 +17,6 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 - [ ] 監控與待確認切換保留結果、候選與警報；來源資料、狀態碼、放行政策維持。
 - [ ] 以公開輪次入口、暫存磁碟及真正 Tk 事件顯示驗證兩語相同行為。
 
-## Blocked by
+## Dependency
 
-- [#14：主頁直覺語言選單與上次語言持久保存](https://github.com/Bowei1121/B518_205_207_ATE/issues/14)
+- M1 / [#14：主頁直覺語言選單與上次語言持久保存](https://github.com/Bowei1121/B518_205_207_ATE/issues/14) is verified in the M2 baseline and no longer blocks implementation. See the ancestry and evidence check in [M2 local validation](../evidence/multilingual-ticket-02/local-validation.md).

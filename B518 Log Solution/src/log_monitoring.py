@@ -34,7 +34,7 @@ from atlas_source_adapter import (
     records_status,
     trusted_sn_from_records,
 )
-from language_catalog import BilingualMessage
+from language_catalog import BilingualMessage, capture_round_event_message
 from monitoring_files import (
     file_signature,
     is_trusted_sn,
@@ -97,9 +97,12 @@ class SessionStore:
         except OSError as error:
             self._remember_failed_write("initialize", (), "Session 初始化保存失敗", error)
 
-    def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None) -> None:
-        self._enqueue_write("event", (message, dict(detail or {}),
-                                       datetime.now().isoformat(timespec="seconds")), "Session 事件保存失敗")
+    def enqueue_event(self, message: str, detail: Optional[Dict[str, str]] = None,
+                      localized_message: Optional[BilingualMessage] = None) -> None:
+        arguments = (message, dict(detail or {}), datetime.now().isoformat(timespec="seconds"))
+        if localized_message is not None:
+            arguments += (localized_message,)
+        self._enqueue_write("event", arguments, "Session 事件保存失敗")
 
     def enqueue_source(self, path: Path) -> None:
         self._enqueue_write("source", (Path(path),), "Session 來源保存失敗")
@@ -282,12 +285,16 @@ class SessionStore:
             self._atomic_write(self.path / "session.json", encoded)
 
     def event(self, message: str, detail: Optional[Dict[str, str]] = None,
-              timestamp: Optional[str] = None) -> None:
-        record = json.dumps({
+              timestamp: Optional[str] = None,
+              localized_message: Optional[BilingualMessage] = None) -> None:
+        payload = {
             "timestamp": timestamp or datetime.now().isoformat(timespec="seconds"),
             "message": message,
             "detail": detail or {},
-        }, ensure_ascii=False) + "\n"
+        }
+        if localized_message is not None:
+            payload["localized_message"] = localized_message.as_record()
+        record = json.dumps(payload, ensure_ascii=False) + "\n"
         with self._lock:
             with (self.path / "events.log").open("a", encoding="utf-8") as handle:
                 handle.write(record)
@@ -345,6 +352,7 @@ class BaseMonitor:
                               "test_timeout_seconds": str(self.test_timeout_seconds),
                               "round_timeout_seconds": str(self.round_timeout_seconds)})
         self.callback, self.now, self.monotonic = callback, now, monotonic
+        self._event_display_position_mapper = lambda slot: slot
         self.started = now()
         self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
@@ -360,6 +368,10 @@ class BaseMonitor:
     def round_results(self) -> Tuple[SlotResult, ...]:
         """Return a stable view of results for the shared round lifecycle."""
         return tuple(replace(result) for result in self.results.values())
+
+    def set_event_display_position_mapper(self, mapper: Callable[[Optional[int]], Optional[int]]) -> None:
+        """Keep captured event labels aligned with the configured display positions."""
+        self._event_display_position_mapper = mapper
 
     def timeout_seconds(self, kind: str) -> int:
         """Expose configured limits through the common round contract."""
@@ -380,10 +392,26 @@ class BaseMonitor:
         self.emit(event)
 
     def emit(self, event: MonitorEvent) -> None:
+        round_id = getattr(self, "settings", {}).get("round_id")
+        if round_id:
+            event.detail.setdefault("round_id", str(round_id))
+        if event.localized_message is None:
+            mapper = getattr(self, "_event_display_position_mapper", lambda slot: slot)
+            display_slot = mapper(event.slot)
+            event.localized_message = capture_round_event_message(
+                event.kind, self.station, event.slot, event.status, event.detail,
+                event.message, display_slot,
+            )
         try:
             enqueue = getattr(self.session, "enqueue_event", None)
             if callable(enqueue):
-                enqueue(event.message, event.detail)
+                if event.localized_message is not None:
+                    enqueue(event.message, event.detail, event.localized_message)
+                else:
+                    enqueue(event.message, event.detail)
+            elif event.localized_message is not None:
+                self.session.event(event.message, event.detail,
+                                   localized_message=event.localized_message)
             else:
                 self.session.event(event.message, event.detail)
         except OSError as error:

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
 from b482_source_adapter import B482SourceAdapter, B482ObservationKind
+from language_catalog import make_bilingual_message
 
 
 def write_records(path, sn="", status="PASS"):
@@ -53,6 +54,21 @@ class LogMonitoringTests(unittest.TestCase):
             self.assertTrue(store.flush())
         self.session_store_patch.stop()
         shutil.rmtree(self.temp)
+
+    def test_session_event_keeps_one_immutable_bilingual_record(self):
+        store = log_monitoring.SessionStore("bilingual", {}, self.temp / "sessions")
+        parameters = {"station": "FCT", "slot": 3, "status": "PASS"}
+        message = make_bilingual_message("round.result", parameters)
+        parameters["slot"] = 9
+
+        store.enqueue_event("slot3 PASS", {"round_id": "round-1"}, message)
+        self.assertTrue(store.flush())
+        record = json.loads((store.path / "events.log").read_text(encoding="utf-8"))
+        self.assertEqual(record["message"], "slot3 PASS")
+        self.assertEqual(record["detail"], {"round_id": "round-1"})
+        self.assertEqual(record["localized_message"]["parameters"]["slot"], 3)
+        self.assertEqual(record["localized_message"]["en"], "FCT Slot 3 result: PASS")
+        self.assertEqual(record["localized_message"]["zh-TW"], "FCT 通道 3 結果：PASS")
 
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))

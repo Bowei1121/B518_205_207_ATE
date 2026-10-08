@@ -14,7 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
-from language_catalog import make_bilingual_message
+from language_catalog import capture_round_event_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
 from round_retention import RetentionStatus, RetentionSummary, RoundRetentionStore
@@ -493,7 +493,8 @@ class MonitoringRound:
                 event = round_event.event
                 store.append_event(
                     AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
-                               event.sn, event.status, event.source, dict(event.detail)),
+                               event.sn, event.status, event.source, dict(event.detail),
+                               event.localized_message),
                     observed_at, elapsed_seconds,
                 )
                 with self._audit_condition:
@@ -630,6 +631,7 @@ class MonitoringRound:
                                      "failed_event_sequence": str(record.get("sequence", "unknown")),
                                      "audit_complete": "false"}),
             )
+        self._capture_bilingual_message(failure.event)
         self._on_event(failure)
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
@@ -989,12 +991,9 @@ class MonitoringRound:
     def _capture_bilingual_message(self, event: MonitorEvent) -> None:
         if event.localized_message is not None:
             return
-        message_id = {"result": "round.result"}.get(event.kind)
-        if message_id is None:
-            return
-        event.localized_message = make_bilingual_message(
-            message_id,
-            {"station": self.station, "slot": event.slot or 0, "status": event.status},
+        event.localized_message = capture_round_event_message(
+            event.kind, self.station, event.slot, event.status, event.detail, event.message,
+            event.slot,
         )
 
     def _persist_audit_event(self, round_event: RoundEvent) -> None:
@@ -1042,6 +1041,7 @@ class MonitoringRound:
                                  "failed_event_sequence": str(failed_event.sequence),
                                  "audit_complete": "false"}),
         )
+        self._capture_bilingual_message(failure.event)
         self._on_event(failure)
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:

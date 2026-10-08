@@ -57,6 +57,25 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.archived": "Trusted Archive",
         "main.slot": "Slot {number}",
         "main.station_title": "{machine} Log Monitoring",
+        'round.started': '{station} round start accepted',
+        'round.ready': '{station} monitoring source ready',
+        'round.collection_stopped': '{station} stopped collecting new source data',
+        'round.stopped': '{station} monitoring stopped by operator',
+        'round.finished': '{station} round completed',
+        'round.timeout.slot': '{station} Slot {slot} timed out: {status} after {elapsed} seconds (limit {deadline} seconds)',
+        'round.timeout.whole': '{station} round monitoring timed out after {elapsed} seconds (limit {deadline} seconds)',
+        'round.alarm.created': '{station} round timeout alarm created',
+        'round.alarm.acknowledged': 'Round timeout alarm acknowledged; other review items remain',
+        'round.alarm.ignored': 'Round alarm acknowledgement ignored',
+        'round.conflict.detected': 'Slot {slot} has a same-round result conflict and awaits review',
+        'round.conflict.kept_original': 'Slot {slot}: original result kept',
+        'round.conflict.accepted_candidate': 'Slot {slot}: new candidate accepted',
+        'round.duplicate_source': 'Slot {slot}: duplicate source recorded',
+        'round.unknown_candidate_rejected': 'Slot {slot}: source could not be linked to this round; candidate rejected and result set to FAIL',
+        'round.audit_write_failed': '{station} audit event could not be saved',
+        'round.session_write_failed': '{station} Session event could not be saved',
+        'round.save_recovered': '{station} Session and audit save recovery completed',
+        'round.start_failed': '{station} monitoring source preparation failed',
         "monitor.idle": "Standby",
         "monitor.active": "Monitoring",
         "monitor.starting": "Starting",
@@ -112,6 +131,25 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.archived": "可信封存",
         "main.slot": "通道 {number}",
         "main.station_title": "{machine} Log 監控",
+        'round.started': '{station} 已接受開始本輪',
+        'round.ready': '{station} 監控來源已就緒',
+        'round.collection_stopped': '{station} 已停止收集新來源資料',
+        'round.stopped': '{station} 監控已由人員停止',
+        'round.finished': '{station} 本輪已完成',
+        'round.timeout.slot': '{station} 通道 {slot} 逾時：經過 {elapsed} 秒，期限 {deadline} 秒，結果 {status}',
+        'round.timeout.whole': '{station} 整輪監控逾時：經過 {elapsed} 秒，期限 {deadline} 秒',
+        'round.alarm.created': '{station} 已建立整輪逾時警報',
+        'round.alarm.acknowledged': '整輪逾時警報已確認；仍有其他項目待確認',
+        'round.alarm.ignored': '整輪警報確認已忽略',
+        'round.conflict.detected': '通道 {slot} 發現同輪結果衝突，等待人工確認',
+        'round.conflict.kept_original': '通道 {slot}：已保留原結果',
+        'round.conflict.accepted_candidate': '通道 {slot}：已採用新候選',
+        'round.duplicate_source': '通道 {slot}：已記錄重複來源',
+        'round.unknown_candidate_rejected': '通道 {slot}：無法確認來源屬於本輪；已拒絕候選並判定 FAIL',
+        'round.audit_write_failed': '{station} 稽核事件保存失敗',
+        'round.session_write_failed': '{station} Session 事件保存失敗',
+        'round.save_recovered': '{station} Session 與稽核紀錄已完成保存復原',
+        'round.start_failed': '{station} 監控來源準備失敗',
         "monitor.idle": "待命",
         "monitor.active": "監控中",
         "monitor.starting": "啟動中",
@@ -190,6 +228,80 @@ def make_bilingual_message(message_id: str, parameters: Mapping[str, object],
         traditional_chinese=translate(message_id, TRADITIONAL_CHINESE, **captured),
         diagnostic=diagnostic,
     )
+
+
+def capture_round_event_message(kind: str, station: str, slot: object, status: str,
+                                detail: Mapping[str, object], legacy_message: str,
+                                display_slot: object = None) -> BilingualMessage:
+    """Capture the bilingual description for one supported shared-round event."""
+    message_id = None
+    parameters = {"station": station}
+    diagnostic = ""
+    if kind == "result":
+        if slot is not None and display_slot is None:
+            return None
+        message_id = "round.result"
+        parameters.update(slot=display_slot if display_slot is not None else 0,
+                          status=status or "unknown")
+    elif kind == "round_started":
+        message_id = "round.started"
+    elif kind == "round_ready":
+        message_id = "round.ready"
+    elif kind == "collection_stopped":
+        message_id = "round.collection_stopped"
+    elif kind == "stopped":
+        message_id = "round.stopped"
+    elif kind == "finished":
+        message_id = "round.finished"
+    elif kind == "timeout":
+        parameters.update(elapsed=detail.get("elapsed_seconds", "unknown"),
+                          deadline=detail.get("deadline_seconds", "unknown"))
+        if slot is not None:
+            if display_slot is None:
+                return None
+            message_id = "round.timeout.slot"
+            parameters.update(slot=display_slot, status=status or "unknown")
+        else:
+            message_id = "round.timeout.whole"
+    elif kind == "round_alarm_created":
+        message_id = "round.alarm.created"
+    elif kind == "round_alarm_acknowledged":
+        message_id = "round.alarm.acknowledged"
+    elif kind == "round_alarm_acknowledgement_ignored":
+        message_id = "round.alarm.ignored"
+    elif kind == "conflict_detected":
+        if slot is not None and display_slot is None:
+            return None
+        message_id = "round.conflict.detected"
+        parameters["slot"] = display_slot if display_slot is not None else 0
+    elif kind == "conflict_resolved":
+        if slot is not None and display_slot is None:
+            return None
+        message_id = ("round.conflict.accepted_candidate"
+                      if detail.get("choice") == "accept_candidate"
+                      else "round.conflict.kept_original")
+        parameters["slot"] = display_slot if display_slot is not None else 0
+    elif kind == "duplicate_source":
+        if slot is not None and display_slot is None:
+            return None
+        message_id = "round.duplicate_source"
+        parameters["slot"] = display_slot if display_slot is not None else 0
+    elif kind == "unknown_round_candidate_rejected":
+        if slot is not None and display_slot is None:
+            return None
+        message_id = "round.unknown_candidate_rejected"
+        parameters["slot"] = display_slot if display_slot is not None else 0
+    elif kind == "audit_write_failed":
+        message_id, diagnostic = "round.audit_write_failed", legacy_message
+    elif kind == "session_write_failed":
+        message_id, diagnostic = "round.session_write_failed", legacy_message
+    elif kind == "save_recovered":
+        message_id = "round.save_recovered"
+    elif kind == "start_failed":
+        message_id, diagnostic = "round.start_failed", legacy_message
+    if message_id is None:
+        return None
+    return make_bilingual_message(message_id, parameters, diagnostic)
 
 
 def render_bilingual_message(message: object, language: str, fallback: str = "") -> str:

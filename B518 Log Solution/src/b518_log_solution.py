@@ -20,7 +20,8 @@ from machine_profiles import (
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from round_start_preparation import RoundStartPathError, RoundStartPreparation
 from language_catalog import (
-    LANGUAGE_OPTIONS, language_name, save_state_message_id, translate,
+    DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, TRADITIONAL_CHINESE, language_name,
+    render_bilingual_message, save_state_message_id, translate,
 )
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
@@ -122,6 +123,7 @@ class B518LogSolutionApp:
         self._rendered_marker_state: Optional[MarkerState] = None
         self.company_logo: Optional[tk.PhotoImage] = None
         self.event_lines: list[str] = []
+        self._event_records: list[tuple[str, object, Optional[str]]] = []
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
         self.retention_days_var: Optional[tk.StringVar] = None
@@ -402,6 +404,7 @@ class B518LogSolutionApp:
         self._refresh_unsaved_rounds()
         self._refresh_archive_statuses()
         self._refresh_main_round_labels()
+        self._refresh_event_log()
 
     def _refresh_main_round_labels(self) -> None:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
@@ -887,12 +890,47 @@ class B518LogSolutionApp:
         if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
             self.rounds.stop()
 
-    def _log(self, text: str) -> None:
-        self.event_lines.append(text)
-        self.event_lines = self.event_lines[-500:]
+    def _render_event_record(self, record: tuple[str, object, Optional[str]]) -> str:
+        fallback, localized, round_id = record
+        language = getattr(self, "current_language", DEFAULT_LANGUAGE)
+        message = render_bilingual_message(localized, language, fallback)
+        diagnostic = getattr(localized, "diagnostic", "")
+        if not diagnostic and isinstance(localized, dict):
+            diagnostic = localized.get("diagnostic", "")
+        if isinstance(diagnostic, str) and diagnostic and diagnostic not in message:
+            message = "{} — {}".format(message, diagnostic)
+        if round_id:
+            prefix = "輪次 {}：" if language == TRADITIONAL_CHINESE else "Round {}: "
+            return prefix.format(round_id[:10]) + message
+        return message
+
+    def _refresh_event_log(self) -> None:
+        if not hasattr(self, "_event_records"):
+            self._event_records = [(line, None, None) for line in self.event_lines]
+        elif len(self.event_lines) != len(self._event_records):
+            # Keep compatibility with callers that reset the legacy text list.
+            self._event_records = [(line, None, None) for line in self.event_lines]
+        self._event_records = self._event_records[-500:]
+        self.event_lines = [self._render_event_record(record) for record in self._event_records]
         if self.settings_log and self.settings_log.winfo_exists():
             self.settings_log.configure(state="normal")
-            self.settings_log.insert("end", text + "\n")
+            self.settings_log.delete("1.0", "end")
+            self.settings_log.insert("1.0", "\n".join(self.event_lines))
+            self.settings_log.see("end")
+            self.settings_log.configure(state="disabled")
+
+    def _log(self, text: str, localized_message=None, round_id: Optional[str] = None) -> None:
+        if not hasattr(self, "_event_records"):
+            self._event_records = []
+        elif len(self.event_lines) != len(self._event_records):
+            self._event_records = [(line, None, None) for line in self.event_lines]
+        self._event_records.append((text, localized_message, round_id))
+        self._event_records = self._event_records[-500:]
+        self.event_lines = [self._render_event_record(record) for record in self._event_records]
+        if self.settings_log and self.settings_log.winfo_exists():
+            self.settings_log.configure(state="normal")
+            self.settings_log.delete("1.0", "end")
+            self.settings_log.insert("1.0", "\n".join(self.event_lines))
             self.settings_log.see("end")
             self.settings_log.configure(state="disabled")
 
@@ -934,11 +972,11 @@ class B518LogSolutionApp:
         if isinstance(event, RoundEvent):
             if event.round_id != self.active_round_id:
                 if event.event.kind in {"audit_write_failed", "save_recovered"}:
-                    self._log("輪次 {}：{}".format(event.round_id[:10], event.event.message))
+                    self._log(event.event.message, event.event.localized_message, event.round_id)
                 self._refresh_unsaved_rounds()
                 return
             event = event.event
-        self._log(event.message)
+        self._log(event.message, event.localized_message)
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
         if event.slot and snapshot:

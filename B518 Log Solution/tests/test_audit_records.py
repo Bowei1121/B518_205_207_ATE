@@ -11,7 +11,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import audit_records
-from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, MonitorEvent, SessionStore, SlotResult
+from log_monitoring import (AtlasActiveArchiveMonitor, BaseMonitor, BtLogMonitor, MonitorEvent,
+                            SessionStore, SlotResult)
 from monitoring_round import RoundCoordinator
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore, read_round_audit
 from rswmt_monitoring import RsWmtLogMonitor
@@ -135,19 +136,64 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertEqual(rebuilt["results"][2]["status"], "FAIL")
         kinds = [event["kind"] for event in rebuilt["events"]]
         self.assertLess(kinds.index("collection_stopped"), kinds.index("finished"))
+        localized_by_kind = {event["kind"]: event["localized_message"]["message_id"]
+                             for event in rebuilt["events"] if "localized_message" in event}
+        self.assertEqual(localized_by_kind["round_started"], "round.started")
+        self.assertEqual(localized_by_kind["round_ready"], "round.ready")
+        self.assertEqual(localized_by_kind["collection_stopped"], "round.collection_stopped")
+        self.assertEqual(localized_by_kind["finished"], "round.finished")
         self.assertTrue(rebuilt["result_available"])
         self.assertEqual([event["sequence"] for event in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
 
     def test_shared_round_result_is_one_versioned_bilingual_audit_event(self):
-        started = self.start_round()
-        monitor = self.monitors[0]
-        monitor.apply_round_result(
+        session_root = Path(self.temp.name) / "legacy-sessions"
+        session_stores = []
+
+        def factory(callback):
+            session = SessionStore("shared-round-session", {}, session_root)
+            session_stores.append(session)
+
+            class SessionBackedMonitor(AuditFakeMonitor):
+                station = "FCT"
+
+                def __init__(self):
+                    super().__init__(callback, lambda: self_outer.clock[0])
+                    self.session = session
+                    self.settings = {}
+
+                def update_round_settings(self, settings):
+                    self.settings.update(settings)
+
+                def apply_round_result(self, slot, status, sn="", source="", detail=None,
+                                       lock_terminal=False):
+                    result = self.results[slot]
+                    result.status, result.sn, result.source = status, sn, source
+                    BaseMonitor.emit(self, MonitorEvent(
+                        "result", "slot{} {}".format(slot, status), slot, sn, status,
+                        source, detail or {},
+                    ))
+
+            self_outer = self
+            monitor = SessionBackedMonitor()
+            self.monitors.append(monitor)
+            return monitor
+
+        started = self.coordinator.start(
+            "FCT", factory, run_async=False, round_timeout_seconds=10, capacity=2,
+            audit_context={"project": "B518", "machine": "FCT", "platform": "atlas",
+                           "profile_version": 1, "capacity": 2,
+                           "mapping": [{"source": 2, "display": 1},
+                                       {"source": 4, "display": 2}],
+                           "timeouts": {"start": 30, "test": 60, "round": 10}},
+        )
+        self.monitors[0].apply_round_result(
             1, "PASS", "SN-123", "/tmp/source-a.csv",
             {"source_position": 2, "source_time": "2026-10-08T09:10:11"},
         )
 
-        rebuilt = self.rebuild_current_round(started.round_id)
+        self.assertTrue(self.coordinator.flush_audit())
+        rebuilt = read_round_audit(self.coordinator.session_path / "audit.jsonl")
         results = [event for event in rebuilt["events"] if event["kind"] == "result"]
         self.assertEqual(len(results), 1)
         event = results[0]
@@ -162,6 +208,13 @@ class RoundAuditRecordTests(unittest.TestCase):
         })
         self.assertEqual(localized["en"], "FCT Slot 1 result: PASS")
         self.assertEqual(localized["zh-TW"], "FCT 通道 1 結果：PASS")
+        session_stores[0].flush(2)
+        session_events = [json.loads(line) for line in
+                          (session_root / "shared-round-session" / "events.log").read_text(
+                              encoding="utf-8").splitlines()]
+        session_result = next(item for item in session_events if item["message"] == "slot1 PASS")
+        self.assertEqual(session_result["localized_message"], localized)
+        self.assertEqual(session_result["detail"]["round_id"], started.round_id)
         self.assertEqual([item["sequence"] for item in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
         self.assertTrue(rebuilt["audit_complete"])
@@ -205,23 +258,24 @@ class RoundAuditRecordTests(unittest.TestCase):
             monotonic=lambda: self.clock[0], audit_root=self.audit_root,
             wall_clock=lambda: wall_clock[0])
         started = self.start_round()
-        original_write = audit_records.os.write
+        original_append = RoundAuditStore.append_event
         failed = threading.Event()
 
-        def fail_one_append(descriptor, content):
-            if not failed.is_set() and b"recovery_probe" in content:
+        def fail_one_append(store, event, observed_at, elapsed_seconds):
+            if not failed.is_set() and event.kind == "result":
                 failed.set()
                 raise OSError("temporary disk fault")
-            return original_write(descriptor, content)
+            return original_append(store, event, observed_at, elapsed_seconds)
 
-        with patch.object(audit_records.os, "write", side_effect=fail_one_append):
+        with patch.object(RoundAuditStore, "append_event", new=fail_one_append):
             self.monitors[0].callback(MonitorEvent(
-                "recovery_probe", "preserve this", detail={"original": "payload"}))
+                "result", "preserve this", slot=1, status="PASS",
+                detail={"original": "payload"}))
             deadline = time.monotonic() + 2
             while not failed.is_set() and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertTrue(failed.is_set())
-            self.assertFalse(self.coordinator.flush_audit(timeout=0.2))
+            self.assertTrue(self.coordinator.flush_audit(timeout=0.2))
             self.assertFalse(self.coordinator.snapshot().audit_complete)
 
         wall_clock[0] = datetime(2026, 10, 7, 12, 30, 0)
@@ -229,12 +283,14 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.wait_for_retry_to_finish()
         self.assertTrue(self.coordinator.flush_audit(timeout=2))
         rebuilt = read_round_audit(self.audit_path(started.round_id))
-        event = next(item for item in rebuilt["events"] if item["kind"] == "recovery_probe")
+        event = next(item for item in rebuilt["events"] if item["kind"] == "result")
         live = next(item for item in self.coordinator.snapshot().events
-                    if item.event.kind == "recovery_probe")
+                    if item.event.kind == "result")
         self.assertEqual(event["sequence"], live.sequence)
         self.assertEqual(event["observed_at"], "2026-10-07T12:00:00")
         self.assertEqual(event["detail"], {"original": "payload"})
+        self.assertEqual(event["localized_message"]["message_id"], "round.result")
+        self.assertEqual(event["localized_message"]["en"], "FCT Slot 1 result: PASS")
         self.assertEqual([item["sequence"] for item in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
         self.assertTrue(self.coordinator.snapshot().audit_complete)
@@ -477,6 +533,8 @@ class RoundAuditRecordTests(unittest.TestCase):
         resolution = next(event for event in rebuilt["events"]
                           if event["kind"] == "conflict_resolved")
         self.assertEqual(resolution["detail"]["choice"], "accept_candidate")
+        self.assertEqual(resolution["localized_message"]["message_id"],
+                         "round.conflict.accepted_candidate")
         self.assertEqual(rebuilt["results"][1]["sn"], "SN-NEW")
 
     def test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order(self):
@@ -594,7 +652,11 @@ class RoundAuditRecordTests(unittest.TestCase):
         conflict = next(event for event in rebuilt["events"] if event["kind"] == "conflict_detected")
         resolution = next(event for event in rebuilt["events"] if event["kind"] == "conflict_resolved")
         self.assertEqual(conflict["detail"]["candidate"]["sn"], "SN-NEW")
+        self.assertEqual(conflict["localized_message"]["message_id"],
+                         "round.conflict.detected")
         self.assertEqual(resolution["detail"]["choice"], "accept_candidate")
+        self.assertEqual(resolution["localized_message"]["message_id"],
+                         "round.conflict.accepted_candidate")
         self.assertEqual(rebuilt["results"][1]["sn"], "SN-NEW")
         self.assertTrue(rebuilt["result_available"])
 
@@ -616,6 +678,11 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertLess(kinds.index("round_alarm_acknowledged"), kinds.index("finished"))
         self.assertTrue(rebuilt["result_available"])
         self.assertEqual({result["status"] for result in rebuilt["results"].values()}, {"NOTEST"})
+        event_by_kind = {event["kind"]: event for event in rebuilt["events"]}
+        self.assertEqual(event_by_kind["timeout"]["localized_message"]["message_id"],
+                         "round.timeout.whole")
+        self.assertEqual(event_by_kind["round_alarm_acknowledged"]["localized_message"]["message_id"],
+                         "round.alarm.acknowledged")
 
     def test_reader_rejects_truncated_or_corrupt_records(self):
         started = self.start_round()
