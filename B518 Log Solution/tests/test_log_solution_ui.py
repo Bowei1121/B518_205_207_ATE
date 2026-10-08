@@ -905,9 +905,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.conflict_list.curselection(), (1,))
                 self.assertEqual(conflict_summary_rows(app)[2][2], "SN-CANDIDATE-2")
                 self.assertIn(second_id, app.conflict_details.get("1.0", "end"))
-                for start, _end in app._conflict_value_ranges["結果"]:
-                    self.assertIn("comparison_difference",
-                                  app.conflict_comparison.tag_names(start))
+                candidate_result = app.conflict_comparison.search("FAIL", "1.0")
+                self.assertTrue(candidate_result)
+                self.assertIn("comparison_difference",
+                              app.conflict_comparison.tag_names(candidate_result))
 
                 app.conflict_close_button.invoke()
                 root.update_idletasks()
@@ -1030,6 +1031,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(second_conflict.slot, 1)
                 self.assertEqual(app.conflict_list.curselection(), (0,))
                 self.assertIn(first_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(1)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertIn(second_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][1:],
+                                 ("SN-ORIGINAL", "SN-CANDIDATE-2"))
                 captured_source = source_file.read_text(encoding="utf-8")
                 source_file.write_text(captured_source.replace(
                     "SN-CANDIDATE-2", "SN-CHANGED-AFTER-CAPTURE").replace(
@@ -1045,11 +1053,7 @@ class LogSolutionUiTests(unittest.TestCase):
                          and app.conflict_list.size() == 3)
                 cross_position_conflict = app.rounds.snapshot().pending_conflicts[2]
                 self.assertEqual(cross_position_conflict.slot, 2)
-
-                app.conflict_list.selection_clear(0, "end")
-                app.conflict_list.selection_set(1)
-                app.conflict_list.event_generate("<<ListboxSelect>>")
-                root.update_idletasks()
+                self.assertEqual(app.conflict_list.curselection(), (1,))
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
                 self.assertIn(second_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
                 self.assertEqual(conflict_summary_rows(app)[2][1:],
@@ -1087,6 +1091,11 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.conflict_comparison.tag_names(remaining_result))
                 app.resolve_conflict_original_button.invoke()
                 wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 1)
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：2")
+                self.assertIn(cross_position_conflict.conflict_id,
+                              app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][1:],
+                                 ("SN-SECOND", "SN-SECOND-CANDIDATE"))
                 remaining_index = app.conflict_comparison.search("FAIL", "1.0")
                 self.assertTrue(remaining_index)
                 self.assertEqual(app.conflict_comparison.tag_cget(
