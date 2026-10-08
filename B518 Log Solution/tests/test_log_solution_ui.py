@@ -169,6 +169,17 @@ class LogSolutionUiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Timed out waiting for asynchronous monitor preparation")
 
+    def wait_for_archive_checks(self, coordinator, timeout=5):
+        terminal_states = {"archived", "protected", "failed"}
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            statuses = coordinator.archive_statuses()
+            if all(status.status in terminal_states for status in statuses):
+                return statuses
+            time.sleep(0.01)
+        self.fail("Timed out waiting for public round archive statuses: {}".format(
+            coordinator.archive_statuses()))
+
     def test_real_tk_global_retention_setting_validates_persists_and_preserves_round_files(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -776,6 +787,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                self.wait_for_archive_checks(app.rounds)
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
@@ -798,6 +810,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app.profile_editor_paths["final"].set(str(final))
             app._apply_profile_editor()
             app._close_settings()
+            started_round_ids = []
 
             def pump_until(predicate, timeout=5):
                 deadline = time.monotonic() + timeout
@@ -815,6 +828,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: not app.rounds.snapshot().source_preparation_pending and
                            (app.rounds.session_path / "audit.jsonl").is_file())
                 snapshot = app.rounds.snapshot()
+                started_round_ids.append(snapshot.round_id)
                 session_path = app.rounds.session_path
                 session_metadata = json.loads((session_path / "session.json").read_text(
                     encoding="utf-8"))
@@ -850,6 +864,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                self.wait_for_archive_checks(app.rounds)
+                for round_id in started_round_ids:
+                    self.assertEqual(app.rounds.archive_status(round_id).status, "archived")
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
@@ -902,6 +919,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.station.set(machine)
                         app._profile_changed()
                         root.update_idletasks()
+                        round_id = None
 
                         def pump_until(predicate, timeout=5):
                             deadline = time.monotonic() + timeout
@@ -923,6 +941,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                        app.rounds.session_path is not None and
                                        not app.rounds.snapshot().source_preparation_pending)
                             snapshot = app.rounds.snapshot()
+                            round_id = snapshot.round_id
                             session_path = app.rounds.session_path
                             session_metadata = json.loads((session_path / "session.json").read_text(
                                 encoding="utf-8"))
@@ -985,6 +1004,10 @@ class LogSolutionUiTests(unittest.TestCase):
                             app.rounds.stop()
                             app.rounds.flush_session(timeout=3)
                             app.rounds.flush_audit(timeout=3)
+                            statuses = self.wait_for_archive_checks(app.rounds)
+                            if round_id is not None:
+                                self.assertEqual(app.rounds.archive_status(round_id).status,
+                                                 "archived", statuses)
                             cleanup_deadline = time.monotonic() + 5
                             while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
                                    and time.monotonic() < cleanup_deadline):
@@ -2220,6 +2243,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            round_ids = []
             try:
                 app.open_settings()
                 app.profile_editor_project.set("B518")
@@ -2274,6 +2298,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.flush_audit(timeout=3)
 
                 snapshot = app.rounds.snapshot()
+                round_ids.append(snapshot.round_id)
                 self.assertEqual(snapshot.station, "BT")
                 self.assertEqual([result.status for result in snapshot.results], ["PASS"] * 4)
                 self.assertTrue(all(app.status_rows[slot]["status"].cget("text") == "PASS"
@@ -2290,6 +2315,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                statuses = self.wait_for_archive_checks(app.rounds)
+                for round_id in round_ids:
+                    self.assertEqual(app.rounds.archive_status(round_id).status, "archived",
+                                     statuses)
                 deadline = time.monotonic() + 5
                 while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
                        and time.monotonic() < deadline):
