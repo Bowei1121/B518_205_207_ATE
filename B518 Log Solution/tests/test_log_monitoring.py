@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
+from log_monitoring import AtlasActiveArchiveMonitor, BaseMonitor, BtLogMonitor, MonitorEvent, parse_archive_timestamp
 from b482_source_adapter import B482SourceAdapter, B482ObservationKind
 from language_catalog import make_bilingual_message
 
@@ -69,6 +69,19 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(record["localized_message"]["parameters"]["slot"], 3)
         self.assertEqual(record["localized_message"]["en"], "FCT Slot 3 result: PASS")
         self.assertEqual(record["localized_message"]["zh-TW"], "FCT 通道 3 結果：PASS")
+
+    def test_legacy_session_adapter_keeps_its_existing_event_call_shape(self):
+        monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "legacy")
+        captured = []
+
+        class LegacySession:
+            def enqueue_event(self, message, detail=None):
+                captured.append((message, detail))
+
+        monitor.session = LegacySession()
+        monitor.callback = lambda event: None
+        monitor.emit(MonitorEvent("source_prepared", "Source ready"))
+        self.assertEqual(captured, [("Source ready", {})])
 
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))

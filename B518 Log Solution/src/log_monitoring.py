@@ -7,6 +7,7 @@ subscribes to events emitted here; the same core is used by unit tests.
 from __future__ import annotations
 
 import csv
+import inspect
 import json
 import os
 import queue
@@ -48,6 +49,17 @@ DEFAULT_TIMEOUTS = {
     "FCT": {"start": 30, "test": 480, "round": 7200},
     "BT": {"start": 30, "test": 240, "round": 7200},
 }
+
+
+def _accepts_event_identity(method) -> bool:
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    if any(parameter.kind == inspect.Parameter.VAR_KEYWORD
+           for parameter in parameters.values()):
+        return True
+    return {"timestamp", "sequence", "round_id"}.issubset(parameters)
 
 
 @dataclass
@@ -431,7 +443,7 @@ class BaseMonitor:
             self.callback(event)
         try:
             enqueue = getattr(self.session, "enqueue_event", None)
-            if callable(enqueue):
+            if callable(enqueue) and _accepts_event_identity(enqueue):
                 if event.localized_message is not None:
                     enqueue(event.message, event.detail, event.localized_message,
                             event.observed_at, event.sequence,
@@ -439,15 +451,29 @@ class BaseMonitor:
                 else:
                     enqueue(event.message, event.detail, timestamp=event.observed_at,
                             sequence=event.sequence, round_id=event.detail.get("round_id"))
+            elif callable(enqueue):
+                if event.localized_message is not None:
+                    enqueue(event.message, event.detail, event.localized_message)
+                else:
+                    enqueue(event.message, event.detail)
             elif event.localized_message is not None:
-                self.session.event(event.message, event.detail, timestamp=event.observed_at,
-                                   localized_message=event.localized_message,
-                                   sequence=event.sequence,
-                                   round_id=event.detail.get("round_id"))
+                write_event = self.session.event
+                if _accepts_event_identity(write_event):
+                    write_event(event.message, event.detail, timestamp=event.observed_at,
+                                localized_message=event.localized_message,
+                                sequence=event.sequence,
+                                round_id=event.detail.get("round_id"))
+                else:
+                    write_event(event.message, event.detail,
+                                localized_message=event.localized_message)
             else:
-                self.session.event(event.message, event.detail, timestamp=event.observed_at,
-                                   sequence=event.sequence,
-                                   round_id=event.detail.get("round_id"))
+                write_event = self.session.event
+                if _accepts_event_identity(write_event):
+                    write_event(event.message, event.detail, timestamp=event.observed_at,
+                                sequence=event.sequence,
+                                round_id=event.detail.get("round_id"))
+                else:
+                    write_event(event.message, event.detail)
         except OSError as error:
             self._report_session_write_failure("Session 事件保存失敗", error)
 

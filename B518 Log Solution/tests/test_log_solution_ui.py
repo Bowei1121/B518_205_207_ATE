@@ -200,40 +200,6 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
-    @unittest.skip("macOS native Menu.post enters system menu tracking; use the full language-menu Tk flow")
-    def test_real_tk_language_button_mouse_click_posts_menu_without_tk_error(self):
-        with TemporaryDirectory() as temporary, \
-                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
-            root = tk.Tk()
-            app = B518LogSolutionApp(
-                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
-            )
-            posting_errors = []
-            root.tk.createcommand("bgerror", lambda message: posting_errors.append(str(message)))
-            try:
-                root.update()
-                self.assertTrue(app.language_button.winfo_ismapped())
-                root.after(150, app.language_menu.unpost)
-                x = app.language_button.winfo_width() // 2
-                y = app.language_button.winfo_height() // 2
-                app.language_button.event_generate("<Enter>", x=x, y=y)
-                app.language_button.event_generate("<Button-1>", x=x, y=y)
-                root.update()
-                self.assertTrue(app.language_menu.winfo_ismapped(),
-                                "Mouse click did not post the language menu")
-                app.language_menu.unpost()
-                root.update()
-                self.assertFalse(posting_errors, posting_errors)
-                self.assertEqual(app.current_language, ENGLISH)
-                self.assertEqual(app.rounds.snapshot(), None)
-            finally:
-                app.rounds.request_close()
-                self.wait_for(lambda: app.rounds.close_status().status == "complete")
-                app.hotkey.close()
-                root.destroy()
-
-    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
-                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_language_menu_switches_main_page_and_persists_across_app_instances(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
