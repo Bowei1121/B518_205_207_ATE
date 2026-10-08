@@ -81,6 +81,6 @@ git diff --check
 - 目標分支在合併前工作樹乾淨，且本地與 `origin/B518-Log-Solution` 均為兩個 push 目的地即時確認的最新 SHA `00a73526bc84b1862835672e3d329ddca06a92f4`。以一般 `--no-ff` 合併 `ConflictDialog/ticket-03`，實際合併 commit：`965d4224218fc96526e8e97141e3bb54b1ec70df`。
 - 在該合併 SHA 上執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：**279 tests passed，53.411 秒**。
 - `git push origin B518-Log-Solution` 成功推送至 Gitea 與 GitHub；隨後分別以 `git ls-remote` 即時確認兩邊 `B518-Log-Solution` 都是 `965d4224218fc96526e8e97141e3bb54b1ec70df`，再刪除兩邊的 `ConflictDialog/ticket-03`。本地票分支以 `git branch -d` 安全刪除；沒有使用強制推送或強制刪除。
-- 正式工作樹已在 `B518-Log-Solution`。本驗收紀錄、票 README 及專案摘要均已記錄合併、推送與分支清理結果，將隨本次文件提交推送；推送後再即時核對主線 SHA 與票分支不存在。
+- 正式工作樹位於 `B518-Log-Solution`。本驗收紀錄、票 README 與專案摘要已包含在提交 `8aa109faa54adb0aecaa55e2fd2124ebeb8302ce`；推送後分別以 `git ls-remote` 確認 Gitea 與 GitHub 的主線均為該 SHA，兩邊及本地均不存在 `ConflictDialog/ticket-03`。
 
 未修改或發布任何遠端議題狀態。
