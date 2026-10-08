@@ -2440,6 +2440,48 @@ class LogSolutionUiTests(unittest.TestCase):
             app.hotkey.close()
             root.destroy()
 
+    def test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                preferences_before = app.profile_store.path.read_bytes()
+
+                with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
+                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                    app.start_button.invoke()
+
+                self.assertIsNone(app.rounds.snapshot())
+                self.assertEqual(str(app.start_button.cget("state")), "normal")
+                self.assertEqual(app.monitor_state.cget("text"), "待命")
+                self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
+                self.assertEqual(show_error.call_args.args[:2], (
+                    "監控啟動失敗", "無法開始監控：disk full",
+                ))
+                self.assertFalse((Path(temporary) / "sessions").exists())
+            finally:
+                deadline = time.monotonic() + 5
+                while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                app.hotkey.close()
+                root.destroy()
+
     def test_operator_selects_project_and_machine_and_choice_survives_restart(self):
         with TemporaryDirectory() as temporary:
             app_root = Path(temporary) / "B518LogSolution"
