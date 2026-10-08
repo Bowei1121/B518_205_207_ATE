@@ -98,6 +98,17 @@ class RsWmtTests(unittest.TestCase):
         self.assertIn('incomplete or unsupported CSV', warning.localized_message.diagnostic)
         self.assertEqual(warning.detail['raw_diagnostic'], warning.message)
 
+    def test_rs_wmt_batch_producer_captures_stable_message_id(self):
+        monitor = self.monitor()
+        self.write_result(start=START.strftime('%Y/%m/%d %H:%M:%S'))
+        monitor.poll_once()
+
+        event = next(item for item in self.events
+                     if item.localized_message and
+                     item.localized_message.message_id == 'platform.rswmt.batch')
+        self.assertEqual(event.localized_message.as_record()['parameters'], {'station': 'BT'})
+        self.assertIn('batch_evidence', event.detail)
+
     def test_malformed_csv_warning_preserves_parser_diagnostic(self):
         monitor = self.monitor()
         path = self.output / '2026-09-11_05-45-44' / 'TESTSERIAL0001_2026-09-11_05-45-44.csv'

@@ -531,6 +531,31 @@ class LogMonitoringTests(unittest.TestCase):
         self.assertEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ900003YV"])
         self.assertNotEqual(evidence["HK5HUX6STQ800003YV"], evidence["HK5HUX6STQ700003YV"])
 
+    def test_b482_batch_mismatch_producer_captures_localized_slot_and_diagnostic(self):
+        clock = [0.0]
+        root = self.temp / "B482-TestData"
+        events = []
+        monitor = BtLogMonitor(
+            root, (1,), now=lambda: self.now, monotonic=lambda: clock[0],
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        first = root / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv")
+        other = root / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ700003YV][PASSED][20220618023001].csv")
+        write_bt(first, "HK5HUX6STQ800003YV", "PASSED", "0")
+        write_bt(other, "HK5HUX6STQ700003YV", "PASSED", "0")
+        monitor.poll_once()
+        clock[0] = 5.1
+        monitor.poll_once()
+
+        event = next(item for item in events
+                     if item.localized_message and
+                     item.localized_message.message_id == "platform.b482.batch_mismatch")
+        record = event.localized_message.as_record()
+        self.assertEqual(record["parameters"], {"slot": 1, "station": "BT"})
+        self.assertIn("20220618023001", record["diagnostic"])
+
     def test_bt_caseinfo_reports_testing_before_final_csv(self):
         root, caseinfo = self.temp / "TestData", self.temp / "CaseInfo"
         monitor = BtLogMonitor(root, (1,), caseinfo_root=caseinfo,
