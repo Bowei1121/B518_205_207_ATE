@@ -150,7 +150,7 @@ class B482SourceAdapter:
         self._pending_source_errors = []
         self._reported_source_errors = set()
 
-    def _record_source_error(self, path: Path, error: OSError) -> None:
+    def _record_source_error(self, path: Path, error: Exception) -> None:
         key = (str(path), str(error))
         if key not in self._reported_source_errors:
             self._reported_source_errors.add(key)
@@ -195,7 +195,8 @@ class B482SourceAdapter:
     def _stable(self, path: Path) -> bool:
         try:
             signature = file_signature(path)
-        except OSError:
+        except OSError as error:
+            self._record_source_error(path, error)
             return False
         key = str(path.resolve())
         previous = self._seen_signatures.get(key)
@@ -218,7 +219,8 @@ class B482SourceAdapter:
             source_time = datetime.strptime(parsed["stamp"], "%Y%m%d%H%M%S")
             try:
                 changed_since_start = self._baseline.get(str(path.resolve())) != file_signature(path)
-            except OSError:
+            except OSError as error:
+                self._record_source_error(path, error)
                 changed_since_start = False
             if source_time < threshold or not changed_since_start or not self._stable(path):
                 continue

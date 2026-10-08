@@ -340,6 +340,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(0.01)
                 self.assertTrue(any("Sample JSON 來源記錄無效" in line
                                     for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Expecting property name" in line
+                                    for line in app.event_lines), app.event_lines)
                 self.assertTrue(app.rounds.flush_session(timeout=3))
                 self.assertTrue(app.rounds.flush_audit(timeout=3))
                 platform_audit_bytes = (session_path / "audit.jsonl").read_bytes()
@@ -413,6 +415,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(any("same-round result conflict" in line
                                     for line in app.event_lines), app.event_lines)
                 self.assertTrue(any("Sample JSON source record is invalid" in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertTrue(any("Expecting property name" in line
                                     for line in app.event_lines), app.event_lines)
                 self.assertEqual((session_path / "audit.jsonl").read_bytes(),
                                  platform_audit_before_language_refresh)
@@ -1321,13 +1325,129 @@ class LogSolutionUiTests(unittest.TestCase):
                             self.assertEqual(audit_config["config_snapshot"], session_profile)
                             self.assertEqual(audit_config["platform"], platform)
                             self.assertEqual(audit_config["mapping"], session_profile["mapping"])
+                            if platform in {"atlas", "b482", "rswmt"}:
+                                diagnostic = "controlled {} source diagnostic".format(platform)
+                                if platform == "atlas":
+                                    import monitoring_files
+
+                                    source_file = (Path(paths["active"]) / "group0-slot1" /
+                                                   "system" / "records.csv")
+                                    source_file.parent.mkdir(parents=True)
+                                    source_file.write_text("MLB_SN,status\n", encoding="utf-8")
+                                    failure = patch.object(
+                                        monitoring_files.csv, "DictReader",
+                                        side_effect=csv.Error(diagnostic),
+                                    )
+                                    expected_message_id = "platform.atlas.source_error"
+                                elif platform == "b482":
+                                    import b482_source_adapter
+
+                                    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                                    source_file = (Path(paths["final"]) /
+                                                   datetime.now().strftime("%Y-%m-%d") /
+                                                   "PASSED" /
+                                                   "[Thread0][cfg][B482SAMPLE0001]"
+                                                   "[PASSED][{}].csv".format(stamp))
+                                    source_file.parent.mkdir(parents=True)
+                                    source_file.write_text(
+                                        "SerialNumber,Unit Number,Test Pass/Fail Status,"
+                                        "StartTime,EndTime\n"
+                                        "B482SAMPLE0001,0,PASSED,start,end\n",
+                                        encoding="utf-8",
+                                    )
+                                    original_signature = b482_source_adapter.file_signature
+
+                                    def fail_b482_signature(path):
+                                        if path == source_file:
+                                            raise OSError(diagnostic)
+                                        return original_signature(path)
+
+                                    failure = patch(
+                                        "b482_source_adapter.file_signature",
+                                        side_effect=fail_b482_signature,
+                                    )
+                                    expected_message_id = "platform.b482.source_error"
+                                else:
+                                    source_file = Path(paths["final"]) / "controlled-source.log"
+                                    source_file.write_text("controlled source\n", encoding="utf-8")
+                                    original_read_text = Path.read_text
+
+                                    def fail_rswmt_diagnostic(path, *args, **kwargs):
+                                        if path == source_file:
+                                            raise OSError(diagnostic)
+                                        return original_read_text(path, *args, **kwargs)
+
+                                    failure = patch.object(
+                                        Path, "read_text", fail_rswmt_diagnostic,
+                                    )
+                                    expected_message_id = "platform.rswmt.warning"
+
+                                with failure:
+                                    pump_until(lambda: any(
+                                        diagnostic in line for line in app.event_lines
+                                    ))
+                                self.assertTrue(app.rounds.flush_session(timeout=3))
+                                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                                event_records = read_round_audit(
+                                    session_path / "audit.jsonl")["events"]
+                                platform_event = next(
+                                    event for event in event_records
+                                    if event.get("localized_message", {}).get("message_id") ==
+                                    expected_message_id
+                                )
+                                self.assertEqual(platform_event["round_id"], round_id)
+                                self.assertIn(
+                                    diagnostic,
+                                    platform_event["localized_message"]["diagnostic"],
+                                )
+                                self.assertIn(
+                                    diagnostic, platform_event["detail"]["raw_diagnostic"],
+                                )
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["en"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                session_event = next(
+                                    event for event in (json.loads(line) for line in
+                                        (session_path / "events.log").read_text(
+                                            encoding="utf-8").splitlines())
+                                    if event.get("localized_message", {}).get("message_id") ==
+                                    expected_message_id
+                                )
+                                self.assertEqual(
+                                    session_event["localized_message"],
+                                    platform_event["localized_message"],
+                                )
+                                before_language_refresh = (
+                                    session_path / "audit.jsonl").read_bytes()
+                                app.language_button.event_generate("<Button-1>")
+                                root.update()
+                                traditional_chinese_index = next(
+                                    menu_index for menu_index in range(
+                                        app.language_menu.index("end") + 1)
+                                    if app.language_menu.entrycget(menu_index, "label") ==
+                                    "繁體中文"
+                                )
+                                app.language_menu.invoke(traditional_chinese_index)
+                                root.update()
+                                self.assertEqual(
+                                    app.rounds.snapshot().round_id, round_id,
+                                )
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["zh-TW"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                self.assertEqual(
+                                    (session_path / "audit.jsonl").read_bytes(),
+                                    before_language_refresh,
+                                )
                             if platform == "b482":
                                 created_at = datetime.now().replace(microsecond=0)
                                 stamp = created_at.strftime("%Y%m%d%H%M%S")
                                 date_folder = created_at.strftime("%Y-%m-%d")
                                 result = (Path(paths["final"]) / date_folder / "PASSED" /
                                           "[Thread0][cfg][B482SAMPLE0001][PASSED][{}].csv".format(stamp))
-                                result.parent.mkdir(parents=True)
+                                result.parent.mkdir(parents=True, exist_ok=True)
                                 result.write_text(
                                     "SerialNumber,Unit Number,Test Pass/Fail Status,StartTime,EndTime\n"
                                     "B482SAMPLE0001,0,PASSED,start,end\n", encoding="utf-8",

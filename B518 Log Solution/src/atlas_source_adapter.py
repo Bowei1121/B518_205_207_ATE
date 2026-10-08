@@ -113,7 +113,7 @@ class AtlasSourceAdapter:
         self._pending_source_errors = []
         self._reported_source_errors = set()
 
-    def _record_source_error(self, path: Path, error: OSError) -> None:
+    def _record_source_error(self, path: Path, error: Exception) -> None:
         key = (str(path), str(error))
         if key not in self._reported_source_errors:
             self._reported_source_errors.add(key)

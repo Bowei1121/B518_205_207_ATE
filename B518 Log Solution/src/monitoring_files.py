@@ -37,7 +37,7 @@ def is_trusted_sn(value: object) -> bool:
     return len(sn) >= 6 and sn not in invalid and not sn.startswith("NUMBER_")
 
 
-def read_csv_rows(path: Path, on_error: Optional[Callable[[OSError], None]] = None
+def read_csv_rows(path: Path, on_error: Optional[Callable[[Exception], None]] = None
                   ) -> List[Dict[str, str]]:
     last_error = None
     for encoding in ("utf-8-sig", "utf-8", "big5", "latin-1"):
@@ -46,8 +46,7 @@ def read_csv_rows(path: Path, on_error: Optional[Callable[[OSError], None]] = No
                 return [{str(k or "").strip(): str(v or "").strip() for k, v in row.items()}
                         for row in csv.DictReader(handle)]
         except (UnicodeError, csv.Error, OSError) as error:
-            if isinstance(error, OSError):
-                last_error = error
+            last_error = error
             continue
     if last_error is not None and on_error is not None:
         on_error(last_error)

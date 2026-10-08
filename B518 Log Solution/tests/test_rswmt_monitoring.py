@@ -98,6 +98,21 @@ class RsWmtTests(unittest.TestCase):
         self.assertIn('incomplete or unsupported CSV', warning.localized_message.diagnostic)
         self.assertEqual(warning.detail['raw_diagnostic'], warning.message)
 
+    def test_malformed_csv_warning_preserves_parser_diagnostic(self):
+        monitor = self.monitor()
+        path = self.output / '2026-09-11_05-45-44' / 'TESTSERIAL0001_2026-09-11_05-45-44.csv'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('"unterminated\n', encoding='utf-8')
+
+        monitor.poll_once()
+        self.seconds = 5.1
+        monitor.poll_once()
+
+        warning = next(event for event in self.events if event.kind == 'warning')
+        self.assertEqual(warning.localized_message.message_id, 'platform.rswmt.warning')
+        self.assertIn('unexpected end of data', warning.localized_message.diagnostic)
+        self.assertEqual(warning.detail['raw_diagnostic'], warning.localized_message.diagnostic)
+
     def test_unreadable_source_log_is_reported_with_bilingual_message(self):
         monitor = self.monitor()
         path = self.output / 'source.log'

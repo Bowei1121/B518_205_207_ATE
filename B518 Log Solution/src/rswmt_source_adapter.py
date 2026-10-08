@@ -79,7 +79,7 @@ def csv_time(value, reference):
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
-def parse_rswmt_csv(path):
+def parse_rswmt_csv(path, on_error: Optional[Callable[[Exception], None]] = None):
     """Parse one complete per-DUT final result; partial and summary files are ignored."""
     path = Path(path)
     match = RESULT_NAME.fullmatch(path.name)
@@ -91,7 +91,9 @@ def parse_rswmt_csv(path):
         if not text.endswith(('\n', '\r')):
             return None
         rows = list(csv.reader(io.StringIO(text), strict=True))
-    except (OSError, UnicodeError, ValueError, csv.Error):
+    except (OSError, UnicodeError, ValueError, csv.Error) as error:
+        if on_error is not None:
+            on_error(error)
         return None
     headers = [i for i, row in enumerate(rows) if row and row[0].strip() == "Serial Number"]
     if len(headers) != 1:
@@ -242,10 +244,13 @@ class RsWmtSourceAdapter:
             changed = previous is None or previous[0] != signature
             stable_since = previous[1] if previous and not changed else self.monotonic()
             self.csv_signatures[key] = (signature, stable_since)
-            record = parse_rswmt_csv(path)
+            parse_errors = []
+            record = parse_rswmt_csv(path, parse_errors.append)
             if record is None:
                 if self.monotonic() - stable_since >= 5:
-                    observations.extend(self._warning(path, 'RS-WMT: incomplete or unsupported CSV; result not accepted.'))
+                    message = (str(parse_errors[-1]) if parse_errors else
+                               'RS-WMT: incomplete or unsupported CSV; result not accepted.')
+                    observations.extend(self._warning(path, message))
                 continue
             batch_events = self._round_evidence(record)
             if batch_events is None:

@@ -154,18 +154,68 @@ class LogMonitoringTests(unittest.TestCase):
             session_root=self.temp / "sessions", callback=b482_events.append,
         )
         write_bt(b482_target, "HK5HUX6STQ800003YV", "PASSED", "0")
+
         def fail_b482_read(path, *args, **kwargs):
             if path == b482_target and kwargs.get("mode", args[0] if args else "r") == "r":
                 raise OSError("controlled source read failure")
             return original_open(path, *args, **kwargs)
 
         with patch.object(Path, "open", fail_b482_read):
-            # The adapter reports a stable file's CSV read failure without
-            # changing its existing candidate acceptance policy.
             b482.poll_once()
         warning = next(event for event in b482_events if event.kind == "warning")
         self.assertEqual(warning.localized_message.message_id, "platform.b482.source_error")
         self.assertEqual(warning.detail["raw_diagnostic"], "controlled source read failure")
+
+    def test_atlas_csv_parse_failure_is_reported_without_changing_source_result_policy(self):
+        active, final = self.temp / "atlas-active-parse-error", self.temp / "atlas-final-parse-error"
+        target = active / "group0-slot1" / "system" / "records.csv"
+        target.parent.mkdir(parents=True)
+        events = []
+        monitor = AtlasActiveArchiveMonitor(
+            "FCT", active, final, (1,), now=lambda: self.now,
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        target.write_text("MLB_SN,status\nHK5HUX6STQ800003YV,PASS\n", encoding="utf-8")
+
+        with patch("monitoring_files.csv.DictReader", side_effect=csv.Error("controlled CSV parse error")):
+            monitor.poll_once()
+
+        warning = next(event for event in events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.atlas.source_error")
+        self.assertEqual(warning.localized_message.diagnostic, "controlled CSV parse error")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled CSV parse error")
+        self.assertEqual(monitor.results[1].status, "TESTING")
+
+    def test_b482_file_signature_failure_is_reported_as_bilingual_source_error(self):
+        import b482_source_adapter
+
+        source = self.temp / "b482-signature-error"
+        events = []
+        monitor = BtLogMonitor(
+            source, (1,), now=lambda: self.now, monotonic=lambda: 6,
+            session_root=self.temp / "sessions", callback=events.append,
+        )
+        target = source / "2022-06-18" / "PASSED" / (
+            "[Thread0][cfg][HK5HUX6STQ800003YV][PASSED][20220618022901].csv")
+        write_bt(target, "HK5HUX6STQ800003YV", "PASSED", "0")
+        original_signature = b482_source_adapter.file_signature
+        signatures = 0
+
+        def fail_when_stability_is_checked(path):
+            nonlocal signatures
+            if path == target:
+                signatures += 1
+                if signatures == 2:
+                    raise OSError("controlled signature failure")
+            return original_signature(path)
+
+        with patch("b482_source_adapter.file_signature", side_effect=fail_when_stability_is_checked):
+            monitor.poll_once()
+
+        warning = next(event for event in events if event.kind == "warning")
+        self.assertEqual(warning.localized_message.message_id, "platform.b482.source_error")
+        self.assertEqual(warning.localized_message.diagnostic, "controlled signature failure")
+        self.assertEqual(warning.detail["raw_diagnostic"], "controlled signature failure")
 
     def test_legacy_session_adapter_keeps_its_existing_event_call_shape(self):
         monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "legacy")
