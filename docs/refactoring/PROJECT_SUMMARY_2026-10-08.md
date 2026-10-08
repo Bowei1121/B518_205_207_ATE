@@ -32,3 +32,11 @@
 - 精簡對照改為可水平捲動的文字表格，按欄位和值範圍呈現紅色粗體；相同來源路徑維持一般樣式。同名來源路徑會逐層擴大目錄提示，尾端目錄相同時仍能顯示分歧片段。完整路徑與識別保留於詳細區。
 - 真 Tk 聚焦衝突 UI 5 tests 通過；受控 Atlas 同名不同封存路徑由真 App／共同輪次進入真正 Tk 彈窗，驗證兩側不同提示及實際紅色粗體。最後完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 276 tests 通過（46.727 秒）。編譯與 `git diff --check` 通過；專案未找到既有型別檢查設定，沒有宣稱型別檢查通過。
 - 六項驗收證據及範圍界線見 [C2 本機驗收紀錄](evidence/conflict-dialog-ticket-02/local-validation.md)。Gitea／GitHub 主線同步於 `341a5ab19880f69d4dd9ce3be110480c604ccd8f`；該提交只新增兩份輪次開始規格文件，討論文件與原未跟蹤檔 SHA-256 相同，已非破壞性合併入票分支 `782ea3f`。固定基準 `332a4518601a8413004b5a1d88baf4b2a89b85d5` 的 Standards／Spec 複審均無未解問題；Standards 記錄一項局部資料群／方法職責氣味，判定不阻擋。票分支 `4b2828e` 推送至 Gitea／GitHub 後，以合併 commit `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d` 整合；主線合併後完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 於該 SHA 通過 276 tests（51.441 秒）。合併 commit 與交付文件已同步至 Gitea／GitHub；兩邊即時查核均確認主線 `ab9126f`、票分支不存在。本地票分支及隔離 worktree 已清理，正式工作樹最後停在 `B518-Log-Solution`。未修改遠端議題狀態。
+
+## C3 人工衝突彈窗多候選一致性（本日後續工作）
+
+- 本次從主線 `00a73526bc84b1862835672e3d329ddca06a92f4` 建立 `ConflictDialog/ticket-03`；該 SHA 為固定 Standards／Spec 審查基準，Git ancestry 證明主線已包含 C1 `d7d82e8` 與 C2 `a56cfa5`。本機 C2 README 有過時狀態文字，依主線合併紀錄、前票驗收及遠端狀態更正，不沿用歷史待審查描述。
+- 修正無有效選取、快照消失或候選已移除時仍可按裁決的 UI 缺口：比較及詳細內容清空，同時停用保留原／採用新按鈕；選到仍有效衝突時恢復操作。
+- 真 Tk 測試透過已註冊的 `sample-json` 控制平台，從暫存 JSONL 經實際 App、RoundCoordinator 捕捉多筆同位置及跨位置衝突；驗證非首項選取在候選刷新時保持同一 conflict ID、兩區同步、差異紅色粗體、來源改動不改捕捉快照、隱藏重開、逐項裁決、空狀態，以及 audit 與 Session `results.csv` 從磁碟重建。另以 Event 控制背景候選加入時的刷新交錯。
+- 最終程式／測試 SHA `db567ff` 的真 Tk 聚焦案例 3 項通過；完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 279 tests（63.887 秒）。`py_compile` 與 `git diff --check` 通過。專案沒有既有 mypy／pyright 或其他型別檢查設定，未宣稱型別檢查通過。母規格十二案例依 C1／C2 已合併證據及本票測試逐案列於正式規格覆蓋表。
+- 固定基準雙軸審查：Standards 無未解問題；Spec 在新增平台註冊至實際 App/Tk 多候選測試與完整十二案例證據矩陣後確認 C3 七項均有證據。交付證據及本次分支推送／後續合併資訊見 [C3 本機驗收紀錄](evidence/conflict-dialog-ticket-03/local-validation.md)。未修改遠端 Issue 狀態。

@@ -10,7 +10,7 @@
 | [C2](02-difference-and-source-disambiguation.md) | [#11](https://github.com/Bowei1121/B518_205_207_ATE/issues/11) | 差異兩側紅色粗體，同名不同路徑以短目錄提示辨識 | #10 |
 | [C3](03-multiple-candidate-consistency.md) | [#12](https://github.com/Bowei1121/B518_205_207_ATE/issues/12) | 多候選、持續刷新、裁決移除與重開時，上下資訊及樣式一致 | #11 |
 
-票務依賴 #10 → #11 → #12。#10 已合併；#11 的 C2 本機實作及驗收已完成，等待固定基準雙軸審查與遠端同步；#12 C3 尚未實作。Issue 狀態不在本次修改，原規格 Issue #9 保持原狀態及更新時間。
+票務依賴 #10 → #11 → #12。C1（#10）及 C2（#11）均已合併至主線；C3（#12）已完成本地實作、驗收與固定基準雙軸審查，分支及同步狀態見下方本機交付紀錄。Git ancestry 與 C2 驗收證據確認 C2 合併提交為 `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d`；以下舊段落曾將 C2 誤記為待審查，現依可查證 Git 與交付證據更正。Issue 狀態不在本次修改，原規格 Issue #9 保持原狀態及更新時間。
 
 每票皆包含真實衝突捕捉到 Tk 顯示／操作的完整路徑與必要測試。C1 先交付可用的基本對照與分區；C2 增加差異辨識，不另拆 formatter 或 widget 票；C3 完成新雙區與樣式在多候選動態流程中的同步行為，不是僅補測試的橫向票。沒有必須先獨立發布的大範圍重構；局部顯示組裝整理放在 C1。
 
@@ -18,7 +18,7 @@
 
 ## 2026-10-08 本機交付狀態
 
-C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2 已實作並合併，受控 Atlas 真 Tk 測試及合併後完整含 Tk 套件 276 項通過（51.441 秒）；固定基準雙軸複審無未解決問題，Standards 記錄一項不阻擋的局部資料群／方法職責氣味。C2 合併提交 `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d`，主線已同步至 Gitea 與 GitHub；本地及遠端 `ConflictDialog/ticket-02` 已清理，正式工作樹位於 `B518-Log-Solution`。C3（#12）仍未實作，依賴關係不變。命令及證據詳見 [C1](../evidence/conflict-dialog-ticket-01/local-validation.md) 與 [C2](../evidence/conflict-dialog-ticket-02/local-validation.md)。未修改遠端議題狀態。
+C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2 已實作並合併，受控 Atlas 真 Tk 測試及合併後完整含 Tk 套件 276 項通過（51.441 秒）；固定基準雙軸複審無未解決問題，Standards 記錄一項不阻擋的局部資料群／方法職責氣味。C2 合併提交 `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d`，主線已同步至 Gitea 與 GitHub；本地及遠端 `ConflictDialog/ticket-02` 已清理，正式工作樹位於 `B518-Log-Solution`。C3（#12）實作、真 Tk／磁碟驗收及完整含 Tk 測試已完成，固定基準 Standards／Spec 審查無未解決問題；分支提交與推送狀態見 [C3 驗收紀錄](../evidence/conflict-dialog-ticket-03/local-validation.md)。未修改遠端議題狀態。
 
 ## 規格驗收覆蓋
 
