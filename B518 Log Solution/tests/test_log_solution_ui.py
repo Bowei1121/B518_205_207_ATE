@@ -2526,10 +2526,16 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             app_root = Path(temporary) / "B518LogSolution"
             prefs = app_root / "preferences.json"
-            with patch("b518_log_solution.APP_ROOT", app_root), patch("b518_log_solution.PREFS_PATH", prefs):
+            session_root = app_root / "sessions"
+            final = Path(temporary) / "b482-final"
+            final.mkdir()
+            with patch("b518_log_solution.APP_ROOT", app_root), \
+                    patch("b518_log_solution.PREFS_PATH", prefs):
                 root = tk.Tk()
                 root.withdraw()
-                app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=session_root,
+                )
                 try:
                     self.assertEqual(app.project_choice.cget("values"), ("B518", "B482"))
                     app.project.set("B482")
@@ -2538,7 +2544,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     profile = app.profiles.get(app.project.get(), app.station.get())
                     self.assertEqual(profile.platform, "b482")
                     profile_paths = dict(profile.paths)
-                    profile_paths["final"] = temporary
+                    profile_paths["final"] = str(final)
                     profile_timeouts = dict(profile.timeouts)
                     profile_timeouts["round"] = 6300
                     app.profiles = app.profiles.with_profile(
@@ -2554,19 +2560,57 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.destroy()
 
                 restarted_root = tk.Tk()
-                restarted_root.withdraw()
-                restarted = B518LogSolutionApp(restarted_root, hotkey_factory=FakeHotkey)
+                restarted_root.deiconify()
+                restarted = B518LogSolutionApp(
+                    restarted_root, hotkey_factory=FakeHotkey, session_root=session_root,
+                )
+
+                def pump_until(predicate, timeout=8):
+                    deadline = time.monotonic() + timeout
+                    while time.monotonic() < deadline:
+                        restarted_root.update()
+                        if predicate():
+                            return
+                        time.sleep(0.01)
+                    self.fail("Timed out starting the restored configuration: {}".format(
+                        restarted.rounds.snapshot()))
+
+                round_id = None
                 try:
-                    self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
+                    self.assertEqual((restarted.project.get(), restarted.station.get()),
+                                     ("B482", "BT"))
                     self.assertEqual(restarted.profiles.get("B482", "BT").timeouts["round"], 6300)
-                    with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_factory:
-                        restarted.start_monitor()
-                    self.assertEqual(monitor_factory.call_args.args[0], "b482")
-                    self.assertEqual(monitor_factory.call_args.kwargs["timeouts"]["round"], 6300)
+                    restarted.start_button.invoke()
+                    pump_until(lambda: restarted.rounds.snapshot() is not None
+                               and restarted.rounds.session_path is not None
+                               and not restarted.rounds.snapshot().source_preparation_pending)
+                    round_id = restarted.rounds.snapshot().round_id
+                    session_path = restarted.rounds.session_path
+                    session = json.loads((session_path / "session.json").read_text(encoding="utf-8"))
+                    profile_snapshot = session["settings"]["profile_snapshot"]["profile"]
+                    self.assertEqual(profile_snapshot["platform"], "b482")
+                    self.assertEqual(profile_snapshot["timeouts"]["round"], 6300)
+                    self.assertEqual(profile_snapshot["paths"]["final"], str(final))
+                    self.assertTrue(restarted.rounds.flush_audit(timeout=3))
+                    audit = read_round_audit(session_path / "audit.jsonl")
+                    self.assertTrue(audit["audit_complete"])
+                    self.assertEqual(audit["round"]["config"]["config_snapshot"], profile_snapshot)
+                    self.assertEqual(audit["round"]["config"]["platform"], "b482")
                 finally:
-                    self.wait_for(lambda: restarted.rounds.retention_cleanup_status().status in {
-                        "complete", "failed",
-                    })
+                    restarted.rounds.stop()
+                    closing = restarted.rounds.request_close()
+                    if closing.status not in {"complete", "failed"}:
+                        pump_until(lambda: restarted.rounds.close_status().status
+                                   in {"complete", "failed"})
+                    statuses = self.wait_for_archive_checks(restarted.rounds)
+                    if round_id is not None:
+                        self.assertEqual(restarted.rounds.archive_status(round_id).status,
+                                         "archived", statuses)
+                    cleanup_deadline = time.monotonic() + 5
+                    while (restarted.rounds.retention_cleanup_status().status
+                           not in {"complete", "failed"} and time.monotonic() < cleanup_deadline):
+                        restarted_root.update()
+                        time.sleep(0.01)
                     restarted.hotkey.close()
                     restarted_root.destroy()
 
