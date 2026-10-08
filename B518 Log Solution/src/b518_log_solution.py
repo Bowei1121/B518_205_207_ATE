@@ -689,13 +689,8 @@ class B518LogSolutionApp:
             messagebox.showerror("配置錯誤", str(error), parent=self.root)
             return
         try:
-            preparation = getattr(self, "round_start_preparation", None)
-            if preparation is None:
-                preparation = RoundStartPreparation()
-            prepared = preparation.prepare(
-                profile,
-                getattr(self, "session_root", APP_ROOT / "sessions"),
-                async_session_writes=True,
+            prepared = self.round_start_preparation.prepare(
+                profile, self.session_root, async_session_writes=True,
             )
         except RoundStartPathError as error:
             messagebox.showerror("路徑錯誤", str(error), parent=self.root)
