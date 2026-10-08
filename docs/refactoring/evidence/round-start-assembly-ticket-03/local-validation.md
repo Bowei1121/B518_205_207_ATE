@@ -95,6 +95,7 @@ There is no project type-check configuration or command (`mypy`, `pyright`, and 
 - Fixed review base: `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8`.
 - Final validated program/test commit before evidence documentation: `8f9b293ec7c90595c4bcd443daabf26e72049f0b`.
 - Implementation commits: `26960a1f18c3e28d06484d30e6c28e19598ac10d`, `8f9b293ec7c90595c4bcd443daabf26e72049f0b`.
-- Standards/Spec review: pending final documentation commit.
+- Standards review at fixed base: no documented-standard violations. One non-blocking test-maintenance observation noted duplicated `pump_until` and cleanup patterns in the two new Tk cases; no implementation change was requested.
+- Spec review at fixed base: no blocking specification findings. The reviewer confirmed the constructor-owned preparation path, real Tk/disk evidence, fourteen-scenario matrix, and honest field/type-check limitations.
 - Local batch pushes succeeded to the configured Gitea and GitHub destinations. Final mainline merge, post-merge test, live SHA verification and branch cleanup are pending the review gate.
 - Field checklist status: pending scheduled factory acceptance; no equipment results are inferred.

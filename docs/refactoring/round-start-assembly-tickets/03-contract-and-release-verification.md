@@ -26,4 +26,4 @@ Part of #24 — https://github.com/Bowei1121/B518_205_207_ATE/issues/24
 
 ## R3 delivery status
 
-All 11 acceptance items have evidence in [R3 local validation](../evidence/round-start-assembly-ticket-03/local-validation.md). The final full Tk suite passed 286 tests at program/test SHA `8f9b293ec7c90595c4bcd443daabf26e72049f0b`. Fixed-base Standards/Spec review and merge/push/branch cleanup are tracked in the delivery evidence; physical field acceptance remains a separate pending activity.
+All 11 acceptance items have evidence in [R3 local validation](../evidence/round-start-assembly-ticket-03/local-validation.md). The final full Tk suite passed 286 tests at program/test SHA `8f9b293ec7c90595c4bcd443daabf26e72049f0b`. Fixed-base Standards review found no violations and one non-blocking test-maintenance observation; Spec review found no blocking gaps. Mainline merge, post-merge verification, push, and branch cleanup remain pending; physical field acceptance remains a separate pending activity.
