@@ -19,7 +19,7 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 ## 本機交付狀態
 
-M1 六項必要驗收已有證據；使用者實際滑鼠與鍵盤確認解除最後操作證據缺口，準備進行主線合併驗證。本次另修正使用者確認的窄 HMI 按鈕裁切缺陷，不能將先前的輸入補測失敗全數歸因環境。固定 Standards／Spec 審查基準維持 `dd81e4dcef781ef4c29a3310a2650827e45d0609`；最新程式／測試版本、命令及複審結果見[本機驗收紀錄](../evidence/multilingual-ticket-01/local-validation.md)。此狀態不表示已更新 GitHub Issue #14；M2～M10 及完整 App／bundle 發布驗收仍待各自交付。
+M1 六項必要驗收已有證據；使用者實際滑鼠與鍵盤確認解除最後操作證據缺口，已合併至 `B518-Log-Solution`（`83d8a68`），主線完整含 Tk 299 tests 通過，兩個遠端同步後安全刪除票分支。本次另修正使用者確認的窄 HMI 按鈕裁切缺陷，不能將先前的輸入補測失敗全數歸因環境。固定 Standards／Spec 審查基準維持 `dd81e4dcef781ef4c29a3310a2650827e45d0609`；最新程式／測試版本、命令及複審結果見[本機驗收紀錄](../evidence/multilingual-ticket-01/local-validation.md)。此狀態不表示已更新 GitHub Issue #14；M2～M10 及完整 App／bundle 發布驗收仍待各自交付。
 
 ## Blocked by
 

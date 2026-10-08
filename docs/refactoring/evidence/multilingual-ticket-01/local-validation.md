@@ -5,7 +5,9 @@
 固定 Standards／Spec 基準：`dd81e4dcef781ef4c29a3310a2650827e45d0609`
 最後程式／測試提交：`44826d44576bf579df1eba4c461468802e8a1ef3`（`fix: attach language menu to its Tk button`）
 最初程式提交：`0a346544fa65a4dd31f6c3194d61a04514e2d6e8`
-工作分支：`Multilingual/ticket-01`
+實作分支：`Multilingual/ticket-01`（已合併及安全刪除）
+目前交付主線：`B518-Log-Solution`
+實際合併 SHA：`83d8a68018ef4d6f78f0f68ff7f6f93caf2df8ce`
 
 ## 實作契約
 
@@ -114,3 +116,13 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiT
 [操作紀錄快照](manual-validation.jsonl) 保存該視窗的 mouse_open、雙向語言切換、可見 Slot／通道文字、新偏好讀取器磁碟值及部分 Tab／Down 按鍵。Cocoa 原生 menu 不會將全部鍵送回觀察器；Space／Enter／Escape、焦點返回的完整操作以使用者明確確認為證，不宣稱 journal 捕捉全部鍵。快照只記錄隔離暫存資料及無輪次操作。前述「待驗」段落記錄較早查核結果，本節及六項表格為最新狀態。
 
 最後 Spec 複核使用同一固定基準 `dd81e4d...44826d4`，核對操作紀錄及人員明確確認後回報：先前唯一驗收缺口已解除，沒有剩餘必要阻擋；本輪唯讀審查沒有程式變更。
+
+## 主線交付與分支清理
+
+- 驗收文件提交 `f2504e7` 已先推送票分支的 Gitea／GitHub。合併前 fetch 及兩端 `ls-remote` 確認主線皆為固定基準 `dd81e4d`，沒有新增提交；工作樹乾淨。
+- 使用 `git merge --no-ff Multilingual/ticket-01`，實際合併 SHA 為 `83d8a68018ef4d6f78f0f68ff7f6f93caf2df8ce`；程式／測試最後 SHA 仍為 `44826d44576bf579df1eba4c461468802e8a1ef3`，文件提交不改產品。
+- 在主線 Python 程式目錄，以已授權桌面工作階段執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`：**299 tests，108.078 秒，OK**。`python3 -m compileall -q src tests` 及 `git diff --check` 通過；無既有型別檢查設定，未宣稱型別檢查通過。
+- `git push origin B518-Log-Solution` 推送兩個既有 push URL。逐一直接 `git ls-remote <URL> refs/heads/B518-Log-Solution` 確認 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`、GitHub `git@github.com:Bowei1121/B518_205_207_ATE.git` 均為上述合併 SHA 後，才安全清理票分支。
+- 本地 `git branch -d Multilingual/ticket-01` 成功，兩端 `git push origin --delete Multilingual/ticket-01` 成功。再次直接查詢兩端票分支皆無 ref，本地 `git branch --list Multilingual/ticket-01` 亦無結果；未強制推送或強制刪除。
+- 本節是合併後純文件更新，最終文件提交可由 `git log -1 --format=%H -- docs/refactoring/evidence/multilingual-ticket-01/local-validation.md` 查證；避免將文件自身 SHA 寫入自身造成循環。文件推送後再次直接查核兩端主線 SHA。
+- M1 六項驗收通過，必要 Spec 問題已解除，Standards 無硬違反；沒有 M1 剩餘阻擋。M2～M10 尚未由本票交付，未修改任何遠端議題；正式 bundle／OS 全域快捷鍵／現場設備驗收仍屬後續範圍。
