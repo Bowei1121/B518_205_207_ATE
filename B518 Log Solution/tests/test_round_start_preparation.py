@@ -1,15 +1,178 @@
 import json
+import os
+import threading
+import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from audit_records import read_round_audit
-from machine_profiles import MachineProfile
+from machine_profiles import MachineProfile, ProfileError
 from monitoring_round import RoundCoordinator
+from platform_registry import DEFAULT_PLATFORM_REGISTRY, PlatformRegistry
 from round_start_preparation import RoundStartPreparation
 
 
 class RoundStartPreparationTests(unittest.TestCase):
+    def test_required_paths_must_be_present_directories_readable_and_enterable(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            regular_file = root / "not-a-directory"
+            regular_file.write_text("source", encoding="utf-8")
+            preparation = RoundStartPreparation()
+
+            for configured in ("", "   ", str(root / "missing"), str(regular_file)):
+                with self.subTest(path=configured):
+                    profile = MachineProfile(
+                        "SAMPLE", "FCT", "sample-json", 1,
+                        {"active": configured}, ((1, 1),),
+                        {"start": 30, "test": 60, "round": 600},
+                    )
+                    with self.assertRaisesRegex(ProfileError, "受控 JSON Lines 樣本來源"):
+                        preparation.prepare(profile, root / "sessions")
+
+            inaccessible = root / "inaccessible"
+            inaccessible.mkdir()
+            inaccessible.chmod(0)
+            try:
+                self.assertFalse(os.access(str(inaccessible), os.R_OK | os.X_OK))
+                profile = MachineProfile(
+                    "SAMPLE", "FCT", "sample-json", 1,
+                    {"active": str(inaccessible)}, ((1, 1),),
+                    {"start": 30, "test": 60, "round": 600},
+                )
+                with self.assertRaisesRegex(ProfileError, "受控 JSON Lines 樣本來源"):
+                    preparation.prepare(profile, root / "sessions")
+            finally:
+                inaccessible.chmod(0o700)
+
+    def test_blank_optional_path_is_omitted_but_invalid_nonblank_path_is_rejected(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            results.mkdir()
+            preparation = RoundStartPreparation()
+            blank_optional = MachineProfile(
+                "B482", "BT", "b482", 1,
+                {"final": str(results), "caseinfo": "   "}, ((1, 1),),
+                {"start": 30, "test": 60, "round": 600},
+            )
+            prepared = preparation.prepare(blank_optional, root / "sessions")
+            self.assertEqual(prepared.station, "BT")
+
+            invalid_optional = MachineProfile(
+                "B482", "BT", "b482", 1,
+                {"final": str(results), "caseinfo": str(root / "missing-caseinfo")},
+                ((1, 1),), {"start": 30, "test": 60, "round": 600},
+            )
+            with self.assertRaisesRegex(ProfileError, "B482 CaseInfo／進度路徑（選填）"):
+                preparation.prepare(invalid_optional, root / "sessions")
+
+    def test_all_registered_platforms_start_through_the_preparation_interface(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cases = (
+                ("B518", "DFU", "atlas", {"active": "active", "final": "final"}, 2),
+                ("B518", "FCT", "atlas", {"active": "active", "final": "final"}, 2),
+                ("B482", "BT", "b482", {"final": "final", "caseinfo": ""}, 4),
+                ("B518", "BT", "rswmt", {"final": "final", "caseinfo": ""}, 3),
+                ("SAMPLE", "FCT", "sample-json", {"active": "active"}, 20),
+            )
+            for index, (project, machine, platform, configured, source_position) in enumerate(cases):
+                with self.subTest(platform=platform):
+                    case_root = root / str(index)
+                    resolved = {}
+                    for field, relative in configured.items():
+                        if not relative:
+                            resolved[field] = relative
+                            continue
+                        path = case_root / relative
+                        path.mkdir(parents=True, exist_ok=True)
+                        if platform == "sample-json":
+                            (path / "events.jsonl").write_text("", encoding="utf-8")
+                        resolved[field] = str(path)
+                    profile = MachineProfile(
+                        project, machine, platform, 1, resolved,
+                        ((source_position, 1),),
+                        {"start": 30, "test": 60, "round": 600},
+                    )
+                    sessions = case_root / "sessions"
+                    coordinator = RoundCoordinator(audit_root=sessions)
+                    prepared = RoundStartPreparation().prepare(profile, sessions)
+                    started = prepared.start(coordinator, run_async=False)
+                    self.assertEqual(started.station, machine)
+                    self.assertEqual(started.results[0].slot, 1)
+                    self.assertIsNotNone(coordinator.session_path)
+                    self.assertTrue(coordinator.flush_session(timeout=2))
+                    self.assertTrue(coordinator.flush_audit(timeout=2))
+                    self.assertTrue((coordinator.session_path / "session.json").is_file())
+                    self.assertTrue((coordinator.session_path / "audit.jsonl").is_file())
+                    coordinator.stop()
+                    self.assertTrue(coordinator.flush_session(timeout=2))
+                    self.assertTrue(coordinator.flush_audit(timeout=2))
+
+    def test_stopping_while_source_is_preparing_keeps_round_stopped_after_factory_returns(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "events.jsonl").write_text("", encoding="utf-8")
+            factory_entered = threading.Event()
+            release_factory = threading.Event()
+            monitor_created = threading.Event()
+            round_events = []
+            base_factory = DEFAULT_PLATFORM_REGISTRY.get("sample-json").monitor_factory
+
+            def delayed_factory(**context):
+                factory_entered.set()
+                if not release_factory.wait(3):
+                    raise AssertionError("The controlled source factory was never released.")
+                monitor = base_factory(**context)
+                monitor_created.set()
+                return monitor
+
+            registry = PlatformRegistry()
+            for name in DEFAULT_PLATFORM_REGISTRY.names:
+                definition = DEFAULT_PLATFORM_REGISTRY.get(name)
+                if name == "sample-json":
+                    definition = replace(definition, monitor_factory=delayed_factory)
+                registry.register(definition)
+
+            profile = MachineProfile(
+                "SAMPLE", "FCT", "sample-json", 1, {"active": str(source)},
+                ((1, 1),), {"start": 30, "test": 60, "round": 600},
+            )
+            sessions = root / "sessions"
+            coordinator = RoundCoordinator(audit_root=sessions)
+            prepared = RoundStartPreparation(registry).prepare(profile, sessions)
+            started = prepared.start(coordinator, run_async=True)
+            self.assertTrue(factory_entered.wait(2))
+            self.assertEqual(started.round_id, coordinator.snapshot().round_id)
+
+            stopped = coordinator.stop()
+            self.assertEqual(stopped.state.value, "STOPPED")
+            release_factory.set()
+            self.assertTrue(monitor_created.wait(2))
+
+            closing = coordinator.request_close()
+            self.assertEqual(closing.status, "saving")
+            deadline = time.monotonic() + 3
+            while coordinator.close_status().status not in {"complete", "failed"}:
+                if time.monotonic() >= deadline:
+                    self.fail("Close coordination did not finish after source preparation returned.")
+                threading.Event().wait(0.01)
+
+            self.assertEqual(coordinator.close_status().status, "complete")
+            self.assertTrue(coordinator.flush_session(timeout=2))
+            self.assertTrue(coordinator.flush_audit(timeout=2))
+            rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
+            self.assertEqual(rebuilt["round"]["round_id"], started.round_id)
+            self.assertIn("collection_stopped", [event["kind"] for event in rebuilt["events"]])
+            self.assertNotIn("round_ready", [event["kind"] for event in rebuilt["events"]])
+
     def test_prepared_profile_starts_real_round_and_persists_matching_session_and_audit(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
