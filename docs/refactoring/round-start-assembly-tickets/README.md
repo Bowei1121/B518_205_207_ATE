@@ -10,15 +10,14 @@
 | R2 | [桌面開始操作接入集中準備流程](02-desktop-start-integration.md) | [#26](https://github.com/Bowei1121/B518_205_207_ATE/issues/26) | #25 |
 | R3 | [移除舊組裝流程，完成交付驗證](03-contract-and-release-verification.md) | [#27](https://github.com/Bowei1121/B518_205_207_ATE/issues/27) | #26 |
 
-R1 implementation and local verification are recorded in [R1 local validation](../evidence/round-start-assembly-ticket-01/local-validation.md). R1 was merged before R2 began. R2 implementation, main-branch verification, review, and delivery status are recorded in [R2 local validation](../evidence/round-start-assembly-ticket-02/local-validation.md); R3 old-path removal and overall release verification remain separate.
+R1 implementation and local verification are recorded in [R1 local validation](../evidence/round-start-assembly-ticket-01/local-validation.md). R1 was merged before R2 began. R2 implementation, main-branch verification, review, and delivery status are recorded in [R2 local validation](../evidence/round-start-assembly-ticket-02/local-validation.md). R3 implementation, 14-scenario coverage, review, and release evidence are recorded in [R3 local validation](../evidence/round-start-assembly-ticket-03/local-validation.md); its separate physical field acceptance is listed in the [field checklist](../evidence/round-start-assembly-ticket-03/field-acceptance-checklist.md).
 
 ## 執行與交付
 
 - R1 是第一階段：完成可直接驗證的集中準備流程，正式 Tk 入口維持原樣。
-- R2 已將正式桌面開始操作接入集中準備流程，並合併至 `B518-Log-Solution`；主線驗證、遠端同步及票分支清理狀態見本地驗收紀錄。R3 再移除失去呼叫端的舊組裝細節並完成整體交付驗證。
-- 原生 GitHub blocking 關係為 #25 → #26 → #27；R1 已納入 R2 工作基準。R3 仍待 R2 完成及後續交付。
-- 原生 GitHub blocking 關係為 #25 → #26 → #27；每份本文亦保存 Blocked by 編號，不為建立子議題關係而修改父議題。
+- R1／R2 已完成程式交付與主線驗證；R3 程式修改及受控真 Tk／平台／磁碟回歸已通過，固定基準 Standards／Spec 審查與主線合併仍待完成。R3 移除只供不完整測試 App 使用的準備 fallback。各票既有主線合併、推送及分支清理 SHA 以其驗收文件為準。
+- 原生 GitHub blocking 關係為 #25 → #26 → #27；每份本文保存 Blocked by 編號。本次未修改父規格 #24 或子議題狀態。
 - 待確認時所有開始入口無副作用的修正與多語言工作維持另案。
-- 程式與桌面驗證完成後交付；現場驗收清單包含實際配置、平台來源、正常開始、位置／結果、停止、失敗提示及保存關閉。實際設備驗收另階段安排。
+- 程式與受控桌面驗證已完成；[現場驗收清單](../evidence/round-start-assembly-ticket-03/field-acceptance-checklist.md)列出實際配置、平台來源、正常開始、位置／結果、停止、失敗提示及保存關閉。實際設備驗收另階段安排，未宣稱已完成。
 
-本次僅拆票及發布，未修改程式、未執行產品測試。
+拆票時的歷史記錄為「僅拆票及發布，未修改程式」；其後 R1～R3 的程式與測試交付分別記於各票驗收文件。本 README 現況已依本機 Git ancestry、最終測試與逐票證據更新。

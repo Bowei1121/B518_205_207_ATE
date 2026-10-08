@@ -44,13 +44,20 @@
 ## R1 配置與輪次啟動集中準備（GitHub #25，母規格 #24）
 
 - 從 `B518-Log-Solution` 的 `c71fb5583364f0a7c4e71d9806cfdec04160cb11` 建立 `RoundStartAssembly/ticket-01`；該 SHA 固定為本票 Standards／Spec 審查基準。開始時工作樹乾淨、主線與兩個既有 push 目的地即時 SHA 相同，票分支原先不存在。
-- 新增無 Tk 相依的公開 `RoundStartPreparation`／`PreparedRoundStart`，以同一 registry 驗證及固定設定，集中檢查路徑、建立 adapter、橋接回呼、配置來源位置映射，並將同一配置資訊交給既有 RoundCoordinator、Session 與 audit。正式 Tk 開始入口未切換；R2 桌面接入、R3 舊流程移除及現場設備驗收仍待後續。
+- 新增無 Tk 相依的公開 `RoundStartPreparation`／`PreparedRoundStart`，以同一 registry 驗證及固定設定，集中檢查路徑、建立 adapter、橋接回呼、配置來源位置映射，並將同一配置資訊交給既有 RoundCoordinator、Session 與 audit。R1 當時正式 Tk 尚未切換；此後 R2 已完成桌面接入，R3 已完成舊流程檢查與交付驗證，現場設備驗收仍另階段安排。
 - 使用真實暫存來源／Session／audit、PlatformRegistry 實際 adapters、Event 控制來源延遲及可注入時鐘驗證。Spec 審查曾指出注入 registry 與全域 validator 不一致，新增反例後已修正為用選定 registry 驗證；來源準備失敗且 Session 未建立時，也修正為 audit 完整落盤後不再永久停在等待狀態。
 - 最新程式提交 `f5e3ff5`；聚焦 PlatformRegistry／mapping／profile／RoundCoordinator 與準備測試共 88 tests 通過。最終完整含 Tk 套件於桌面環境通過 287 tests（50.528 秒）。型別檢查設定查無；compileall 不視為型別檢查。固定基準複審與文件提交完成後才合併。
-- 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。固定基準 Standards／Spec 複審無未解問題；非阻擋建議為新舊入口間重複的路徑 helper。合併 SHA `90e7c276f3ae28167f75d50a11b78cb973a061aa` 的主線完整含 Tk 套件通過 287 tests（49.445 秒）。Gitea 與 GitHub 主線均已同步，且確認後本地及兩個遠端的 `RoundStartAssembly/ticket-01` 均已安全刪除；最終文件提交後再即時確認一次同步。未修改遠端議題狀態。
+- 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。固定基準 Standards／Spec 複審無未解問題；非阻擋建議為當時新舊入口間重複的路徑 helper。合併 SHA `90e7c276f3ae28167f75d50a11b78cb973a061aa` 的主線完整含 Tk 套件通過 287 tests（49.445 秒）。Gitea 與 GitHub 主線均已同步，且確認後本地及兩個遠端的 `RoundStartAssembly/ticket-01` 均已安全刪除；最終文件提交後再即時確認一次同步。未修改遠端議題狀態。
 
 ## R2 桌面開始操作接入（GitHub #26）
 
 - R2 以固定審查基準 `b2816400415364bd033bd4f784bfebf3cda58b2b` 從 `B518-Log-Solution` 建立 `RoundStartAssembly/ticket-02`。起始工作樹乾淨；本次即時查核的 Gitea 與 GitHub 主線均在同一基準，票分支起初不存在。R1 實作與驗收證據均已在基準中。
 - 正式 Tk 開始入口改用公開 `RoundStartPreparation`，介面保留既有驗證／提示、忙碌狀態、同步偏好保存與輪次協調順序。UI 不再組裝 callback holder、adapter、來源位置映射或 Session/audit 配置證據。各平台按鈕開始、兩種快捷鍵交接、AWAITING_REVIEW 基準差異、RUNNING 保護和偏好替換失敗均補上真 Tk 行為證據。
-- R2 11 項驗收及母規格 14 組情境對照記於 [R2 本機驗收紀錄](evidence/round-start-assembly-ticket-02/local-validation.md)。最後程式／測試 SHA `88b448438564e55f0ef57457b05b855bb30ea67c` 的完整含 Tk 套件於桌面工作階段通過 289 tests（69.410 秒）；四項封存收尾聚焦案例及成功封存斷言亦通過。固定基準 `b2816400415364bd033bd4f784bfebf3cda58b2b` 的 Standards／Spec 複審至 `88b4484` 無未解問題；Standards 留有非阻擋的測試失敗訊息保留建議。最終合併 SHA `a4e051a18aa263456f437af724d8f05ea40f2863` 的主線完整含 Tk 套件通過 289 tests（68.912 秒），型別檢查器未設定。主線推送後直接查得 Gitea 與 GitHub 均為 `002c12a16a6fa744f3224b8d305a4382414f2be2`；兩目的地的 `RoundStartAssembly/ticket-02` refs 均為 `853ae10a8749d8bf83da8cbd8ff4636b057b5a5c` 後，安全刪除本地與兩個遠端票分支。工作樹最後位於乾淨的 `B518-Log-Solution`。未修改遠端議題；R3 整體正式交付與設備現場驗收仍分開處理。
+- R2 11 項驗收及母規格 14 組情境對照記於 [R2 本機驗收紀錄](evidence/round-start-assembly-ticket-02/local-validation.md)。最後程式／測試 SHA `88b448438564e55f0ef57457b05b855bb30ea67c` 的完整含 Tk 套件於桌面工作階段通過 289 tests（69.410 秒）；四項封存收尾聚焦案例及成功封存斷言亦通過。固定基準 `b2816400415364bd033bd4f784bfebf3cda58b2b` 的 Standards／Spec 複審至 `88b4484` 無未解問題；Standards 留有非阻擋的測試失敗訊息保留建議。最終合併 SHA `a4e051a18aa263456f437af724d8f05ea40f2863` 的主線完整含 Tk 套件通過 289 tests（68.912 秒），型別檢查器未設定。主線推送後直接查得 Gitea 與 GitHub 均為 `002c12a16a6fa744f3224b8d305a4382414f2be2`；兩目的地的 `RoundStartAssembly/ticket-02` refs 均為 `853ae10a8749d8bf83da8cbd8ff4636b057b5a5c` 後，安全刪除本地與兩個遠端票分支。工作樹最後位於乾淨的 `B518-Log-Solution`。未修改遠端議題；R3 當時尚未開始，現已另行完成程式驗收，實際設備驗收仍分開處理。
+
+## R3 移除舊組裝流程與交付驗證（GitHub #27，母規格 #24）
+
+- 從乾淨主線 `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8` 建立 `RoundStartAssembly/ticket-03`；當時 Gitea／GitHub 主線同 SHA，R1 合併 `90e7c276` 及 R2 合併 `a4e051a` 均為祖先，票分支原先不存在。固定 Standards／Spec 基準為 `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8`。
+- 呼叫端查核確認正式 Tk 已只呼叫 `RoundStartPreparation`。移除 `start_monitor` 對不完整 App 的 fallback 準備器與推測 Session 路徑；配置編輯／匯入匯出仍用的驗證、PlatformRegistry 建立責任及 ConfiguredMonitor 映射均保留。刪除三個由 `object.__new__` 與 mock factory 組裝的舊測試，改以真 Tk 全平台開始、兩輪舊事件隔離，以及實際 B482 重啟配置後的 Session／audit 磁碟讀取保留行為證據。
+- 程式／測試提交 `26960a1f18c3e28d06484d30e6c28e19598ac10d`、`8f9b293ec7c90595c4bcd443daabf26e72049f0b` 已推送到 Gitea 與 GitHub。桌面真 Tk 聚焦套件 46 tests 通過（14.590 秒）；實際 B482 配置重啟測試 1 test 通過（1.202 秒）。最終完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 286 tests（63.304 秒）。`compileall` 與 `git diff --check` 通過；型別檢查設定不存在，沒有宣稱通過。
+- 十一項驗收與母規格十四組情境見 [R3 本機驗收紀錄](evidence/round-start-assembly-ticket-03/local-validation.md)，可填寫的實際設備驗收表見[現場清單](evidence/round-start-assembly-ticket-03/field-acceptance-checklist.md)。固定基準 Standards／Spec 審查、最終文件 SHA、主線合併、主線套件、兩 push 目的地直接同步查核及安全分支清理仍待完成；現場設備驗收另階段安排，未宣稱完成。遠端議題未操作。
