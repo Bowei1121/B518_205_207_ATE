@@ -14,6 +14,10 @@ from monitoring_round import RoundCoordinator, RoundSnapshot
 from platform_registry import DEFAULT_PLATFORM_REGISTRY, PlatformRegistry
 
 
+class RoundStartPathError(ProfileError):
+    """A validated profile refers to a required or optional path that is unusable."""
+
+
 def configured_directory(value: str) -> Optional[Path]:
     """Resolve a configured directory while treating blank values as absent."""
     text = value.strip()
@@ -50,6 +54,11 @@ class PreparedRoundStart:
     _async_session_writes: bool
     _now: Optional[Callable]
     _monotonic: Optional[Callable]
+
+    @property
+    def profile(self) -> MachineProfile:
+        """Return the immutable profile snapshot captured for this start."""
+        return self._profile
 
     @property
     def station(self) -> str:
@@ -155,7 +164,7 @@ class RoundStartPreparation:
             directory = configured_directory(fixed_profile.paths.get(field, ""))
             if directory is None:
                 label = definition.path_labels.get(field, field)
-                raise ProfileError("請設定存在且可讀取的{}。".format(label))
+                raise RoundStartPathError("請設定存在且可讀取的{}。".format(label))
             resolved_paths[field] = directory
 
         for field in definition.optional_paths:
@@ -163,7 +172,7 @@ class RoundStartPreparation:
             directory = configured_directory(configured) if configured.strip() else None
             if configured.strip() and directory is None:
                 label = definition.path_labels.get(field, field)
-                raise ProfileError("{} 不存在或無法讀取。".format(label))
+                raise RoundStartPathError("{} 不存在或無法讀取。".format(label))
             resolved_paths[field] = directory
 
         return PreparedRoundStart(
