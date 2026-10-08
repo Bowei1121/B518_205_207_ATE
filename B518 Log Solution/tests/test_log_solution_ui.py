@@ -873,6 +873,8 @@ class LogSolutionUiTests(unittest.TestCase):
                             continue
                         path = case_root / relative
                         path.mkdir(parents=True)
+                        if platform == "sample-json":
+                            (path / "events.jsonl").write_text("", encoding="utf-8")
                         paths[field] = str(path)
                     with patch("b518_log_solution.PREFS_PATH", case_root / "preferences.json"):
                         root = tk.Tk()
@@ -960,6 +962,25 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertTrue(app.rounds.flush_audit(timeout=3))
                                 rebuilt = read_round_audit(session_path / "audit.jsonl")
                                 self.assertEqual(rebuilt["results"][3]["status"], "PASS")
+                            if platform == "sample-json":
+                                sample_time = datetime.now().isoformat(timespec="seconds")
+                                (Path(paths["active"]) / "events.jsonl").write_text(
+                                    json.dumps({
+                                        "kind": "final", "position": 20,
+                                        "sn": "SAMPLE000020", "status": "PASS",
+                                        "source_time": sample_time, "batch_id": "tk-round-fixture",
+                                    }) + "\n", encoding="utf-8",
+                                )
+                                pump_until(lambda: app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS")
+                                running_round_id = app.rounds.snapshot().round_id
+                                app.start_button.invoke()
+                                root.event_generate("<Command-Shift-M>")
+                                app.hotkey.callback()
+                                root.update()
+                                pump_until(lambda: app.rounds.snapshot().round_id == running_round_id and
+                                           app.rounds.snapshot().results[0].status == "PASS" and
+                                           app.status_rows[1]["status"].cget("text") == "PASS")
                         finally:
                             app.rounds.stop()
                             app.rounds.flush_session(timeout=3)
