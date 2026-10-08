@@ -1310,6 +1310,25 @@ class LogSolutionUiTests(unittest.TestCase):
                             app.language_menu.invoke(menu_index)
                             root.update()
 
+                        def verify_round_event_language_refresh(event_record):
+                            localized = event_record["localized_message"]
+                            pump_until(lambda: any(localized["en"] in line
+                                                   for line in app.event_lines))
+                            state_before = app.rounds.snapshot()
+                            audit_before = (session_path / "audit.jsonl").read_bytes()
+                            select_language("繁體中文")
+                            self.assertTrue(any(localized["zh-TW"] in line
+                                                for line in app.event_lines), app.event_lines)
+                            self.assertEqual(app.rounds.snapshot().round_id, state_before.round_id)
+                            self.assertEqual(app.rounds.snapshot().results, state_before.results)
+                            self.assertEqual(app.rounds.snapshot().events, state_before.events)
+                            self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before)
+                            select_language("English")
+                            self.assertTrue(any(localized["en"] in line
+                                                for line in app.event_lines), app.event_lines)
+                            self.assertEqual(app.rounds.snapshot().events, state_before.events)
+                            self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before)
+
                         try:
                             selected_profile = app.profiles.get(project, machine)
                             self.assertEqual(app._display_capacity(), selected_profile.capacity)
@@ -1336,7 +1355,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             self.assertEqual(audit_config["config_snapshot"], session_profile)
                             self.assertEqual(audit_config["platform"], platform)
                             self.assertEqual(audit_config["mapping"], session_profile["mapping"])
-                            if platform in {"atlas", "b482", "rswmt"}:
+                            if platform in {"atlas", "b482", "rswmt", "sample-json"}:
                                 diagnostic = "controlled {} source diagnostic".format(platform)
                                 if platform == "atlas":
                                     import monitoring_files
@@ -1378,7 +1397,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                         side_effect=fail_b482_signature,
                                     )
                                     expected_message_id = "platform.b482.source_error"
-                                else:
+                                elif platform == "rswmt":
                                     source_file = Path(paths["final"]) / "controlled-source.log"
                                     source_file.write_text("controlled source\n", encoding="utf-8")
                                     original_read_text = Path.read_text
@@ -1392,6 +1411,18 @@ class LogSolutionUiTests(unittest.TestCase):
                                         Path, "read_text", fail_rswmt_diagnostic,
                                     )
                                     expected_message_id = "platform.rswmt.warning"
+                                else:
+                                    source_file = Path(paths["active"]) / "events.jsonl"
+                                    original_open = Path.open
+
+                                    def fail_sample_json_read(path, *args, **kwargs):
+                                        mode = kwargs.get("mode", args[0] if args else "r")
+                                        if path == source_file and mode == "rb":
+                                            raise OSError(diagnostic)
+                                        return original_open(path, *args, **kwargs)
+
+                                    failure = patch.object(Path, "open", fail_sample_json_read)
+                                    expected_message_id = "platform.sample_json.unreadable"
 
                                 with failure:
                                     pump_until(lambda: any(
@@ -1411,9 +1442,10 @@ class LogSolutionUiTests(unittest.TestCase):
                                     diagnostic,
                                     platform_event["localized_message"]["diagnostic"],
                                 )
-                                self.assertIn(
-                                    diagnostic, platform_event["detail"]["raw_diagnostic"],
+                                raw_diagnostic = platform_event["detail"].get(
+                                    "raw_diagnostic", platform_event["detail"].get("raw_error", ""),
                                 )
+                                self.assertIn(diagnostic, raw_diagnostic)
                                 self.assertTrue(any(
                                     platform_event["localized_message"]["en"] in line
                                     for line in app.event_lines
@@ -1535,6 +1567,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(result_event["round_id"], round_id)
                                 self.assertEqual(result_event["localized_message"]["message_id"],
                                                  "round.result")
+                                verify_round_event_language_refresh(result_event)
                                 audit_bytes = (session_path / "audit.jsonl").read_bytes()
                                 state = app.rounds.snapshot()
                                 select_language("繁體中文")
@@ -1571,6 +1604,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(partial_event["round_id"], round_id)
                                 self.assertEqual(partial_event["localized_message"]["message_id"],
                                                  "round.result")
+                                verify_round_event_language_refresh(partial_event)
                             if platform == "sample-json":
                                 sample_time = datetime.now().isoformat(timespec="seconds")
                                 event_path = Path(paths["active"]) / "events.jsonl"
@@ -1597,6 +1631,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(sample_event["round_id"], running_round_id)
                                 self.assertEqual(sample_event["localized_message"]["message_id"],
                                                  "round.result")
+                                verify_round_event_language_refresh(sample_event)
                                 app.start_button.invoke()
                                 root.event_generate("<Command-Shift-M>")
                                 app.hotkey.callback()
@@ -1622,7 +1657,9 @@ class LogSolutionUiTests(unittest.TestCase):
                                     encoding="utf-8",
                                 )
                                 pump_until(lambda: app.rounds.snapshot().results[0].status == "TESTING")
-                                created_at = datetime.now().replace(microsecond=0)
+                                created_at = datetime.strptime(
+                                    log_time, "%Y-%m-%d %H:%M:%S,%f",
+                                ).replace(microsecond=0)
                                 start = created_at.strftime("%Y/%d/%m %H:%M:%S")
                                 stopped = (created_at + timedelta(seconds=1)).strftime(
                                     "%Y/%d/%m %H:%M:%S",
@@ -1652,6 +1689,12 @@ class LogSolutionUiTests(unittest.TestCase):
                                 rebuilt = read_round_audit(session_path / "audit.jsonl")
                                 self.assertTrue(rebuilt["audit_complete"])
                                 self.assertEqual(rebuilt["results"][1]["sn"], "RSWMT000001")
+                                rswmt_result = next(
+                                    event for event in rebuilt["events"]
+                                    if event.get("sn") == "RSWMT000001" and
+                                    event.get("status") == "PASS"
+                                )
+                                verify_round_event_language_refresh(rswmt_result)
                         finally:
                             app.rounds.stop()
                             app.rounds.flush_session(timeout=3)
