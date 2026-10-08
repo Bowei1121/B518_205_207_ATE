@@ -1,10 +1,15 @@
 # C1 人工衝突彈窗本機驗收紀錄
 
-日期：2026-10-08（Asia/Taipei）  
-專案根目錄：`B518 Log Solution`  
-Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`  
-工作分支：`ConflictDialog/ticket-01`  
-固定 code-review 基準：`d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`  
+日期：2026-10-08（Asia/Taipei）
+
+專案根目錄：`B518 Log Solution`
+
+Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
+
+工作分支：`ConflictDialog/ticket-01`
+
+固定 code-review 基準：`d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`
+
 最後已驗證程式提交：`ebe7364`（其父提交 `5240a21`）
 
 ## 交付內容
