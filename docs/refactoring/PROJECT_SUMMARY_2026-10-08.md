@@ -53,4 +53,4 @@
 
 - R2 以固定審查基準 `b2816400415364bd033bd4f784bfebf3cda58b2b` 從 `B518-Log-Solution` 建立 `RoundStartAssembly/ticket-02`。起始工作樹乾淨；本次即時查核的 Gitea 與 GitHub 主線均在同一基準，票分支起初不存在。R1 實作與驗收證據均已在基準中。
 - 正式 Tk 開始入口改用公開 `RoundStartPreparation`，介面保留既有驗證／提示、忙碌狀態、同步偏好保存與輪次協調順序。UI 不再組裝 callback holder、adapter、來源位置映射或 Session/audit 配置證據。各平台按鈕開始、兩種快捷鍵交接、AWAITING_REVIEW 基準差異、RUNNING 保護和偏好替換失敗均補上真 Tk 行為證據。
-- R2 11 項驗收及母規格 14 組情境對照記於 [R2 本機驗收紀錄](evidence/round-start-assembly-ticket-02/local-validation.md)。固定基準雙軸審查（`b2816400415364bd033bd4f784bfebf3cda58b2b`）無未解問題；Standards 僅記一項非阻擋測試 helper 重複建議。完整含 Tk 套件於桌面工作階段通過 289 tests（65.224 秒）；一次先前間歇性協調測試失敗後，單獨與完整套件重跑均通過。合併、雙遠端即時同步及分支清理完成後續補記；本票不取代 R3 整體正式交付或設備現場驗收。
+- R2 11 項驗收及母規格 14 組情境對照記於 [R2 本機驗收紀錄](evidence/round-start-assembly-ticket-02/local-validation.md)。合併後完整套件發現 Tk 測試過早檢查畫面，以及關閉交接可能以延遲 `stopped` 覆蓋來源建立失敗原因；新增 Event 控制測試並以 `20d3874` 修正後，完整含 Tk 套件於桌面工作階段通過 289 tests（60.505 秒）。固定基準 Standards／Spec 初審無阻擋，測試後修正的固定基準複審及重新合併、同步與清理結果待完成；本票不取代 R3 整體正式交付或設備現場驗收。

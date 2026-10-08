@@ -14,7 +14,7 @@ Date: 2026-10-08 (Asia/Taipei)
 
 `B518LogSolutionApp.start_monitor` now validates/fixes the selected profile and paths through `RoundStartPreparation`, then keeps the existing Tk responsibilities and order: show busy state, synchronously persist preferences, and hand the prepared request to `RoundCoordinator`. Tk no longer assembles callback holders, adapters, source-slot mappings, or Session/audit evidence. `RoundStartPathError` preserves the existing path-error dialog while distinguishing path failures from other profile errors. The original registry remains the source of profile choices.
 
-The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. Latest code/test commit before final documentation validation: `9cd6b4e` (update this SHA if code or tests change).
+The initial R2 implementation was committed as `6429a87`; the fixed review base remains the pre-R2 SHA above. Test-only commits added true-Tk regression and failure evidence. A post-merge full run exposed two synchronization gaps: a Tk test asserted rendered rows before the next event-loop delivery, and a delayed close `stopped` event could overwrite a source-preparation failure. Both are covered by the fixes in `20d3874`; latest validated code/test SHA is `20d3874`.
 
 ## R2 acceptance results
 
@@ -68,7 +68,13 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiT
 Ran 1 test in 8.278s — OK
 
 B518_TK_TESTS=1 python3 scripts/run_tests.py
-Ran 289 tests in 65.224s — OK (accessible desktop session)
+Ran 289 tests in 65.224s — OK (accessible desktop session, before the final race fix)
+
+B518_TK_TESTS=1 python3 scripts/run_tests.py test_round_start_preparation.RoundStartPreparationTests.test_source_creation_failure_through_preparation_is_audited_before_close_completes test_log_solution_ui.LogSolutionUiTests.test_app_completes_rswmt_final_only_round_through_shared_entry
+Ran 2 tests in 6.883s — OK (after final race fix)
+
+B518_TK_TESTS=1 python3 scripts/run_tests.py
+Ran 289 tests in 60.505s — OK (final branch verification in accessible desktop session)
 
 python3 -m compileall -q src tests
 OK (syntax/bytecode compilation only)
@@ -77,14 +83,13 @@ git diff --check
 OK
 ```
 
-The focused 136-test run preceded the two separately passing tests listed afterwards; the complete run includes all tests. An earlier full run had one intermittent failure in `test_source_creation_failure_through_preparation_is_audited_before_close_completes` (`manual_stop` observed where `start_failed` was expected). The test passed in isolation and the subsequent complete run passed. The project has no configured mypy/pyright/type-check command; no type-check pass is claimed. The final full Tk run used an accessible desktop graphical session; a sandboxed Tk initialization attempt had aborted with code 134 before escalation and is not counted as a product test failure.
+The focused 136-test run preceded the two separately passing tests listed afterwards. The first complete 289-test run passed before the final race fix, then the post-merge run exposed the two issues described above. An Event-controlled regression made the source-failure/close ordering reproducible; the test failed against the old code with `manual_stop` and passed after the guard. The final complete run after both fixes passed 289 tests. The project has no configured mypy/pyright type-check command; no type-check pass is claimed. Final Tk tests used an accessible desktop graphical session; sandboxed Tk initialization attempts aborted before escalation and are not counted as product failures.
 
 ## Final review and delivery record
 
-- Full Tk suite: **289 tests passed in 65.224s**.
-- Fixed-base Standards review: **no documented-standard violations**. One non-blocking judgement-call smell was noted: similar `pump_until` polling helpers are repeated across new Tk tests; consolidation is optional if diagnostics remain clear.
-- Fixed-base Spec review: **no blocking findings**. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b` and reviewed the final implementation and evidence diff.
-- Final validated code/test SHA: `9cd6b4e` unless changed after review.
+- Full Tk suite after final fix: **289 tests passed in 60.505s**.
+- Initial fixed-base Standards review: no documented-standard violations; one non-blocking judgement-call smell noted similar `pump_until` helpers in Tk tests. Initial Spec review had no blocking findings. Both used `b2816400415364bd033bd4f784bfebf3cda58b2b`; **re-review of `20d3874` is pending**.
+- Final validated code/test SHA: `20d3874`.
 - Merge SHA, live push destination verification, and branch cleanup: **pending**.
 
 Any Tk test temporary directory is isolated. Existing production round data, exports and source logs were not used for failure injection or cleanup.
