@@ -147,6 +147,7 @@ class B518LogSolutionApp:
         self.retention_days_var: Optional[tk.StringVar] = None
         self.retention_status: Optional[tk.StringVar] = None
         self.retention_cleanup_status: Optional[tk.StringVar] = None
+        self._retention_cleanup_request_status = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
@@ -1776,7 +1777,7 @@ class B518LogSolutionApp:
 
         previous = self.profile_store.retention_days
         try:
-            self.rounds.save_retention_setting(
+            cleanup_request = self.rounds.save_retention_setting(
                 days, lambda: self.profile_store.save_retention_days(days))
         except ProfileError as error:
             self._set_retention_status("app.settings.retention.status.read_failed",
@@ -1794,6 +1795,9 @@ class B518LogSolutionApp:
         self.retention_effective_label.configure(
             text=self._t("app.settings.retention.effective", days=days))
         self._record_app_event("app.settings.event.retention.saved", {"days": days})
+        self._retention_cleanup_request_status = (
+            cleanup_request if cleanup_request.status == "skipped" else None)
+        self._refresh_retention_cleanup_status()
         if days < previous:
             self._set_retention_status("app.settings.retention.status.shortened")
         else:
@@ -1805,6 +1809,13 @@ class B518LogSolutionApp:
         if variable is None:
             return
         status = self.rounds.retention_cleanup_status()
+        close_state = self.rounds.close_status().status
+        request_status = self._retention_cleanup_request_status
+        if (request_status is not None and request_status.status == "skipped" and
+                close_state in {"saving", "waiting", "failed"}):
+            status = request_status
+        elif request_status is not None:
+            self._retention_cleanup_request_status = None
         summaries = self.rounds.retention_cleanup_summaries()
         latest = summaries[-1] if summaries else None
         status_message = {
@@ -1814,8 +1825,9 @@ class B518LogSolutionApp:
             "failed": "app.settings.retention.cleanup.failed",
             "skipped": "app.settings.retention.cleanup.skipped",
         }.get(status.status, "app.settings.retention.cleanup.failed")
-        detail = self._t(status_message,
-                         reason=status.message if status.status == "skipped" else "")
+        detail = self._t(
+            status_message,
+            reason=self._retention_reason_text(status.message) if status.status == "skipped" else "")
         if status.status == "failed" and latest is None and status.message:
             detail += "\n" + status.message
         if latest is not None:
@@ -1845,7 +1857,28 @@ class B518LogSolutionApp:
 
     def _retention_reason_text(self, reason: str) -> str:
         """Translate known cleanup status copy while leaving diagnostic details intact."""
+        diagnostic_prefixes = {
+            "封存資訊無法讀取：": "archive_read_failed",
+            "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",
+            "必要輪次紀錄無法重建：": "archive_component_rebuild_failed",
+        }
+        for prefix, message_id in diagnostic_prefixes.items():
+            if reason.startswith(prefix):
+                return self._t("app.settings.retention.reason." + message_id,
+                               diagnostic=reason[len(prefix):])
         message_ids = {
+            "關閉保存期間不啟動新清理": "close",
+            "封存資訊版本未知": "archive_unknown_version",
+            "封存時間無效或缺少時區": "archive_invalid_time",
+            "封存資訊格式不正確": "archive_format_invalid",
+            "封存資訊完整性驗證失敗": "archive_integrity_failed",
+            "封存輪次身分不一致": "archive_round_identity_mismatch",
+            "封存完整性資訊缺失": "archive_integrity_missing",
+            "封存組成資料不完整": "archive_components_incomplete",
+            "封存組成資料格式不正確": "archive_component_format_invalid",
+            "封存組成資料路徑不正確": "archive_component_path_invalid",
+            "必要輪次紀錄內容已變更": "archive_component_changed",
+            "磁碟紀錄未完整保存或輪次身分不一致": "archive_disk_incomplete",
             "關閉保存期間暫停清理": "close",
             "本次 App 執行仍受保護": "protected",
             "可信封存時間缺少時區": "timezone",

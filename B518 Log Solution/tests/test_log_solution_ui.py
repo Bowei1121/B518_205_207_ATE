@@ -27,6 +27,7 @@ from monitoring_round import (
     ConflictSide, RoundConflict, RoundCoordinator, RoundEvent, RoundSnapshot, RoundState,
 )
 import audit_records
+import app_event_store
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
@@ -883,6 +884,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
                 self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
                 self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 app.app_events.stop()
@@ -3338,6 +3341,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rows_canvas.yview()[1], 1.0)
             finally:
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 root.destroy()
 
@@ -3375,6 +3384,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertNotIn("Unsaved", app.profiles.projects)
             finally:
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 root.destroy()
 
@@ -4080,6 +4095,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.app_events.path.read_bytes(), event_bytes)
             finally:
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 app.app_events.stop()
                 root.destroy()
@@ -4096,6 +4117,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root, hotkey_factory=FakeHotkey,
                 session_root=Path(temporary) / "sessions", app_event_path=event_path,
             )
+            release_write = threading.Event()
 
             def pump_until(predicate, timeout=5):
                 deadline = time.monotonic() + timeout
@@ -4160,8 +4182,63 @@ class LogSolutionUiTests(unittest.TestCase):
                                     for item in retention_events))
                 self.assertEqual(retention_events[-1]["diagnostic"],
                                  "preferences disk full")
+
+                write_entered = threading.Event()
+                atomic_replace = app_event_store._atomic_replace
+
+                def hold_event_write(path, content):
+                    write_entered.set()
+                    if not release_write.wait(5):
+                        raise OSError("test write gate timed out")
+                    atomic_replace(path, content)
+
+                with patch("app_event_store._atomic_replace", side_effect=hold_event_write):
+                    app.rounds.record_app_event("app.settings.event.retention.saved", {"days": 180})
+                    self.wait_for(write_entered.is_set)
+                    app.rounds.request_close()
+                    self.wait_for(lambda: app.rounds.close_status().status in {"saving", "waiting"})
+                    app.retention_days_var.set("365")
+                    click(app.retention_save_button)
+                    self.assertIn(
+                        "Cleanup paused while records are being saved for app close.",
+                        app.retention_cleanup_status.get())
+                    self.assertEqual(
+                        app._retention_reason_text("封存資訊版本未知"),
+                        "The archive metadata version is not supported.")
+                    self.assertEqual(
+                        app._retention_reason_text("封存時間無效或缺少時區"),
+                        "The archive time is invalid or has no time zone.")
+                    self.assertEqual(
+                        app._retention_reason_text("封存資訊無法讀取：disk full"),
+                        "Archive metadata could not be read: disk full")
+                    app.language_button.event_generate("<Button-1>")
+                    root.update()
+                    chinese_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文"
+                    )
+                    app.language_menu.invoke(chinese_index)
+                    root.update()
+                    self.assertIn("關閉保存期間暫停清理", app.retention_cleanup_status.get())
+                    self.assertNotIn("Cleanup paused", app.retention_cleanup_status.get())
+                    self.assertEqual(
+                        app._retention_reason_text("封存資訊版本未知"),
+                        "封存資訊版本不受支援。")
+                    self.assertEqual(
+                        app._retention_reason_text("封存時間無效或缺少時區"),
+                        "封存時間無效或缺少時區。")
+                    release_write.set()
+                    self.wait_for(lambda: app.rounds.app_event_status().complete)
+                    self.wait_for(lambda: app.rounds.close_status().status == "complete")
             finally:
+                release_write.set()
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 app.app_events.stop()
                 root.destroy()
@@ -4223,6 +4300,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.profile_editor_paths["active"].get(), "/draft/active")
             finally:
                 app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 app.app_events.stop()
                 root.destroy()
@@ -4284,6 +4367,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
                 self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                    "complete", "failed"
+                })
                 self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
                 app.app_events.stop()
