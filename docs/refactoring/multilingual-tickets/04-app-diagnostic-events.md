@@ -10,13 +10,13 @@ App 啟動、配置、熱鍵及偏好等沒有輪次的事件也有持久雙語�
 
 ## Acceptance criteria
 
-- [ ] App 層事件使用自身時間、身分及同筆兩語，不虛構 round_id，保留訊息識別／參數與必要診斷。
-- [ ] 無輪次及初始化錯誤可理解；自有提示使用集中翻譯、保留既有確認／取消效果，不因翻譯自動操作。
-- [ ] 保存失敗保留整筆待補存，修復後有序重試不缺語言或重複，不遞迴產生無限診斷事件。
-- [ ] App 層未保存工作納入正常保存及關閉協調，不因沒有輪次而被略過；不承諾當下能寫到故障磁碟。
-- [ ] 原始診斷可在詳細區查閱，畫面先呈現所選語言的說明；兩種語言使用同一錯誤身分。
-- [ ] 真正 Tk、暫存磁碟及故障注入驗證啟動／配置／熱鍵／語言設定保存錯誤、重試與完整保存。
+- [x] App 層事件使用自身時間、身分及同筆兩語，不虛構 round_id，保留訊息識別／參數與必要診斷。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#acceptance-evidence)
+- [x] 無輪次及初始化錯誤可理解；自有提示使用集中翻譯、保留既有確認／取消效果，不因翻譯自動操作。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#app-event-producer-inventory)
+- [x] 保存失敗保留整筆待補存，修復後有序重試不缺語言或重複，不遞迴產生無限診斷事件。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#persistence-and-close-contract)
+- [x] App 層未保存工作納入正常保存及關閉協調，不因沒有輪次而被略過；不承諾當下能寫到故障磁碟。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#persistence-and-close-contract)
+- [x] 原始診斷可在詳細區查閱，畫面先呈現所選語言的說明；兩種語言使用同一錯誤身分。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#acceptance-evidence)
+- [x] 真正 Tk、暫存磁碟及故障注入驗證啟動／配置／熱鍵／語言設定保存錯誤、重試與完整保存。[驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md#acceptance-evidence)
 
-## Blocked by
+## Dependency status
 
-- [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15)
+直接依賴 [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15) 已由 M2 合併至 GitHub `B518-Log-Solution`，見 [M2 驗收紀錄](../evidence/multilingual-ticket-02/local-validation.md)；M4 沒有剩餘直接依賴阻擋。
