@@ -672,6 +672,7 @@ class LogSolutionUiTests(unittest.TestCase):
             final.mkdir()
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
+            round_id = None
             try:
                 app.open_settings()
                 app.profile_editor_capacity.set("3")
@@ -687,6 +688,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(0.01)
 
                 self.assertIsNotNone(app.rounds.session_path)
+                round_id = app.rounds.snapshot().round_id
                 while (app.rounds.snapshot().source_preparation_pending and
                        time.monotonic() < preparation_deadline):
                     root.update()
@@ -787,7 +789,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
-                self.wait_for_archive_checks(app.rounds)
+                statuses = self.wait_for_archive_checks(app.rounds)
+                if round_id is not None:
+                    self.assertEqual(app.rounds.archive_status(round_id).status, "archived", statuses)
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
