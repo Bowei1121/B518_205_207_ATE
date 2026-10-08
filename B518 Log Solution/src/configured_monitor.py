@@ -13,6 +13,10 @@ class ConfiguredMonitor:
         self._monitor = monitor
         self._source_to_display = dict(source_to_display)
         self._display_to_source = {display: source for source, display in self._source_to_display.items()}
+        set_display_mapper = getattr(monitor, "set_event_display_position_mapper", None)
+        if callable(set_display_mapper):
+            set_display_mapper(lambda source_slot: self._source_to_display.get(source_slot)
+                               if source_slot is not None else None)
 
     @property
     def session(self):
@@ -57,6 +61,12 @@ class ConfiguredMonitor:
 
     def update_round_settings(self, settings):
         self._monitor.update_round_settings(settings)
+
+    def set_event_context_provider(self, provider):
+        """Forward round identity assignment to the wrapped event producer."""
+        set_provider = getattr(self._monitor, "set_event_context_provider", None)
+        if callable(set_provider):
+            set_provider(provider)
 
     def publish_round_event(self, event):
         if event.slot is None:

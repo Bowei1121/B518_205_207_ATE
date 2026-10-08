@@ -427,6 +427,19 @@ class RoundStartPreparationTests(unittest.TestCase):
                               for slot, value in sorted(rebuilt["results"].items())], [
                 (1, "PASS"), (2, "FAIL"),
             ])
+            session_events = [json.loads(line) for line in
+                              (session_path / "events.log").read_text(
+                                  encoding="utf-8").splitlines()]
+            audit_result = next(event for event in rebuilt["events"]
+                                if event["kind"] == "result")
+            session_result = next(event for event in session_events
+                                  if event.get("localized_message", {}).get("message_id") ==
+                                  "round.result")
+            self.assertEqual(session_result["round_id"], started.round_id)
+            self.assertEqual(session_result["sequence"], audit_result["sequence"])
+            self.assertEqual(session_result["timestamp"], audit_result["observed_at"])
+            self.assertEqual(session_result["localized_message"],
+                             audit_result["localized_message"])
 
 
 if __name__ == "__main__":

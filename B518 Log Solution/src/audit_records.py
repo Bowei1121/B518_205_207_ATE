@@ -37,6 +37,7 @@ class AuditEvent:
     status: str = ""
     source: str = ""
     detail: Dict[str, object] = field(default_factory=dict)
+    localized_message: Optional[object] = None
 
 
 def _lock_for(path: Path):
@@ -182,6 +183,8 @@ class RoundAuditStore:
             "batch_evidence": _first(detail, "batch_id", "batch", "round_evidence_id"),
             "detail": detail or {},
         }
+        if event.localized_message is not None:
+            record["localized_message"] = event.localized_message.as_record()
         with self._condition:
             previous_sequence = self._last_enqueued_sequence
             if event.sequence <= previous_sequence:

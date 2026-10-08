@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from log_monitoring import AtlasActiveArchiveMonitor, BtLogMonitor, parse_archive_timestamp
+from log_monitoring import AtlasActiveArchiveMonitor, BaseMonitor, BtLogMonitor, MonitorEvent, parse_archive_timestamp
 from b482_source_adapter import B482SourceAdapter, B482ObservationKind
+from language_catalog import make_bilingual_message
 
 
 def write_records(path, sn="", status="PASS"):
@@ -53,6 +54,65 @@ class LogMonitoringTests(unittest.TestCase):
             self.assertTrue(store.flush())
         self.session_store_patch.stop()
         shutil.rmtree(self.temp)
+
+    def test_session_event_keeps_one_immutable_bilingual_record(self):
+        store = log_monitoring.SessionStore("bilingual", {}, self.temp / "sessions")
+        parameters = {"station": "FCT", "slot": 3, "status": "PASS"}
+        message = make_bilingual_message("round.result", parameters)
+        parameters["slot"] = 9
+
+        store.enqueue_event("slot3 PASS", {"round_id": "round-1"}, message)
+        self.assertTrue(store.flush())
+        record = json.loads((store.path / "events.log").read_text(encoding="utf-8"))
+        self.assertEqual(record["message"], "slot3 PASS")
+        self.assertEqual(record["detail"], {"round_id": "round-1"})
+        self.assertEqual(record["localized_message"]["parameters"]["slot"], 3)
+        self.assertEqual(record["localized_message"]["en"], "FCT Slot 3 result: PASS")
+        self.assertEqual(record["localized_message"]["zh-TW"], "FCT 通道 3 結果：PASS")
+
+    def test_legacy_session_adapter_keeps_its_existing_event_call_shape(self):
+        monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "legacy")
+        captured = []
+        published = []
+
+        class LegacySession:
+            def enqueue_event(self, message, detail=None):
+                captured.append((message, detail))
+
+        monitor.session = LegacySession()
+        monitor.callback = published.append
+        monitor.emit(MonitorEvent("source_prepared", "Source ready"))
+        monitor.emit(MonitorEvent("round_started", "FCT round start accepted"))
+        self.assertEqual(captured, [
+            ("Source ready", {}), ("FCT round start accepted", {}),
+        ])
+        self.assertIsNotNone(published[1].localized_message)
+
+    def test_session_adapter_with_keyword_extension_receives_identity_as_keywords(self):
+        monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "keyword-adapter",
+                              now=lambda: self.now)
+        captured = []
+
+        class ExtensibleSession:
+            def enqueue_event(self, message, detail=None, **kwargs):
+                captured.append((message, detail, kwargs))
+
+        monitor.session = ExtensibleSession()
+        def assign_context(event):
+            event.detail["round_id"] = "round-keyword"
+            event.sequence = 1
+            event.observed_at = self.now.isoformat(timespec="seconds")
+
+        monitor.set_event_context_provider(assign_context)
+        monitor.emit(MonitorEvent("result", "slot1 PASS", 1, status="PASS"))
+
+        self.assertEqual(len(captured), 1)
+        message, _detail, kwargs = captured[0]
+        self.assertEqual(message, "slot1 PASS")
+        self.assertEqual(kwargs["round_id"], "round-keyword")
+        self.assertEqual(kwargs["sequence"], 1)
+        self.assertEqual(kwargs["timestamp"], self.now.isoformat(timespec="seconds"))
+        self.assertEqual(kwargs["localized_message"].message_id, "round.result")
 
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))

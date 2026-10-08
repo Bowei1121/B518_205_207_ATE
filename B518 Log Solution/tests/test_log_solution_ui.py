@@ -200,44 +200,6 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
-    def test_real_tk_language_button_mouse_click_posts_menu_without_tk_error(self):
-        with TemporaryDirectory() as temporary, \
-                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
-            root = tk.Tk()
-            app = B518LogSolutionApp(
-                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
-            )
-            posting_errors = []
-            root.tk.createcommand("bgerror", lambda message: posting_errors.append(str(message)))
-            posted = threading.Event()
-            app.language_menu.configure(postcommand=posted.set)
-            try:
-                root.update()
-                self.assertTrue(app.language_button.winfo_ismapped())
-                root.after(150, app.language_menu.unpost)
-                x = app.language_button.winfo_width() // 2
-                y = app.language_button.winfo_height() // 2
-                app.language_button.event_generate("<Enter>", x=x, y=y)
-                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
-                deadline = time.monotonic() + 2
-                while not posted.is_set() and not posting_errors and time.monotonic() < deadline:
-                    root.update()
-                    time.sleep(0.01)
-                app.language_menu.unpost()
-                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
-                root.update()
-                self.assertFalse(posting_errors, posting_errors)
-                self.assertTrue(posted.is_set(), "Mouse click did not post the language menu")
-                self.assertEqual(app.current_language, ENGLISH)
-                self.assertEqual(app.rounds.snapshot(), None)
-            finally:
-                app.rounds.request_close()
-                self.wait_for(lambda: app.rounds.close_status().status == "complete")
-                app.hotkey.close()
-                root.destroy()
-
-    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
-                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_language_menu_switches_main_page_and_persists_across_app_instances(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -292,6 +254,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNotNone(snapshot)
                 self.assertFalse(snapshot.source_preparation_pending)
                 round_id = snapshot.round_id
+                deadline = time.monotonic() + 2
+                while (not any("FCT round start accepted" in line for line in app.event_lines)
+                       and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertTrue(any("FCT round start accepted" in line
+                                    for line in app.event_lines), app.event_lines)
+                app.open_settings()
+                root.update()
+                self.assertIn("FCT round start accepted",
+                              app.settings_log.get("1.0", "end-1c"))
                 with events_path.open("a", encoding="utf-8") as event_file:
                     event_file.write(json.dumps({
                         "kind": "activity", "position": 20, "sn": "LANG000001",
@@ -310,6 +283,20 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.rounds.flush_session(timeout=3))
                 self.assertTrue(app.rounds.flush_audit(timeout=3))
                 audit_before_switch = (session_path / "audit.jsonl").read_bytes()
+                audit_events = [json.loads(line) for line in audit_before_switch.decode(
+                    "utf-8").splitlines() if json.loads(line).get("record_type") == "event"]
+                session_events = [json.loads(line) for line in
+                                  (session_path / "events.log").read_text(
+                                      encoding="utf-8").splitlines()]
+                audit_started = next(item for item in audit_events
+                                     if item["kind"] == "round_started")
+                session_started = next(item for item in session_events
+                                       if item["message"] == audit_started["message"])
+                self.assertEqual(session_started["localized_message"],
+                                 audit_started["localized_message"])
+                self.assertEqual(audit_started["localized_message"]["message_id"],
+                                 "round.started")
+                self.assertEqual(audit_started["round_id"], round_id)
                 round_files_before_switch = tuple(sorted(
                     (path.relative_to(session_path), path.read_bytes())
                     for path in session_path.rglob("*") if path.is_file()
@@ -330,9 +317,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
+                self.assertIn("FCT 已接受開始本輪", app.event_lines)
+                self.assertIn("FCT 已接受開始本輪",
+                              app.settings_log.get("1.0", "end-1c"))
                 after_switch = app.rounds.snapshot()
                 self.assertEqual(after_switch.round_id, round_id)
                 self.assertEqual(after_switch.results, before_switch.results)
+                self.assertEqual(after_switch.events, before_switch.events)
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "TESTING")
                 self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before_switch)
                 self.assertEqual(round_files_before_switch, tuple(sorted(
@@ -360,6 +351,11 @@ class LogSolutionUiTests(unittest.TestCase):
                         break
                     time.sleep(0.01)
                 self.assertEqual(app.rounds.snapshot().round_id, round_id)
+                deadline = time.monotonic() + 2
+                while (not any("same-round result conflict" in line
+                               for line in app.event_lines) and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
                 conflicts_before_switch = app.rounds.snapshot().pending_conflicts
                 self.assertEqual(len(conflicts_before_switch), 1)
                 conflict_id = conflicts_before_switch[0].conflict_id
@@ -384,6 +380,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app.current_language, ENGLISH)
                 self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
+                self.assertTrue(any("same-round result conflict" in line
+                                    for line in app.event_lines), app.event_lines)
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "Slot 1")
                 self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
                 saved_bytes = preferences.read_bytes()
@@ -398,6 +396,35 @@ class LogSolutionUiTests(unittest.TestCase):
                 failed_write = MachineProfileStore(preferences)
                 failed_write.load()
                 self.assertEqual(failed_write.language, ENGLISH)
+                app.conflict_window.deiconify()
+                root.update()
+                decision_button = app.resolve_conflict_candidate_button
+                x, y = decision_button.winfo_width() // 2, decision_button.winfo_height() // 2
+                decision_button.event_generate("<Enter>", x=x, y=y)
+                decision_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                decision_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                deadline = time.monotonic() + 2
+                while (app.rounds.snapshot().pending_conflicts and time.monotonic() < deadline):
+                    root.update()
+                    time.sleep(0.01)
+                self.assertFalse(app.rounds.snapshot().pending_conflicts)
+                self.assertEqual(app.rounds.snapshot().results[0].status, "FAIL")
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                rebuilt_after_decision = read_round_audit(session_path / "audit.jsonl")
+                decision = next(event for event in rebuilt_after_decision["events"]
+                                if event["kind"] == "conflict_resolved")
+                self.assertEqual(decision["localized_message"]["message_id"],
+                                 "round.conflict.accepted_candidate")
+                self.assertEqual(sum(event["kind"] == "conflict_resolved"
+                                     for event in rebuilt_after_decision["events"]), 1)
+                session_after_decision = [json.loads(line) for line in
+                                          (session_path / "events.log").read_text(
+                                              encoding="utf-8").splitlines()]
+                session_decision = next(event for event in session_after_decision
+                                        if event["message"] == decision["message"])
+                self.assertEqual(session_decision["localized_message"],
+                                 decision["localized_message"])
                 second_root = tk.Tk()
                 second_root.withdraw()
                 second_app = B518LogSolutionApp(

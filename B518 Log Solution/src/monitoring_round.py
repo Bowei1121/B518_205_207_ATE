@@ -14,6 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from language_catalog import capture_round_event_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
 from round_retention import RetentionStatus, RetentionSummary, RoundRetentionStore
@@ -179,6 +180,7 @@ class MonitoringRound:
         self._deadline_slots = set()
         self._result_evidence: Dict[int, Dict[str, str]] = {}
         self._pending_conflicts: Dict[str, RoundConflict] = {}
+        self._next_event_sequence = 1
         self._round_alarm: Optional[RoundAlarm] = None
         self._round_alarm_ready = True
         self._configured_round_timeout = round_timeout_seconds
@@ -492,7 +494,8 @@ class MonitoringRound:
                 event = round_event.event
                 store.append_event(
                     AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
-                               event.sn, event.status, event.source, dict(event.detail)),
+                               event.sn, event.status, event.source, dict(event.detail),
+                               event.localized_message),
                     observed_at, elapsed_seconds,
                 )
                 with self._audit_condition:
@@ -629,6 +632,7 @@ class MonitoringRound:
                                      "failed_event_sequence": str(record.get("sequence", "unknown")),
                                      "audit_complete": "false"}),
             )
+        self._capture_bilingual_message(failure.event)
         self._on_event(failure)
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
@@ -663,6 +667,9 @@ class MonitoringRound:
 
     def _prepare_monitor(self) -> None:
         monitor = self._monitor_factory(self._receive_monitor_event)
+        context_provider = getattr(monitor, "set_event_context_provider", None)
+        if callable(context_provider):
+            context_provider(self._prepare_monitor_event)
         with self._lock:
             self._monitor = monitor
             self._monitor_persistence_ready = False
@@ -951,6 +958,7 @@ class MonitoringRound:
         if event.kind == "unresolved_source_conflict":
             self._fail_unconfirmed_candidate(event)
             return
+        self._capture_bilingual_message(event)
         if event.kind == "session_write_failed":
             message = event.message
             if message not in self._audit_errors:
@@ -959,6 +967,7 @@ class MonitoringRound:
                 self._save_errors.append(message)
             self._save_history.append(message)
         with self._lock:
+            self._prepare_monitor_event_locked(event)
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()
                                if item.slot == event.slot), None) if self._monitor is not None else None
@@ -979,10 +988,39 @@ class MonitoringRound:
                 self._collection_stopped = True
                 if self._completion_reason != "start_failed":
                     self._completion_reason = "manual_stop"
-            round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
+            round_event = RoundEvent(self.round_id, event.sequence, event)
             self._events.append(round_event)
+            self._events.sort(key=lambda item: item.sequence)
         self._persist_audit_event(round_event)
         self._on_event(round_event)
+
+    def _prepare_monitor_event(self, event: MonitorEvent) -> None:
+        with self._lock:
+            self._prepare_monitor_event_locked(event)
+
+    def _prepare_monitor_event_locked(self, event: MonitorEvent) -> None:
+        # Source candidates are Session evidence, not accepted common-round
+        # events. The coordinator may reject or defer them without writing an
+        # audit row, so they must not consume the audit sequence space.
+        if event.kind in {"result_candidate", "unresolved_source_conflict"}:
+            if event.observed_at is None:
+                event.observed_at = self._wall_clock().isoformat(timespec="seconds")
+            return
+        if event.sequence is None:
+            event.sequence = self._next_event_sequence
+            self._next_event_sequence += 1
+        else:
+            self._next_event_sequence = max(self._next_event_sequence, event.sequence + 1)
+        if event.observed_at is None:
+            event.observed_at = self._wall_clock().isoformat(timespec="seconds")
+
+    def _capture_bilingual_message(self, event: MonitorEvent) -> None:
+        if event.localized_message is not None:
+            return
+        event.localized_message = capture_round_event_message(
+            event.kind, self.station, event.slot, event.status, event.detail, event.message,
+            event.slot,
+        )
 
     def _persist_audit_event(self, round_event: RoundEvent) -> None:
         store = self._audit_store
@@ -990,7 +1028,7 @@ class MonitoringRound:
             return
         event = round_event.event
         failure_message = None
-        observed_at = self._wall_clock().isoformat(timespec="seconds")
+        observed_at = event.observed_at or self._wall_clock().isoformat(timespec="seconds")
         elapsed_seconds = self._monotonic() - self._started_monotonic
         with self._audit_condition:
             while round_event.sequence != self._audit_next_sequence:
@@ -1003,7 +1041,8 @@ class MonitoringRound:
                 try:
                     store.append_event(
                         AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
-                                   event.sn, event.status, event.source, dict(event.detail)),
+                                   event.sn, event.status, event.source, dict(event.detail),
+                                   event.localized_message),
                         observed_at, elapsed_seconds,
                     )
                 except (OSError, AuditRecordError, TypeError, ValueError) as error:
@@ -1028,6 +1067,7 @@ class MonitoringRound:
                                  "failed_event_sequence": str(failed_event.sequence),
                                  "audit_complete": "false"}),
         )
+        self._capture_bilingual_message(failure.event)
         self._on_event(failure)
 
     def _consider_result_candidate(self, event: MonitorEvent) -> str:
