@@ -6,7 +6,9 @@
 
 固定 code-review 基準：`332a4518601a8413004b5a1d88baf4b2a89b85d5`
 
-程式與測試提交：`fad583e`（`feat: highlight conflict field differences`）
+程式提交：`fad583e`（`feat: highlight conflict field differences`）
+
+最後測試提交：`3275bb0`（`test: cover missing conflict source time`）
 
 程式目錄：`B518 Log Solution`
 
@@ -15,7 +17,7 @@
 - Git 根目錄為此專案根目錄；Python 程式及測試位於 `B518 Log Solution/`。
 - C1 已由 `B518-Log-Solution` ancestry 確認包含於固定基準，且 [C1 本機驗收紀錄](../conflict-dialog-ticket-01/local-validation.md) 證明其精簡／詳細分區、拖曳、切換、長檔名及測試收尾修正。
 - 原工作樹有未跟蹤文件 `docs/refactoring/ROUND_START_ASSEMBLY_DISCUSSION_2026-10-08.md`。C2 使用獨立 worktree `/private/tmp/B518-ConflictDialog-ticket-02`；該文件未更動、未加入提交。
-- 建立本票時本機分支 `ConflictDialog/ticket-02` 不存在。當次即時遠端查詢因網路不可達而失敗：Gitea `10.64.76.34:3000` 連線失敗，GitHub `github.com` DNS 解析失敗。分支以已確認的本機 C1 基準建立；遠端狀態未臆測，尚未 push、合併或刪除分支。
+- 建立本票時本機分支 `ConflictDialog/ticket-02` 不存在。初次即時遠端查詢因網路不可達失敗；之後重新查核確認 Gitea 與 GitHub 的 `B518-Log-Solution` 均為 `341a5ab19880f69d4dd9ce3be110480c604ccd8f`，遠端 C2 分支均不存在。`341a5ab` 僅新增兩份輪次開始規格文件，且其討論文件 SHA-256 與原工作樹未跟蹤檔相同；沒有覆蓋或改寫該內容。已將 `341a5ab` 非破壞性合併入票分支，合併提交 `782ea3f57abf86968d83baa5ee18e67657c3ad15`。
 
 ## 實際驗收命令與結果
 
@@ -29,7 +31,7 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py
 
 - Python 語法編譯：通過。
 - 聚焦衝突 UI：4 tests 通過，使用可存取桌面圖形工作階段的真 Tk；包括受控 Atlas 來源的實際 App 流程、非模態收集、分隔拖曳、裁決／audit 磁碟重建，以及捕捉後來源檔改名仍使用快照。
-- 全套含 Tk 測試：275 tests 通過，56.827 秒。
+- 全套含 Tk 測試：275 tests 通過，59.518 秒。
 - 專案沒有 `pyproject.toml`、`mypy.ini`、`setup.cfg`、`tox.ini`、`Makefile`、`.flake8` 或 `pyrightconfig.json` 型別檢查設定；未執行或宣稱型別檢查通過。
 - `git diff --check`：通過。
 
@@ -51,6 +53,6 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py
 
 ## 審查與交付狀態
 
-固定 Standards／Spec 雙軸審查尚待執行；若審查後有程式修改，需重跑受影響測試及全套驗收。此紀錄對應程式／測試提交 `fad583e`；後續文件或程式提交須更新最後驗證 SHA。
+固定 Standards／Spec 雙軸審查執行中；若審查後有程式修改，需重跑受影響測試及全套驗收。最後驗證程式／測試 SHA 為 `3275bb0`；最新主線文件合併及本文件更新都不包含程式或測試修改。
 
-遠端 push、合併及分支清理目前受遠端連線阻擋。需先重新即時查核兩個遠端與所有 push 目的地；若仍不可達，保留 `ConflictDialog/ticket-02` 專用分支，不進行合併或刪除。
+尚未 push、合併至主線或清理分支。審查通過後須先重新查核兩個遠端與所有 push 目的地，推送同名票分支並確認同步；主線合併、驗證及 push 完成後才可刪除票分支。若任何一步受阻，保留專用分支。

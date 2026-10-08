@@ -28,7 +28,7 @@
 
 ## C2 人工衝突差異與來源消歧（本日後續工作）
 
-- C2 以固定 C1 基準 `332a4518601a8413004b5a1d88baf4b2a89b85d5` 建立 `ConflictDialog/ticket-02`，未重用 C1 的 code-review 基準。程式／測試提交 `fad583e`。
+- C2 以固定 C1 基準 `332a4518601a8413004b5a1d88baf4b2a89b85d5` 建立 `ConflictDialog/ticket-02`，未重用 C1 的 code-review 基準。程式提交 `fad583e`；最後測試提交 `3275bb0`。
 - 精簡對照改為可水平捲動的文字表格，按欄位和值範圍呈現紅色粗體；相同來源路徑維持一般樣式。同名來源路徑會逐層擴大目錄提示，尾端目錄相同時仍能顯示分歧片段。完整路徑與識別保留於詳細區。
-- 真 Tk 聚焦衝突 UI 4 tests 通過；完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 275 tests 通過（56.827 秒）。編譯與 `git diff --check` 通過；專案未找到既有型別檢查設定，沒有宣稱型別檢查通過。
-- 六項驗收證據及範圍界線見 [C2 本機驗收紀錄](evidence/conflict-dialog-ticket-02/local-validation.md)。雙軸審查待完成；兩個遠端即時查詢遇到網路不可達，故尚未 push／合併／刪除分支，需保留專用分支。未修改遠端議題狀態。
+- 真 Tk 聚焦衝突 UI 4 tests 通過；最後完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 275 tests 通過（59.518 秒）。編譯與 `git diff --check` 通過；專案未找到既有型別檢查設定，沒有宣稱型別檢查通過。
+- 六項驗收證據及範圍界線見 [C2 本機驗收紀錄](evidence/conflict-dialog-ticket-02/local-validation.md)。遠端稍後恢復可查，Gitea／GitHub 主線同步於 `341a5ab`；該提交只新增兩份輪次開始規格文件，討論文件與原未跟蹤檔 SHA-256 相同，已非破壞性合併入票分支 `782ea3f`。C2 遠端票分支仍不存在，尚未 push／合併／清理；雙軸審查進行中。未修改遠端議題狀態。
