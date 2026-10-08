@@ -1,9 +1,13 @@
 # C2 本機驗收紀錄
 
-日期：2026-10-08（Asia/Taipei）  
-範圍：人工衝突彈窗 C2／GitHub Issue #11  
-固定 code-review 基準：`332a4518601a8413004b5a1d88baf4b2a89b85d5`  
-程式與測試提交：`fad583e`（`feat: highlight conflict field differences`）  
+日期：2026-10-08（Asia/Taipei）
+
+範圍：人工衝突彈窗 C2／GitHub Issue #11
+
+固定 code-review 基準：`332a4518601a8413004b5a1d88baf4b2a89b85d5`
+
+程式與測試提交：`fad583e`（`feat: highlight conflict field differences`）
+
 程式目錄：`B518 Log Solution`
 
 ## 起始狀態與 C1 前置確認
