@@ -161,4 +161,4 @@ M1 最後程式／測試 `44826d4`：案例 1 的主頁與全域偏好、案例 
 
 ## M4 適用驗收覆蓋（2026-10-09）
 
-M4 僅覆蓋母規格案例 7（App 錯誤雙語、原始診斷及可理解提示）、案例 9（同筆雙語、磁碟重讀且切換不回寫）及案例 10（無輪次事件、有序保存、補存與正常關閉）的 App 層部分。最終程式／測試 `be4f091` 執行完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py`，330 tests 通過（92.409 秒）；包含真 Tk App 診斷、熱鍵／配置／匯入匯出／偏好失敗、歷史錯誤恢復、耐久性重試及 App 保存納入關閉。固定基準 `648b0c2126aaa6ab29016f2f95deb24ca7c8145f` 的 Standards／Spec 複審至 `be4f091` 無未解問題。詳細命令、事件 producer 清單、磁碟契約及限制見 [M4 本機驗收](evidence/multilingual-ticket-04/local-validation.md)。M4 不代表案例 7、9、10 的其他視窗／平台／歷史部分或全 App 多語言完成；案例 16 bundle 驗收仍屬 M10。
+M4 僅覆蓋母規格案例 7（App 錯誤雙語、原始診斷及可理解提示）、案例 9（同筆雙語、磁碟重讀且切換不回寫）及案例 10（無輪次事件、有序保存、補存與正常關閉）的 App 層部分。程式／測試 `be4f091` 的完整含 Tk 套件通過 330 tests（92.409 秒），包含真 Tk App 診斷、熱鍵／配置／匯入匯出／偏好失敗、歷史錯誤恢復、耐久性重試及 App 保存納入關閉；固定基準 `648b0c2126aaa6ab29016f2f95deb24ca7c8145f` 的 Standards／Spec 複審至該版本無未解問題。GitHub 合併提交 `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 合併後再執行完整含 Tk 套件，330 tests 通過（93.584 秒）。詳細命令、事件 producer 清單、磁碟契約、推送及目的地查證見 [M4 本機驗收](evidence/multilingual-ticket-04/local-validation.md)。M4 不代表案例 7、9、10 的其他視窗／平台／歷史部分或全 App 多語言完成；案例 16 bundle 驗收仍屬 M10。公司 Gitea 同步及票分支清理依使用者指示延至週一。

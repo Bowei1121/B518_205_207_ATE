@@ -65,4 +65,11 @@ The earliest M4 UI test runs occurred before all legacy UI tests were redirected
 - Gitea synchronization is pending Monday and is not claimed here. Do not remove the local or GitHub ticket branch until Gitea is directly confirmed.
 - No remote issue status was changed.
 
+## GitHub merge and post-merge verification
+
+- GitHub merge commit: `f7e24cd265fc173d5d113e7fb122083602f5e5fa` (`Multilingual/ticket-04` into `B518-Log-Solution`). The merge was made only after the full pre-merge suite and fixed-baseline dual-axis review passed.
+- Post-merge command: `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` — **330 tests passed** in 93.584 seconds on the clean merged checkout. This confirms the merged mainline, including real Tk tests, after integration.
+- Program/test validation remains `be4f091`; the merge commit and final documentation commit are tracked separately. This evidence update does not change code or tests.
+- GitHub direct SHA check and push of the merged mainline plus this evidence update are pending completion of the current network-enabled push/query. Company Gitea remains deferred to Monday. Keep local and GitHub `Multilingual/ticket-04` branches until Gitea is directly confirmed; no branch cleanup is performed now.
+
 M4 does not claim M5–M10 complete, full App-wide translation, App event retention/deletion, complete bundle verification, OS-level global-hotkey hardware acceptance, or field-device acceptance.

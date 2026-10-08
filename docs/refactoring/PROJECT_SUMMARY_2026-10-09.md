@@ -22,4 +22,4 @@
 - `06a4093` 修正目錄 fsync 耐久性、診斷歷史 UI，並補上真正 Tk 匯入／匯出錯誤檢查；`be4f091` 加入公開 revision token，避免視窗關閉時讀取診斷歷史、視窗開啟且沒有新事件時重複複製完整 journal。每批已先驗證、commit 並推送 GitHub 同名分支。
 - 最終程式／測試驗證 SHA：`be4f091`。完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（92.409 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 涵蓋保存歷史故障與修復、匯入／匯出診斷、fsync／關閉重試。完整輸出與逐項連結見 M4 [本機驗收紀錄](evidence/multilingual-ticket-04/local-validation.md)。
 - 型別檢查設定查無；未宣稱型別檢查通過。固定雙軸審查使用 M4 開始前基準 SHA，未沿用 M2／M3 基準。
-- 下一步須完成驗收文件提交及 GitHub `B518-Log-Solution` 合併／合併後含 Tk 驗證。公司 Gitea 同步延至週一；Gitea 直接確認前保留本地及 GitHub `Multilingual/ticket-04`，不清理票分支。M4 不修改任何 GitHub Issue 狀態。
+- GitHub 已以合併提交 `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 將 M4 併入 `B518-Log-Solution`；合併後完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（93.584 秒）。合併後推送與直接 SHA 查證，以及本摘要這次更新的最終文件提交，待本次網路操作完成後記錄。公司 Gitea 同步延至週一；Gitea 直接確認前保留本地及 GitHub `Multilingual/ticket-04`，不清理票分支。M4 不修改任何 GitHub Issue 狀態。
