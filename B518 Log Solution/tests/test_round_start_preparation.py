@@ -4,6 +4,7 @@ import threading
 import time
 import unittest
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -166,12 +167,160 @@ class RoundStartPreparationTests(unittest.TestCase):
                 threading.Event().wait(0.01)
 
             self.assertEqual(coordinator.close_status().status, "complete")
+            deadline = time.monotonic() + 3
+            while not all(status.cleanup_eligible for status in coordinator.archive_statuses()):
+                if time.monotonic() >= deadline:
+                    self.fail("Public archive status did not confirm the background archive write.")
+                threading.Event().wait(0.01)
             self.assertTrue(coordinator.flush_session(timeout=2))
             self.assertTrue(coordinator.flush_audit(timeout=2))
             rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
             self.assertEqual(rebuilt["round"]["round_id"], started.round_id)
             self.assertIn("collection_stopped", [event["kind"] for event in rebuilt["events"]])
             self.assertNotIn("round_ready", [event["kind"] for event in rebuilt["events"]])
+
+    def test_source_creation_failure_through_preparation_is_audited_before_close_completes(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "events.jsonl").write_text("", encoding="utf-8")
+            factory_entered = threading.Event()
+            release_factory = threading.Event()
+            failure_reported = threading.Event()
+
+            def failing_factory(**_context):
+                factory_entered.set()
+                if not release_factory.wait(3):
+                    raise AssertionError("The controlled source factory was never released.")
+                raise OSError("controlled source creation failure")
+
+            def on_event(event):
+                if event.event.kind == "start_failed":
+                    failure_reported.set()
+
+            registry = PlatformRegistry()
+            for name in DEFAULT_PLATFORM_REGISTRY.names:
+                definition = DEFAULT_PLATFORM_REGISTRY.get(name)
+                if name == "sample-json":
+                    definition = replace(definition, monitor_factory=failing_factory)
+                registry.register(definition)
+
+            profile = MachineProfile(
+                "SAMPLE", "FCT", "sample-json", 1, {"active": str(source)},
+                ((1, 1),), {"start": 30, "test": 60, "round": 600},
+            )
+            sessions = root / "sessions"
+            coordinator = RoundCoordinator(on_event=on_event, audit_root=sessions)
+            prepared = RoundStartPreparation(registry).prepare(profile, sessions)
+            started = prepared.start(coordinator, run_async=True)
+            self.assertTrue(factory_entered.wait(2))
+            closing = coordinator.request_close()
+            self.assertEqual(closing.status, "saving")
+            self.assertFalse(failure_reported.is_set())
+
+            release_factory.set()
+            self.assertTrue(failure_reported.wait(2))
+            deadline = time.monotonic() + 3
+            while coordinator.close_status().status not in {"complete", "failed"}:
+                if time.monotonic() >= deadline:
+                    self.fail("Close coordination did not finish after source failure was recorded: "
+                              "{}; snapshot={!r}; archive={!r}".format(
+                                  coordinator.close_status(), coordinator.snapshot(),
+                                  coordinator.archive_statuses()))
+                threading.Event().wait(0.01)
+
+            self.assertEqual(coordinator.close_status().status, "complete")
+            snapshot = coordinator.snapshot()
+            self.assertEqual(snapshot.round_id, started.round_id)
+            self.assertEqual(snapshot.completion_reason, "start_failed")
+            start_failures = [item for item in snapshot.events if item.event.kind == "start_failed"]
+            self.assertEqual(len(start_failures), 1)
+            rebuilt = read_round_audit(sessions / started.round_id / "audit.jsonl")
+            persisted_failures = [event for event in rebuilt["events"]
+                                  if event["kind"] == "start_failed"]
+            self.assertEqual(len(persisted_failures), 1)
+            self.assertIn("controlled source creation failure", persisted_failures[0]["message"])
+
+    def test_injected_round_deadline_during_preparation_stops_late_source_before_ready(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "events.jsonl").write_text("", encoding="utf-8")
+            elapsed = [0.0]
+            started_at = datetime(2026, 10, 8, 9, 0, 0)
+            factory_entered = threading.Event()
+            release_factory = threading.Event()
+            monitor_created = threading.Event()
+            base_factory = DEFAULT_PLATFORM_REGISTRY.get("sample-json").monitor_factory
+
+            def delayed_factory(**context):
+                factory_entered.set()
+                if not release_factory.wait(3):
+                    raise AssertionError("The controlled source factory was never released.")
+                monitor = base_factory(**context)
+                monitor_created.set()
+                return monitor
+
+            registry = PlatformRegistry()
+            for name in DEFAULT_PLATFORM_REGISTRY.names:
+                definition = DEFAULT_PLATFORM_REGISTRY.get(name)
+                if name == "sample-json":
+                    definition = replace(definition, monitor_factory=delayed_factory)
+                registry.register(definition)
+
+            profile = MachineProfile(
+                "SAMPLE", "FCT", "sample-json", 1, {"active": str(source)},
+                ((1, 1),), {"start": 30, "test": 60, "round": 5},
+            )
+            sessions = root / "sessions"
+            coordinator = RoundCoordinator(
+                monotonic=lambda: elapsed[0], audit_root=sessions,
+                wall_clock=lambda: started_at,
+            )
+            preparation = RoundStartPreparation(registry)
+            prepared = preparation.prepare(
+                profile, sessions, now=lambda: started_at,
+                monotonic=lambda: elapsed[0],
+            )
+            started = prepared.start(coordinator, run_async=True)
+            self.assertTrue(factory_entered.wait(2))
+
+            elapsed[0] = 5.0
+            expired = coordinator.poll_once()
+            self.assertTrue(expired.collection_stopped)
+            self.assertEqual(expired.round_alarm.created_at, started_at.isoformat(timespec="seconds"))
+            self.assertFalse(expired.round_alarm_ready)
+            self.assertFalse(expired.result_available)
+
+            release_factory.set()
+            self.assertTrue(monitor_created.wait(2))
+            deadline = time.monotonic() + 3
+            while not coordinator.snapshot().round_alarm_ready:
+                if time.monotonic() >= deadline:
+                    self.fail("The late source did not complete deadline handoff.")
+                threading.Event().wait(0.01)
+
+            handed_off = coordinator.snapshot()
+            self.assertEqual(handed_off.round_id, started.round_id)
+            self.assertFalse(any(item.event.kind == "round_ready" for item in handed_off.events))
+            self.assertTrue(coordinator.acknowledge_round_alarm(
+                started.round_id, handed_off.round_alarm.alarm_id).result_available)
+            coordinator.request_close()
+            deadline = time.monotonic() + 3
+            while coordinator.close_status().status not in {"complete", "failed"}:
+                if time.monotonic() >= deadline:
+                    self.fail("Close coordination did not finish after deadline handoff.")
+                threading.Event().wait(0.01)
+            self.assertEqual(coordinator.close_status().status, "complete")
+            deadline = time.monotonic() + 3
+            while not all(status.cleanup_eligible for status in coordinator.archive_statuses()):
+                if time.monotonic() >= deadline:
+                    self.fail("Public archive status did not confirm the background archive write.")
+                threading.Event().wait(0.01)
+            self.assertTrue(coordinator.flush_session(timeout=2))
+            self.assertTrue(coordinator.flush_audit(timeout=2))
 
     def test_prepared_profile_starts_real_round_and_persists_matching_session_and_audit(self):
         with TemporaryDirectory() as temporary:
