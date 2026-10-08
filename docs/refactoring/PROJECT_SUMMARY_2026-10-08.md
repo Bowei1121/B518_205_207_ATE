@@ -39,4 +39,4 @@
 - 修正無有效選取、快照消失或候選已移除時仍可按裁決的 UI 缺口：比較及詳細內容清空，同時停用保留原／採用新按鈕；選到仍有效衝突時恢復操作。
 - 真 Tk 測試透過已註冊的 `sample-json` 控制平台，從暫存 JSONL 經實際 App、RoundCoordinator 捕捉多筆同位置及跨位置衝突；驗證非首項選取在候選刷新時保持同一 conflict ID、兩區同步、差異紅色粗體、來源改動不改捕捉快照、隱藏重開、逐項裁決、空狀態，以及 audit 與 Session `results.csv` 從磁碟重建。另以 Event 控制背景候選加入時的刷新交錯。
 - 最終程式／測試 SHA `db567ff` 的真 Tk 聚焦案例 3 項通過；完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 279 tests（63.887 秒）。`py_compile` 與 `git diff --check` 通過。專案沒有既有 mypy／pyright 或其他型別檢查設定，未宣稱型別檢查通過。母規格十二案例依 C1／C2 已合併證據及本票測試逐案列於正式規格覆蓋表。
-- 固定基準雙軸審查：Standards 無未解問題；Spec 在新增平台註冊至實際 App/Tk 多候選測試與完整十二案例證據矩陣後確認 C3 七項均有證據。交付證據及本次分支推送／後續合併資訊見 [C3 本機驗收紀錄](evidence/conflict-dialog-ticket-03/local-validation.md)。未修改遠端 Issue 狀態。
+- 固定基準雙軸審查：Standards 無未解問題；Spec 在新增平台註冊至實際 App/Tk 多候選測試與完整十二案例證據矩陣後確認 C3 七項均有證據。合併提交 `965d4224218fc96526e8e97141e3bb54b1ec70df` 的完整含 Tk 套件通過 279 tests（53.411 秒）；主線已推送並即時確認 Gitea／GitHub SHA 相同，本地與遠端票分支已清理，正式工作樹停在 `B518-Log-Solution`。交付證據見 [C3 本機驗收紀錄](evidence/conflict-dialog-ticket-03/local-validation.md)。未修改遠端 Issue 狀態。
