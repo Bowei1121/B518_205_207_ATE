@@ -977,7 +977,8 @@ class MonitoringRound:
             elif event.kind == "stopped":
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
-                self._completion_reason = "manual_stop"
+                if self._completion_reason != "start_failed":
+                    self._completion_reason = "manual_stop"
             round_event = RoundEvent(self.round_id, len(self._events) + 1, event)
             self._events.append(round_event)
         self._persist_audit_event(round_event)
