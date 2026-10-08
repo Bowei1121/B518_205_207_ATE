@@ -818,6 +818,154 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            sources = []
+
+            def source_factory(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for controlled multi-candidate review UI")
+
+            try:
+                started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                app.active_round_id = started.round_id
+                pump_until(lambda: sources and app.rounds.snapshot()
+                           and app.rounds.snapshot().results
+                           and app.rounds.snapshot().results[0].status == "PASS")
+                source = sources[0]
+                for sn, name, stamp in (
+                        ("SN-CANDIDATE-1", "candidate-1.csv", "10:01:00"),
+                        ("SN-CANDIDATE-2", "candidate-2.csv", "10:02:00")):
+                    self.assertEqual(source.offer_candidate(
+                        1, sn, "FAIL", "/controlled/slot1/" + name, name,
+                        "2026-10-08T" + stamp), "defer")
+                self.assertEqual(source.offer_candidate(
+                    2, "SN-OTHER-CANDIDATE", "FAIL", "/controlled/slot2/other.csv",
+                    "slot2-candidate", "2026-10-08T10:03:00"), "defer")
+                pump_until(lambda: len(app.rounds.snapshot().pending_conflicts) == 3
+                           and app.conflict_window is not None
+                           and app.conflict_window.winfo_viewable())
+
+                captured = app.rounds.snapshot().pending_conflicts
+                second_id = captured[1].conflict_id
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(1)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[2][2], "SN-CANDIDATE-2")
+                self.assertIn(second_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+
+                candidate_started = threading.Event()
+                candidate_release = threading.Event()
+                candidate_done = threading.Event()
+                candidate_errors = []
+
+                def add_candidate_during_refresh():
+                    candidate_started.set()
+                    if not candidate_release.wait(3):
+                        candidate_errors.append("candidate release timed out")
+                        return
+                    try:
+                        decision = source.offer_candidate(
+                            1, "SN-CANDIDATE-3", "FAIL", "/controlled/slot1/candidate-3.csv",
+                            "candidate-3", "2026-10-08T10:04:00")
+                        if decision != "defer":
+                            candidate_errors.append("unexpected candidate decision: " + decision)
+                    except Exception as error:
+                        candidate_errors.append(str(error))
+                    finally:
+                        candidate_done.set()
+
+                candidate_thread = threading.Thread(target=add_candidate_during_refresh)
+                candidate_thread.start()
+                self.assertTrue(candidate_started.wait(2))
+                candidate_release.set()
+                pump_until(lambda: len(app.rounds.snapshot().pending_conflicts) == 4
+                           and app.conflict_list.size() == 4 and candidate_done.is_set())
+                candidate_thread.join(timeout=2)
+                self.assertFalse(candidate_thread.is_alive())
+                self.assertEqual(candidate_errors, [])
+                self.assertEqual(app.conflict_list.curselection(), (1,))
+                self.assertEqual(conflict_summary_rows(app)[2][2], "SN-CANDIDATE-2")
+                self.assertIn(second_id, app.conflict_details.get("1.0", "end"))
+                for start, _end in app._conflict_value_ranges["結果"]:
+                    self.assertIn("comparison_difference",
+                                  app.conflict_comparison.tag_names(start))
+
+                app.conflict_close_button.invoke()
+                root.update_idletasks()
+                self.assertFalse(app.conflict_window.winfo_viewable())
+                self.assertEqual(source.offer_candidate(
+                    2, "SN-OTHER-CANDIDATE-2", "FAIL", "/controlled/slot2/other-2.csv",
+                    "slot2-candidate-2", "2026-10-08T10:05:00"), "defer")
+                pump_until(lambda: len(app.rounds.snapshot().pending_conflicts) == 5)
+                self.assertEqual(app.conflict_list.curselection(), (1,))
+                app.review_button.invoke()
+                root.update_idletasks()
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                self.assertIn(second_id, app.conflict_details.get("1.0", "end"))
+
+                app.resolve_conflict_candidate_button.invoke()
+                pump_until(lambda: len(app.rounds.snapshot().pending_conflicts) == 4
+                           and second_id not in {item.conflict_id
+                                                 for item in app.rounds.snapshot().pending_conflicts})
+                self.assertEqual(app.conflict_list.curselection(), (0,))
+                first_id = captured[0].conflict_id
+                self.assertIn(first_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][2], "SN-CANDIDATE-1")
+
+                while app.rounds.snapshot().pending_conflicts:
+                    app.resolve_conflict_original_button.invoke()
+                    root.update_idletasks()
+                self.assertFalse(app.conflict_list.curselection())
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：未知")
+                self.assertEqual(app.conflict_details.get("1.0", "end-1c"),
+                                 "目前沒有待確認項目。")
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "disabled")
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "disabled")
+
+                app.rounds.stop()
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = Path(temporary) / "sessions" / started.round_id / "audit.jsonl"
+                rebuilt = read_round_audit(audit_path)
+                self.assertTrue(rebuilt["audit_complete"])
+                detected = [event for event in rebuilt["events"]
+                            if event["kind"] == "conflict_detected"]
+                resolved = [event for event in rebuilt["events"]
+                            if event["kind"] == "conflict_resolved"]
+                self.assertEqual(len(detected), 5)
+                self.assertEqual(len(resolved), 5)
+                self.assertEqual({event["detail"]["conflict_id"] for event in resolved},
+                                 {event["detail"]["conflict_id"] for event in detected})
+                self.assertEqual([event["detail"]["choice"] for event in resolved].count(
+                    "accept_candidate"), 1)
+            finally:
+                if app.rounds.snapshot() and app.rounds.snapshot().state in {
+                        RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app.hotkey.close()
+                root.destroy()
+
     def test_atlas_round_shows_nonblocking_conflict_and_releases_after_other_slot_finishes(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
