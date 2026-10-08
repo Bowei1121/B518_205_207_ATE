@@ -812,7 +812,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertFalse(app.rounds.snapshot().result_available)
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
 
-                app.conflict_window.withdraw()
+                app.conflict_close_button.invoke()
+                root.update_idletasks()
+                self.assertFalse(app.conflict_window.winfo_viewable())
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
 
                 captured_candidate_path = Path(conflict.candidate.source)
@@ -881,7 +883,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 "conflict-second", "round-first", 2,
                 side("SN-SECOND", "FAIL", "/capture/second/original.csv", "second-original",
                      "2026-10-08T10:01:00", {"round_evidence_id": "evidence-second"}),
-                side("SN-SECOND-NEW", "PASS", "/capture/second/candidate.csv", "second-new",
+                side("SN-SECOND-NEW", "PASS",
+                     "/capture/second/" + ("long-candidate-" * 12) + ".csv", "second-new",
                      "2026-10-08T10:02:00", {"round_evidence_id": "evidence-second"}),
                 (("round_evidence_id", "evidence-second"),), "2026-10-08T10:03:00",
             )
@@ -939,10 +942,27 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(second_rows[0], ("結果", ("FAIL", "PASS")))
                 self.assertEqual(second_rows[1], ("SN", ("SN-SECOND", "SN-SECOND-NEW")))
                 self.assertEqual(second_rows[3],
-                                 ("來源檔名", ("original.csv", "candidate.csv")))
+                                 ("來源檔名", ("original.csv", ("long-candidate-" * 12) + ".csv")))
+                self.assertGreater(app.conflict_comparison.column("candidate")["width"], 500)
+                self.assertLess(app.conflict_comparison.xview()[1], 1.0)
                 second_detail = app.conflict_details.get("1.0", "end")
                 self.assertIn("conflict-second", second_detail)
                 self.assertNotIn("conflict-first", second_detail)
+                app.conflict_comparison.xview_moveto(1)
+                self.assertGreater(app.conflict_comparison.xview()[0], 0.0)
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(0)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertEqual(app.conflict_comparison.xview()[0], 0.0)
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                app.conflict_window.geometry("720x360")
+                root.update_idletasks()
+                self.assertTrue(app.conflict_comparison_scrollbar.winfo_viewable())
+                self.assertTrue(app.conflict_close_button.winfo_viewable())
+                first_detail = app.conflict_details.get("1.0", "end")
+                self.assertIn("conflict-first", first_detail)
+                self.assertNotIn("conflict-second", first_detail)
             finally:
                 app.rounds = coordinator
                 app.hotkey.close()

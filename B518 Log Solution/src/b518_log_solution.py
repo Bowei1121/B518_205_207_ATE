@@ -9,7 +9,7 @@ import subprocess
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
@@ -142,6 +142,7 @@ class B518LogSolutionApp:
         self.conflict_panes: Optional[ttk.Panedwindow] = None
         self.conflict_position_label: Optional[ttk.Label] = None
         self.conflict_comparison: Optional[ttk.Treeview] = None
+        self.conflict_comparison_scrollbar: Optional[ttk.Scrollbar] = None
         self.conflict_details: Optional[tk.Text] = None
         self._conflict_ids: list[str] = []
         self.round_alarm_window: Optional[tk.Toplevel] = None
@@ -909,14 +910,21 @@ class B518LogSolutionApp:
             self.conflict_comparison.heading("original", text="原結果")
             self.conflict_comparison.heading("candidate", text="新候選")
             self.conflict_comparison.column("#0", width=100, minwidth=80, stretch=False)
-            self.conflict_comparison.column("original", width=140, minwidth=100, stretch=True)
-            self.conflict_comparison.column("candidate", width=140, minwidth=100, stretch=True)
+            self.conflict_comparison.column("original", width=140, minwidth=100, stretch=False)
+            self.conflict_comparison.column("candidate", width=140, minwidth=100, stretch=False)
             self.conflict_comparison.grid(row=1, column=0, sticky="nsew")
             summary_scrollbar = ttk.Scrollbar(
                 summary, orient="vertical", command=self.conflict_comparison.yview,
             )
             summary_scrollbar.grid(row=1, column=1, sticky="ns")
-            self.conflict_comparison.configure(yscrollcommand=summary_scrollbar.set)
+            self.conflict_comparison_scrollbar = ttk.Scrollbar(
+                summary, orient="horizontal", command=self.conflict_comparison.xview,
+            )
+            self.conflict_comparison_scrollbar.grid(row=2, column=0, sticky="ew")
+            self.conflict_comparison.configure(
+                yscrollcommand=summary_scrollbar.set,
+                xscrollcommand=self.conflict_comparison_scrollbar.set,
+            )
 
             details = ttk.Frame(self.conflict_panes)
             details.columnconfigure(0, weight=1)
@@ -1006,6 +1014,9 @@ class B518LogSolutionApp:
     def _clear_conflict_comparison(self) -> None:
         if self.conflict_comparison:
             self.conflict_comparison.delete(*self.conflict_comparison.get_children(""))
+            self.conflict_comparison.column("original", width=140)
+            self.conflict_comparison.column("candidate", width=140)
+            self.conflict_comparison.xview_moveto(0)
         if self.conflict_position_label:
             self.conflict_position_label.configure(text="顯示位置：未知")
         if self.conflict_details:
@@ -1050,6 +1061,13 @@ class B518LogSolutionApp:
         for label, original, candidate in rows:
             self.conflict_comparison.insert("", "end", text=label,
                                             values=(original, candidate))
+        display_font = tkfont.nametofont("TkDefaultFont")
+        for column, heading, value_index in (
+                ("original", "原結果", 1), ("candidate", "新候選", 2)):
+            content_width = max(display_font.measure(row[value_index]) for row in rows)
+            column_width = max(140, display_font.measure(heading) + 24, content_width + 24)
+            self.conflict_comparison.column(column, width=column_width)
+        self.conflict_comparison.xview_moveto(0)
 
         def render(side):
             return ("SN：{}\n結果：{}\n來源：{}\n來源識別：{}\n來源時間：{}\n證據：{}".format(
