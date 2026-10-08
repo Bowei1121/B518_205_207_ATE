@@ -9,6 +9,8 @@ from pathlib import Path
 import tempfile
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
+from language_catalog import DEFAULT_LANGUAGE, is_supported_language
+
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
 
 
@@ -126,11 +128,18 @@ class MachineProfileStore:
         self.path = Path(preferences_path)
         self.migration_required = False
         self._retention_days = DEFAULT_RETENTION_DAYS
+        self._language = DEFAULT_LANGUAGE
+        self.language_error: Optional[str] = None
 
     @property
     def retention_days(self) -> int:
         """Return the effective global retention duration in whole days."""
         return self._retention_days
+
+    @property
+    def language(self) -> str:
+        """Return the effective global App language identifier."""
+        return self._language
 
     @staticmethod
     def _validated_retention_days(value: object) -> int:
@@ -147,7 +156,23 @@ class MachineProfileStore:
             return "保存天數設定無效，已使用預設值 365 天：{}".format(error)
         return None
 
+    def _load_language(self, preferences: Mapping[str, object]) -> Optional[str]:
+        value = preferences.get("language", DEFAULT_LANGUAGE)
+        if not is_supported_language(value):
+            self._language = DEFAULT_LANGUAGE
+            self.language_error = "語言設定無效，已改用 English。"
+        else:
+            self._language = value
+            self.language_error = None
+        return self.language_error
+
+    @staticmethod
+    def _join_preference_errors(*errors: Optional[str]) -> Optional[str]:
+        messages = [error for error in errors if error]
+        return " ".join(messages) if messages else None
+
     def load(self):
+        self.language_error = None
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
@@ -156,6 +181,7 @@ class MachineProfileStore:
             raw = {}
         except (OSError, json.JSONDecodeError, ProfileError) as error:
             self._retention_days = DEFAULT_RETENTION_DAYS
+            self._language = DEFAULT_LANGUAGE
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "無法讀取偏好檔：{}".format(error)
 
@@ -163,6 +189,7 @@ class MachineProfileStore:
             try:
                 catalog = ProfileCatalog.from_dict(raw)
                 retention_error = self._load_retention_days(raw)
+                language_error = self._load_language(raw)
                 project, machine = raw.get("project"), raw.get("machine")
                 try:
                     catalog.get(project, machine)
@@ -175,10 +202,12 @@ class MachineProfileStore:
                     return catalog, fallback.project, fallback.machine, error
             except (ProfileError, TypeError) as error:
                 self._retention_days = DEFAULT_RETENTION_DAYS
+                self._language = DEFAULT_LANGUAGE
                 catalog, project, machine = migrate_legacy_preferences({})
                 return catalog, project, machine, "配置無效：{}".format(error)
         if "schema_version" in raw:
             self._retention_days = DEFAULT_RETENTION_DAYS
+            self._language = DEFAULT_LANGUAGE
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "不支援的偏好版本：{}。".format(raw.get("schema_version"))
 
@@ -187,8 +216,10 @@ class MachineProfileStore:
         except (ProfileError, TypeError, AttributeError) as error:
             catalog, project, machine = migrate_legacy_preferences({})
             self.migration_required = False
+            self._language = DEFAULT_LANGUAGE
             return catalog, project, machine, "舊偏好遷移失敗：{}".format(error)
         retention_error = self._load_retention_days(raw)
+        language_error = self._load_language(raw)
         self.migration_required = True
         return catalog, project, machine, retention_error
 
@@ -196,10 +227,14 @@ class MachineProfileStore:
              preserve_legacy: bool = False) -> None:
         catalog.get(project, machine)
         retention_days = self._retention_days
+        language = self._language
         try:
             current = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(current, dict) and "retention_days" in current:
                 retention_days = self._validated_retention_days(current["retention_days"])
+            if isinstance(current, dict) and "language" in current:
+                language = (current["language"] if is_supported_language(current["language"])
+                            else DEFAULT_LANGUAGE)
         except FileNotFoundError:
             pass
         except (OSError, UnicodeError, json.JSONDecodeError, ProfileError):
@@ -207,6 +242,7 @@ class MachineProfileStore:
         payload = catalog.to_dict()
         payload.update({"project": project, "machine": machine})
         payload["retention_days"] = retention_days
+        payload["language"] = language
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if preserve_legacy and self.path.exists():
             legacy_path = self.path.with_name("preferences.legacy.json")
@@ -215,6 +251,30 @@ class MachineProfileStore:
         _atomic_write_text(self.path, _profile_document_json(payload))
         self.migration_required = False
         self._retention_days = retention_days
+        self._language = language
+
+    def save_language(self, language: str) -> None:
+        """Persist a supported language while retaining every other preference."""
+        if not is_supported_language(language):
+            raise ProfileError("不支援的語言設定。")
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raw = {}
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ProfileError("無法讀取偏好檔：{}".format(error))
+        if not isinstance(raw, dict):
+            raise ProfileError("偏好檔根節點必須是 JSON 物件。")
+        version = raw.get("schema_version")
+        if version is not None:
+            if type(version) is not int or version != PROFILE_SCHEMA_VERSION:
+                raise ProfileError("不支援的偏好版本：{}。".format(version))
+            ProfileCatalog.from_dict(raw)
+        payload = dict(raw)
+        payload["language"] = language
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(self.path, _profile_document_json(payload))
+        self._language = language
 
     def save_retention_days(self, days: int) -> None:
         """Persist a global retention duration without replacing profile data."""

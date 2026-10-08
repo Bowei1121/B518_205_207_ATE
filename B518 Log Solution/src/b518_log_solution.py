@@ -19,6 +19,9 @@ from machine_profiles import (
 )
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from round_start_preparation import RoundStartPathError, RoundStartPreparation
+from language_catalog import (
+    LANGUAGE_OPTIONS, language_name, save_state_message_id, translate,
+)
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
     KVM_FIRST_ROW_Y, KVM_ROW_STEP,
@@ -52,12 +55,6 @@ STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
     "WAITING": "#d9d9d9", "COMPLETING": "#82c7ff", "STALLED": "#ff9900", "STOPPED": "#bfbfbf",
     "TIMEOUT": "#ff9900",
-}
-SAVE_STATE_LABELS = {
-    "waiting": "等待保存",
-    "saving": "保存中",
-    "failed": "保存失敗",
-    "complete": "完整保存",
 }
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 20
@@ -112,6 +109,11 @@ class B518LogSolutionApp:
         self.profile_store = MachineProfileStore(PREFS_PATH)
         self.round_start_preparation = RoundStartPreparation()
         self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
+        self.current_language = self.profile_store.language
+        self._language_save_error: Optional[str] = None
+        self._monitor_state_message = "monitor.idle"
+        self._monitor_state_parameters: dict[str, object] = {}
+        self._current_save_state = "waiting"
         self.project = tk.StringVar(value=selected_project)
         self.station = tk.StringVar(value=selected_machine)
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
@@ -145,6 +147,8 @@ class B518LogSolutionApp:
         self.root.after(150, self._drain_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.rounds.start_retention_schedule(self.profile_store.retention_days)
+        if self.profile_store.language_error:
+            self.root.after(300, self._show_invalid_language_warning)
         if not self.hotkey.available:
             self.root.after(300, self._show_hotkey_warning)
 
@@ -198,6 +202,7 @@ class B518LogSolutionApp:
         header.pack(fill="x")
         header.pack_propagate(False)
         ttk.Button(header, text="設定", command=self.open_settings, style="Main.TButton", width=4).pack(side="left")
+        self.settings_button = header.winfo_children()[-1]
         self._build_company_identity(header)
         self.station_title = tk.Label(header, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
@@ -214,22 +219,43 @@ class B518LogSolutionApp:
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
         selection.pack(fill="x", pady=(4, 3))
-        ttk.Label(selection, text="專案").pack(side="left")
+        self.project_label = ttk.Label(selection, text="專案")
+        self.project_label.pack(side="left")
         self.project_choice = ttk.Combobox(selection, textvariable=self.project, state="readonly", width=10,
                                            values=self.profiles.projects)
         self.project_choice.pack(side="left", padx=(5, 12))
         self.project_choice.bind("<<ComboboxSelected>>", self._project_changed)
-        ttk.Label(selection, text="機型").pack(side="left")
+        self.machine_label = ttk.Label(selection, text="機型")
+        self.machine_label.pack(side="left")
         self.machine_choice = ttk.Combobox(selection, textvariable=self.station, state="readonly", width=8)
         self.machine_choice.pack(side="left", padx=(5, 0))
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
+        self.language_choice = tk.StringVar(value=self.current_language)
+        self.language_menu = tk.Menu(self.root, tearoff=False)
+        for language, native_name in LANGUAGE_OPTIONS:
+            self.language_menu.add_radiobutton(
+                label=native_name, variable=self.language_choice, value=language,
+                command=lambda selected=language: self._select_language(selected),
+            )
+        self.language_button = tk.Menubutton(
+            selection, text="English ▾", menu=self.language_menu,
+            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+            activebackground="#e5e7eb", relief="raised", borderwidth=1,
+            font=("Helvetica", 10), takefocus=True,
+        )
+        self.language_button.pack(side="right", padx=(3, 0))
+        for key in ("<space>", "<Return>", "<Down>"):
+            self.language_button.bind(key, self._post_language_menu)
+        self.language_button.bind("<Escape>", self._cancel_language_menu)
 
         self.kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=KVM_BAND_HEIGHT)
         self.kvm_results.pack(fill="x", pady=(2, 4))
         self.kvm_results.pack_propagate(False)
-        tk.Label(self.kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-                 font=("Helvetica", 10, "bold"), anchor="w").place(x=0, y=0, width=80, height=16)
+        self.kvm_result_title = tk.Label(self.kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND,
+                                         foreground=TEXT_COLOUR,
+                                         font=("Helvetica", 10, "bold"), anchor="w")
+        self.kvm_result_title.place(x=0, y=0, width=80, height=16)
         self._build_kvm_locator(self.kvm_results, *LOCATOR_LEFT, mirrored=False)
         self._build_kvm_locator(self.kvm_results, *LOCATOR_RIGHT, mirrored=True)
         self.kvm_state_marker = tk.Canvas(
@@ -256,8 +282,10 @@ class B518LogSolutionApp:
         legend = tk.Frame(body, background=LIGHT_BACKGROUND, height=58)
         legend.pack(fill="x")
         legend.pack_propagate(False)
-        tk.Label(legend, text="KVM 狀態模板", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-                 font=("Helvetica", MAIN_FONT_SIZE, "bold")).place(x=0, y=0, width=342, height=24)
+        self.kvm_legend_title = tk.Label(legend, text="KVM 狀態模板", background=LIGHT_BACKGROUND,
+                                         foreground=TEXT_COLOUR,
+                                         font=("Helvetica", MAIN_FONT_SIZE, "bold"))
+        self.kvm_legend_title.place(x=0, y=0, width=342, height=24)
         for index, status in enumerate(STATUS_TEMPLATE_STATES):
             label = tk.Label(legend, text=status, background=STATUS_COLOURS[status], foreground="#000000",
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), relief="solid", borderwidth=1)
@@ -267,10 +295,14 @@ class B518LogSolutionApp:
         headings = tk.Frame(body, background=LIGHT_BACKGROUND, height=30)
         headings.pack(fill="x")
         headings.pack_propagate(False)
-        for text, x, width in (("通道", 0, 60), ("狀態", 60, 94), ("產品 SN", 154, 188)):
-            tk.Label(headings, text=text, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-                     font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center").place(
-                x=x, y=0, width=width, height=30)
+        self.main_headings = {}
+        for message_id, x, width in (("main.slot_heading", 0, 60),
+                                     ("main.status_heading", 60, 94),
+                                     ("main.serial_heading", 154, 188)):
+            label = tk.Label(headings, text="", background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                             font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center")
+            label.place(x=x, y=0, width=width, height=30)
+            self.main_headings[message_id] = label
 
         self.rows_panel = tk.Frame(body, background=LIGHT_BACKGROUND)
         self.rows_panel.pack(fill="both", expand=True)
@@ -328,6 +360,124 @@ class B518LogSolutionApp:
             round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
         self.archive_retry_button.pack(side="right")
         self._render_rows()
+        self._apply_main_language()
+
+    def _t(self, message_id: str, **parameters: object) -> str:
+        return translate(message_id, self.current_language, **parameters)
+
+    def _set_main_monitor_state(self, message_id: str, **parameters: object) -> None:
+        self._monitor_state_message = message_id
+        self._monitor_state_parameters = parameters
+        if hasattr(self, "monitor_state"):
+            self.monitor_state.configure(text=self._t(message_id, **parameters))
+
+    def _apply_main_language(self) -> None:
+        """Update existing main-page widgets without rebuilding monitoring state."""
+        if not hasattr(self, "language_button"):
+            return
+        self.root.title(self._t("app.title"))
+        self.language_button.configure(text="{} ▾".format(language_name(self.current_language)))
+        self.language_button.configure(
+            relief="sunken" if self._language_save_error else "raised")
+        self.project_label.configure(text=self._t("main.project"))
+        self.machine_label.configure(text=self._t("main.machine_type"))
+        self.settings_button.configure(text=self._t("main.settings"))
+        self.kvm_result_title.configure(text=self._t("main.kvm_result"))
+        self.kvm_legend_title.configure(text=self._t("main.kvm_legend"))
+        for message_id, widget in self.main_headings.items():
+            widget.configure(text=self._t(message_id))
+        self.start_button.configure(text=self._t("main.start_monitor"))
+        self.stop_button.configure(text=self._t("main.stop"))
+        self.retry_save_button.configure(text=self._t("main.retry_save"))
+        self.unsaved_round_retry_button.configure(text=self._t("main.retry_selected"))
+        self.archive_retry_button.configure(text=self._t("main.retry_archive"))
+        self._set_main_monitor_state(self._monitor_state_message,
+                                     **self._monitor_state_parameters)
+        self._render_station_title()
+        self._render_save_status()
+        self._refresh_unsaved_rounds()
+        self._refresh_archive_statuses()
+        self._refresh_main_round_labels()
+
+    def _refresh_main_round_labels(self) -> None:
+        """Refresh only main-page round labels; language changes do not touch dialogs."""
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        conflicts = snapshot.pending_conflicts if snapshot else ()
+        self.review_button.configure(
+            text=self._t("main.review_count", count=len(conflicts)),
+            state="normal" if conflicts else "disabled",
+        )
+        alarm = snapshot.round_alarm if snapshot else None
+        alarm_pending = alarm is not None and not alarm.acknowledged_at
+        self.round_alarm_button.configure(
+            text=self._t("main.round_alarm_pending" if alarm_pending else
+                         "main.round_alarm_acknowledged" if alarm else "main.round_alarm"),
+            state="normal" if alarm_pending and snapshot.round_alarm_ready else "disabled",
+        )
+        if alarm_pending and conflicts:
+            self._set_main_monitor_state("monitor.awaiting_both", count=len(conflicts))
+        elif alarm_pending:
+            self._set_main_monitor_state("monitor.awaiting_alarm")
+        elif conflicts:
+            self._set_main_monitor_state("monitor.awaiting_conflicts", count=len(conflicts))
+        elif snapshot and snapshot.state.value == "COMPLETED":
+            self._set_main_monitor_state("monitor.completed")
+        elif snapshot and snapshot.state.value == "STOPPED" and snapshot.completion_reason == "manual_stop":
+            self._set_main_monitor_state("monitor.stopped")
+        elif self._round_is_active():
+            self._set_main_monitor_state("monitor.active")
+        elif self._monitor_state_message not in {"monitor.starting", "monitor.start_failed",
+                                                 "monitor.timeout_stopped", "monitor.closing"}:
+            self._set_main_monitor_state("monitor.idle")
+
+    def _render_station_title(self) -> None:
+        if hasattr(self, "station_title"):
+            self.station_title.configure(text=self._t("main.station_title", machine=self.station.get().upper()))
+
+    def _render_save_status(self) -> None:
+        if hasattr(self, "save_status"):
+            self.save_status.configure(text=self._t(save_state_message_id(self._current_save_state)))
+
+    def _select_language(self, language: str) -> None:
+        if language == self.current_language:
+            self.language_choice.set(self.current_language)
+            return
+        self.current_language = language
+        self.language_choice.set(language)
+        self._language_save_error = None
+        self._apply_main_language()
+        try:
+            self.profile_store.save_language(language)
+        except (OSError, ProfileError) as error:
+            self._language_save_error = str(error)
+            message = self._t("language.save_failed", reason=str(error))
+            title = self._t("language.save_failed_title")
+            self.language_button.configure(relief="sunken")
+            messagebox.showerror(title, message, parent=self.root)
+        else:
+            self._language_save_error = None
+            self.language_button.configure(relief="raised")
+
+    def _post_language_menu(self, _event=None):
+        self.language_menu.post(self.language_button.winfo_rootx(),
+                                self.language_button.winfo_rooty() + self.language_button.winfo_height())
+        self.language_menu.focus_set()
+        return "break"
+
+    def _cancel_language_menu(self, _event=None):
+        try:
+            self.language_menu.unpost()
+        except tk.TclError:
+            pass
+        self.language_button.focus_set()
+        return "break"
+
+    def _show_invalid_language_warning(self) -> None:
+        if self.root.winfo_exists() and self.profile_store.language_error:
+            messagebox.showwarning(
+                self._t("language.invalid_saved_title"),
+                self._t("language.invalid_saved"), parent=self.root,
+            )
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
         """Show the supplied company asset when deployed, with a readable fallback."""
@@ -408,7 +558,8 @@ class B518LogSolutionApp:
                 self._log("本輪保存失敗：{}".format(error))
                 reported_save_errors.add(error)
         self._reported_save_errors = reported_save_errors
-        status_text = SAVE_STATE_LABELS.get(save_state, "保存中")
+        self._current_save_state = save_state
+        status_text = self._t(save_state_message_id(save_state))
         if hasattr(self, "save_status"):
             self.save_status.configure(text=status_text)
         if hasattr(self, "retry_save_button"):
@@ -423,7 +574,8 @@ class B518LogSolutionApp:
         """Ask the shared round coordinator to retry in a background worker."""
         started = self.rounds.retry_saves()
         if started:
-            self.save_status.configure(text="保存狀態：保存中")
+            self._current_save_state = "saving"
+            self._render_save_status()
             self.retry_save_button.configure(state="disabled")
 
     def retry_selected_round(self) -> None:
@@ -447,8 +599,7 @@ class B518LogSolutionApp:
                 snapshot.round_id[:10], snapshot.save_errors[0]))
         else:
             self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], SAVE_STATE_LABELS.get(
-                    snapshot.save_state, snapshot.save_state)))
+                snapshot.round_id[:10], self._t(save_state_message_id(snapshot.save_state))))
 
     def _refresh_unsaved_rounds(self) -> None:
         """Render all protected rounds by identity, separate from the active result board."""
@@ -460,17 +611,19 @@ class B518LogSolutionApp:
         mapping = {}
         for snapshot in snapshots:
             label = "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10],
-                                           SAVE_STATE_LABELS.get(snapshot.save_state, snapshot.save_state))
+                                           self._t(save_state_message_id(snapshot.save_state)))
             mapping[label] = snapshot.round_id
             labels.append(label)
         self._unsaved_round_ids = mapping
         self.unsaved_round_picker.configure(values=labels)
         selected = next((label for label, round_id in mapping.items() if round_id == current_id), "")
         if not selected and labels:
-            selected = next((label for label in labels
-                             if "保存失敗" in label), labels[0])
+            failed_round_id = next((snapshot.round_id for snapshot in snapshots
+                                    if snapshot.save_state == "failed"), None)
+            selected = next((label for label, round_id in mapping.items()
+                             if round_id == failed_round_id), labels[0])
         self.unsaved_round_choice.set(selected)
-        self.unsaved_round_count.configure(text="未保存輪次 {}".format(len(snapshots)))
+        self.unsaved_round_count.configure(text=self._t("main.unsaved_rounds", count=len(snapshots)))
         self._update_selected_round_retry()
 
     def _refresh_archive_statuses(self) -> None:
@@ -482,7 +635,7 @@ class B518LogSolutionApp:
         saved = sum(status.save_state == "complete" and not status.cleanup_eligible
                     for status in statuses)
         archived = sum(status.cleanup_eligible for status in statuses)
-        summary = "輪次：未完整保存 {} · 完整保存 {} · 可信封存 {}".format(unsaved, saved, archived)
+        summary = self._t("main.archive_summary", unsaved=unsaved, saved=saved, archived=archived)
         selected_round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
         unsaved_status = next((status for status in statuses
                                if status.round_id == selected_round_id and status.save_state != "complete"), None)
@@ -494,9 +647,9 @@ class B518LogSolutionApp:
         detail_status = unsaved_status or (retryable[0] if retryable else archived_status)
         detail = ""
         if detail_status is not None:
-            state = ("可信封存" if detail_status.cleanup_eligible else
-                     "完整保存・受保護" if detail_status.save_state == "complete" else
-                     SAVE_STATE_LABELS.get(detail_status.save_state, detail_status.save_state))
+            state = (self._t("main.archived") if detail_status.cleanup_eligible else
+                     self._t("main.archive_protected") if detail_status.save_state == "complete" else
+                     self._t(save_state_message_id(detail_status.save_state)))
             reason = detail_status.message
             if detail_status.save_state == "failed":
                 snapshot = self.rounds.round_snapshot(detail_status.round_id)
@@ -541,7 +694,6 @@ class B518LogSolutionApp:
         for child in self.rows_box.winfo_children():
             child.destroy()
         self.status_rows = {}
-        station = self.station.get().upper()
         row_count = self._display_capacity()
         screen_height = self.root.winfo_screenheight()
         visible_rows = visible_detail_rows(row_count, screen_height)
@@ -553,13 +705,14 @@ class B518LogSolutionApp:
         self.rows_scrollbar.pack_forget()
         if row_count > visible_rows:
             self.rows_scrollbar.pack(side="right", fill="y")
-        self.station_title.configure(text="{} Log 監控".format(station))
-        self.monitor_state.configure(text="監控中" if self._round_is_active() else "待命")
+        self._render_station_title()
+        self._set_main_monitor_state("monitor.active" if self._round_is_active() else "monitor.idle")
         for slot in range(1, row_count + 1):
             row = tk.Frame(self.rows_box, background="#111111", width=ROW_WIDTH, height=ROW_HEIGHT)
             row.place(x=0, y=(slot - 1) * (ROW_HEIGHT + ROW_GAP), width=ROW_WIDTH, height=ROW_HEIGHT)
             row.pack_propagate(False)
-            slot_label = tk.Label(row, text="Slot {}".format(slot), background="#ffffff", foreground="#000000",
+            slot_label = tk.Label(row, text=self._t("main.slot", number=slot),
+                                  background="#ffffff", foreground="#000000",
                                   font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center")
             status_label = tk.Label(row, text="WAITING", background=STATUS_COLOURS["WAITING"], foreground="#000000",
                                     font=("Helvetica", MAIN_FONT_SIZE, "bold"), anchor="center")
@@ -653,11 +806,16 @@ class B518LogSolutionApp:
         if getattr(self, "_closing_ui", False):
             self.start_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
-            self.monitor_state.configure(text="關閉前保存中")
+            self._set_main_monitor_state("monitor.closing")
         else:
             self.start_button.configure(state="disabled" if monitoring else "normal")
             self.stop_button.configure(state="normal" if monitoring else "disabled")
-            self.monitor_state.configure(text=state_text or ("監控中" if monitoring else "待命"))
+            message_by_text = {
+                "啟動中": "monitor.starting", "逾時停止": "monitor.timeout_stopped",
+                "啟動失敗": "monitor.start_failed", "監控中": "monitor.active", "待命": "monitor.idle",
+            }
+            self._set_main_monitor_state(message_by_text.get(
+                state_text, "monitor.active" if monitoring else "monitor.idle"))
         for name in ("project_choice", "machine_choice"):
             choice = getattr(self, name, None)
             if choice:
@@ -701,7 +859,7 @@ class B518LogSolutionApp:
 
         self.active_profile_snapshot = prepared.profile
         self.start_button.configure(state="disabled")
-        self.monitor_state.configure(text="啟動中")
+        self._set_main_monitor_state("monitor.starting")
         self.root.update_idletasks()
         try:
             self._save_preferences()
@@ -904,22 +1062,23 @@ class B518LogSolutionApp:
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_button.configure(
-            text="待確認 ({})".format(len(conflicts)),
+            text=self._t("main.review_count", count=len(conflicts)),
             state="normal" if conflicts else "disabled",
         )
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
         if alarm_pending or conflicts:
             reasons = []
-            if alarm_pending:
-                reasons.append("整輪警報")
-            if conflicts:
-                reasons.append("衝突 {} 項".format(len(conflicts)))
-            self.monitor_state.configure(text="待確認：" + "、".join(reasons))
+            if alarm_pending and conflicts:
+                self._set_main_monitor_state("monitor.awaiting_both", count=len(conflicts))
+            elif alarm_pending:
+                self._set_main_monitor_state("monitor.awaiting_alarm")
+            else:
+                self._set_main_monitor_state("monitor.awaiting_conflicts", count=len(conflicts))
         elif snapshot and snapshot.state.value == "COMPLETED":
-            self.monitor_state.configure(text="本輪完成")
+            self._set_main_monitor_state("monitor.completed")
         elif snapshot and snapshot.state.value == "STOPPED" and snapshot.completion_reason == "manual_stop":
-            self.monitor_state.configure(text="已停止")
+            self._set_main_monitor_state("monitor.stopped")
         if self.conflict_window and self.conflict_window.winfo_exists():
             if self.conflict_list is None:
                 return
@@ -1101,7 +1260,7 @@ class B518LogSolutionApp:
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         alarm = snapshot.round_alarm if snapshot else None
         if alarm is None:
-            self.round_alarm_button.configure(text="整輪警報", state="disabled")
+            self.round_alarm_button.configure(text=self._t("main.round_alarm"), state="disabled")
             if (snapshot and self._round_alarm_window_identity and
                     self._round_alarm_window_identity[0] != snapshot.round_id and
                     self.round_alarm_window and self.round_alarm_window.winfo_exists()):
@@ -1109,7 +1268,7 @@ class B518LogSolutionApp:
             return
         pending = not alarm.acknowledged_at
         self.round_alarm_button.configure(
-            text="整輪警報（待確認）" if pending else "整輪警報已確認",
+            text=self._t("main.round_alarm_pending" if pending else "main.round_alarm_acknowledged"),
             state="normal" if pending and snapshot.round_alarm_ready else "disabled",
         )
         identity = (alarm.round_id, alarm.alarm_id)

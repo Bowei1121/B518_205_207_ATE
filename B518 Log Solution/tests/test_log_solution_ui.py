@@ -28,6 +28,7 @@ from monitoring_round import (
 import audit_records
 from audit_records import read_round_audit
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
+from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE
 
 
 class FakeHotkey:
@@ -159,6 +160,201 @@ class LogSolutionUiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Timed out waiting for public round archive statuses: {}".format(
             coordinator.archive_statuses()))
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_language_menu_switches_main_page_and_persists_across_app_instances(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            preferences = Path(temporary) / "preferences.json"
+            source = Path(temporary) / "source"
+            source.mkdir()
+            events_path = source / "events.jsonl"
+            events_path.write_text("", encoding="utf-8")
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            try:
+                profile = replace(
+                    app.profiles.get("B518", "FCT"), project="SAMPLE", platform="sample-json",
+                    capacity=2, paths={"active": str(source)}, mapping=((20, 1), (4, 2)),
+                )
+                app.profiles = app.profiles.with_profile(profile)
+                app.project_choice.configure(values=app.profiles.projects)
+                app.project.set("SAMPLE")
+                app._project_changed()
+                app.station.set("FCT")
+                app._profile_changed()
+                root.update()
+                self.assertEqual(app.current_language, DEFAULT_LANGUAGE)
+                self.assertEqual(app.language_button.cget("text"), "English ▾")
+                self.assertEqual(
+                    [app.language_menu.entrycget(index, "label")
+                     for index in range(app.language_menu.index("end") + 1)],
+                    ["English", "繁體中文"],
+                )
+                self.assertEqual(app.language_choice.get(), ENGLISH)
+                self.assertEqual(app.settings_button.cget("text"), "Settings")
+                self.assertEqual(app.project_label.cget("text"), "Project")
+                self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
+                self.assertLessEqual(
+                    app.language_button.winfo_x() + app.language_button.winfo_width(),
+                    app.language_button.master.winfo_width(),
+                )
+                self.assertLess(app.language_button.winfo_rooty(), app.kvm_result_title.winfo_rooty())
+
+                app.start_button.invoke()
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    snapshot = app.rounds.snapshot()
+                    if snapshot is not None and not snapshot.source_preparation_pending:
+                        break
+                    time.sleep(0.01)
+                snapshot = app.rounds.snapshot()
+                self.assertIsNotNone(snapshot)
+                self.assertFalse(snapshot.source_preparation_pending)
+                round_id = snapshot.round_id
+                with events_path.open("a", encoding="utf-8") as event_file:
+                    event_file.write(json.dumps({
+                        "kind": "activity", "position": 20, "sn": "LANG000001",
+                        "source_time": "2026-10-08T10:00:00+08:00", "batch_id": "language-ui",
+                    }) + "\n")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    if (app.rounds.snapshot().results[0].status == "TESTING" and
+                            app.status_rows[1]["status"].cget("text") == "TESTING"):
+                        break
+                    time.sleep(0.01)
+                before_switch = app.rounds.snapshot()
+                self.assertEqual(before_switch.results[0].status, "TESTING")
+                session_path = app.rounds.session_path
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_before_switch = (session_path / "audit.jsonl").read_bytes()
+                round_files_before_switch = tuple(sorted(
+                    (path.relative_to(session_path), path.read_bytes())
+                    for path in session_path.rglob("*") if path.is_file()
+                ))
+
+                # Exercise the visible menu button and the actual native menu entry.
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertEqual(app.language_button.cget("text"), "繁體中文 ▾")
+                self.assertEqual(app.settings_button.cget("text"), "設定")
+                self.assertEqual(app.project_label.cget("text"), "專案")
+                self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
+                after_switch = app.rounds.snapshot()
+                self.assertEqual(after_switch.round_id, round_id)
+                self.assertEqual(after_switch.results, before_switch.results)
+                self.assertEqual(app.status_rows[1]["status"].cget("text"), "TESTING")
+                self.assertEqual((session_path / "audit.jsonl").read_bytes(), audit_before_switch)
+                self.assertEqual(round_files_before_switch, tuple(sorted(
+                    (path.relative_to(session_path), path.read_bytes())
+                    for path in session_path.rglob("*") if path.is_file()
+                )))
+
+                with events_path.open("a", encoding="utf-8") as event_file:
+                    event_file.write(json.dumps({
+                        "kind": "activity", "position": 4, "sn": "LANG000002",
+                        "source_time": "2026-10-08T10:00:01+08:00", "batch_id": "language-ui",
+                    }) + "\n")
+                    event_file.write(json.dumps({
+                        "kind": "final", "position": 20, "sn": "LANG000001", "status": "PASS",
+                        "source_time": "2026-10-08T10:00:02+08:00", "batch_id": "language-ui",
+                    }) + "\n")
+                    event_file.write(json.dumps({
+                        "kind": "final", "position": 20, "sn": "LANG-CANDIDATE", "status": "FAIL",
+                        "source_time": "2026-10-08T10:00:03+08:00", "batch_id": "language-ui",
+                    }) + "\n")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    if app.rounds.snapshot().state == RoundState.AWAITING_REVIEW:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(app.rounds.snapshot().round_id, round_id)
+                conflicts_before_switch = app.rounds.snapshot().pending_conflicts
+                self.assertEqual(len(conflicts_before_switch), 1)
+                conflict_id = conflicts_before_switch[0].conflict_id
+                self.assertEqual(preferences.exists(), True)
+
+                saved = MachineProfileStore(preferences)
+                saved.load()
+                self.assertEqual(saved.language, TRADITIONAL_CHINESE)
+                app._save_preferences()
+                reloaded = MachineProfileStore(preferences)
+                reloaded.load()
+                self.assertEqual(reloaded.language, TRADITIONAL_CHINESE)
+
+                app.language_button.event_generate("<space>")
+                root.update()
+                app.language_menu.event_generate("<Escape>")
+                root.update()
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                app.language_button.event_generate("<space>")
+                root.update()
+                app.language_menu.invoke(0)
+                root.update()
+                self.assertEqual(app.current_language, ENGLISH)
+                self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
+                self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
+                saved_bytes = preferences.read_bytes()
+                app.language_menu.invoke(0)
+                self.assertEqual(preferences.read_bytes(), saved_bytes)
+                with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
+                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                    app.language_menu.invoke(chinese_index)
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIn("繁體中文", app.language_button.cget("text"))
+                self.assertIn("disk full", show_error.call_args.args[1])
+                failed_write = MachineProfileStore(preferences)
+                failed_write.load()
+                self.assertEqual(failed_write.language, ENGLISH)
+                second_root = tk.Tk()
+                second_root.withdraw()
+                second_app = B518LogSolutionApp(
+                    second_root, hotkey_factory=FakeHotkey,
+                    session_root=Path(temporary) / "sessions-2",
+                )
+                try:
+                    self.assertEqual(second_app.current_language, ENGLISH)
+                    self.assertEqual(second_app.language_button.cget("text"), "English ▾")
+                finally:
+                    second_app.rounds.request_close()
+                    self.wait_for(lambda: second_app.rounds.close_status().status == "complete")
+                    second_app.hotkey.close()
+                    second_root.destroy()
+            finally:
+                snapshot = app.rounds.snapshot()
+                if snapshot is not None:
+                    for conflict in snapshot.pending_conflicts:
+                        app.rounds.resolve_review(conflict.conflict_id, "keep_original")
+                app.rounds.stop()
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    snapshot = app.rounds.snapshot()
+                    if snapshot is not None and snapshot.state == RoundState.STOPPED:
+                        break
+                    time.sleep(0.01)
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                self.wait_for_archive_checks(app.rounds)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
 
     def test_real_tk_global_retention_setting_validates_persists_and_preserves_round_files(self):
         with TemporaryDirectory() as temporary, \
@@ -338,12 +534,12 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 app.rounds = rounds
-                self.assertIn("未完整保存 0", app.archive_status_label.cget("text"))
+                self.assertIn("0 unsaved", app.archive_status_label.cget("text"))
                 started = rounds.start("FCT", OneResultMonitor, run_async=False)
                 app.active_round_id = started.round_id
                 app._apply_round_snapshot(rounds.snapshot())
                 app._refresh_archive_statuses()
-                self.assertIn("未完整保存 1", app.archive_status_label.cget("text"))
+                self.assertIn("1 unsaved", app.archive_status_label.cget("text"))
 
                 import round_archival
                 original_replace = round_archival.os.replace
@@ -369,7 +565,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app._refresh_archive_statuses()
                 self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
-                self.assertIn("可信封存", app.archive_round_detail.cget("text"))
+                self.assertIn("Trusted Archive", app.archive_round_detail.cget("text"))
                 self.assertIn("2026-10-07T10:00:00+08:00", app.archive_round_detail.cget("text"))
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
             finally:
@@ -420,7 +616,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     pass
 
             try:
-                self.assertEqual(app.save_status.cget("text"), "等待保存")
+                self.assertEqual(app.save_status.cget("text"), "Waiting to save")
                 app.rounds = coordinator
                 started = coordinator.start("FCT", lambda callback: holder.setdefault(
                     "monitor", Monitor(callback)), run_async=False, capacity=1)
@@ -481,12 +677,12 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.retry_save_button.invoke()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "complete" or
-                           "完整保存" not in app.save_status.cget("text")) and time.monotonic() < deadline:
+                           "Saved Completely" not in app.save_status.cget("text")) and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
 
                 self.assertEqual(coordinator.snapshot().save_state, "complete")
-                self.assertIn("完整保存", app.save_status.cget("text"))
+                self.assertIn("Saved Completely", app.save_status.cget("text"))
                 self.assertTrue(coordinator.flush_session(timeout=2))
                 rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
                 self.assertEqual(len([event for event in rebuilt["events"]
@@ -589,6 +785,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.active_round_id = current.round_id
                 app._apply_round_snapshot(current)
                 app._refresh_unsaved_rounds()
+                self.assertEqual(
+                    app._unsaved_round_ids[app.unsaved_round_choice.get()], previous.round_id,
+                )
                 label = next(label for label, round_id in app._unsaved_round_ids.items()
                              if round_id == previous.round_id)
                 app.unsaved_round_choice.set(label)
@@ -2507,7 +2706,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 self.assertIsNone(app.rounds.snapshot())
                 self.assertEqual(str(app.start_button.cget("state")), "normal")
-                self.assertEqual(app.monitor_state.cget("text"), "待命")
+                self.assertEqual(app.monitor_state.cget("text"), "Standby")
                 self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
                 self.assertEqual(show_error.call_args.args[:2], (
                     "監控啟動失敗", "無法開始監控：disk full",
@@ -2629,7 +2828,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(0.01)
             self.assertFalse(app._round_is_active())
-            self.assertEqual(app.monitor_state.cget("text"), "啟動失敗")
+            self.assertEqual(app.monitor_state.cget("text"), "Start Failed")
             self.assertIn("denied", app.event_lines[-1])
             show_error.assert_called_once()
         finally:
