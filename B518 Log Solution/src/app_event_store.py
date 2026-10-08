@@ -115,6 +115,12 @@ def read_app_event_store(path: Path) -> dict:
                 not isinstance(event["localized_message"].get("zh-TW"), str) or
                 not isinstance(event.get("diagnostic", ""), str)):
             raise ValueError("App 事件紀錄內容不完整或序號不連續")
+        try:
+            occurred_at = datetime.fromisoformat(event["occurred_at"])
+        except ValueError:
+            raise ValueError("App 事件時間格式無效")
+        if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+            raise ValueError("App 事件時間缺少時區")
         seen.add(event["event_id"])
     return payload
 
@@ -135,8 +141,6 @@ class AppEventStore:
         try:
             if self.path.exists():
                 self._events = read_app_event_store(self.path)["events"]
-            else:
-                _atomic_replace(self.path, _json_bytes(self._payload([])))
         except Exception as error:
             self._error = str(error)
             self._error_history.append(self._error)
@@ -150,6 +154,16 @@ class AppEventStore:
     def events(self) -> Tuple[AppEvent, ...]:
         with self._condition:
             return tuple(self._pending)
+
+    @property
+    def records(self) -> Tuple[dict, ...]:
+        """Return persisted and pending immutable snapshots for diagnostics UI."""
+        with self._condition:
+            persisted = list(self._events)
+            pending = [event.as_record() for event in self._pending]
+        known = {item["event_id"] for item in persisted}
+        persisted.extend(item for item in pending if item["event_id"] not in known)
+        return tuple(json.loads(json.dumps(item, ensure_ascii=False)) for item in persisted)
 
     def record(self, message_id: str, parameters=None, diagnostic: str = "",
                kind: str = "app_diagnostic") -> AppEvent:

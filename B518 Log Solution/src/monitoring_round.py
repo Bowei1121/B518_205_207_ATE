@@ -137,6 +137,7 @@ class CloseSnapshot:
     generation: int = 0
     round_ids: Tuple[str, ...] = ()
     message: str = ""
+    app_event_pending: int = 0
 
 
 def _round_close_complete(round_: "MonitoringRound", snapshot: RoundSnapshot) -> bool:
@@ -1237,6 +1238,7 @@ class RoundCoordinator:
         self._closing = False
         self._close_status = CloseSnapshot()
         self._close_worker_active = False
+        self._app_event_store = None
         self._archive_states: Dict[str, ArchiveSnapshot] = {}
         self._archive_locations: Dict[str, ArchiveLocation] = {}
         self._archive_locks: Dict[str, threading.Lock] = {}
@@ -1317,6 +1319,43 @@ class RoundCoordinator:
             target_id = round_id or (self._current.round_id if self._current is not None else None)
             target = self._tracked_rounds.get(target_id) if target_id is not None else None
         return target.retry_saves() if target is not None else False
+
+    def register_app_event_store(self, store) -> None:
+        """Register the App-owned, no-round journal used by save-before-close."""
+        with self._lock:
+            if self._closing:
+                raise RuntimeError("關閉保存進行中，不能替換 App 事件保存來源")
+            self._app_event_store = store
+
+    def record_app_event(self, message_id: str, parameters=None, diagnostic: str = "",
+                         kind: str = "app_diagnostic"):
+        """Capture one App-owned event through the shared public save boundary."""
+        with self._lock:
+            if self._close_status.status == "complete":
+                return None
+            if self._app_event_store is None:
+                raise RuntimeError("尚未註冊 App 事件保存來源")
+            return self._app_event_store.record(message_id, parameters, diagnostic, kind)
+
+    def app_event_status(self):
+        """Return App event durability state without exposing its queue or worker."""
+        with self._lock:
+            store = self._app_event_store
+        return store.status() if store is not None else None
+
+    def app_event_records(self):
+        """Return immutable App event snapshots for the diagnostic presentation."""
+        with self._lock:
+            store = self._app_event_store
+        return store.records if store is not None else ()
+
+    def retry_app_event_saves(self) -> bool:
+        """Request a nonblocking retry of App-owned records."""
+        with self._lock:
+            if self._closing:
+                return False
+            store = self._app_event_store
+        return store.retry() if store is not None else False
 
     def retry_archival(self, round_id: str) -> bool:
         """Request a nonblocking disk revalidation after storage repair."""
@@ -1587,8 +1626,11 @@ class RoundCoordinator:
             failed_archive_ids = tuple(
                 round_id for round_id, status in self._archive_states.items()
                 if not status.cleanup_eligible)
+            app_event_store = self._app_event_store
         for round_ in failed:
             round_.retry_saves()
+        if app_event_store is not None:
+            app_event_store.retry()
         with self._lock:
             for round_id in failed_archive_ids:
                 self._queue_archive_check_locked(round_id)
@@ -1692,8 +1734,27 @@ class RoundCoordinator:
                             "封存資訊保存失敗；視窗仍保持開啟。" + "; ".join(archive_failures))
                         return
                     with self._lock:
-                        if self._closing and self._close_status.generation == generation:
-                            self._close_status = CloseSnapshot("complete", generation, round_ids)
+                        app_store = self._app_event_store
+                        app_status = app_store.status() if app_store is not None else None
+                        if app_status is not None and not app_status.complete:
+                            if app_status.status == "failed":
+                                self._close_status = CloseSnapshot(
+                                    "failed", generation, round_ids,
+                                    "App 診斷紀錄尚未完整保存：{}".format(app_status.error),
+                                    app_status.pending_count)
+                                return
+                            self._close_status = CloseSnapshot(
+                                "waiting", generation, round_ids,
+                                "等待 App 診斷紀錄完成保存", app_status.pending_count)
+                            should_wait_for_app = True
+                        else:
+                            should_wait_for_app = False
+                            if self._closing and self._close_status.generation == generation:
+                                self._close_status = CloseSnapshot("complete", generation, round_ids)
+                    if should_wait_for_app:
+                        if not app_store.flush(timeout=0.05):
+                            continue
+                        continue
                     return
                 failed = tuple(snapshot for snapshot in incomplete
                                if snapshot.save_state == "failed")

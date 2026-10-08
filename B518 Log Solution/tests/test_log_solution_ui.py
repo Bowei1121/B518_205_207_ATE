@@ -28,6 +28,7 @@ from monitoring_round import (
 )
 import audit_records
 from audit_records import read_round_audit
+from app_event_store import read_app_event_store
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE
 
@@ -161,6 +162,160 @@ class LogSolutionUiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("Timed out waiting for public round archive statuses: {}".format(
             coordinator.archive_statuses()))
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_app_diagnostic_is_bilingual_inspectable_and_saved_before_close(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            preferences = Path(temporary) / "preferences.json"
+            profile_store = MachineProfileStore(preferences)
+            profile_store.load()
+            profile_store.save_language(ENGLISH)
+            app_path = Path(temporary) / "app-events.json"
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+                app_event_clock=lambda: datetime(2026, 10, 9, 2, 3, 4, tzinfo=timezone.utc),
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping App event save UI")
+
+            def root_destroyed():
+                try:
+                    return not root.winfo_exists()
+                except tk.TclError:
+                    return True
+
+            try:
+                root.update()
+                original_preferences = preferences.read_bytes()
+                x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
+                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                with patch("machine_profiles._atomic_write_text", side_effect=OSError("preference disk full")), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIn("繁體中文", app.language_button.cget("text"))
+                self.assertEqual(preferences.read_bytes(), original_preferences)
+                self.assertIn("preference disk full", app.event_lines[-1])
+
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                app.app_diagnostics_button.invoke()
+                root.update()
+                self.assertIsNotNone(app.app_diagnostics_window)
+                detail_text = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("原始診斷", detail_text)
+                self.assertIn("preference disk full", detail_text)
+                saved = read_app_event_store(app_path)["events"]
+                language_failure = next(item for item in saved
+                                        if item["localized_message"]["message_id"] ==
+                                        "app.language.preference_save_failed")
+                self.assertEqual(language_failure["localized_message"]["en"],
+                                 "Language changed for this session but could not be saved: preference disk full")
+                self.assertEqual(language_failure["localized_message"]["zh-TW"],
+                                 "語言已切換供本次使用，但保存失敗：preference disk full")
+                self.assertNotIn("round_id", language_failure)
+
+                app.close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+                pump_until(root_destroyed)
+                self.assertTrue(root_destroyed())
+                rebuilt = read_app_event_store(app_path)
+                self.assertTrue(any(item["event_id"] == language_failure["event_id"]
+                                    for item in rebuilt["events"]))
+            finally:
+                if not root_destroyed():
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_close_keeps_app_write_failure_open_and_retries_it(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping App save-before-close UI")
+
+            def root_destroyed():
+                try:
+                    return not root.winfo_exists()
+                except tk.TclError:
+                    return True
+
+            try:
+                root.update()
+                def fail_app_store(_path, _content):
+                    raise OSError("app journal unavailable")
+
+                with patch("app_event_store._atomic_replace", side_effect=fail_app_store):
+                    x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
+                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                    root.update()
+                    chinese_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    with patch("machine_profiles._atomic_write_text",
+                               side_effect=OSError("preference disk full")), \
+                            patch("b518_log_solution.messagebox.showerror"):
+                        app.language_menu.invoke(chinese_index)
+                    event_record = next(item for item in app.rounds.app_event_records()
+                                        if item["localized_message"]["message_id"] ==
+                                        "app.language.preference_save_failed")
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+                    app.close()
+                    pump_until(lambda: app.rounds.close_status().status == "failed")
+                    pump_until(lambda: "app journal unavailable" in
+                               app._close_error_label.cget("text"))
+                    self.assertTrue(root.winfo_exists())
+                    self.assertTrue(app._close_window.winfo_exists())
+
+                button = app._close_retry_button
+                x, y = button.winfo_width() // 2, button.winfo_height() // 2
+                button.event_generate("<ButtonPress-1>", x=x, y=y)
+                button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+                pump_until(root_destroyed)
+                self.assertTrue(root_destroyed())
+                events = read_app_event_store(app_path)["events"]
+                self.assertEqual([item["localized_message"]["message_id"] for item in events],
+                                 ["app.startup.started", "app.language.preference_save_failed"])
+                self.assertEqual(events[1]["event_id"], event_record["event_id"])
+                self.assertEqual(events[1]["diagnostic"], "preference disk full")
+            finally:
+                if not root_destroyed():
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import json
 import sys
 import subprocess
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
 
+from app_event_store import AppEventStore
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
@@ -86,7 +88,8 @@ def sn_font_size(_sn: str, _column_width: int = 188) -> int:
 
 class B518LogSolutionApp:
     def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey,
-                 session_root: Optional[Path] = None):
+                 session_root: Optional[Path] = None, app_event_path: Optional[Path] = None,
+                 app_event_clock=None):
         self.root = root
         self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
         self.root.title("B518 Log Solution-V0.1.0")
@@ -96,6 +99,8 @@ class B518LogSolutionApp:
         self.rounds = RoundCoordinator(
             self.events.put, audit_root=self.session_root,
             retention_ledger_path=self.session_root.parent / "round-retention-ledger.json")
+        self.app_events = AppEventStore(app_event_path or APP_ROOT / "app-events.json", clock=app_event_clock)
+        self.rounds.register_app_event_store(self.app_events)
         self._closing_ui = False
         self._close_window = None
         self._close_status_label = None
@@ -124,6 +129,13 @@ class B518LogSolutionApp:
         self.company_logo: Optional[tk.PhotoImage] = None
         self.event_lines: list[str] = []
         self._event_records: list[tuple[str, object, Optional[str]]] = []
+        self._app_event_ids = set()
+        self.app_diagnostics_window = None
+        self.app_diagnostics_list = None
+        self.app_diagnostics_detail = None
+        self.app_diagnostics_status = None
+        self.app_diagnostics_retry_button = None
+        self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
         self.retention_days_var: Optional[tk.StringVar] = None
@@ -142,6 +154,7 @@ class B518LogSolutionApp:
         self.round_alarm_ack_button: Optional[ttk.Button] = None
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._configure_appearance()
+        self._record_startup_diagnostics()
         self._build()
         self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
         self.root.bind_all("<Command-Shift-M>", self._on_local_hotkey)
@@ -149,8 +162,12 @@ class B518LogSolutionApp:
         self.root.after(150, self._drain_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.rounds.start_retention_schedule(self.profile_store.retention_days)
+        if self.profile_error:
+            self.root.after(300, self._show_startup_warning)
         if self.profile_store.language_error:
             self.root.after(300, self._show_invalid_language_warning)
+        if self.app_events.status().error:
+            self.root.after(300, self._show_app_event_store_warning)
         if not self.hotkey.available:
             self.root.after(300, self._show_hotkey_warning)
 
@@ -363,8 +380,16 @@ class B518LogSolutionApp:
         self.archive_retry_button = ttk.Button(
             round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
         self.archive_retry_button.pack(side="right")
+        app_event_controls = ttk.Frame(controls)
+        app_event_controls.pack(fill="x", pady=(4, 0))
+        self.app_event_status_label = ttk.Label(app_event_controls, text="")
+        self.app_event_status_label.pack(side="left", fill="x", expand=True)
+        self.app_diagnostics_button = ttk.Button(
+            app_event_controls, text=self._t("app.diagnostic.heading"), command=self.open_app_diagnostics)
+        self.app_diagnostics_button.pack(side="right")
         self._render_rows()
         self._apply_main_language()
+        self._refresh_app_event_status()
 
     def _t(self, message_id: str, **parameters: object) -> str:
         return translate(message_id, self.current_language, **parameters)
@@ -397,6 +422,7 @@ class B518LogSolutionApp:
         self.retry_save_button.configure(text=self._t("main.retry_save"))
         self.unsaved_round_retry_button.configure(text=self._t("main.retry_selected"))
         self.archive_retry_button.configure(text=self._t("main.retry_archive"))
+        self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
         self._set_main_monitor_state(self._monitor_state_message,
                                      **self._monitor_state_parameters)
         self._render_station_title()
@@ -405,6 +431,9 @@ class B518LogSolutionApp:
         self._refresh_archive_statuses()
         self._refresh_main_round_labels()
         self._refresh_event_log()
+        self._refresh_app_event_status()
+        if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
+            self._refresh_app_event_records()
 
     def _refresh_main_round_labels(self) -> None:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
@@ -445,6 +474,141 @@ class B518LogSolutionApp:
         if hasattr(self, "save_status"):
             self.save_status.configure(text=self._t(save_state_message_id(self._current_save_state)))
 
+    def _record_startup_diagnostics(self) -> None:
+        self._record_app_event("app.startup.started")
+        if self.profile_error:
+            self._record_app_event("app.startup.preferences_read_failed",
+                                   {"reason": self.profile_error}, self.profile_error)
+        if self.profile_store.language_error:
+            self._record_app_event("app.preferences.invalid_language", {},
+                                   self.profile_store.language_error)
+        initial_error = self.app_events.status().error
+        if initial_error:
+            self._record_app_event("app.event_store.initialize_failed", {"reason": initial_error},
+                                   initial_error)
+
+    def _record_app_event(self, message_id: str, parameters=None, diagnostic: str = ""):
+        """Capture and display one App-owned event through the shared public boundary."""
+        event = self.rounds.record_app_event(message_id, parameters or {}, diagnostic)
+        if event is not None:
+            self._app_event_ids.add(event.event_id)
+            self._log(event.message.english, event.message)
+        return event
+
+    def _refresh_app_event_status(self) -> None:
+        status = self.rounds.app_event_status()
+        if status is None:
+            return
+        if status.status == "failed":
+            text = self._t("app.save.failed", reason=status.error)
+        elif status.status == "saving":
+            text = self._t("app.save.pending", count=status.pending_count)
+        else:
+            text = self._t("app.save.complete")
+        if self.app_event_status_label and self.app_event_status_label.winfo_exists():
+            self.app_event_status_label.configure(text=text)
+        if self.app_diagnostics_status and self.app_diagnostics_status.winfo_exists():
+            self.app_diagnostics_status.configure(text=text)
+        if self.app_diagnostics_retry_button and self.app_diagnostics_retry_button.winfo_exists():
+            self.app_diagnostics_retry_button.configure(
+                state="normal" if status.status == "failed" else "disabled")
+
+    def _refresh_app_event_records(self) -> None:
+        for record in self.rounds.app_event_records():
+            event_id = record.get("event_id")
+            if not isinstance(event_id, str) or event_id in self._app_event_ids:
+                continue
+            self._app_event_ids.add(event_id)
+            localized = record.get("localized_message")
+            fallback = record.get("message", "")
+            self._event_records.append((fallback, localized, None))
+        self._refresh_event_log()
+        if self.app_diagnostics_list and self.app_diagnostics_list.winfo_exists():
+            selected = self.app_diagnostics_list.curselection()
+            prior_id = getattr(self, "_selected_app_event_id", None)
+            self.app_diagnostics_list.delete(0, "end")
+            records = self.rounds.app_event_records()
+            for record in records:
+                self.app_diagnostics_list.insert(
+                    "end", "{} · {}".format(record.get("occurred_at", ""),
+                                               render_bilingual_message(
+                                                   record.get("localized_message"),
+                                                   self.current_language,
+                                                   record.get("message", ""))))
+            if prior_id:
+                for index, record in enumerate(records):
+                    if record.get("event_id") == prior_id:
+                        self.app_diagnostics_list.selection_set(index)
+                        self._show_app_event_detail(index)
+                        break
+            elif records and not selected:
+                self.app_diagnostics_list.selection_set(len(records) - 1)
+                self._show_app_event_detail(len(records) - 1)
+
+    def _show_app_event_detail(self, index: Optional[int] = None) -> None:
+        if not self.app_diagnostics_detail or not self.app_diagnostics_detail.winfo_exists():
+            return
+        if index is None:
+            selected = self.app_diagnostics_list.curselection() if self.app_diagnostics_list else ()
+            index = selected[0] if selected else None
+        records = self.rounds.app_event_records()
+        if index is None or index < 0 or index >= len(records):
+            return
+        record = records[index]
+        self._selected_app_event_id = record.get("event_id")
+        message = render_bilingual_message(record.get("localized_message"),
+                                           self.current_language, record.get("message", ""))
+        detail = "{}\n{}: {}\n{}: {}\n{}: {}\n{}:\n{}\n{}:\n{}".format(
+            message,
+            self._t("app.diagnostic.event_time"), record.get("occurred_at", ""),
+            self._t("app.diagnostic.event_id"), record.get("event_id", ""),
+            self._t("app.diagnostic.message_id"),
+            record.get("localized_message", {}).get("message_id", ""),
+            self._t("app.diagnostic.parameters"),
+            json.dumps(record.get("localized_message", {}).get("parameters", {}),
+                       ensure_ascii=False, indent=2),
+            self._t("app.diagnostic.raw"), record.get("diagnostic", ""),
+        )
+        self.app_diagnostics_detail.configure(state="normal")
+        self.app_diagnostics_detail.delete("1.0", "end")
+        self.app_diagnostics_detail.insert("1.0", detail)
+        self.app_diagnostics_detail.configure(state="disabled")
+
+    def open_app_diagnostics(self) -> None:
+        if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
+            self.app_diagnostics_window.lift()
+            self._refresh_app_event_records()
+            return
+        window = tk.Toplevel(self.root)
+        self.app_diagnostics_window = window
+        window.title(self._t("app.diagnostic.heading"))
+        window.geometry("760x430")
+        window.minsize(600, 340)
+        window.transient(self.root)
+        body = ttk.Frame(window, padding=10)
+        body.pack(fill="both", expand=True)
+        self.app_diagnostics_list = tk.Listbox(body, width=42, exportselection=False)
+        self.app_diagnostics_list.pack(side="left", fill="both", expand=True)
+        self.app_diagnostics_list.bind("<<ListboxSelect>>", lambda _event: self._show_app_event_detail())
+        self.app_diagnostics_detail = tk.Text(body, wrap="word", state="disabled")
+        self.app_diagnostics_detail.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.pack(fill="x")
+        self.app_diagnostics_status = ttk.Label(footer, text="")
+        self.app_diagnostics_status.pack(side="left", fill="x", expand=True)
+        self.app_diagnostics_retry_button = ttk.Button(
+            footer, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
+            state="disabled")
+        self.app_diagnostics_retry_button.pack(side="left", padx=6)
+        ttk.Button(footer, text=self._t("app.diagnostic.close"), command=window.destroy).pack(side="right")
+        window.protocol("WM_DELETE_WINDOW", window.destroy)
+        self._refresh_app_event_records()
+        self._refresh_app_event_status()
+
+    def retry_app_event_saves(self) -> None:
+        self.rounds.retry_app_event_saves()
+        self._refresh_app_event_status()
+
     def _select_language(self, language: str) -> None:
         if language == self.current_language:
             self.language_choice.set(self.current_language)
@@ -459,6 +623,8 @@ class B518LogSolutionApp:
             self._language_save_error = str(error)
             message = self._t("language.save_failed", reason=str(error))
             title = self._t("language.save_failed_title")
+            self._record_app_event("app.language.preference_save_failed", {"reason": str(error)},
+                                   str(error))
             self.language_button.configure(relief="sunken")
             messagebox.showerror(title, message, parent=self.root)
         else:
@@ -485,6 +651,19 @@ class B518LogSolutionApp:
                 self._t("language.invalid_saved_title"),
                 self._t("language.invalid_saved"), parent=self.root,
             )
+
+    def _show_startup_warning(self) -> None:
+        if self.root.winfo_exists() and self.profile_error:
+            messagebox.showwarning(self._t("app.startup.title"),
+                                   self._t("app.startup.preferences_read_failed",
+                                           reason=self.profile_error), parent=self.root)
+
+    def _show_app_event_store_warning(self) -> None:
+        status = self.rounds.app_event_status()
+        if self.root.winfo_exists() and status and status.error:
+            messagebox.showerror(self._t("app.event_store.title"),
+                                 self._t("app.event_store.initialize_failed", reason=status.error),
+                                 parent=self.root)
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
         """Show the supplied company asset when deployed, with a readable fallback."""
@@ -807,7 +986,9 @@ class B518LogSolutionApp:
             self.start_monitor()
 
     def _show_hotkey_warning(self) -> None:
-        messagebox.showwarning("全域快捷鍵不可用", self.hotkey.message, parent=self.root)
+        self._record_app_event("app.hotkey.unavailable", {}, self.hotkey.message)
+        messagebox.showwarning(self._t("app.hotkey.title"),
+                               self._t("app.hotkey.unavailable"), parent=self.root)
 
     def _set_monitor_controls(self, monitoring: bool, state_text: Optional[str] = None) -> None:
         if getattr(self, "_closing_ui", False):
@@ -851,17 +1032,26 @@ class B518LogSolutionApp:
         try:
             profile = self._selected_profile()
         except (AttributeError, ProfileError) as error:
-            messagebox.showerror("配置錯誤", str(error), parent=self.root)
+            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            messagebox.showerror(self._t("app.profile.validation_title"),
+                                 self._t("app.profile.validation_failed", reason=str(error)),
+                                 parent=self.root)
             return
         try:
             prepared = self.round_start_preparation.prepare(
                 profile, self.session_root, async_session_writes=True,
             )
         except RoundStartPathError as error:
-            messagebox.showerror("路徑錯誤", str(error), parent=self.root)
+            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            messagebox.showerror(self._t("app.profile.validation_title"),
+                                 self._t("app.profile.validation_failed", reason=str(error)),
+                                 parent=self.root)
             return
         except (AttributeError, ProfileError, ValueError) as error:
-            messagebox.showerror("配置錯誤", str(error), parent=self.root)
+            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            messagebox.showerror(self._t("app.profile.validation_title"),
+                                 self._t("app.profile.validation_failed", reason=str(error)),
+                                 parent=self.root)
             return
 
         self.active_profile_snapshot = prepared.profile
@@ -879,8 +1069,9 @@ class B518LogSolutionApp:
             self._render_state_marker(None)
             self._set_monitor_controls(False)
             message = "無法開始監控：{}".format(error)
-            self._log(message)
-            messagebox.showerror("監控啟動失敗", message, parent=self.root)
+            self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
+            messagebox.showerror(self._t("app.profile.save_title"),
+                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
             return
         self._set_monitor_controls(True)
         self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
@@ -953,6 +1144,8 @@ class B518LogSolutionApp:
         self._apply_round_snapshot(snapshot)
         self._refresh_unsaved_rounds()
         self._refresh_archive_statuses()
+        self._refresh_app_event_status()
+        self._refresh_app_event_records()
         self.rounds.poll_retention_schedule(self.profile_store.retention_days)
         self._refresh_retention_cleanup_status()
         self._refresh_conflict_review()
@@ -1605,7 +1798,8 @@ class B518LogSolutionApp:
                 preserve_legacy=self.profile_store.migration_required,
             )
         except (OSError, ProfileError, TypeError, ValueError) as error:
-            self.profile_editor_status.set("保存失敗，原配置仍有效：{}".format(error))
+            self.profile_editor_status.set(self._t("app.profile.save_failed", reason=str(error)))
+            self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
             return
         self.profiles = catalog
         self.profile_error = None
@@ -1657,7 +1851,8 @@ class B518LogSolutionApp:
             catalog, project, machine = self.profile_store.import_document(
                 document, self.project.get(), self.station.get())
         except (OSError, ProfileError, TypeError, ValueError) as error:
-            self.profile_editor_status.set("匯入失敗，原配置保留：{}".format(error))
+            self.profile_editor_status.set(self._t("app.profile.import_failed", reason=str(error)))
+            self._record_app_event("app.profile.import_failed", {"reason": str(error)}, str(error))
             return
         self._activate_profile_catalog(
             catalog, project, machine,
@@ -1675,7 +1870,8 @@ class B518LogSolutionApp:
         try:
             MachineProfileStore.export_document(Path(path), self.profiles)
         except OSError as error:
-            self.profile_editor_status.set("匯出失敗：{}".format(error))
+            self.profile_editor_status.set(self._t("app.profile.export_failed", reason=str(error)))
+            self._record_app_event("app.profile.export_failed", {"reason": str(error)}, str(error))
             return
         self.profile_editor_status.set("已匯出 {} 組配置。".format(len(self.profiles.profiles)))
 
@@ -1683,6 +1879,7 @@ class B518LogSolutionApp:
         catalog, saved_project, saved_machine, error = self.profile_store.load()
         if error:
             self.profile_editor_status.set("重新載入失敗，目前有效配置保留：{}".format(error))
+            self._record_app_event("app.startup.preferences_read_failed", {"reason": error}, error)
             return
         self._activate_profile_catalog(
             catalog, saved_project, saved_machine,
@@ -1761,6 +1958,12 @@ class B518LogSolutionApp:
             return
         if self._closing_ui:
             return
+        try:
+            self._save_preferences()
+        except (OSError, ProfileError) as error:
+            self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
+            messagebox.showerror(self._t("app.profile.save_title"),
+                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
         self._closing_ui = True
         self._set_monitor_controls(self._round_is_active())
         status = rounds.request_close()
@@ -1847,11 +2050,8 @@ class B518LogSolutionApp:
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.destroy()
         self._closing_ui = False
-        try:
-            self._save_preferences()
-        except (OSError, ProfileError) as error:
-            messagebox.showerror("偏好儲存失敗", str(error), parent=self.root)
         self.hotkey.close()
+        self.app_events.stop()
         self.root.destroy()
 
 

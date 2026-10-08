@@ -63,6 +63,7 @@ class AppEventStoreTests(unittest.TestCase):
 
         with patch("app_event_store._atomic_replace", side_effect=blocked_replace):
             self.assertTrue(entered.wait(2))
+            self.wait_until(lambda: self.store.status().pending_count == 2)
             release.set()
             self.wait_until(lambda: self.store.status().status == "failed")
             self.assertFalse(self.store.flush(.05))
@@ -84,6 +85,7 @@ class AppEventStoreTests(unittest.TestCase):
         store = AppEventStore(blocked / "events.json", clock=lambda: self.now[0])
         self.addCleanup(store.stop)
         event = store.record("app.event_store.write_failed", {"reason": "blocked"}, "blocked")
+        self.wait_until(lambda: store.status().status == "failed")
         self.assertEqual(store.status().status, "failed")
         self.assertEqual(store.status().pending_count, 1)
         self.assertFalse(store.flush(.05))
@@ -95,11 +97,44 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(rebuilt["events"][0]["event_id"], event.event_id)
         self.assertEqual(rebuilt["events"][0]["diagnostic"], "blocked")
 
+    def test_replace_that_succeeds_then_reports_failure_is_not_duplicated_on_retry(self):
+        from app_event_store import _atomic_replace
+        event = self.store.record("app.profile.save_failed", {"reason": "late error"}, "late error")
+        did_report = [False]
+
+        def replace_then_report_error(path, content):
+            _atomic_replace(path, content)
+            if not did_report[0]:
+                did_report[0] = True
+                raise OSError("replace completed but acknowledgement failed")
+
+        with patch("app_event_store._atomic_replace", side_effect=replace_then_report_error):
+            self.wait_until(lambda: self.store.status().status == "failed")
+            self.assertEqual([item["event_id"] for item in
+                              read_app_event_store(self.path)["events"]], [event.event_id])
+            self.assertTrue(self.store.retry())
+            self.assertTrue(self.store.flush())
+        rebuilt = read_app_event_store(self.path)["events"]
+        self.assertEqual([item["event_id"] for item in rebuilt], [event.event_id])
+        self.assertEqual([item["sequence"] for item in rebuilt], [1])
+
     def test_reader_rejects_unknown_version_and_round_linkage(self):
         payload = {"record_type": "app_event_store", "schema_version": 77, "events": []}
         self.path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "不受支援"):
             read_app_event_store(self.path)
+
+    def test_reader_rejects_invalid_or_timezone_naive_event_time(self):
+        event = self.store.record("app.startup.started")
+        self.assertTrue(self.store.flush())
+        original = read_app_event_store(self.path)
+        self.assertEqual(original["events"][0]["event_id"], event.event_id)
+        for timestamp in ("not-a-time", "2026-10-09T12:00:00"):
+            malformed = json.loads(json.dumps(original))
+            malformed["events"][0]["occurred_at"] = timestamp
+            self.path.write_text(json.dumps(malformed), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "時間"):
+                read_app_event_store(self.path)
 
 
 if __name__ == "__main__":
