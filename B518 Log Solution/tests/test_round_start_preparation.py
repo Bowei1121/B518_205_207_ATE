@@ -16,6 +16,27 @@ from round_start_preparation import RoundStartPreparation
 
 
 class RoundStartPreparationTests(unittest.TestCase):
+    def wait_for_archive_write(self, coordinator, round_id):
+        deadline = time.monotonic() + 3
+        stable_since = None
+        previous = None
+        while time.monotonic() < deadline:
+            archive = coordinator.archive_status(round_id)
+            if archive is not None and archive.cleanup_eligible and archive.path is not None:
+                try:
+                    stat = archive.path.stat()
+                    signature = (stat.st_size, stat.st_mtime_ns, archive.path.read_bytes())
+                except OSError:
+                    signature = None
+                if signature is not None and signature == previous:
+                    if stable_since is not None and time.monotonic() - stable_since >= 0.2:
+                        return
+                else:
+                    previous = signature
+                    stable_since = time.monotonic()
+            threading.Event().wait(0.01)
+        self.fail("Public archive status and its disk record did not settle.")
+
     def test_required_paths_must_be_present_directories_readable_and_enterable(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -167,11 +188,7 @@ class RoundStartPreparationTests(unittest.TestCase):
                 threading.Event().wait(0.01)
 
             self.assertEqual(coordinator.close_status().status, "complete")
-            deadline = time.monotonic() + 3
-            while not all(status.cleanup_eligible for status in coordinator.archive_statuses()):
-                if time.monotonic() >= deadline:
-                    self.fail("Public archive status did not confirm the background archive write.")
-                threading.Event().wait(0.01)
+            self.wait_for_archive_write(coordinator, started.round_id)
             self.assertTrue(coordinator.flush_session(timeout=2))
             self.assertTrue(coordinator.flush_audit(timeout=2))
             rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
@@ -314,11 +331,7 @@ class RoundStartPreparationTests(unittest.TestCase):
                     self.fail("Close coordination did not finish after deadline handoff.")
                 threading.Event().wait(0.01)
             self.assertEqual(coordinator.close_status().status, "complete")
-            deadline = time.monotonic() + 3
-            while not all(status.cleanup_eligible for status in coordinator.archive_statuses()):
-                if time.monotonic() >= deadline:
-                    self.fail("Public archive status did not confirm the background archive write.")
-                threading.Event().wait(0.01)
+            self.wait_for_archive_write(coordinator, started.round_id)
             self.assertTrue(coordinator.flush_session(timeout=2))
             self.assertTrue(coordinator.flush_audit(timeout=2))
 
