@@ -1420,6 +1420,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 )
                                 before_language_refresh = (
                                     session_path / "audit.jsonl").read_bytes()
+                                state_before_language_refresh = app.rounds.snapshot()
                                 app.language_button.event_generate("<Button-1>")
                                 root.update()
                                 traditional_chinese_index = next(
@@ -1433,10 +1434,40 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(
                                     app.rounds.snapshot().round_id, round_id,
                                 )
+                                self.assertEqual(
+                                    app.rounds.snapshot().results,
+                                    state_before_language_refresh.results,
+                                )
+                                self.assertEqual(
+                                    app.rounds.snapshot().events,
+                                    state_before_language_refresh.events,
+                                )
                                 self.assertTrue(any(
                                     platform_event["localized_message"]["zh-TW"] in line
                                     for line in app.event_lines
                                 ), app.event_lines)
+                                self.assertEqual(
+                                    (session_path / "audit.jsonl").read_bytes(),
+                                    before_language_refresh,
+                                )
+                                app.language_button.event_generate("<Button-1>")
+                                root.update()
+                                english_index = next(
+                                    menu_index for menu_index in range(
+                                        app.language_menu.index("end") + 1)
+                                    if app.language_menu.entrycget(menu_index, "label") ==
+                                    "English"
+                                )
+                                app.language_menu.invoke(english_index)
+                                root.update()
+                                self.assertTrue(any(
+                                    platform_event["localized_message"]["en"] in line
+                                    for line in app.event_lines
+                                ), app.event_lines)
+                                self.assertEqual(
+                                    app.rounds.snapshot().events,
+                                    state_before_language_refresh.events,
+                                )
                                 self.assertEqual(
                                     (session_path / "audit.jsonl").read_bytes(),
                                     before_language_refresh,
