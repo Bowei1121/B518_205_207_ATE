@@ -47,4 +47,4 @@
 - 新增無 Tk 相依的公開 `RoundStartPreparation`／`PreparedRoundStart`，以同一 registry 驗證及固定設定，集中檢查路徑、建立 adapter、橋接回呼、配置來源位置映射，並將同一配置資訊交給既有 RoundCoordinator、Session 與 audit。正式 Tk 開始入口未切換；R2 桌面接入、R3 舊流程移除及現場設備驗收仍待後續。
 - 使用真實暫存來源／Session／audit、PlatformRegistry 實際 adapters、Event 控制來源延遲及可注入時鐘驗證。Spec 審查曾指出注入 registry 與全域 validator 不一致，新增反例後已修正為用選定 registry 驗證；來源準備失敗且 Session 未建立時，也修正為 audit 完整落盤後不再永久停在等待狀態。
 - 最新程式提交 `f5e3ff5`；聚焦 PlatformRegistry／mapping／profile／RoundCoordinator 與準備測試共 88 tests 通過。最終完整含 Tk 套件於桌面環境通過 287 tests（50.528 秒）。型別檢查設定查無；compileall 不視為型別檢查。固定基準複審與文件提交完成後才合併。
-- 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。目前已推送 Gitea 與 GitHub；完整套件、複審、合併及分支清理狀態依最終結果續記。未修改遠端議題狀態。
+- 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。固定基準 Standards／Spec 複審無未解問題；非阻擋建議為新舊入口間重複的路徑 helper。合併 SHA `90e7c276f3ae28167f75d50a11b78cb973a061aa` 的主線完整含 Tk 套件通過 287 tests（49.445 秒）；R1 票分支先前已推送至 Gitea 與 GitHub。主線推送同步及分支清理結果將在最終交付記錄。未修改遠端議題狀態。

@@ -67,4 +67,6 @@ This matrix distinguishes new R1 evidence from inherited regression and work lef
 
 Fixed Standards/Spec base: `c71fb5583364f0a7c4e71d9806cfdec04160cb11`. Final Standards re-review found no documented-standard violation. One non-blocking duplicate path-helper smell remains because R1 intentionally keeps the old Tk path. Final Spec re-review confirmed the earlier registry-validation mismatch is fixed: both profile validation and adapter preparation use the selected PlatformRegistry, covered by `test_profile_validation_uses_the_same_platform_registry_as_adapter_preparation`. No unresolved Standards or Spec blocker remains.
 
-Implementation batches: `a9fc77c`, `8a7a46c`, `1b23bc5`, `1ca7533`, `f5e3ff5`. The ticket branch was pushed to both configured destinations (Gitea and GitHub) after each validated implementation batch. No remote issue was edited. Merge and branch cleanup are pending final test/review and synchronization checks.
+Implementation batches: `a9fc77c`, `8a7a46c`, `1b23bc5`, `1ca7533`, `f5e3ff5`. The ticket branch was pushed to both configured destinations (Gitea and GitHub) after each validated implementation batch. No remote issue was edited.
+
+After merge, `B518-Log-Solution` is at `90e7c276f3ae28167f75d50a11b78cb973a061aa`; `B518_TK_TESTS=1 python3 scripts/run_tests.py` passed 287 tests in 49.445 seconds at that SHA. Main push synchronization and branch cleanup are being completed after this evidence update.
