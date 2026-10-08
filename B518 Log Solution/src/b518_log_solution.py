@@ -387,6 +387,8 @@ class B518LogSolutionApp:
         self.kvm_legend_title.configure(text=self._t("main.kvm_legend"))
         for message_id, widget in self.main_headings.items():
             widget.configure(text=self._t(message_id))
+        for slot, row in self.status_rows.items():
+            row["slot"].configure(text=self._t("main.slot", number=slot))
         self.start_button.configure(text=self._t("main.start_monitor"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
