@@ -23,6 +23,77 @@ def valid_profile():
 
 
 class MachineProfileTests(unittest.TestCase):
+    def test_global_language_defaults_to_english_and_reloads_from_preferences_disk(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            store.load()
+            self.assertEqual(store.language, "en")
+
+            store.save_language("zh-TW")
+
+            restarted = MachineProfileStore(path)
+            restarted.load()
+            self.assertEqual(restarted.language, "zh-TW")
+
+    def test_legacy_preferences_without_language_default_to_english(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            catalog, _project, _machine = migrate_legacy_preferences({})
+            path.write_text(catalog.to_json(), encoding="utf-8")
+
+            store = MachineProfileStore(path)
+            store.load()
+
+            self.assertEqual(store.language, "en")
+            self.assertIsNone(store.language_error)
+
+    def test_profile_save_and_import_keep_global_language_but_export_only_profiles(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            export_path = Path(temporary) / "profiles.json"
+            store = MachineProfileStore(path)
+            catalog, _project, _machine, _error = store.load()
+            store.save_language("zh-TW")
+
+            store.save(catalog, "B518", "FCT")
+            MachineProfileStore.export_document(export_path, catalog)
+            store.import_document(catalog.to_json(), "B518", "FCT")
+
+            restarted = MachineProfileStore(path)
+            restarted.load()
+            self.assertEqual(restarted.language, "zh-TW")
+            self.assertNotIn("language", json.loads(export_path.read_text(encoding="utf-8")))
+
+    def test_language_replace_failure_preserves_effective_setting_and_preferences_file(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(path)
+            catalog, _project, _machine, _error = store.load()
+            store.save(catalog, "B518", "FCT")
+            original = path.read_bytes()
+
+            with patch("machine_profiles.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    store.save_language("zh-TW")
+
+            self.assertEqual(store.language, "en")
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_unknown_saved_language_falls_back_to_english_with_diagnostic(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            catalog, _project, _machine = migrate_legacy_preferences({})
+            raw = json.loads(catalog.to_json())
+            raw.update({"project": "B518", "machine": "FCT", "language": "fr"})
+            path.write_text(json.dumps(raw), encoding="utf-8")
+
+            store = MachineProfileStore(path)
+            store.load()
+
+            self.assertEqual(store.language, "en")
+            self.assertIn("語言設定無效", store.language_error)
+
     def test_global_retention_days_defaults_and_reload_from_preferences_disk(self):
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "preferences.json"

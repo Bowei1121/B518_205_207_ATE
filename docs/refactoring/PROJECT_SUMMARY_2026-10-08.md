@@ -61,3 +61,15 @@
 - 呼叫端查核確認正式 Tk 已只呼叫 `RoundStartPreparation`。移除 `start_monitor` 對不完整 App 的 fallback 準備器與推測 Session 路徑；配置編輯／匯入匯出仍用的驗證、PlatformRegistry 建立責任及 ConfiguredMonitor 映射均保留。刪除三個由 `object.__new__` 與 mock factory 組裝的舊測試，改以真 Tk 全平台開始、兩輪舊事件隔離，以及實際 B482 重啟配置後的 Session／audit 磁碟讀取保留行為證據。
 - 程式／測試提交 `26960a1f18c3e28d06484d30e6c28e19598ac10d`、`8f9b293ec7c90595c4bcd443daabf26e72049f0b` 已推送到 Gitea 與 GitHub。桌面真 Tk 聚焦套件 46 tests 通過（14.590 秒）；實際 B482 配置重啟測試 1 test 通過（1.202 秒）。最終完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 286 tests（63.304 秒）。`compileall` 與 `git diff --check` 通過；型別檢查設定不存在，沒有宣稱通過。
 - 十一項驗收與母規格十四組情境見 [R3 本機驗收紀錄](evidence/round-start-assembly-ticket-03/local-validation.md)，可填寫的實際設備驗收表見[現場清單](evidence/round-start-assembly-ticket-03/field-acceptance-checklist.md)。固定基準 Standards 審查無規範違反、Spec 審查無阻擋缺口；Standards 留有一項非阻擋測試維護觀察。主線合併 SHA `98fa01e20dd883fc6a9d6c3c25fbc764e5c3cd7e` 的完整 Tk 套件再次通過 286 tests（63.224 秒）。合併後證據與安全清理紀錄及最後文件更新均直接確認同步至 Gitea／GitHub；本地及兩個遠端票分支已移除。現場設備驗收另階段安排，未宣稱完成。遠端議題未操作。
+
+## M1 主頁語言選單（GitHub #14，母規格 #13）
+
+- 以本次即時查核主線 `dd81e4dcef781ef4c29a3310a2650827e45d0609` 建立 `Multilingual/ticket-01`；該 SHA 固定為本票 Standards／Spec 審查基準。起始工作樹乾淨，兩個既有 push 目的地主線同 SHA，票分支原先不存在。前述多語言拆票 README 的「尚未認領或開始」狀態已過時，已依目前程式提交與測試證據更新。
+- 真 Tk 透過 sample-json 來源及 RoundCoordinator 驗證 RUNNING／AWAITING_REVIEW 切換、候選與結果、暫存磁碟內容、重啟讀回、設定寫入故障及未知語言診斷。Spec 審查發現選單選取仍以 `Menu.invoke()` 驗證，沒有證明原生選單的真實滑鼠點擊或鍵盤導覽／啟用；Tk 合成事件與本次 Quartz OS 輸入均未能補足，故該驗收待驗、整票未完成並保留分支，不合併。Standards 審查無規範違反，僅記錄一項非阻擋的狀態呈現重複邏輯觀察。程式提交 `0a346544fa65a4dd31f6c3194d61a04514e2d6e8`、Tk 回歸提交 `3a613f9` 與驗收文件提交 `0d7e0bf` 已推送至 origin 設定的 Gitea、GitHub 兩個 push URL；先前即時查核確認票分支兩端皆為 `0d7e0bf`。固定審查基準 `dd81e4d...`；無合併 SHA，未刪除票分支。
+- 原提交版本的完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 297 tests（64.846 秒）；`python3 -m compileall -q src tests` 與 `git diff --check` 通過。真 Tk 使用已授權桌面工作階段；一般沙盒 Tk 建窗曾以 exit 134 中止。專案未找到既有型別檢查設定，未宣稱型別檢查通過。驗收逐項與 M2～M10 邊界見 [M1 本機驗收紀錄](evidence/multilingual-ticket-01/local-validation.md)。未修改 Issue #14 或母規格 #13。
+- 使用者隨後在實際主頁發現語言按鈕被窄 HMI 裁切。新真 Tk 回歸重現英文實際寬度 5／需求 72 像素、繁中 73／79；根因為專案、機型與語言控制項擠在同列。`006eebc` 將專案／機型排成兩列，語言保留右上空間，維持 376 像素寬、增加 26 像素高度；KVM 區內相對標記／色帶座標維持。聚焦 3 tests 通過，更新舊高度斷言並固定鍵盤测试焦點後，完整 298 tests 通過（64.631 秒）；程式修正已推送兩個既有目的地。這是實際產品缺陷，先前輸入補測失敗不能全數歸因桌面權限。
+- 固定基準複審另找到已存在通道列的 Slot／通道文字未切換；新增真 Tk 雙向文字斷言先失敗，再於主頁語言刷新更新既有列標籤，未重建監控或改產品狀態。已修正 ticket 第 6 項與驗收紀錄的不一致，保留第 2／6 項待完整人員輸入驗收；尚未合併 M1，未開始 M2。修正版主頁以隔離資料再次開啟供使用者實際操作。
+- 使用者最新修正回報為「可以完整顯示，但不能點開」，故僅記錄可見性已確認。檢查本機 Tk 8.6，原 menu 建於 root，違反 menubutton 滑鼠開啟時的後代要求；新真 Tk 按鈕事件測試直接重現 `TK MENUBUTTON POST_NONCHILD`，更正 menu 歸屬後聚焦 3 tests 通過（5.035 秒）。此為明確產品缺陷，不能以先前 Quartz 輸入環境限制解釋。最新修正版仍需人員確認實際選取與鍵盤操作。
+- 最後程式／測試 `44826d44576bf579df1eba4c461468802e8a1ef3` 的完整含 Tk 套件通過 299 tests（75.866 秒），固定 `dd81e4d...` 的 Standards／Spec 複審沒有新程式缺陷；原通道文字問題已解決，Standards 留 2 項非阻擋重複邏輯觀察。最新視窗以隔離資料開啟後，使用者確認滑鼠可展開並立即切換；觀察紀錄驗證英文／繁中雙向選取、Slot／通道文字及全新偏好讀取器的磁碟值一致。目前仍等待人員鍵盤導覽／選取／取消驗收，尚未合併或刪除票分支。
+
+- 最後人員驗收：使用者於 `44826d4` 真 Tk 修正版確認滑鼠可展開並即時切換，另確認 Tab／Space／方向鍵／Enter 選取及 Escape 取消、焦點返回「全部正常」。操作紀錄快照保存於 M1 evidence，六項驗收均有證據；先前待驗描述為歷史查核，現進行最後 Spec 複核及主線合併。尚未開始 M2。
