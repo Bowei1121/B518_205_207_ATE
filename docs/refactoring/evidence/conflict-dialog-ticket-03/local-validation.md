@@ -23,7 +23,7 @@ Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
 
 `_clear_conflict_comparison()` 現在會清空精簡／詳細顯示並停用「保留原結果」與「採用新候選」按鈕。選取不存在、共同輪次快照消失，或選取的 conflict ID 已從最新待裁決集合移除時，都走清空路徑；目前選取仍有效時才重新啟用兩個按鈕。沒有改動來源解析、衝突產生／去重、候選排序、裁決政策、保存流程或產品放行規則。
 
-TDD 先新增真 Tk 無選取案例。紅燈測試指出清單空選時 UI 仍顯示舊詳情且裁決按鈕為 `normal`；最小實作後，實際 UI 清空、顯示未知位置並停用兩個裁決入口，測試轉綠。
+TDD 先新增真 Tk 無選取案例。紅燈測試確認清單空選時原本已會清空內容，但兩個裁決按鈕仍為 `normal`、可操作；最小實作後，內容維持清空、顯示未知位置且兩個入口為 disabled，測試轉綠。
 
 主要 C3 端到端案例使用已註冊 `sample-json` 平台，而非直接呼叫 UI 私有 helper：測試建立真實暫存 JSONL，設定並啟動實際 `B518LogSolutionApp`，由平台 adapter 將同位置兩筆衝突及另一位置衝突送入共同 RoundCoordinator，再用真正 Tk 清單和按鈕互動。測試在第二筆同位置衝突被選取時追加跨位置衝突，確認刷新後仍為同一 conflict ID，位置、摘要與詳細內容一致；檢查真實渲染的紅色前景及粗體，修改來源 JSONL 後仍顯示捕捉快照，隱藏／重開、採用新候選、保留原結果、全部清空後禁用裁決。最後從新讀取的 audit 及 Session `results.csv` 驗證三個位置結果、三筆 `conflict_detected`／`conflict_resolved` 及其 ID 一致。
 
@@ -71,7 +71,7 @@ git diff --check
 | --- | --- |
 | `2bd373595cba5db934d0f4eb883c86feb75cb19c` | 修正無有效衝突選取時清空顯示並停用裁決按鈕；含首個紅綠測試 |
 | `72194dd9735baa4eab9a3dcef485113a3081932d` | 多候選刷新、逐項處理、隱藏重開與磁碟 audit 測試 |
-| `5827cab...` | 真實 sample-json 平台至 App/Tk、差異樣式、來源變動及磁碟重建測試 |
+| `5827cab47be6d7cd890ea15d61127cfeef7c2150` | 真實 sample-json 平台至 App/Tk、差異樣式、來源變動及磁碟重建測試 |
 | `db567ffb097e253dc9e7b8e23ba8e4a4f6b908a2` | 真實平台刷新時保留非首項選取的額外驗收 |
 
 首次 push 已設定 upstream。最後即時查核時，Gitea 與 GitHub 上 `ConflictDialog/ticket-03` 均為 `db567ffb097e253dc9e7b8e23ba8e4a4f6b908a2`。本紀錄與本票其他文件會在後續主線合併驗證後補記實際合併 SHA、主線推送、遠端分支清理及正式工作樹位置；目前尚未執行合併或刪除票分支。
