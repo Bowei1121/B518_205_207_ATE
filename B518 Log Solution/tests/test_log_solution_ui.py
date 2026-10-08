@@ -23,7 +23,9 @@ from b518_log_solution import (
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
 from log_monitoring import BaseMonitor, SessionStore, SlotResult
-from monitoring_round import RoundCoordinator, RoundEvent
+from monitoring_round import (
+    ConflictSide, RoundConflict, RoundCoordinator, RoundEvent, RoundSnapshot, RoundState,
+)
 import audit_records
 from audit_records import read_round_audit
 from machine_profiles import MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
@@ -744,6 +746,60 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(conflict.original.status, "PASS")
                 self.assertEqual(conflict.candidate.status, "FAIL")
 
+                self.assertEqual(app.conflict_comparison.heading("#0")["text"], "項目")
+                self.assertEqual(app.conflict_comparison.heading("original")["text"], "原結果")
+                self.assertEqual(app.conflict_comparison.heading("candidate")["text"], "新候選")
+                comparison_rows = [
+                    (app.conflict_comparison.item(row, "text"),
+                     app.conflict_comparison.item(row, "values"))
+                    for row in app.conflict_comparison.get_children("")
+                ]
+                self.assertEqual([row[0] for row in comparison_rows],
+                                 ["結果", "SN", "來源時間", "來源檔名"])
+                self.assertEqual(comparison_rows[0][1], ("PASS", "FAIL"))
+                self.assertEqual(comparison_rows[1][1],
+                                 (conflict.original.sn, conflict.candidate.sn))
+                self.assertEqual(comparison_rows[2][1],
+                                 (conflict.original.source_time, conflict.candidate.source_time))
+                self.assertEqual(comparison_rows[3][1],
+                                 (Path(conflict.original.source).name,
+                                  Path(conflict.candidate.source).name))
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：2")
+                detail_text = app.conflict_details.get("1.0", "end")
+                self.assertIn(conflict.round_id, detail_text)
+                self.assertIn(conflict.conflict_id, detail_text)
+                self.assertIn(conflict.original.source, detail_text)
+                self.assertIn(conflict.candidate.source, detail_text)
+                root.update_idletasks()
+                pane_height = app.conflict_panes.winfo_height()
+                initial_sash = app.conflict_panes.sashpos(0)
+                self.assertGreater(pane_height, 0)
+                self.assertGreater(initial_sash / float(pane_height), 0.32)
+                self.assertLess(initial_sash / float(pane_height), 0.48)
+                app.conflict_panes.event_generate(
+                    "<ButtonPress-1>", x=app.conflict_panes.winfo_width() - 8,
+                    y=initial_sash + 2,
+                )
+                app.conflict_panes.event_generate(
+                    "<B1-Motion>", x=app.conflict_panes.winfo_width() - 8,
+                    y=initial_sash + 32,
+                )
+                app.conflict_panes.event_generate(
+                    "<ButtonRelease-1>", x=app.conflict_panes.winfo_width() - 8,
+                    y=initial_sash + 32,
+                )
+                root.update_idletasks()
+                self.assertGreater(app.conflict_panes.sashpos(0), initial_sash)
+
+                app.conflict_window.geometry("720x360")
+                root.update_idletasks()
+                self.assertGreaterEqual(app.conflict_window.winfo_width(), 720)
+                self.assertGreaterEqual(app.conflict_window.winfo_height(), 360)
+                self.assertGreater(app.conflict_list.winfo_height(), 0)
+                self.assertGreater(app.conflict_comparison.winfo_width(), 0)
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "normal")
+
                 second_stamp = (datetime.now() + timedelta(seconds=2)).strftime("%Y%m%d_%H-%M-%S.000-run")
                 second_archive = final / second_sn / second_stamp / "system" / "records.csv"
                 second_active.unlink()
@@ -758,9 +814,21 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app.conflict_window.withdraw()
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+
+                captured_candidate_path = Path(conflict.candidate.source)
+                self.assertTrue(captured_candidate_path.is_file())
+                changed_source_path = captured_candidate_path.with_name("changed-after-capture.csv")
+                captured_candidate_path.rename(changed_source_path)
                 app._open_conflict_review()
                 app.conflict_list.selection_set(0)
-                app._resolve_selected_conflict("keep_original")
+                root.update_idletasks()
+                selected_source_row = app.conflict_comparison.item(
+                    app.conflict_comparison.get_children("")[3], "values",
+                )
+                self.assertEqual(selected_source_row[1], captured_candidate_path.name)
+                self.assertIn(conflict.candidate.source,
+                              app.conflict_details.get("1.0", "end"))
+                app.resolve_conflict_original_button.invoke()
                 self.assertFalse(app.rounds.snapshot().pending_conflicts)
                 self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
                 self.assertTrue(app.rounds.snapshot().result_available)
@@ -769,6 +837,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._drain_events()
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
                 self.assertEqual(app.status_rows[2]["status"].cget("text"), "PASS")
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                rebuilt = read_round_audit(app.rounds.session_path / "audit.jsonl")
+                resolved = [event for event in rebuilt["events"]
+                            if event["kind"] == "conflict_resolved"]
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertEqual(len(resolved), 1)
+                self.assertEqual(resolved[0]["detail"]["choice"], "keep_original")
+                self.assertEqual(resolved[0]["detail"]["conflict_id"], conflict.conflict_id)
             finally:
                 if app._round_is_active():
                     app.rounds.stop()
@@ -776,6 +853,100 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
+                root.destroy()
+
+    def test_real_tk_conflict_selection_keeps_both_sections_on_same_snapshot(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            coordinator = app.rounds
+
+            def side(sn, status, source, source_id, source_time, evidence):
+                return ConflictSide(sn, status, source, source_id, source_time,
+                                    tuple(sorted(evidence.items())))
+
+            first = RoundConflict(
+                "conflict-first", "round-first", 1,
+                side("SN-FIRST", "PASS", "/capture/original/first.csv", "original-id",
+                     "", {"round_evidence_id": "evidence-first"}),
+                side("", "FAIL", "", "candidate-id-must-not-become-a-path", "",
+                     {"round_evidence_id": "evidence-first"}),
+                (("round_evidence_id", "evidence-first"),), "2026-10-08T10:00:00",
+            )
+            second = RoundConflict(
+                "conflict-second", "round-first", 2,
+                side("SN-SECOND", "FAIL", "/capture/second/original.csv", "second-original",
+                     "2026-10-08T10:01:00", {"round_evidence_id": "evidence-second"}),
+                side("SN-SECOND-NEW", "PASS", "/capture/second/candidate.csv", "second-new",
+                     "2026-10-08T10:02:00", {"round_evidence_id": "evidence-second"}),
+                (("round_evidence_id", "evidence-second"),), "2026-10-08T10:03:00",
+            )
+            snapshot = RoundSnapshot(
+                "round-first", "FCT", RoundState.AWAITING_REVIEW, (), False, 0, (),
+                pending_conflicts=(first, second),
+            )
+
+            class SnapshotCoordinator:
+                def __getattr__(self, name):
+                    return getattr(coordinator, name)
+
+                def snapshot(self):
+                    return snapshot
+
+            app.rounds = SnapshotCoordinator()
+            app.active_round_id = snapshot.round_id
+            try:
+                app.events.put(RoundEvent(snapshot.round_id, 1, MonitorEvent(
+                    "conflict_detected", "controlled conflict", detail={"round_id": snapshot.round_id},
+                )))
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    root.update()
+                    if app.conflict_window and app.conflict_window.winfo_exists():
+                        break
+                    time.sleep(0.01)
+                self.assertTrue(app.conflict_window and app.conflict_window.winfo_exists())
+                root.update_idletasks()
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                first_rows = [
+                    (app.conflict_comparison.item(row, "text"),
+                     app.conflict_comparison.item(row, "values"))
+                    for row in app.conflict_comparison.get_children("")
+                ]
+                self.assertEqual(first_rows[0], ("結果", ("PASS", "FAIL")))
+                self.assertEqual(first_rows[1], ("SN", ("SN-FIRST", "未知")))
+                self.assertEqual(first_rows[2], ("來源時間", ("未知", "未知")))
+                self.assertEqual(first_rows[3], ("來源檔名", ("first.csv", "未知")))
+                first_detail = app.conflict_details.get("1.0", "end")
+                self.assertIn("candidate-id-must-not-become-a-path", first_detail)
+                self.assertIn("/capture/original/first.csv", first_detail)
+                self.assertNotIn("candidate-id-must-not-become-a-path.csv", first_rows[3][1])
+
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(1)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                second_rows = [
+                    (app.conflict_comparison.item(row, "text"),
+                     app.conflict_comparison.item(row, "values"))
+                    for row in app.conflict_comparison.get_children("")
+                ]
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：2")
+                self.assertEqual(second_rows[0], ("結果", ("FAIL", "PASS")))
+                self.assertEqual(second_rows[1], ("SN", ("SN-SECOND", "SN-SECOND-NEW")))
+                self.assertEqual(second_rows[3],
+                                 ("來源檔名", ("original.csv", "candidate.csv")))
+                second_detail = app.conflict_details.get("1.0", "end")
+                self.assertIn("conflict-second", second_detail)
+                self.assertNotIn("conflict-first", second_detail)
+            finally:
+                app.rounds = coordinator
+                app.hotkey.close()
+                coordinator.request_close()
                 root.destroy()
 
     def test_unknown_atlas_identity_change_is_visible_as_fail_and_audited_without_reason(self):
