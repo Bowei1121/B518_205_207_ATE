@@ -24,3 +24,5 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 ## M5 驗收紀錄
 
 本票目前完成五項驗收及原生選檔的受控返回測試；原生檔案選擇器的實際桌面互動仍待確認，故尚未達到合併條件。程式、測試、測試命令、M4 依賴及環境限制見 [M5 本機驗收紀錄](../evidence/multilingual-ticket-05/local-validation.md)。
+
+最終程式／測試版本 `a90be28c8b1615b408aaf6147572e603dff5338e` 的完整含 Tk 套件通過 334 項，真 Tk UI 模組通過 57 項；固定 Standards／Spec 基準為 `740b26c23f5fb6fcc0988272183159b4405df5da`，複審發現已修正。此 SHA 已直接確認在 GitHub `Multilingual/ticket-05`。第五項驗收的實際原生選檔／系統覆寫拒絕操作仍待人工確認；在此完成及公司 Gitea 週一同步直接確認前，保留票分支，不合併或清理。
