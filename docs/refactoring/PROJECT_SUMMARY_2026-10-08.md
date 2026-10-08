@@ -83,3 +83,9 @@
 - Session 與 audit 的共同事件使用相同 round ID、序號、時間及雙語內容。準備流程的 `ConfiguredMonitor` 轉交輪次事件上下文；Session adapter 保留舊兩參數呼叫並用關鍵字傳遞新增欄位。未形成 audit 紀錄的來源候選不消耗 audit 序號，避免未知來源 FAIL 事件造成序號缺口。真實 `RoundStartPreparation`、RoundCoordinator、sample-json、Session／audit 暫存磁碟讀取驗證來源映射及紀錄一致。
 - 最終程式／測試提交 `1d036f0339c2d37ac7907e46c31f92708909ea38`。完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 303 tests（80.331 秒）、0 跳過；包含真 Tk 事件語言切換與人工操作、未知來源 FAIL、Session／audit 重建，以及關閉保存、封存與清理回歸。`compileall` 與 `git diff --check` 通過；專案沒有既有型別檢查設定，未宣稱型別檢查通過。固定基準 Standards／Spec 審查均無未解阻擋。
 - M2 六項驗收、固定基準 Standards／Spec 審查及完整含 Tk 測試完成；最後程式／測試 SHA `1d036f0339c2d37ac7907e46c31f92708909ea38` 完整套件通過 303 tests（80.331 秒、0 跳過）。依使用者指示，M2 已合併至 `B518-Log-Solution`，合併 SHA `f128d9f963f60d416d0eaf5917fa5eda87408280`；合併後完整套件再通過 303 tests（80.964 秒、0 跳過），並推送 GitHub。推送後直接查得 GitHub `B518-Log-Solution` 為合併 SHA。公司內部 Gitea 預定週一同步；在確認 Gitea SHA 前保留 `Multilingual/ticket-02` 分支。未修改 GitHub #15 或母規格 #13。證據見 [M2 本機驗收紀錄](evidence/multilingual-ticket-02/local-validation.md)。
+
+## M3 平台事件雙語遷移（GitHub #16，母規格 #13）
+
+- 依使用者允許先以 GitHub 主線作為 M2 工作基準，M2 合併 `f128d9f` 與驗收文件主線 `c87c7bc` 均已納入；M3 固定 Standards／Spec 基準為 `c87c7bcefa334b96c420f255e8c1bf99e7a97370`。M3 分支 `Multilingual/ticket-03` 從乾淨主線建立。README 原列 #15 為阻擋已過時，依 ancestry 更新為已由 M2 解除；Gitea 本次即時查詢等待 30 秒無回應後中止，狀態未確認。
+- 第一批程式提交 `3c0b56f9f96196bdf4abc37cacebee68dea43233` 已推至 GitHub 票分支，直接 ref 曾確認與提交相符。平台 producer 開始使用 M2 固定雙語事件契約，涵蓋 Atlas、B482、RS-WMT 與 sample-json 的來源／讀取／解析事件。聚焦測試 95 項通過；後續 Sample JSON 讀取錯誤修正的聚焦批次 58 項通過；排除整個 Tk UI 測試模組的非 Tk 套件 260 項通過。
+- 一般 shell 建窗以 exit 134 中止；改在已授權桌面執行能力中，真 Tk sample-json 來源錯誤／語言刷新與 audit bytes 不變案例通過，完整含 Tk 套件 310 tests 通過（69.502 秒）。首次 Tk 案例發現比較基準早於背景合法來源事件；將 audit bytes 快照移至語言切換前後後重跑通過。沒有既有型別檢查設定。M3 全平台等價／診斷矩陣與固定基準雙軸審查仍待完成，未合併或清理票分支；Gitea 即時查詢 30 秒無回應，狀態未確認。證據見 [M3 本機驗收紀錄](evidence/multilingual-ticket-03/local-validation.md)。

@@ -18,4 +18,8 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 ## Blocked by
 
-- [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15)
+- [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15) — 已由 M2 合併提交 `f128d9f963f60d416d0eaf5917fa5eda87408280` 納入 `B518-Log-Solution`，M3 的程式依賴已解除。公司 Gitea 同步仍待公司網路即時確認。
+
+## Current delivery status
+
+M3 implementation is in progress on `Multilingual/ticket-03`. The first validated program batch is `3c0b56f9f96196bdf4abc37cacebee68dea43233`, pushed to the GitHub ticket branch. The required full suite passed 310 tests, including the true-Tk sample-json source-error/language-refresh case, in an authorized desktop GUI session. The complete cross-platform equivalence/error-display matrix, fixed-base review, and Gitea synchronization remain open; acceptance is partial and this ticket is not ready to merge. See [local validation](../evidence/multilingual-ticket-03/local-validation.md).

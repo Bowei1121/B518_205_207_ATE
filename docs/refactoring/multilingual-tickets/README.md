@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | [M1](01-main-language-menu.md) | [#14](https://github.com/Bowei1121/B518_205_207_ATE/issues/14) | 主頁直覺語言選單、英文／繁中即時切換、上次語言持久保存；[本機驗收](../evidence/multilingual-ticket-01/local-validation.md) | 無 |
 | [M2](02-round-bilingual-events.md) | [#15](https://github.com/Bowei1121/B518_205_207_ATE/issues/15) | 共同輪次事件同筆雙語、切換畫面事件及磁碟重建 | #14（已由 M1 主線交付解除） |
-| [M3](03-platform-event-migration.md) | [#16](https://github.com/Bowei1121/B518_205_207_ATE/issues/16) | 各已支援平台的來源／解析／錯誤事件都可雙語閱讀與保存 | #15 |
+| [M3](03-platform-event-migration.md) | [#16](https://github.com/Bowei1121/B518_205_207_ATE/issues/16) | 各已支援平台的來源／解析／錯誤事件都可雙語閱讀與保存 | #15（已由 M2 主線交付解除） |
 | [M4](04-app-diagnostic-events.md) | [#17](https://github.com/Bowei1121/B518_205_207_ATE/issues/17) | 無輪次 App 事件雙語保存、可理解錯誤、原始診斷與故障補存 | #15 |
 | [M5](05-settings-and-file-dialogs.md) | [#18](https://github.com/Bowei1121/B518_205_207_ATE/issues/18) | 工程師設定、配置與選檔流程換語言且不丟輸入 | #17 |
 | [M6](06-conflicts-and-alarms.md) | [#19](https://github.com/Bowei1121/B518_205_207_ATE/issues/19) | 衝突與警報同步翻譯，保留選取、快照與人工決定 | #15 |

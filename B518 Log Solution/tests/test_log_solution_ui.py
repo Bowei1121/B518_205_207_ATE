@@ -398,6 +398,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 reloaded.load()
                 self.assertEqual(reloaded.language, TRADITIONAL_CHINESE)
 
+                platform_audit_before_language_refresh = (session_path / "audit.jsonl").read_bytes()
                 app.language_button.event_generate("<space>")
                 root.update()
                 app.language_menu.event_generate("<Escape>")
@@ -413,7 +414,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                     for line in app.event_lines), app.event_lines)
                 self.assertTrue(any("Sample JSON source record is invalid" in line
                                     for line in app.event_lines), app.event_lines)
-                self.assertEqual((session_path / "audit.jsonl").read_bytes(), platform_audit_bytes)
+                self.assertEqual((session_path / "audit.jsonl").read_bytes(),
+                                 platform_audit_before_language_refresh)
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "Slot 1")
                 self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
                 saved_bytes = preferences.read_bytes()
