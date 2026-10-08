@@ -81,6 +81,9 @@ Ran 1 test in 1.202s — OK (real B482 adapter and disk readers, at `8f9b293`)
 B518_TK_TESTS=1 python3 scripts/run_tests.py
 Ran 286 tests in 63.304s — OK (accessible desktop session, at `8f9b293ec7c90595c4bcd443daabf26e72049f0b`)
 
+B518_TK_TESTS=1 python3 scripts/run_tests.py
+Ran 286 tests in 63.224s — OK (post-merge, accessible desktop session, at merge commit `98fa01e20dd883fc6a9d6c3c25fbc764e5c3cd7e`)
+
 python3 -m compileall -q src tests
 OK (syntax/bytecode compilation only)
 
@@ -97,5 +100,6 @@ There is no project type-check configuration or command (`mypy`, `pyright`, and 
 - Implementation commits: `26960a1f18c3e28d06484d30e6c28e19598ac10d`, `8f9b293ec7c90595c4bcd443daabf26e72049f0b`.
 - Standards review at fixed base: no documented-standard violations. One non-blocking test-maintenance observation noted duplicated `pump_until` and cleanup patterns in the two new Tk cases; no implementation change was requested.
 - Spec review at fixed base: no blocking specification findings. The reviewer confirmed the constructor-owned preparation path, real Tk/disk evidence, fourteen-scenario matrix, and honest field/type-check limitations.
-- Local batch pushes succeeded to the configured Gitea and GitHub destinations. Final mainline merge, post-merge test, live SHA verification and branch cleanup are pending the review gate.
+- Merge commit: `98fa01e20dd883fc6a9d6c3c25fbc764e5c3cd7e` (`merge: complete round start assembly R3`). The post-merge full Tk suite passed 286 tests in 63.224 seconds. Live mainline SHA confirmation at both push destinations and ticket-branch cleanup are pending.
+- Non-elevated Tk execution initially exited with code 134 at the UI test startup; the isolated case and full suite passed in the accessible desktop execution context. This environment limitation is not treated as a product failure.
 - Field checklist status: pending scheduled factory acceptance; no equipment results are inferred.

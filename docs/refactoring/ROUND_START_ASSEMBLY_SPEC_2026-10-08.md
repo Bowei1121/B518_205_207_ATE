@@ -119,7 +119,7 @@ R2 connects the formal Tk button and keyboard entry paths to the R1 public prepa
 
 ### R3 verification coverage
 
-R3 verification is recorded in [R3 local validation](evidence/round-start-assembly-ticket-03/local-validation.md). The current program/test SHA is `8f9b293ec7c90595c4bcd443daabf26e72049f0b`; the fixed Standards/Spec review base is `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8`. The final complete Tk suite ran against that program/test SHA. This table records current evidence for the fourteen scenario groups; it does not convert earlier R1/R2 historical claims into new results.
+R3 verification is recorded in [R3 local validation](evidence/round-start-assembly-ticket-03/local-validation.md). The final program/test SHA is `8f9b293ec7c90595c4bcd443daabf26e72049f0b`; the fixed Standards/Spec review base is `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8`; merge SHA is `98fa01e20dd883fc6a9d6c3c25fbc764e5c3cd7e`. The complete Tk suite passed both at the final program/test SHA and after merge. This table records current evidence for the fourteen scenario groups; it does not convert earlier R1/R2 historical claims into new results.
 
 | # | Scenario | R3 evidence | Result / limit |
 | --- | --- | --- | --- |
@@ -138,7 +138,7 @@ R3 verification is recorded in [R3 local validation](evidence/round-start-assemb
 | 13 | Old-round event / unmapped source | `test_queued_prior_round_event_cannot_change_the_new_round_ui`; `test_warning_for_unmapped_source_is_kept_without_claiming_a_display_slot` | Pass; stale event exercised through a two-round real Tk App |
 | 14 | Save/retry/archive/retention regression | Full audit, coordinator, archival, retention, and Tk suite | Pass; no lifecycle implementation changed |
 
-The R3 full run was `B518_TK_TESTS=1 python3 scripts/run_tests.py`: **286 tests passed in 63.304 seconds** in an accessible desktop session. The project has no configured type-check command; syntax compilation is recorded separately and is not called type checking. Physical equipment acceptance and OS-level global-hotkey acceptance remain separate field work.
+The R3 full run was `B518_TK_TESTS=1 python3 scripts/run_tests.py`: **286 tests passed in 63.304 seconds** on the final program/test commit and **286 tests passed in 63.224 seconds** after merge, both in an accessible desktop session. The project has no configured type-check command; syntax compilation is recorded separately and is not called type checking. Physical equipment acceptance and OS-level global-hotkey acceptance remain separate field work.
 
 - 日期：2026-10-08。來源：`ROUND_START_ASSEMBLY_DISCUSSION_2026-10-08.md` 的 A1–A7；使用者已同意完整結論並要求轉為規格。
 - 討論事實查證基準為 4d7754c；制定規格時 HEAD 為 332a451，新增提交為 C1 合併驗證文件。開始實作前須再次核對最新程式，遇到契約差異先記錄，不暗中改變已確認需求。
