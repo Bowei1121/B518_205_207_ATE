@@ -1423,13 +1423,13 @@ class LogSolutionUiTests(unittest.TestCase):
                                 state_before_language_refresh = app.rounds.snapshot()
                                 app.language_button.event_generate("<Button-1>")
                                 root.update()
-                                traditional_chinese_index = next(
+                                chinese_index = next(
                                     menu_index for menu_index in range(
                                         app.language_menu.index("end") + 1)
                                     if app.language_menu.entrycget(menu_index, "label") ==
                                     "繁體中文"
                                 )
-                                app.language_menu.invoke(traditional_chinese_index)
+                                app.language_menu.invoke(chinese_index)
                                 root.update()
                                 self.assertEqual(
                                     app.rounds.snapshot().round_id, round_id,
