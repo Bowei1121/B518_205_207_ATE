@@ -135,7 +135,7 @@ App 將部署至美國工廠，現場操作員與工程師需要英文介面，�
 
 真正 Tk 測試使用可存取桌面工作階段的環境；必要案例因環境未執行需明記待驗，不以 mock、語法或文件檢查冒充。此次規格交付未執行產品測試或宣告實作完成。
 
-M3（2026-10-08）已補齊所有支援平台 producer 對照與完整參數（含共同入口加入的 `station`），並新增 B482 batch/mismatch、RS-WMT batch、Sample JSON 各警告 ID／參數斷言。Atlas DFU/FCT、B482、RS-WMT、sample-json 的真 Tk 正常／部分／讀取錯誤矩陣均經公開準備與 RoundCoordinator，使用新 Session／audit 讀取器重建；同輪結果切換雙語後狀態與 audit bytes 不變。Atlas/sample-json 適用候選／未知來源 FAIL 與共同 RoundCoordinator timeout 另有真 Tk 測試。完整含 Tk 套件在測試提交 `30f8702` 後通過 317 tests（79.404 秒）；timeout 測試修正了完整套件暴露的 round-ready 快照競爭。一般 shell 無桌面時 Tk 建窗 exit 134，已在桌面圖形工作階段執行成功。固定基準 `c87c7bcefa334b96c420f255e8c1bf99e7a97370` Standards／Spec 審查沒有未解產品缺口；Standards 記錄一項非阻擋重複錯誤回報整理建議，Spec 文件參數發現已修正並待文件複核。GitHub `Multilingual/ticket-03` 直接查得 `30f8702cd6511c5a698882874306093cbaf5dd26`；Gitea 依使用者指示週一同步，直接確認前保留票分支。M3 acceptance 覆蓋不表示全 App 多語言、現場設備或完整發布驗收完成。逐項結果見 [M3 本機驗收](evidence/multilingual-ticket-03/local-validation.md)。
+M3（2026-10-08）已補齊所有支援平台 producer 對照與完整參數（含共同入口加入的 `station`），並新增 B482 batch/mismatch、RS-WMT batch、Sample JSON 五種警告 ID／參數／診斷斷言。Atlas DFU/FCT、B482、RS-WMT、sample-json 的真 Tk 正常／部分／讀取錯誤矩陣均經公開準備與 RoundCoordinator，使用新 Session／audit 讀取器重建；同輪結果切換雙語後狀態與 audit bytes 不變。Atlas/sample-json 適用候選／未知來源 FAIL 與共同 RoundCoordinator timeout 另有真 Tk 測試。完整含 Tk 套件在測試提交 `9d35db3` 後通過 317 tests（88.328 秒）；timeout 測試修正了完整套件暴露的 round-ready 快照競爭。一般 shell 無桌面時 Tk 建窗 exit 134，已在桌面圖形工作階段執行成功。固定基準 `c87c7bcefa334b96c420f255e8c1bf99e7a97370` Standards／Spec 審查沒有未解產品缺口；Standards 記錄一項非阻擋重複錯誤回報整理建議，最新完整 diff 複審進行中。GitHub `Multilingual/ticket-03` 直接查得 `9d35db36af225ce6faf56eafbe2e8554917e1a66`；Gitea 依使用者指示週一同步，直接確認前保留票分支。M3 acceptance 覆蓋不表示全 App 多語言、現場設備或完整發布驗收完成。逐項結果見 [M3 本機驗收](evidence/multilingual-ticket-03/local-validation.md)。
 
 ## Out of Scope
 
