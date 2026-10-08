@@ -966,6 +966,176 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_sample_platform_conflicts_stay_consistent_through_real_tk_and_disk_rebuild(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            source_root = Path(temporary) / "source"
+            source_root.mkdir()
+            source_file = source_root / "events.jsonl"
+            source_file.write_text("", encoding="utf-8")
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+
+            def wait_ui(predicate, timeout=8):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for sample-platform conflict review")
+
+            def append_source_event(kind, position, sn, status, second):
+                event = {
+                    "kind": kind, "position": position, "sn": sn, "status": status,
+                    "source_time": "2026-10-08T10:00:{:02d}".format(second),
+                    "batch_id": "c3-controlled-batch",
+                }
+                with source_file.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(event) + "\n")
+
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("sample-json")
+                app.profile_editor_capacity.set("3")
+                app.profile_editor_mapping.set("1:1, 2:2, 3:3")
+                app.profile_editor_paths["active"].set(str(source_root))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_monitor()
+                wait_ui(lambda: app.rounds.session_path is not None)
+
+                append_source_event("activity", 3, "", "TESTING", 0)
+                append_source_event("final", 1, "SN-ORIGINAL", "PASS", 1)
+                wait_ui(lambda: any(result.slot == 1 and result.status == "PASS"
+                                    for result in app.rounds.snapshot().results))
+                append_source_event("final", 1, "SN-CANDIDATE-1", "FAIL", 2)
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 1
+                         and app.conflict_window is not None
+                         and app.conflict_window.winfo_viewable())
+                first_conflict = app.rounds.snapshot().pending_conflicts[0]
+                self.assertEqual((first_conflict.slot, first_conflict.original.status,
+                                  first_conflict.candidate.status), (1, "PASS", "FAIL"))
+
+                append_source_event("final", 1, "SN-CANDIDATE-2", "NOTEST", 3)
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 2
+                         and app.conflict_list.size() == 2)
+                conflicts = app.rounds.snapshot().pending_conflicts
+                second_conflict = conflicts[1]
+                self.assertEqual(second_conflict.slot, 1)
+                self.assertEqual(app.conflict_list.curselection(), (0,))
+                self.assertIn(first_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+                captured_source = source_file.read_text(encoding="utf-8")
+                source_file.write_text(captured_source.replace(
+                    "SN-CANDIDATE-2", "SN-CHANGED-AFTER-CAPTURE").replace(
+                    '"NOTEST"', '"PASS"'), encoding="utf-8")
+                root.update_idletasks()
+                self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 2)
+
+                append_source_event("final", 2, "SN-SECOND", "PASS", 4)
+                wait_ui(lambda: any(result.slot == 2 and result.status == "PASS"
+                                    for result in app.rounds.snapshot().results))
+                append_source_event("final", 2, "SN-SECOND-CANDIDATE", "FAIL", 5)
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 3
+                         and app.conflict_list.size() == 3)
+                cross_position_conflict = app.rounds.snapshot().pending_conflicts[2]
+                self.assertEqual(cross_position_conflict.slot, 2)
+
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(1)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                self.assertIn(second_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][1:],
+                                 ("SN-ORIGINAL", "SN-CANDIDATE-2"))
+                candidate_index = app.conflict_comparison.search("NOTEST", "1.0")
+                self.assertTrue(candidate_index)
+                self.assertIn("comparison_difference",
+                              app.conflict_comparison.tag_names(candidate_index))
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(difference_font.actual("weight"), "bold")
+
+                app.conflict_close_button.invoke()
+                root.update_idletasks()
+                self.assertFalse(app.conflict_window.winfo_viewable())
+                app.review_button.invoke()
+                root.update_idletasks()
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                self.assertIn(second_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+
+                app.resolve_conflict_candidate_button.invoke()
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 2
+                         and second_conflict.conflict_id not in {
+                             item.conflict_id for item in app.rounds.snapshot().pending_conflicts
+                         })
+                self.assertEqual(app.conflict_list.curselection(), (0,))
+                self.assertIn(first_conflict.conflict_id, app.conflict_details.get("1.0", "end"))
+                remaining_result = app.conflict_comparison.search("FAIL", "1.0")
+                self.assertTrue(remaining_result)
+                self.assertIn("comparison_difference",
+                              app.conflict_comparison.tag_names(remaining_result))
+                app.resolve_conflict_original_button.invoke()
+                wait_ui(lambda: len(app.rounds.snapshot().pending_conflicts) == 1)
+                remaining_index = app.conflict_comparison.search("FAIL", "1.0")
+                self.assertTrue(remaining_index)
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(difference_font.actual("weight"), "bold")
+                app.resolve_conflict_original_button.invoke()
+                wait_ui(lambda: not app.rounds.snapshot().pending_conflicts)
+                self.assertFalse(app.conflict_list.curselection())
+                self.assertEqual(app.conflict_details.get("1.0", "end-1c"),
+                                 "目前沒有待確認項目。")
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "disabled")
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "disabled")
+
+                append_source_event("final", 3, "SN-THIRD", "PASS", 6)
+                wait_ui(lambda: app.rounds.snapshot().collection_stopped
+                         and app.rounds.snapshot().result_available)
+                self.assertTrue(app.rounds.flush_session(timeout=3))
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = app.rounds.session_path / "audit.jsonl"
+                rebuilt = read_round_audit(audit_path)
+                self.assertTrue(rebuilt["audit_complete"])
+                self.assertTrue(rebuilt["result_available"])
+                self.assertEqual([rebuilt["results"][slot]["status"] for slot in (1, 2, 3)],
+                                 ["PASS", "PASS", "PASS"])
+                detected = [event for event in rebuilt["events"]
+                            if event["kind"] == "conflict_detected"]
+                resolved = [event for event in rebuilt["events"]
+                            if event["kind"] == "conflict_resolved"]
+                self.assertEqual(len(detected), 3)
+                self.assertEqual(len(resolved), 3)
+                self.assertEqual({event["detail"]["conflict_id"] for event in detected},
+                                 {event["detail"]["conflict_id"] for event in resolved})
+                with (app.rounds.session_path / "results.csv").open(encoding="utf-8") as handle:
+                    session_results = list(csv.DictReader(handle))
+                self.assertEqual([(int(row["slot"]), row["status"]) for row in session_results],
+                                 [(1, "PASS"), (2, "PASS"), (3, "PASS")])
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
     def test_atlas_round_shows_nonblocking_conflict_and_releases_after_other_slot_finishes(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
