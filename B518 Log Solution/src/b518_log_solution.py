@@ -134,6 +134,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_list = None
         self.app_diagnostics_detail = None
         self.app_diagnostics_status = None
+        self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
@@ -541,6 +542,12 @@ class B518LogSolutionApp:
             self.app_event_status_label.configure(text=text)
         if self.app_diagnostics_status and self.app_diagnostics_status.winfo_exists():
             self.app_diagnostics_status.configure(text=text)
+        if self.app_diagnostics_history and self.app_diagnostics_history.winfo_exists():
+            history = "；".join(status.error_history) if status.error_history else "—"
+            self.app_diagnostics_history.configure(text=self._t(
+                "app.diagnostic.save_history",
+                status=self._t("app.diagnostic.save_state." + status.status),
+                history=history))
         if self.app_diagnostics_retry_button and self.app_diagnostics_retry_button.winfo_exists():
             self.app_diagnostics_retry_button.configure(
                 state="normal" if status.status == "failed" else "disabled")
@@ -629,13 +636,17 @@ class B518LogSolutionApp:
         self.app_diagnostics_detail.pack(side="left", fill="both", expand=True, padx=(8, 0))
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.pack(fill="x")
-        self.app_diagnostics_status = ttk.Label(footer, text="")
+        footer_row = ttk.Frame(footer)
+        footer_row.pack(fill="x")
+        self.app_diagnostics_status = ttk.Label(footer_row, text="")
         self.app_diagnostics_status.pack(side="left", fill="x", expand=True)
         self.app_diagnostics_retry_button = ttk.Button(
-            footer, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
+            footer_row, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
             state="disabled")
         self.app_diagnostics_retry_button.pack(side="left", padx=6)
-        ttk.Button(footer, text=self._t("app.diagnostic.close"), command=window.destroy).pack(side="right")
+        ttk.Button(footer_row, text=self._t("app.diagnostic.close"), command=window.destroy).pack(side="right")
+        self.app_diagnostics_history = ttk.Label(footer, text="", wraplength=720, justify="left")
+        self.app_diagnostics_history.pack(fill="x", pady=(5, 0))
         window.protocol("WM_DELETE_WINDOW", window.destroy)
         self._refresh_app_event_records()
         self._refresh_app_event_status()

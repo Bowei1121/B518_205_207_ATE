@@ -118,6 +118,34 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual([item["event_id"] for item in rebuilt], [event.event_id])
         self.assertEqual([item["sequence"] for item in rebuilt], [1])
 
+    def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
+        real_fsync = __import__("os").fsync
+        calls = [0]
+
+        def fail_directory_fsync_once(descriptor):
+            calls[0] += 1
+            # _atomic_replace fsyncs the file first and its parent directory second.
+            if calls[0] == 2:
+                raise OSError("directory fsync unavailable")
+            return real_fsync(descriptor)
+
+        with patch("app_event_store.os.fsync", side_effect=fail_directory_fsync_once):
+            event = self.store.record("app.profile.save_failed", {"reason": "test"}, "test")
+            self.wait_until(lambda: self.store.status().status == "failed")
+            status = self.store.status()
+            self.assertEqual(status.pending_count, 1)
+            self.assertIn("directory fsync unavailable", status.error)
+            self.assertFalse(status.complete)
+            self.assertEqual([item["event_id"] for item in
+                              read_app_event_store(self.path)["events"]], [event.event_id])
+
+            self.assertTrue(self.store.retry())
+            self.assertTrue(self.store.flush())
+
+        self.assertTrue(self.store.status().complete)
+        self.assertEqual([item["event_id"] for item in
+                          read_app_event_store(self.path)["events"]], [event.event_id])
+
     def test_reader_rejects_unknown_version_and_round_linkage(self):
         payload = {"record_type": "app_event_store", "schema_version": 77, "events": []}
         self.path.write_text(json.dumps(payload), encoding="utf-8")

@@ -62,6 +62,14 @@ def _json_bytes(payload: object) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def _fsync_directory(directory: Path) -> None:
+    descriptor = os.open(str(directory), os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _atomic_replace(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=".{}-".format(path.name), dir=str(path.parent))
@@ -71,14 +79,7 @@ def _atomic_replace(path: Path, content: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, str(path))
-        try:
-            directory_fd = os.open(str(path.parent), os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        except OSError:
-            pass
+        _fsync_directory(path.parent)
     except Exception:
         try:
             os.unlink(temporary)
@@ -249,6 +250,10 @@ class AppEventStore:
                                              event.kind, event.message, event.diagnostic)
                         _atomic_replace(self.path, _json_bytes(self._payload(disk_events + [record])))
                         disk_events.append(record)
+                    else:
+                        # A prior replace may have succeeded before directory fsync failed.
+                        # Reconfirm the directory entry before reporting durable completion.
+                        _fsync_directory(self.path.parent)
                     with self._condition:
                         self._events = disk_events
                         if self._pending and self._pending[0].event_id == event.event_id:

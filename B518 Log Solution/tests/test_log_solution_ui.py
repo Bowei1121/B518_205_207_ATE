@@ -305,6 +305,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 root.update()
+                pump_until(lambda: app.rounds.app_event_status().complete)
                 def fail_app_store(_path, _content):
                     raise OSError("app journal unavailable")
 
@@ -409,6 +410,29 @@ class LogSolutionUiTests(unittest.TestCase):
                     click(apply_button)
                 self.assertIn("active configuration remains unchanged",
                               app.profile_editor_status.get())
+
+                original_catalog = app.profiles.to_dict()
+                original_selection = (app.project.get(), app.station.get())
+                invalid_import = Path(temporary) / "invalid-profile.json"
+                invalid_import.write_text("{", encoding="utf-8")
+                import_button = find_button(app.settings_window, "匯入配置")
+                export_button = find_button(app.settings_window, "匯出配置")
+                self.assertIsNotNone(import_button)
+                self.assertIsNotNone(export_button)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                with patch("b518_log_solution.filedialog.askopenfilename",
+                           return_value=str(invalid_import)), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    click(import_button)
+                self.assertEqual(app.profiles.to_dict(), original_catalog)
+                self.assertEqual((app.project.get(), app.station.get()), original_selection)
+                self.assertIn("saved configuration remains unchanged",
+                              app.profile_editor_status.get())
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(Path(temporary) / "missing" / "export.json")), \
+                        patch("b518_log_solution.messagebox.showerror"):
+                    click(export_button)
+                self.assertIn("could not be exported", app.profile_editor_status.get())
                 app._close_settings()
 
                 pump_until(lambda: app.rounds.app_event_status().complete)
@@ -423,6 +447,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("app.startup.started", ids)
                 self.assertIn("app.hotkey.unavailable", ids)
                 self.assertIn("app.profile.save_failed", ids)
+                self.assertIn("app.profile.import_failed", ids)
+                self.assertIn("app.profile.export_failed", ids)
                 self.assertTrue(all("round_id" not in item for item in stored))
 
                 profile_index = next(index for index, row in enumerate(rows)
@@ -434,6 +460,50 @@ class LogSolutionUiTests(unittest.TestCase):
                 detail = app.app_diagnostics_detail.get("1.0", "end-1c")
                 self.assertIn("Configuration preferences could not be saved", detail)
                 self.assertIn("profile disk full", detail)
+
+                import_index = next(index for index, row in enumerate(rows)
+                                    if "Configuration could not be imported" in row)
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(import_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                import_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("Configuration could not be imported", import_detail)
+                self.assertIn("JSON", import_detail)
+
+                export_index = next(index for index, row in enumerate(rows)
+                                    if "Configuration could not be exported" in row)
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(export_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                export_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("Configuration could not be exported", export_detail)
+                self.assertIn("missing", export_detail)
+
+                # The journal's own failure is exposed in the real diagnostics window
+                # after recovery, while complete remains the current save state.
+                app._close_settings()
+                click(app.settings_button)
+                export_button = find_button(app.settings_window, "匯出配置")
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(Path(temporary) / "missing-again" / "export.json")), \
+                        patch("b518_log_solution.messagebox.showerror"), \
+                        patch("app_event_store._atomic_replace",
+                              side_effect=OSError("diagnostic journal disk full")):
+                    click(export_button)
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+                pump_until(lambda: "diagnostic journal disk full" in
+                           app.app_diagnostics_history.cget("text"))
+                click(app.app_diagnostics_retry_button)
+                pump_until(lambda: "diagnostic journal disk full" in
+                           app.app_diagnostics_history.cget("text"))
+                pump_until(lambda: app.rounds.app_event_status().complete and
+                           "current status: complete" in
+                           app.app_diagnostics_history.cget("text").lower())
+                self.assertIn("complete", app.app_diagnostics_history.cget("text").lower())
+
+                app.close()
 
                 app.close()
                 pump_until(lambda: app.rounds.close_status().status == "complete")

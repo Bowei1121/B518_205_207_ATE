@@ -1,6 +1,7 @@
 import csv
 import gc
 import io
+import os
 import tempfile
 import threading
 import time
@@ -1741,16 +1742,18 @@ class MonitoringRoundTests(unittest.TestCase):
 
             failed_event = rounds.record_app_event(
                 "app.hotkey.unavailable", {}, "permission denied")
-            original_replace = app_event_store._atomic_replace
             failed = threading.Event()
+            real_fsync = os.fsync
+            fsync_calls = [0]
 
-            def fail_event(path, content):
-                if failed_event.event_id.encode() in content:
+            def fail_directory_fsync_once(descriptor):
+                fsync_calls[0] += 1
+                if fsync_calls[0] == 2:
                     failed.set()
-                    raise OSError("app disk fault")
-                return original_replace(path, content)
+                    raise OSError("app directory fsync fault")
+                return real_fsync(descriptor)
 
-            with patch.object(app_event_store, "_atomic_replace", side_effect=fail_event):
+            with patch.object(app_event_store.os, "fsync", side_effect=fail_directory_fsync_once):
                 self.assertTrue(failed.wait(2))
                 deadline = time.monotonic() + 2
                 while store.status().status != "failed" and time.monotonic() < deadline:
@@ -1760,7 +1763,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 while rounds.close_status().status != "failed" and time.monotonic() < deadline:
                     threading.Event().wait(.01)
                 self.assertEqual(rounds.close_status().status, "failed")
-                self.assertIn("app disk fault", rounds.close_status().message)
+                self.assertIn("app directory fsync fault", rounds.close_status().message)
                 self.assertEqual(close.round_ids, ())
 
             rounds.retry_close_saves()
