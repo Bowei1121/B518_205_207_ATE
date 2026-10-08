@@ -1839,6 +1839,45 @@ class LogSolutionUiTests(unittest.TestCase):
                 )
                 self.assertEqual(difference_font.actual("weight"), "bold")
 
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = app.rounds.session_path / "audit.jsonl"
+                audit_bytes_before_refresh = audit_path.read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+                selected_conflict_id = second_conflict.conflict_id
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertTrue(any(
+                    event.event.localized_message and
+                    event.event.localized_message.traditional_chinese in line
+                    for event in state_before_refresh.events for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                 state_before_refresh.pending_conflicts)
+                self.assertEqual(app.conflict_list.curselection(), (1,))
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                self.assertIn(selected_conflict_id, app.conflict_details.get("1.0", "end"))
+                self.assertEqual(conflict_summary_rows(app)[2][1:],
+                                 ("SN-ORIGINAL", "SN-CANDIDATE-2"))
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                 state_before_refresh.pending_conflicts)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+
                 app.conflict_close_button.invoke()
                 root.update_idletasks()
                 self.assertFalse(app.conflict_window.winfo_viewable())
