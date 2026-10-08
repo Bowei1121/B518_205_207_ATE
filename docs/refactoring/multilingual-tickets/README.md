@@ -4,7 +4,7 @@
 
 狀態：使用者已確認十張拆票，M1～M10 已發布為 GitHub #14～#23。M1 六項驗收與審查已通過並合併至主線 `83d8a68`。M2 六項驗收、完整含 Tk 套件及固定基準 Standards／Spec 審查均已完成，程式／測試 SHA `1d036f0339c2d37ac7907e46c31f92708909ea38` 已推送；合併提交 `f128d9f963f60d416d0eaf5917fa5eda87408280` 已推送至 GitHub 的 `B518-Log-Solution` 並直接確認。完整證據見[本機驗收紀錄](../evidence/multilingual-ticket-02/local-validation.md)。內部 Gitea 將於週一同步；在直接確認同步前保留 `Multilingual/ticket-02` 分支。M3～M10 依下列範圍與依賴另行交付。Issue #13 僅作 Parent 參考；本次不修改遠端議題狀態。M1／M2 的本機證據不代表全 App 多語言完成。
 
-M3 已在 `Multilingual/ticket-03` 完成來源診斷修正及跨平台真正 Tk 顯示／磁碟驗證；完整 Tk 套件通過 313 tests。固定基準 Standards 審查無硬違規；Spec 複審仍要求補足雙語下全平台正常、部分資料、候選、未知來源 FAIL 與逾時矩陣，因此 M3 驗收尚未完成、不合併、不清理分支。GitHub push 回報成功，但本次 direct ref 查詢受 DNS 阻擋；Gitea 依使用者指示週一推送。細節見 [M3 本機驗收](../evidence/multilingual-ticket-03/local-validation.md)。
+M3 已在 `Multilingual/ticket-03` 完成來源診斷修正及跨平台真正 Tk 顯示／磁碟驗證；完整 Tk 套件通過 314 tests。固定基準 Standards 審查無硬違規；Spec 複審仍要求補足雙語下全平台正常、部分資料、候選、未知來源 FAIL 與逾時矩陣，因此 M3 驗收尚未完成、不合併、不清理分支。GitHub 票分支於文件提交 `3c5f9a6` 後直接確認相同 SHA；Gitea 依使用者指示週一同步。細節見 [M3 本機驗收紀錄](../evidence/multilingual-ticket-03/local-validation.md)。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |
