@@ -10,7 +10,7 @@ Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
 
 固定 code-review 基準：`d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`
 
-最後已驗證程式提交：`ebe7364`（其父提交 `5240a21`）
+最後已驗證程式提交：`ebe7364`（其父提交 `5240a21`；後續僅有驗收文件提交）
 
 ## 交付內容
 
@@ -30,7 +30,7 @@ Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
 
 ## 實際命令與結果
 
-以下兩個聚焦測試在分支程式提交 `ebe7364` 上曾以可用的 Tk 桌面工作階段通過：
+以下兩個聚焦測試在分支程式提交 `ebe7364` 上以可用的 Tk 桌面工作階段通過：
 
 ```sh
 cd "B518 Log Solution/B518 Log Solution"
@@ -38,7 +38,7 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiT
 B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_real_tk_conflict_selection_keeps_both_sections_on_same_snapshot
 ```
 
-本次後續靜態檢查：`python3 -m compileall -q src tests` 與 `git diff --check` 通過。專案未發現 `pyproject.toml`、mypy、pyright 或其他既有型別檢查設定；因此沒有宣稱型別檢查通過。
+重新取得桌面存取後，再次執行上列兩個聚焦測試，均通過（2 tests，7.561 秒）。`python3 -m compileall -q src tests` 與 `git diff --check d0f4535dc74753cbb6a457828b7b5c1d6ecacac9..HEAD` 通過。專案未發現 `pyproject.toml`、mypy、pyright 或其他既有型別檢查設定；因此沒有宣稱型別檢查通過。
 
 本回合非 Tk 完整模組套件命令：
 
@@ -47,14 +47,14 @@ cd "B518 Log Solution/B518 Log Solution"
 python3 scripts/run_tests.py test_verify_macos_bundle test_log_monitoring test_audit_records test_anonymize_baseline_samples test_platform_registry test_round_archival test_b482_source_adapter test_kvm_display_contract test_configured_monitor test_atlas_source_adapter test_replay_baseline_samples test_machine_profiles test_rswmt_monitoring test_round_retention test_monitoring_round
 ```
 
-結果：232 tests passed（26.507 秒）。這組命令刻意排除會建立 Tk 視窗的 `test_log_solution_ui`，不能代替完整含 Tk 的專案套件。
+結果：232 tests passed（26.507 秒）。這組命令刻意排除會建立 Tk 視窗的 `test_log_solution_ui`，只作為完整套件的非 Tk 對照。
 
-完整 `test_log_solution_ui` 曾有測試 teardown 與背景 Session／archive 寫入競爭，TemporaryDirectory 清理偶發失敗；另一次測試檔整體執行曾通過，但不是最終完成的全專案套件結果。本次嘗試重新啟動 Tk 時，最小命令 `python3 -c 'import tkinter as tk; r=tk.Tk()'` 以 exit 134／SIGABRT 結束，無法重新執行 GUI 驗收。`python3 scripts/run_tests.py test_conflict` 不是有效測試識別，已確認 runner 要求 unittest module 名稱；不列為產品測試結果。
+最終完整套件以桌面存取權限執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，結果 **275 tests passed（49.283 秒）**，含完整 `test_log_solution_ui`。一般沙盒中的 Tk 建窗會以 SIGABRT 結束；使用已核准的桌面執行權限後，真 Tk 測試及完整套件均通過。早期 `python3 scripts/run_tests.py test_conflict` 不是有效測試識別，已確認 runner 要求 unittest module 名稱；不列為產品測試結果。
 
 
 ## 固定基準審查
 
 - Standards（基準 `d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`）：沒有文件標準違規或可行性異味發現。
-- Spec：C1 實作與聚焦驗收相符；審查指出母規格的全套測試交付門檻尚未確認（P2）。上述完整 UI／專案測試阻擋仍未解決。
+- Spec（相同固定基準）：C1 實作與聚焦驗收相符。首次審查的 P2 指出全套測試證據尚缺；其後 275 項含 Tk 完整套件通過，該交付缺口已解除，沒有未解決的程式審查問題。
 
-因此，聚焦驗收項目有既有真 Tk 證據，非 Tk 測試模組 232 項通過，但**最終完整 UI／全專案測試尚未通過確認**。須在可成功建立 Tk 視窗的桌面工作階段重跑兩個聚焦案例、完整 UI 檔與完整 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，再解除 Spec 審查所列交付門檻，才可進入合併及分支清理。這些門檻未完成，應保留 `ConflictDialog/ticket-01`。
+聚焦 GUI、完整 UI 檔、完整套件與 Standards／Spec 審查均已有通過證據。完整套件對應程式 SHA `ebe7364`；之後僅新增驗收文件，沒有改動程式或測試。
