@@ -139,6 +139,33 @@ class RoundAuditRecordTests(unittest.TestCase):
         self.assertEqual([event["sequence"] for event in rebuilt["events"]],
                          list(range(1, len(rebuilt["events"]) + 1)))
 
+    def test_shared_round_result_is_one_versioned_bilingual_audit_event(self):
+        started = self.start_round()
+        monitor = self.monitors[0]
+        monitor.apply_round_result(
+            1, "PASS", "SN-123", "/tmp/source-a.csv",
+            {"source_position": 2, "source_time": "2026-10-08T09:10:11"},
+        )
+
+        rebuilt = self.rebuild_current_round(started.round_id)
+        results = [event for event in rebuilt["events"] if event["kind"] == "result"]
+        self.assertEqual(len(results), 1)
+        event = results[0]
+        self.assertEqual(event["message"], "slot1 PASS")
+        self.assertEqual(event["round_id"], started.round_id)
+        self.assertEqual(event["display_position"], 1)
+        localized = event["localized_message"]
+        self.assertEqual(localized["version"], 1)
+        self.assertEqual(localized["message_id"], "round.result")
+        self.assertEqual(localized["parameters"], {
+            "station": "FCT", "slot": 1, "status": "PASS",
+        })
+        self.assertEqual(localized["en"], "FCT Slot 1 result: PASS")
+        self.assertEqual(localized["zh-TW"], "FCT 通道 1 結果：PASS")
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]],
+                         list(range(1, len(rebuilt["events"]) + 1)))
+        self.assertTrue(rebuilt["audit_complete"])
+
     def test_completed_round_audit_writers_exit_after_idle_period(self):
         thread_baseline = threading.active_count()
         for _ in range(6):

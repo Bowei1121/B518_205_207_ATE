@@ -14,6 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from language_catalog import make_bilingual_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
 from round_retention import RetentionStatus, RetentionSummary, RoundRetentionStore
@@ -951,6 +952,7 @@ class MonitoringRound:
         if event.kind == "unresolved_source_conflict":
             self._fail_unconfirmed_candidate(event)
             return
+        self._capture_bilingual_message(event)
         if event.kind == "session_write_failed":
             message = event.message
             if message not in self._audit_errors:
@@ -984,6 +986,17 @@ class MonitoringRound:
         self._persist_audit_event(round_event)
         self._on_event(round_event)
 
+    def _capture_bilingual_message(self, event: MonitorEvent) -> None:
+        if event.localized_message is not None:
+            return
+        message_id = {"result": "round.result"}.get(event.kind)
+        if message_id is None:
+            return
+        event.localized_message = make_bilingual_message(
+            message_id,
+            {"station": self.station, "slot": event.slot or 0, "status": event.status},
+        )
+
     def _persist_audit_event(self, round_event: RoundEvent) -> None:
         store = self._audit_store
         if store is None and self._audit_root is None:
@@ -1003,7 +1016,8 @@ class MonitoringRound:
                 try:
                     store.append_event(
                         AuditEvent(round_event.sequence, event.kind, event.message, event.slot,
-                                   event.sn, event.status, event.source, dict(event.detail)),
+                                   event.sn, event.status, event.source, dict(event.detail),
+                                   event.localized_message),
                         observed_at, elapsed_seconds,
                     )
                 except (OSError, AuditRecordError, TypeError, ValueError) as error:

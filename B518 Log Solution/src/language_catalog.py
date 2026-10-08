@@ -1,7 +1,9 @@
 """Supported App languages and their native display names."""
 
+import json
+from dataclasses import dataclass
 from string import Formatter
-from typing import Dict, Tuple
+from typing import Dict, Mapping, Tuple
 
 ENGLISH = "en"
 TRADITIONAL_CHINESE = "zh-TW"
@@ -66,6 +68,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "monitor.awaiting_both": "Awaiting Review: {count} conflicts · Round Alarm",
         "monitor.completed": "Round Complete",
         "monitor.stopped": "Stopped",
+        "round.result": "{station} Slot {slot} result: {status}",
     },
     TRADITIONAL_CHINESE: {
         "app.title": "B518 Log Solution-V0.1.0",
@@ -120,6 +123,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "monitor.awaiting_both": "待確認：衝突 {count} 項、整輪警報",
         "monitor.completed": "本輪完成",
         "monitor.stopped": "已停止",
+        "round.result": "{station} 通道 {slot} 結果：{status}",
     },
 }
 
@@ -150,6 +154,60 @@ def translate(message_id: str, language: str = DEFAULT_LANGUAGE, **parameters: o
         raise KeyError("Unknown message identifier: {}".format(message_id))
     template = LANGUAGE_RESOURCES.get(language, {}).get(message_id) or english
     return template.format(**parameters)
+
+
+@dataclass(frozen=True)
+class BilingualMessage:
+    """One immutable bilingual rendering snapshot attached to one event."""
+
+    message_id: str
+    parameters_json: str
+    english: str
+    traditional_chinese: str
+    diagnostic: str = ""
+    version: int = 1
+
+    def as_record(self) -> dict:
+        return {
+            "version": self.version,
+            "message_id": self.message_id,
+            "parameters": json.loads(self.parameters_json),
+            "en": self.english,
+            "zh-TW": self.traditional_chinese,
+            "diagnostic": self.diagnostic,
+        }
+
+
+def make_bilingual_message(message_id: str, parameters: Mapping[str, object],
+                           diagnostic: str = "") -> BilingualMessage:
+    """Capture parameters and both rendered languages once, at event creation."""
+    parameters_json = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
+    captured = json.loads(parameters_json)
+    return BilingualMessage(
+        message_id=message_id,
+        parameters_json=parameters_json,
+        english=translate(message_id, ENGLISH, **captured),
+        traditional_chinese=translate(message_id, TRADITIONAL_CHINESE, **captured),
+        diagnostic=diagnostic,
+    )
+
+
+def render_bilingual_message(message: object, language: str, fallback: str = "") -> str:
+    """Render a captured event in the selected language without changing it."""
+    if isinstance(message, BilingualMessage):
+        record = message.as_record()
+    elif isinstance(message, Mapping):
+        record = dict(message)
+    else:
+        return fallback
+    if record.get("version") != 1:
+        return fallback
+    try:
+        return translate(str(record["message_id"]), language,
+                         **dict(record.get("parameters", {})))
+    except (KeyError, TypeError, ValueError):
+        localized = record.get("zh-TW" if language == TRADITIONAL_CHINESE else "en")
+        return localized if isinstance(localized, str) else fallback
 
 
 def validate_translations() -> Tuple[str, ...]:

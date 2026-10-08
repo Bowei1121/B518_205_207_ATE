@@ -34,6 +34,7 @@ from atlas_source_adapter import (
     records_status,
     trusted_sn_from_records,
 )
+from language_catalog import BilingualMessage
 from monitoring_files import (
     file_signature,
     is_trusted_sn,
@@ -58,6 +59,7 @@ class MonitorEvent:
     status: str = ""
     source: str = ""
     detail: Dict[str, str] = field(default_factory=dict)
+    localized_message: Optional[BilingualMessage] = None
 
 
 @dataclass
