@@ -11,7 +11,7 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 ## Acceptance criteria
 
 - [x] 按鈕顯示目前語言及展開提示，選項為原生名稱與勾選；不以國旗或語系代碼代替。
-- [x] 滑鼠與鍵盤可展開、選取及取消，不需套用或重啟；重選不改操作狀態，未支援語言不列選項。
+- [ ] 真實滑鼠與鍵盤可展開、導覽／選取及取消，不需套用或重啟；重選不改操作狀態，未支援語言不列選項。Spec 審查指出目前真 Tk 測試以 `Menu.invoke()` 選取，OS 級輸入補測未能送達 Tk；見本機驗收紀錄，待補證據。
 - [x] 首次英文、重啟記住上次選擇，設定獨立於 profile；配置保存不抹除語言，未知設定回英文，保存失敗明確可見。
 - [x] 主頁可翻譯文字集中管理，缺少單項回退英文；穩定訊息識別、參數及共用術語契約可供後續事件使用，不改狀態碼。
 - [x] 主頁即時切換不重啟監控，語言菜單與長文字不遮住 KVM 標記或色帶；真正 Tk 驗證可操作版面。
@@ -19,7 +19,7 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 ## 本機交付狀態
 
-M1 已於 `Multilingual/ticket-01` 完成程式與測試驗收。固定 Standards／Spec 審查基準為 `dd81e4dcef781ef4c29a3310a2650827e45d0609`；最後測試版本為 `3a613f9`。實際命令、真 Tk 操作、磁碟重讀與限制見[本機驗收紀錄](../evidence/multilingual-ticket-01/local-validation.md)。此狀態是本機交付紀錄，不表示已更新 GitHub Issue #14；M2～M10 及完整 App／bundle 發布驗收仍待各自交付。
+M1 程式已實作並推送至專用分支；其餘五項驗收有證據，第 2 項真實滑鼠／鍵盤選單操作證據尚待補足，因此整票尚未完成、尚未合併。固定 Standards／Spec 審查基準為 `dd81e4dcef781ef4c29a3310a2650827e45d0609`；最後程式／測試版本為 `3a613f9`。命令、審查結果及環境限制見[本機驗收紀錄](../evidence/multilingual-ticket-01/local-validation.md)。此狀態不表示已更新 GitHub Issue #14；M2～M10 及完整 App／bundle 發布驗收仍待各自交付。
 
 ## Blocked by
 
