@@ -356,6 +356,44 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_unknown_saved_language_uses_english_and_shows_diagnostic(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch("b518_log_solution.messagebox.showwarning") as show_warning:
+            preferences = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(preferences)
+            catalog, project, machine, _error = store.load()
+            store.save(catalog, project, machine)
+            payload = json.loads(preferences.read_text(encoding="utf-8"))
+            payload["language"] = "fr"
+            preferences.write_text(json.dumps(payload), encoding="utf-8")
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            try:
+                deadline = time.monotonic() + 2
+                while not show_warning.called and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.01)
+                self.assertEqual(app.current_language, ENGLISH)
+                self.assertIsNone(app.profile_error)
+                self.assertEqual(app.language_button.cget("text"), "English ▾")
+                self.assertIn("unavailable", show_warning.call_args.args[1])
+                self.assertEqual(
+                    [app.language_menu.entrycget(index, "label")
+                     for index in range(app.language_menu.index("end") + 1)],
+                    ["English", "繁體中文"],
+                )
+            finally:
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
     def test_real_tk_global_retention_setting_validates_persists_and_preserves_round_files(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
