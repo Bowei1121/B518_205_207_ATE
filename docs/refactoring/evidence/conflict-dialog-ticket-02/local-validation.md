@@ -10,6 +10,8 @@
 
 最後測試提交：`3275bb0`（`test: cover missing conflict source time`）
 
+受控 Atlas 端到端路徑測試提交：`5f2f846`（`test: verify Atlas source disambiguation in Tk`）
+
 程式目錄：`B518 Log Solution`
 
 ## 起始狀態與 C1 前置確認
@@ -30,8 +32,8 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py
 ```
 
 - Python 語法編譯：通過。
-- 聚焦衝突 UI：4 tests 通過，使用可存取桌面圖形工作階段的真 Tk；包括受控 Atlas 來源的實際 App 流程、非模態收集、分隔拖曳、裁決／audit 磁碟重建，以及捕捉後來源檔改名仍使用快照。
-- 全套含 Tk 測試：275 tests 通過，59.518 秒。
+- 聚焦衝突 UI：5 tests 通過，使用可存取桌面圖形工作階段的真 Tk；包括受控 Atlas 來源的實際 App 流程、同名不同封存路徑消歧、非模態收集、分隔拖曳、裁決／audit 磁碟重建，以及捕捉後來源檔改名仍使用快照。
+- 全套含 Tk 測試：276 tests 通過，46.727 秒。
 - 專案沒有 `pyproject.toml`、`mypy.ini`、`setup.cfg`、`tox.ini`、`Makefile`、`.flake8` 或 `pyrightconfig.json` 型別檢查設定；未執行或宣稱型別檢查通過。
 - `git diff --check`：通過。
 
@@ -42,7 +44,7 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py
 3. **檔名與目錄消歧：通過。** 不同檔名直接呈現差異；`/line-A/group0-slot1/system/records.csv` 與 `/line-B/group0-slot1/system/records.csv` 的短提示分別顯示 `line-A/group0-slot1/system` 及 `line-B/group0-slot1/system`，兩側都實際紅色粗體，沒有只比較 basename。
 4. **相同來源路徑：通過。** 同一路徑結果變更時，來源欄保持一般文字，只有結果欄標示差異。
 5. **完整證據與可操作性：通過。** 下方詳細區仍包含完整路徑及原來源識別；真 Tk 視窗維持 720×360 最小尺寸，長檔名可水平捲動，既有底部按鈕仍可見。C1 分隔拖曳流程在受控 Atlas Tk 測試回歸通過。
-6. **受控來源與真正 Tk：通過。** 既有 Atlas 來源測試實際經 App／共同輪次擷取衝突，驗證目前欄位值及可見樣式；其他真 Tk 測試涵蓋來源移動後仍顯示已捕捉內容、缺少值、同名多目錄、切換重置與既有操作。
+6. **受控來源與真正 Tk：通過。** Atlas 端到端測試維持第二個位置收集，並以兩個實際暫存封存目錄產生同檔名衝突；事件經 App／共同輪次捕捉後，在真正 Tk 驗證提示兩側不同、紅色粗體與詳細區完整路徑。其他真 Tk 測試涵蓋來源移動後仍顯示已捕捉內容、缺少值、切換重置與既有操作。
 
 ## 實作契約與範圍
 
@@ -53,6 +55,6 @@ B518_TK_TESTS=1 python3 scripts/run_tests.py
 
 ## 審查與交付狀態
 
-固定 Standards／Spec 雙軸審查執行中；若審查後有程式修改，需重跑受影響測試及全套驗收。最後驗證程式／測試 SHA 為 `3275bb0`；最新主線文件合併及本文件更新都不包含程式或測試修改。
+固定基準 `332a4518601a8413004b5a1d88baf4b2a89b85d5` 的 Standards／Spec 雙軸複審已依最後端到端測試完成，沒有未解決問題。Standards 指出 `_show_selected_conflict` 局部承擔路徑解析、比較、Tk 呈現與尺寸調整，且使用位置式基本型別 tuple；審查者將其視為範圍局部的可維護性氣味，不構成標準違反或交付阻擋。Spec 複審確認六項 C2 驗收均有證據，沒有 C3 範圍擴張。若之後修改程式，需重跑受影響測試及全套驗收。最後驗證程式／測試 SHA 為 `5f2f846`；本文件及 README／摘要的後續文件修改不含程式或測試變更。
 
-尚未 push、合併至主線或清理分支。審查通過後須先重新查核兩個遠端與所有 push 目的地，推送同名票分支並確認同步；主線合併、驗證及 push 完成後才可刪除票分支。若任何一步受阻，保留專用分支。
+票分支已透過首次 `git push --set-upstream origin ConflictDialog/ticket-02` 推送至 Gitea 與 GitHub，並設定 upstream。最新即時 `git ls-remote` 確認兩邊主線均為 `341a5ab19880f69d4dd9ce3be110480c604ccd8f`，票分支均為 `5f2f846ea86b08267f0563e38c344b7958d30803`。尚未合併至主線或清理分支；合併前仍須再次查核主線最新狀態及乾淨工作樹，合併後 push 並確認兩目的地同步後才可刪除票分支。若任一步受阻，保留專用分支。
