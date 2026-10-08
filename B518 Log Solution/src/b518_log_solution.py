@@ -1038,6 +1038,10 @@ class B518LogSolutionApp:
             self.conflict_details.delete("1.0", "end")
             self.conflict_details.insert("1.0", "目前沒有待確認項目。")
             self.conflict_details.configure(state="disabled")
+        for button in (self.resolve_conflict_original_button,
+                       self.resolve_conflict_candidate_button):
+            if button and button.winfo_exists():
+                button.configure(state="disabled")
 
     def _show_selected_conflict(self, _event=None) -> None:
         if (not self.conflict_list or not self.conflict_details or
@@ -1049,6 +1053,7 @@ class B518LogSolutionApp:
             return
         snapshot = self.rounds.snapshot()
         if not snapshot:
+            self._clear_conflict_comparison()
             return
         conflict_id = self._conflict_ids[selected[0]]
         conflict = next((item for item in snapshot.pending_conflicts
@@ -1056,6 +1061,10 @@ class B518LogSolutionApp:
         if not conflict:
             self._clear_conflict_comparison()
             return
+        for button in (self.resolve_conflict_original_button,
+                       self.resolve_conflict_candidate_button):
+            if button and button.winfo_exists():
+                button.configure(state="normal")
 
         def source_parts(side):
             if not side.source:

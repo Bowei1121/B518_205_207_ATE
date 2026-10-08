@@ -43,6 +43,88 @@ class FakeHotkey:
         self.closed = True
 
 
+class ControlledConflictMonitor:
+    """Publish same-round candidates through the real RoundCoordinator seam."""
+
+    def __init__(self, callback):
+        self.callback = callback
+        self.results = {1: SlotResult(1), 2: SlotResult(2)}
+        self.round_id = ""
+        self.collection_stopped = False
+        self.finished = False
+
+    def update_round_settings(self, settings):
+        self.round_id = settings["round_id"]
+
+    def start(self):
+        evidence = self._evidence("base", "2026-10-08T10:00:00")
+        self.apply_round_result(1, "PASS", "SN-BASE", "/controlled/slot1/base.csv", evidence)
+        self.apply_round_result(2, "TESTING", "SN-OTHER", "/controlled/slot2/active.csv",
+                                self._evidence("other", "2026-10-08T10:00:01"))
+
+    def _evidence(self, source_id, source_time):
+        return {"round_evidence_id": "controlled-round-evidence",
+                "source_id": source_id, "source_time": source_time,
+                "source_position": "{}".format(source_id)}
+
+    def offer_candidate(self, slot, sn, status, source, source_id, source_time):
+        detail = self._evidence(source_id, source_time)
+        event = MonitorEvent("result_candidate", "controlled candidate", slot, sn, status,
+                             source, detail)
+        decision = self.callback(event)
+        if decision == "accept":
+            self.apply_round_result(slot, status, sn, source, detail)
+        return decision
+
+    def round_results(self):
+        return tuple(self.results.values())
+
+    def timeout_seconds(self, _kind):
+        return 3600
+
+    def has_pending_review(self):
+        return False
+
+    def resolve_review(self, _choice):
+        return None
+
+    def publish_round_event(self, event):
+        self.callback(event)
+
+    def set_result(self, slot, status, detail=None, lock_terminal=False):
+        self.apply_round_result(slot, status, self.results[slot].sn,
+                                self.results[slot].source, detail, lock_terminal)
+
+    def apply_round_result(self, slot, status, sn="", source="", detail=None, lock_terminal=False):
+        result = self.results[slot]
+        result.sn = sn or result.sn
+        result.status = status
+        result.source = source
+        result.updated_at = "2026-10-08T10:00:00"
+        self.callback(MonitorEvent("result", "controlled result", slot, result.sn, status,
+                                   source, detail or {}))
+
+    def poll_once(self):
+        return None
+
+    def stop_collection(self):
+        self.collection_stopped = True
+
+    def finish(self):
+        self.collection_stopped = True
+        self.finished = True
+
+    def stop(self):
+        if self.finished:
+            return
+        self.collection_stopped = True
+        self.finished = True
+        for result in self.results.values():
+            if result.status not in {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}:
+                self.apply_round_result(result.slot, "STOPPED", result.sn, result.source)
+        self.callback(MonitorEvent("stopped", "controlled source stopped"))
+
+
 def install_test_profile(app, station, platform, active=".", final=".", caseinfo=""):
     """Give a lightweight App fixture the same required profile seam as production."""
     project = "B482" if platform == "b482" else "B518"
@@ -675,6 +757,64 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
                 app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_conflict_review_disables_resolution_when_selection_is_cleared(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            sources = []
+
+            def source_factory(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for controlled conflict review UI")
+
+            try:
+                started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                app.active_round_id = started.round_id
+                pump_until(lambda: sources and app.rounds.snapshot()
+                           and app.rounds.snapshot().results
+                           and app.rounds.snapshot().results[0].status == "PASS")
+                self.assertEqual(sources[0].offer_candidate(
+                    1, "SN-CANDIDATE", "FAIL", "/controlled/slot1/candidate.csv",
+                    "candidate", "2026-10-08T10:01:00"), "defer")
+                pump_until(lambda: app.conflict_window is not None and
+                           app.conflict_window.winfo_viewable())
+                self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "normal")
+
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+
+                self.assertFalse(app.conflict_list.curselection())
+                self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：未知")
+                self.assertEqual(app.conflict_details.get("1.0", "end-1c"), "目前沒有待確認項目。")
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "disabled")
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "disabled")
+                self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+            finally:
+                if app.rounds.snapshot() and app.rounds.snapshot().state in {
+                        RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
                 app.hotkey.close()
                 root.destroy()
 
