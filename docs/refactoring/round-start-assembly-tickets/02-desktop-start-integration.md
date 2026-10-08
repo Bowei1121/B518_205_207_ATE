@@ -8,18 +8,22 @@ Part of #24 — https://github.com/Bowei1121/B518_205_207_ATE/issues/24
 
 ## Acceptance criteria
 
-- [ ] Tk 正式開始入口接入 R1 公開準備 Interface，畫面不再需要理解 callback holder、來源位置列表或配置證據組裝順序；不新增新舊流程切換選項。
-- [ ] 保持配置／路徑驗證、固定配置與啟動中顯示、同步保存偏好、接受輪次、背景建立來源與就緒通知的既有時序。
-- [ ] 配置、路徑或偏好保存同步失敗不接受新輪次；提示文字、出現時機、按鈕與畫面恢復效果完全沿用既有行為。
-- [ ] 真正 Tk 驗證所有既有平台與機型正常開始、位置／結果呈現及 Session／audit 同份配置證據；不僅 patch 函式確認呼叫。
-- [ ] 真正 Tk 驗證開始按鈕、視窗內快捷鍵，以及全域要求送回 Tk 事件迴圈後的操作；不據此宣稱 OS 全域快捷鍵實機驗收完成。
-- [ ] 背景建立失敗維持原提示、控制恢復及失敗輪次保存；慢速準備仍計入期限，停止／逾時後不重啟。
-- [ ] RUNNING 重複開始不換輪、不清空結果或重設畫面；關閉保存中拒絕開始。
-- [ ] AWAITING_REVIEW 直接開始與兩種快捷鍵各別驗證：不建立新輪，仍保留原入口副作用差異；無副作用修正另案。
-- [ ] 舊輪延遲事件不覆寫新輪畫面，準備中關閉仍由原協調等待來源與完整保存，不提早關閉或釋放待保存資料。
-- [ ] 保留既有平台解析、位置映射、未知同輪採用、人工衝突與 KVM 契約；不混入多語言、提示改寫或生命週期重拆。
-- [ ] 每項遷移包含對應行為驗證，既有測試保持通過；記錄本票實際桌面與程式驗證結果，正式交付仍等待 R3。
+- [x] Tk 正式開始入口接入 R1 公開準備 Interface，畫面不再需要理解 callback holder、來源位置列表或配置證據組裝順序；不新增新舊流程切換選項。
+- [x] 保持配置／路徑驗證、固定配置與啟動中顯示、同步保存偏好、接受輪次、背景建立來源與就緒通知的既有時序。
+- [x] 配置、路徑或偏好保存同步失敗不接受新輪次；提示文字、出現時機、按鈕與畫面恢復效果完全沿用既有行為。
+- [x] 真正 Tk 驗證所有既有平台與機型正常開始、位置／結果呈現及 Session／audit 同份配置證據；不僅 patch 函式確認呼叫。
+- [x] 真正 Tk 驗證開始按鈕、視窗內快捷鍵，以及全域要求送回 Tk 事件迴圈後的操作；不據此宣稱 OS 全域快捷鍵實機驗收完成。
+- [x] 背景建立失敗維持原提示、控制恢復及失敗輪次保存；慢速準備仍計入期限，停止／逾時後不重啟。
+- [x] RUNNING 重複開始不換輪、不清空結果或重設畫面；關閉保存中拒絕開始。
+- [x] AWAITING_REVIEW 直接開始與兩種快捷鍵各別驗證：不建立新輪，仍保留原入口副作用差異；無副作用修正另案。
+- [x] 舊輪延遲事件不覆寫新輪畫面，準備中關閉仍由原協調等待來源與完整保存，不提早關閉或釋放待保存資料。
+- [x] 保留既有平台解析、位置映射、未知同輪採用、人工衝突與 KVM 契約；不混入多語言、提示改寫或生命週期重拆。
+- [x] 每項遷移包含對應行為驗證，既有測試保持通過；記錄本票實際桌面與程式驗證結果，正式交付仍等待 R3。
 
 ## Blocked by
 
 - #25 — 集中啟動準備，驗證配置與輪次紀錄一致性
+
+## Local verification
+
+R2 implementation, acceptance evidence, complete Tk suite result, limitations, and mother-spec scenario mapping are recorded in [local validation](../evidence/round-start-assembly-ticket-02/local-validation.md). The R2 branch's final review and merge status are recorded there after completion. R3 remains responsible for obsolete-path cleanup and overall release verification.
