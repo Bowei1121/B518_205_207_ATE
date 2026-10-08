@@ -49,7 +49,7 @@ ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
 DETAIL_ROWS_VISIBLE = 7
-WINDOW_FIXED_HEIGHT = 353
+WINDOW_FIXED_HEIGHT = 379
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -219,16 +219,17 @@ class B518LogSolutionApp:
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
         selection.pack(fill="x", pady=(4, 3))
+        selection.columnconfigure(1, weight=1)
         self.project_label = ttk.Label(selection, text="專案")
-        self.project_label.pack(side="left")
+        self.project_label.grid(row=0, column=0, sticky="w")
         self.project_choice = ttk.Combobox(selection, textvariable=self.project, state="readonly", width=10,
                                            values=self.profiles.projects)
-        self.project_choice.pack(side="left", padx=(5, 12))
+        self.project_choice.grid(row=0, column=1, sticky="ew", padx=(5, 12))
         self.project_choice.bind("<<ComboboxSelected>>", self._project_changed)
         self.machine_label = ttk.Label(selection, text="機型")
-        self.machine_label.pack(side="left")
+        self.machine_label.grid(row=1, column=0, sticky="w")
         self.machine_choice = ttk.Combobox(selection, textvariable=self.station, state="readonly", width=8)
-        self.machine_choice.pack(side="left", padx=(5, 0))
+        self.machine_choice.grid(row=1, column=1, sticky="ew", padx=(5, 12))
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
         self.language_choice = tk.StringVar(value=self.current_language)
@@ -244,7 +245,7 @@ class B518LogSolutionApp:
             activebackground="#e5e7eb", relief="raised", borderwidth=1,
             font=("Helvetica", 10), takefocus=True,
         )
-        self.language_button.pack(side="right", padx=(3, 0))
+        self.language_button.grid(row=0, column=2, rowspan=2, sticky="ne", padx=(3, 0))
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
         self.language_button.bind("<Escape>", self._cancel_language_menu)

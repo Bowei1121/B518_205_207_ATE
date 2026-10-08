@@ -163,6 +163,43 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_language_and_profile_controls_fit_fixed_hmi_width(self):
+        for language in (ENGLISH, TRADITIONAL_CHINESE):
+            with self.subTest(language=language), TemporaryDirectory() as temporary, \
+                    patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+                store = MachineProfileStore(Path(temporary) / "preferences.json")
+                store.load()
+                store.save_language(language)
+                root = tk.Tk()
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                )
+                try:
+                    root.update()
+                    self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                    for widget in (app.language_button, app.project_label, app.project_choice,
+                                   app.machine_label, app.machine_choice):
+                        self.assertTrue(widget.winfo_ismapped(), widget.cget("text")
+                                        if "text" in widget.keys() else str(widget))
+                        self.assertGreaterEqual(widget.winfo_width(), widget.winfo_reqwidth())
+                        self.assertGreaterEqual(widget.winfo_rootx(), root.winfo_rootx())
+                        self.assertLessEqual(widget.winfo_rootx() + widget.winfo_width(),
+                                             root.winfo_rootx() + root.winfo_width())
+                        self.assertLessEqual(widget.winfo_rooty() + widget.winfo_height(),
+                                             app.kvm_results.winfo_rooty())
+                    x = app.language_button.winfo_rootx() + app.language_button.winfo_width() // 2
+                    y = app.language_button.winfo_rooty() + app.language_button.winfo_height() // 2
+                    self.assertEqual(root.winfo_containing(x, y), app.language_button)
+                    self.assertEqual(app.kvm_state_marker.winfo_x(), 278)
+                    self.assertEqual(app.kvm_state_marker.winfo_y(), 0)
+                finally:
+                    app.rounds.request_close()
+                    self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                    app.hotkey.close()
+                    root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_language_menu_switches_main_page_and_persists_across_app_instances(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -1065,6 +1102,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 return snapshot.round_id
 
             try:
+                root.focus_force()
+                root.update()
+                self.assertEqual(root.focus_get(), root)
                 prior = app.rounds.snapshot()
                 previous_round_id = prior.round_id if prior else None
                 root.event_generate("<Command-Shift-M>")
@@ -2623,10 +2663,11 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(profiles.get("B518", "DFU").capacity, 7)
         self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
         self.assertEqual(profiles.get("B482", "BT").capacity, 4)
-        self.assertEqual(window_height(4), 514)
-        self.assertEqual(window_height(6), 608)
-        self.assertEqual(window_height(7), 655)
-        self.assertEqual(window_height(20), 682)
+        # The second profile-selection row reserves 26 pixels above the KVM band.
+        self.assertEqual(window_height(4), 540)
+        self.assertEqual(window_height(6), 634)
+        self.assertEqual(window_height(7), 681)
+        self.assertEqual(window_height(20), 708)
         self.assertEqual(visible_detail_rows(20, 500), 1)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
