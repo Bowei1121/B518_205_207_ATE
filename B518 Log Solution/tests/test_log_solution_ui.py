@@ -405,7 +405,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 click(app.settings_button)
                 app.profile_editor_project.set("Unsaved")
                 with patch.object(app.profile_store, "save", side_effect=OSError("profile disk full")):
-                    apply_button = find_button(app.settings_window, "套用並保存")
+                    apply_button = find_button(app.settings_window, "Apply and Save")
                     self.assertIsNotNone(apply_button)
                     click(apply_button)
                 self.assertIn("active configuration remains unchanged",
@@ -415,8 +415,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 original_selection = (app.project.get(), app.station.get())
                 invalid_import = Path(temporary) / "invalid-profile.json"
                 invalid_import.write_text("{", encoding="utf-8")
-                import_button = find_button(app.settings_window, "匯入配置")
-                export_button = find_button(app.settings_window, "匯出配置")
+                import_button = find_button(app.settings_window, "Import Configuration")
+                export_button = find_button(app.settings_window, "Export Configuration")
                 self.assertIsNotNone(import_button)
                 self.assertIsNotNone(export_button)
                 pump_until(lambda: app.rounds.app_event_status().complete)
@@ -485,7 +485,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 # after recovery, while complete remains the current save state.
                 app._close_settings()
                 click(app.settings_button)
-                export_button = find_button(app.settings_window, "匯出配置")
+                export_button = find_button(app.settings_window, "Export Configuration")
                 with patch("b518_log_solution.filedialog.asksaveasfilename",
                            return_value=str(Path(temporary) / "missing-again" / "export.json")), \
                         patch("b518_log_solution.messagebox.showerror"), \
@@ -920,8 +920,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.open_settings()
                 self.assertEqual(app.retention_days_var.get(), "365")
                 help_text = app.retention_help_label.cget("text")
-                self.assertIn("完整 24 小時", help_text)
-                self.assertIn("下一次背景清理", help_text)
+                self.assertIn("full 24 hours", help_text)
+                self.assertIn("next background cleanup", help_text)
 
                 app.retention_days_var.set("730")
                 app.retention_save_button.invoke()
@@ -934,7 +934,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 persisted = MachineProfileStore(Path(temporary) / "preferences.json")
                 persisted.load()
                 self.assertEqual(persisted.retention_days, 180)
-                self.assertIn("下一次背景清理", app.retention_status.get())
+                self.assertIn("next background cleanup", app.retention_status.get())
 
                 valid_preferences = Path(temporary, "preferences.json").read_bytes()
                 for invalid in ("", "not-a-number", "0", "-1"):
@@ -944,7 +944,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     rejected.load()
                     self.assertEqual(rejected.retention_days, 180)
                     self.assertEqual(Path(temporary, "preferences.json").read_bytes(), valid_preferences)
-                    self.assertIn("正整數", app.retention_status.get())
+                    self.assertIn("positive integer", app.retention_status.get())
 
                 app.retention_days_var.set("730")
                 with patch.object(app.profile_store, "save_retention_days",
@@ -953,8 +953,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 failed = MachineProfileStore(Path(temporary) / "preferences.json")
                 failed.load()
                 self.assertEqual(failed.retention_days, 180)
-                self.assertEqual(app.retention_effective_label.cget("text"), "目前生效：180 天")
-                self.assertIn("保存失敗", app.retention_status.get())
+                self.assertEqual(app.retention_effective_label.cget("text"),
+                                 "Effective setting: 180 days")
+                self.assertIn("Could not save", app.retention_status.get())
                 self.assertEqual(round_path.read_bytes(), original_round_data)
                 self.assertEqual(tuple(session_root.rglob("*")), (round_path.parent, round_path))
             finally:
@@ -1019,8 +1020,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.retention_cleanup_status().status, "complete",
                                  app.rounds.retention_cleanup_status())
                 app._refresh_retention_cleanup_status()
-                self.assertEqual(app.retention_cleanup_heading.cget("text"), "背景清理摘要")
-                self.assertIn("保留 1 輪", app.retention_cleanup_status.get())
+                self.assertEqual(app.retention_cleanup_heading.cget("text"), "Background Cleanup Summary")
+                self.assertIn("retained 1", app.retention_cleanup_status.get())
                 self.assertTrue(archive_path.parent.exists())
 
                 previous_count = len(app.rounds.retention_cleanup_summaries())
@@ -1039,7 +1040,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                  app.rounds.retention_cleanup_status())
                 self.assertFalse(archive_path.parent.exists())
                 app._refresh_retention_cleanup_status()
-                self.assertIn("刪除 1 輪", app.retention_cleanup_status.get())
+                self.assertIn("deleted 1 rounds", app.retention_cleanup_status.get())
                 persisted = MachineProfileStore(Path(temporary) / "preferences.json")
                 persisted.load()
                 self.assertEqual(persisted.retention_days, 180)
@@ -3411,6 +3412,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 source = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
                 try:
                     source.open_settings()
+                    source._select_language(TRADITIONAL_CHINESE)
                     source.retention_days_var.set("180")
                     source.retention_save_button.invoke()
                     source.profile_editor_project.set("Demo")
@@ -3422,9 +3424,20 @@ class LogSolutionUiTests(unittest.TestCase):
                     source.profile_editor_mapping.set("1:2, 2:1")
                     source.profile_editor_timeouts["start"].set("45")
                     source._apply_profile_editor()
+                    persisted_source = MachineProfileStore(source_preferences)
+                    persisted_source.load()
+                    self.assertEqual(persisted_source.language, TRADITIONAL_CHINESE)
+                    self.assertEqual(persisted_source.retention_days, 180)
                     with patch("b518_log_solution.filedialog.asksaveasfilename", return_value=str(exported)):
                         source._export_profiles()
                     self.assertNotIn("retention_days", json.loads(exported.read_text(encoding="utf-8")))
+                    source_ids = {
+                        item["localized_message"]["message_id"]
+                        for item in source.rounds.app_event_records()
+                    }
+                    self.assertIn("app.settings.event.profile.saved", source_ids)
+                    self.assertIn("app.settings.event.profile.exported", source_ids)
+                    self.assertIn("app.settings.event.retention.saved", source_ids)
                     MachineProfileStore.export_document(
                         single_profile_export,
                         ProfileCatalog((source.profiles.get("Demo", "DFU"),)),
@@ -3442,16 +3455,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     deployed.open_settings()
                     deployed.retention_days_var.set("730")
                     deployed.retention_save_button.invoke()
+                    deployed._select_language(TRADITIONAL_CHINESE)
                     with patch("b518_log_solution.filedialog.askopenfilename",
                                return_value=str(single_profile_export)):
                         deployed._import_profiles()
                     reloaded = MachineProfileStore(deployment_preferences)
                     reloaded.load()
                     self.assertEqual(reloaded.retention_days, 730)
+                    self.assertEqual(reloaded.language, TRADITIONAL_CHINESE)
                     self.assertEqual(deployed.profiles.get("Demo", "DFU").paths["active"],
                                      "/deployment/active")
                     self.assertEqual((deployed.project.get(), deployed.station.get()), ("Demo", "DFU"))
-                    self.assertIn("原選擇不存在", deployed.profile_editor_status.get())
+                    self.assertIn("匯入後原選擇不存在",
+                                  deployed.profile_editor_status.get())
                     original = deployed.profiles.to_dict()
                     invalid_export = Path(temporary) / "invalid.json"
                     invalid_export.write_text("{", encoding="utf-8")
@@ -3459,8 +3475,14 @@ class LogSolutionUiTests(unittest.TestCase):
                                return_value=str(invalid_export)):
                         deployed._import_profiles()
                     self.assertEqual(deployed.profiles.to_dict(), original)
-                    self.assertIn("saved configuration remains unchanged",
+                    self.assertIn("原配置仍有效",
                                   deployed.profile_editor_status.get())
+                    failed_import = next(
+                        item for item in deployed.rounds.app_event_records()
+                        if item["localized_message"]["message_id"] == "app.profile.import_failed")
+                    self.assertIn("Expecting property name", failed_import["diagnostic"])
+                    self.assertTrue(failed_import["localized_message"]["en"])
+                    self.assertTrue(failed_import["localized_message"]["zh-TW"])
 
                     replacement = deployed.profiles.with_profile(replace(
                         deployed.profiles.get("Demo", "DFU"),
@@ -3856,6 +3878,8 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 round_id = None
                 try:
+                    pump_until(lambda: restarted.rounds.retention_cleanup_status().status
+                               in {"complete", "failed"})
                     self.assertEqual((restarted.project.get(), restarted.station.get()),
                                      ("B482", "BT"))
                     self.assertEqual(restarted.profiles.get("B482", "BT").timeouts["round"], 6300)
@@ -3934,10 +3958,290 @@ class LogSolutionUiTests(unittest.TestCase):
             app.open_settings()
             tabs = tuple(app.settings_notebook.tab(tab, "text")
                          for tab in app.settings_notebook.tabs())
-            self.assertEqual(tabs, ("工程師配置", "事件與 Session", "保存期限"))
+            self.assertEqual(tabs, ("Engineer Configuration", "Events & Session", "Retention"))
         finally:
             app._close_settings()
             app.hotkey.close()
+            root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_open_settings_refreshes_language_in_place_and_keeps_invalid_draft(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def click(widget):
+                x, y = widget.winfo_width() // 2, widget.winfo_height() // 2
+                widget.event_generate("<ButtonPress-1>", x=x, y=y)
+                widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            def select_language(language):
+                click(app.language_button)
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") ==
+                    ("English" if language == ENGLISH else "繁體中文"))
+                app.language_menu.invoke(index)
+                root.update()
+
+            def find_button(parent, label):
+                for child in parent.winfo_children():
+                    if isinstance(child, ttk.Button) and child.cget("text") == label:
+                        return child
+                    found = find_button(child, label)
+                    if found is not None:
+                        return found
+                return None
+
+            try:
+                app.open_settings()
+                window = app.settings_window
+                selected_tab = app.settings_notebook.tabs()[2]
+                app.settings_notebook.select(selected_tab)
+                app.profile_editor_project.set("Unsaved Project")
+                app.profile_editor_capacity.set("not-a-number")
+                app.profile_editor_machine.set("BT")
+                click(find_button(app.settings_window, "Validate Draft"))
+                before_status = app.profile_editor_status.get()
+                self.assertIn("Configuration fields are invalid", before_status)
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                event_bytes = app.app_events.path.read_bytes()
+
+                # Change language through the same public selection boundary used by
+                # the main language menu; the existing settings Toplevel must survive.
+                select_language(TRADITIONAL_CHINESE)
+                self.assertIs(app.settings_window, window)
+                self.assertTrue(window.winfo_exists())
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Project")
+                self.assertEqual(app.profile_editor_capacity.get(), "not-a-number")
+                self.assertEqual(app.profile_editor_machine.get(), "BT")
+                self.assertIn("配置欄位錯誤", app.profile_editor_status.get())
+                self.assertIn("容量必須是正整數", app.profile_editor_status.get())
+                self.assertEqual(app.settings_notebook.select(), selected_tab)
+                self.assertEqual(
+                    tuple(app.settings_notebook.tab(tab, "text")
+                          for tab in app.settings_notebook.tabs()),
+                    ("工程師配置", "事件與 Session", "保存期限"),
+                )
+
+                select_language(ENGLISH)
+                self.assertIs(app.settings_window, window)
+                self.assertTrue(window.winfo_exists())
+                self.assertEqual(
+                    tuple(app.settings_notebook.tab(tab, "text")
+                          for tab in app.settings_notebook.tabs()),
+                    ("Engineer Configuration", "Events & Session", "Retention"),
+                )
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Project")
+                self.assertEqual(app.profile_editor_capacity.get(), "not-a-number")
+                self.assertEqual(app.profile_editor_status.get(), before_status)
+                self.assertEqual(app.settings_notebook.select(), selected_tab)
+                self.assertEqual(app.app_events.path.read_bytes(), event_bytes)
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_retention_setting_uses_visible_errors_and_persists_bilingual_app_events(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            preferences_path = Path(temporary) / "preferences.json"
+            event_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions", app_event_path=event_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping settings save UI")
+
+            def click(widget):
+                x, y = widget.winfo_width() // 2, widget.winfo_height() // 2
+                widget.event_generate("<ButtonPress-1>", x=x, y=y)
+                widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            try:
+                app.open_settings()
+                original_days = app.profile_store.retention_days
+                app.retention_days_var.set("0")
+                click(app.retention_save_button)
+                self.assertIn("positive integer", app.retention_status.get())
+                self.assertEqual(app.profile_store.retention_days, original_days)
+                self.assertIn("positive integer", app.rounds.app_event_records()[-1][
+                    "localized_message"]["en"])
+
+                app.retention_days_var.set("180")
+                click(app.retention_save_button)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                self.assertEqual(app.profile_store.retention_days, 180)
+                self.assertIn("180", app.retention_effective_label.cget("text"))
+                saved_preferences = preferences_path.read_bytes()
+                app.retention_days_var.set("730")
+                with patch.object(app.profile_store, "save_retention_days",
+                                  side_effect=OSError("preferences disk full")):
+                    click(app.retention_save_button)
+                self.assertIn("Could not save", app.retention_status.get())
+                self.assertEqual(app.profile_store.retention_days, 180)
+                self.assertEqual(app.retention_effective_label.cget("text"),
+                                 "Effective setting: 180 days")
+                self.assertEqual(preferences_path.read_bytes(), saved_preferences)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                reloaded = MachineProfileStore(preferences_path)
+                reloaded.load()
+                self.assertEqual(reloaded.retention_days, 180)
+                records = read_app_event_store(event_path)["events"]
+                retention_events = [
+                    item for item in records
+                    if item["localized_message"]["message_id"].startswith(
+                        "app.settings.event.retention.")
+                ]
+                self.assertEqual(len(retention_events), 3)
+                self.assertEqual(
+                    [item["localized_message"]["message_id"] for item in retention_events],
+                    ["app.settings.event.retention.invalid",
+                     "app.settings.event.retention.saved",
+                     "app.settings.event.retention.save_failed"],
+                )
+                self.assertTrue(all(item.get("round_id") is None for item in retention_events))
+                self.assertTrue(all(item["localized_message"]["en"] and
+                                    item["localized_message"]["zh-TW"]
+                                    for item in retention_events))
+                self.assertEqual(retention_events[-1]["diagnostic"],
+                                 "preferences disk full")
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_file_dialog_buttons_use_current_language_and_cancel_without_changes(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("Unsaved")
+                app.profile_editor_paths["active"].set("/draft/active")
+
+                def find_button(parent, label):
+                    for child in parent.winfo_children():
+                        if isinstance(child, ttk.Button) and child.cget("text") == label:
+                            return child
+                        found = find_button(child, label)
+                        if found is not None:
+                            return found
+                    return None
+
+                choose_button = find_button(app.settings_window, "Choose Local Folder")
+                import_button = find_button(app.settings_window, "Import Configuration")
+                export_button = find_button(app.settings_window, "Export Configuration")
+                self.assertIsNotNone(choose_button)
+                self.assertIsNotNone(import_button)
+                self.assertIsNotNone(export_button)
+
+                with patch("b518_log_solution.filedialog.askdirectory", return_value="") as chooser:
+                    choose_button.invoke()
+                self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
+                self.assertTrue(chooser.call_args.kwargs["mustexist"])
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/draft/active")
+
+                app._select_language(TRADITIONAL_CHINESE)
+                import_button = find_button(app.settings_window, "匯入配置")
+                export_button = find_button(app.settings_window, "匯出配置")
+                with patch("b518_log_solution.filedialog.askopenfilename", return_value="") as chooser:
+                    import_button.invoke()
+                self.assertEqual(chooser.call_args.kwargs["title"], "匯入工程師配置")
+                self.assertEqual(chooser.call_args.kwargs["filetypes"],
+                                 (("JSON 配置", "*.json"), ("所有檔案", "*")))
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value="") as chooser:
+                    export_button.invoke()
+                self.assertEqual(chooser.call_args.kwargs["title"], "匯出工程師配置")
+                self.assertEqual(chooser.call_args.kwargs["defaultextension"], ".json")
+                self.assertEqual(chooser.call_args.kwargs["filetypes"],
+                                 (("JSON 配置", "*.json"),))
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved")
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/draft/active")
+            finally:
+                app._close_settings()
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_english_profile_editor_controls_fit_the_existing_minimum_window(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        try:
+            app.open_settings()
+            window = app.settings_window
+            window.geometry("680x560")
+            app.settings_notebook.select(app.settings_notebook.tabs()[0])
+            root.update()
+            right_edge = window.winfo_rootx() + window.winfo_width()
+            visible_controls = []
+
+            def collect(parent):
+                for child in parent.winfo_children():
+                    if isinstance(child, (ttk.Label, ttk.Button, ttk.Entry, ttk.Combobox)) and \
+                            child.winfo_ismapped():
+                        visible_controls.append(child)
+                    collect(child)
+
+            collect(window)
+            self.assertTrue(visible_controls)
+            outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
+                        else widget.winfo_class(),
+                        widget.winfo_rootx() + widget.winfo_width() - right_edge)
+                       for widget in visible_controls
+                       if widget.winfo_rootx() + widget.winfo_width() > right_edge]
+            self.assertEqual(outside, [], "Settings controls extend beyond the window: {}".format(outside))
+            self.assertTrue(any(isinstance(widget, ttk.Button) and
+                                widget.cget("text") == "Choose Local Folder"
+                                for widget in visible_controls))
+            app.settings_notebook.select(app.settings_notebook.tabs()[2])
+            root.update()
+            visible_controls.clear()
+            collect(window)
+            outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
+                        else widget.winfo_class(),
+                        widget.winfo_rootx() + widget.winfo_width() - right_edge)
+                       for widget in visible_controls
+                       if widget.winfo_rootx() + widget.winfo_width() > right_edge]
+            self.assertEqual(outside, [], "Retention controls extend beyond the window: {}".format(outside))
+            self.assertGreater(app.retention_help_label.winfo_height(), 42)
+            self.assertIn("full 24 hours", app.retention_help_label.cget("text"))
+        finally:
+            app._close_settings()
+            app.hotkey.close()
+            app.app_events.stop()
             root.destroy()
 
     def test_explicit_light_theme_keeps_dark_mode_controls_readable(self):
