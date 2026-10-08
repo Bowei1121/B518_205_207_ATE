@@ -50,15 +50,28 @@ class PlatformRegistryTests(unittest.TestCase):
                 '{"kind":"unknown","position":1,"sn":"SAMPLE000001"}\n'
                 '{"kind":"activity","position":1,"sn":42}\n'
                 '{"kind":"final","position":1,"sn":"SAMPLE000001",'
-                '"status":"MYSTERY"}\n', encoding="utf-8")
+                '"status":"MYSTERY"}\n'
+                'not-json\n', encoding="utf-8")
             monitor.poll_once()
+
+            original_open = Path.open
+
+            def fail_source_read(source_path, *args, **kwargs):
+                if source_path == path and kwargs.get("mode", args[0] if args else "r") == "rb":
+                    raise OSError("controlled Sample JSON read failure")
+                return original_open(source_path, *args, **kwargs)
+
+            with patch.object(Path, "open", fail_source_read):
+                monitor.poll_once()
 
             by_id = {event.localized_message.message_id: event
                      for event in events if event.localized_message}
             self.assertEqual(set(by_id), {
+                "platform.sample_json.invalid_record",
                 "platform.sample_json.unsupported_record",
                 "platform.sample_json.invalid_fields",
                 "platform.sample_json.invalid_status",
+                "platform.sample_json.unreadable",
             })
             for message_id, event in by_id.items():
                 record = event.localized_message.as_record()
@@ -74,6 +87,10 @@ class PlatformRegistryTests(unittest.TestCase):
                 "platform.sample_json.invalid_fields"].detail["raw_diagnostic"])
             self.assertIn("狀態不受支援", by_id[
                 "platform.sample_json.invalid_status"].detail["raw_diagnostic"])
+            self.assertIn("JSON Lines 記錄格式錯誤", by_id[
+                "platform.sample_json.invalid_record"].detail["raw_diagnostic"])
+            self.assertIn("controlled Sample JSON read failure", by_id[
+                "platform.sample_json.unreadable"].detail["raw_diagnostic"])
             self.assertTrue(monitor.session.flush())
 
     def test_registry_preserves_injected_replay_clocks_for_registered_adapters(self):
