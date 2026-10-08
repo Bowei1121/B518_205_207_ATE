@@ -2578,6 +2578,102 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_real_tk_timeout_event_language_refresh_preserves_round_and_audit(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+            sources = []
+
+            class ControlledTimeoutMonitor(BaseMonitor):
+                def poll_once(self):
+                    return
+
+            def source_factory(callback):
+                source = ControlledTimeoutMonitor(
+                    "FCT", {}, (1, 2), callback=callback,
+                    session_root=Path(temporary) / "sessions",
+                )
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for the shared timeout event")
+
+            try:
+                started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
+                app.active_round_id = started.round_id
+                pump_until(lambda: sources and app.rounds.session_path is not None)
+                sources[0].publish_round_event(MonitorEvent(
+                    "timeout", "FCT 尚未開始測試逾時", status="TIMEOUT",
+                    detail={"kind": "start"},
+                ))
+                def timeout_is_visible():
+                    event = next((event.event for event in app.rounds.snapshot().events
+                                  if event.event.kind == "timeout"), None)
+                    return (event is not None and event.localized_message is not None and
+                            any(event.localized_message.english in line
+                                for line in app.event_lines))
+
+                pump_until(timeout_is_visible)
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                session_path = app.rounds.session_path
+                audit_path = session_path / "audit.jsonl"
+                pump_until(audit_path.is_file)
+                audit_bytes_before_refresh = audit_path.read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+                timeout_event = next(event.event for event in state_before_refresh.events
+                                     if event.event.kind == "timeout")
+                self.assertIsNotNone(timeout_event.localized_message)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertTrue(any(timeout_event.localized_message.traditional_chinese in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().round_id, started.round_id)
+                self.assertEqual(app.rounds.snapshot().results, state_before_refresh.results)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertTrue(any(timeout_event.localized_message.english in line
+                                    for line in app.event_lines), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                close_status = app.rounds.close_status().status
+                app.hotkey.close()
+                root.destroy()
+                self.assertEqual(close_status, "complete")
+
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
