@@ -2097,7 +2097,7 @@ class B518LogSolutionApp:
         try:
             MachineProfileStore.export_document(Path(path), self.profiles)
         except OSError as error:
-            self.profile_editor_status.set(self._t("app.profile.export_failed", reason=str(error)))
+            self._set_profile_editor_status("app.profile.export_failed", reason=str(error))
             self._record_app_event("app.profile.export_failed", {"reason": str(error)}, str(error))
             return
         self._set_profile_editor_status("app.settings.profile.status.exported",

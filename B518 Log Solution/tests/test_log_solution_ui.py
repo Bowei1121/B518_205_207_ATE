@@ -433,6 +433,22 @@ class LogSolutionUiTests(unittest.TestCase):
                         patch("b518_log_solution.messagebox.showerror"):
                     click(export_button)
                 self.assertIn("could not be exported", app.profile_editor_status.get())
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertIn("無法匯出配置", app.profile_editor_status.get())
+                self.assertIn("No such file or directory", app.profile_editor_status.get())
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                app.language_menu.invoke(0)
+                root.update()
+                self.assertIn("could not be exported", app.profile_editor_status.get())
+                self.assertIn("No such file or directory", app.profile_editor_status.get())
                 app._close_settings()
 
                 pump_until(lambda: app.rounds.app_event_status().complete)
@@ -529,6 +545,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root = tk.Tk()
                 app = B518LogSolutionApp(
                     root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                    app_event_path=Path(temporary) / "app-events.json",
                 )
                 try:
                     root.update()
@@ -568,6 +585,7 @@ class LogSolutionUiTests(unittest.TestCase):
             root.deiconify()
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
             )
             try:
                 profile = replace(
@@ -864,7 +882,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_archive_checks(app.rounds)
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for_archive_checks(app.rounds)
                 app.hotkey.close()
+                app.app_events.stop()
                 root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
@@ -3229,12 +3250,15 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                self.wait_for_archive_checks(app.rounds)
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
                 close_status = app.rounds.close_status().status
                 app.hotkey.close()
+                app.app_events.stop()
                 root.destroy()
-                self.assertEqual(close_status, "complete")
+                self.assertEqual(close_status, "complete", app.rounds.close_status())
 
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \
@@ -4031,6 +4055,15 @@ class LogSolutionUiTests(unittest.TestCase):
                     ("工程師配置", "事件與 Session", "保存期限"),
                 )
 
+                export_button = find_button(app.settings_window, "匯出配置")
+                failed_export_path = Path(temporary) / "missing" / "export.json"
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(failed_export_path)):
+                    click(export_button)
+                self.assertIn("無法匯出配置", app.profile_editor_status.get())
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                event_bytes = app.app_events.path.read_bytes()
+
                 select_language(ENGLISH)
                 self.assertIs(app.settings_window, window)
                 self.assertTrue(window.winfo_exists())
@@ -4041,7 +4074,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 )
                 self.assertEqual(app.profile_editor_project.get(), "Unsaved Project")
                 self.assertEqual(app.profile_editor_capacity.get(), "not-a-number")
-                self.assertEqual(app.profile_editor_status.get(), before_status)
+                self.assertIn("Configuration could not be exported", app.profile_editor_status.get())
+                self.assertIn("No such file", app.profile_editor_status.get())
                 self.assertEqual(app.settings_notebook.select(), selected_tab)
                 self.assertEqual(app.app_events.path.read_bytes(), event_bytes)
             finally:
@@ -4196,53 +4230,64 @@ class LogSolutionUiTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_english_profile_editor_controls_fit_the_existing_minimum_window(self):
-        root = tk.Tk()
-        root.withdraw()
-        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
-        try:
-            app.open_settings()
-            window = app.settings_window
-            window.geometry("680x560")
-            app.settings_notebook.select(app.settings_notebook.tabs()[0])
-            root.update()
-            right_edge = window.winfo_rootx() + window.winfo_width()
-            visible_controls = []
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.withdraw()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                window = app.settings_window
+                window.geometry("680x560")
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
+                right_edge = window.winfo_rootx() + window.winfo_width()
+                visible_controls = []
 
-            def collect(parent):
-                for child in parent.winfo_children():
-                    if isinstance(child, (ttk.Label, ttk.Button, ttk.Entry, ttk.Combobox)) and \
-                            child.winfo_ismapped():
-                        visible_controls.append(child)
-                    collect(child)
+                def collect(parent):
+                    for child in parent.winfo_children():
+                        if isinstance(child, (ttk.Label, ttk.Button, ttk.Entry, ttk.Combobox)) and \
+                                child.winfo_ismapped():
+                            visible_controls.append(child)
+                        collect(child)
 
-            collect(window)
-            self.assertTrue(visible_controls)
-            outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
-                        else widget.winfo_class(),
-                        widget.winfo_rootx() + widget.winfo_width() - right_edge)
-                       for widget in visible_controls
-                       if widget.winfo_rootx() + widget.winfo_width() > right_edge]
-            self.assertEqual(outside, [], "Settings controls extend beyond the window: {}".format(outside))
-            self.assertTrue(any(isinstance(widget, ttk.Button) and
-                                widget.cget("text") == "Choose Local Folder"
-                                for widget in visible_controls))
-            app.settings_notebook.select(app.settings_notebook.tabs()[2])
-            root.update()
-            visible_controls.clear()
-            collect(window)
-            outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
-                        else widget.winfo_class(),
-                        widget.winfo_rootx() + widget.winfo_width() - right_edge)
-                       for widget in visible_controls
-                       if widget.winfo_rootx() + widget.winfo_width() > right_edge]
-            self.assertEqual(outside, [], "Retention controls extend beyond the window: {}".format(outside))
-            self.assertGreater(app.retention_help_label.winfo_height(), 42)
-            self.assertIn("full 24 hours", app.retention_help_label.cget("text"))
-        finally:
-            app._close_settings()
-            app.hotkey.close()
-            app.app_events.stop()
-            root.destroy()
+                collect(window)
+                self.assertTrue(visible_controls)
+                outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
+                            else widget.winfo_class(),
+                            widget.winfo_rootx() + widget.winfo_width() - right_edge)
+                           for widget in visible_controls
+                           if widget.winfo_rootx() + widget.winfo_width() > right_edge]
+                self.assertEqual(outside, [],
+                                 "Settings controls extend beyond the window: {}".format(outside))
+                self.assertTrue(any(isinstance(widget, ttk.Button) and
+                                    widget.cget("text") == "Choose Local Folder"
+                                    for widget in visible_controls))
+                app.settings_notebook.select(app.settings_notebook.tabs()[2])
+                root.update()
+                visible_controls.clear()
+                collect(window)
+                outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
+                            else widget.winfo_class(),
+                            widget.winfo_rootx() + widget.winfo_width() - right_edge)
+                           for widget in visible_controls
+                           if widget.winfo_rootx() + widget.winfo_width() > right_edge]
+                self.assertEqual(outside, [],
+                                 "Retention controls extend beyond the window: {}".format(outside))
+                self.assertGreater(app.retention_help_label.winfo_height(), 42)
+                self.assertIn("full 24 hours", app.retention_help_label.cget("text"))
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for_archive_checks(app.rounds)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
 
     def test_explicit_light_theme_keeps_dark_mode_controls_readable(self):
         root = tk.Tk()
