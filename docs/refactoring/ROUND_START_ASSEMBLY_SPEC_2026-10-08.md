@@ -117,7 +117,30 @@ R1 is implemented without switching the formal Tk entry point. Its current-run p
 
 R2 connects the formal Tk button and keyboard entry paths to the R1 public preparation interface. Its 14-scenario coverage and R2 acceptance evidence are tracked in [R2 local validation](evidence/round-start-assembly-ticket-02/local-validation.md). The R2 tests distinguish newly added desktop coverage from inherited R1/coordinator regression evidence; they do not claim R3's old-path cleanup, complete release sign-off, OS-level global-hotkey field acceptance, or physical factory-device acceptance.
 
+### R3 verification coverage
+
+R3 verification is recorded in [R3 local validation](evidence/round-start-assembly-ticket-03/local-validation.md). The current program/test SHA is `8f9b293ec7c90595c4bcd443daabf26e72049f0b`; the fixed Standards/Spec review base is `0fbbd01ddb627bdd9bdee413ca6d3dfc2ae23fc8`. The final complete Tk suite ran against that program/test SHA. This table records current evidence for the fourteen scenario groups; it does not convert earlier R1/R2 historical claims into new results.
+
+| # | Scenario | R3 evidence | Result / limit |
+| --- | --- | --- | --- |
+| 1 | Invalid configuration / unknown platform | `test_invalid_profile_matrix_is_rejected`, `test_unknown_platform_remains_rejected_after_registration`, `test_empty_paths_are_rejected_before_monitor_creation` | Pass |
+| 2 | Required path blank/missing/non-directory/unreadable | `test_required_paths_must_be_present_directories_readable_and_enterable`; true-Tk blank path test | Pass |
+| 3 | Optional path blank / invalid nonblank | `test_blank_optional_path_is_omitted_but_invalid_nonblank_path_is_rejected` | Pass |
+| 4 | Preference write failure | `test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy` | Pass; true Tk and unchanged disk preference |
+| 5 | Frozen config and Session/audit disk evidence | `test_prepared_profile_starts_real_round_and_persists_matching_session_and_audit`; real Tk platform and B482 restart tests | Pass; fresh readers |
+| 6 | Normal start on all platforms | `test_real_tk_start_button_prepares_every_registered_platform_profile`; RS-WMT shared-entry test | Pass for four registered production configurations and controlled sample-json; no physical equipment claim |
+| 7 | Slow preparation / accepted and ready time | `test_source_preparation_time_counts_from_the_accepted_start`; injected-deadline test | Pass; controlled timing |
+| 8 | Background source creation failure | `test_source_creation_failure_through_preparation_is_audited_before_close_completes`; Tk error recovery test | Pass; durable event |
+| 9 | Stop/timeout during preparation | Event-controlled stop and injected deadline tests in `test_round_start_preparation` | Pass; late source does not restart collection |
+| 10 | RUNNING repeated start | Real Tk all-platform test; `test_repeated_start_while_running_keeps_the_same_round` | Pass |
+| 11 | AWAITING_REVIEW three start entries | `test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects` | Pass; baseline differences retained |
+| 12 | Close-save start guard / preparation close / cancel and retry | Coordinator close-cancel tests and `test_real_tk_close_waits_for_source_preparation_before_destroy` | Pass; temporary data removed only after public save/archive completion checks |
+| 13 | Old-round event / unmapped source | `test_queued_prior_round_event_cannot_change_the_new_round_ui`; `test_warning_for_unmapped_source_is_kept_without_claiming_a_display_slot` | Pass; stale event exercised through a two-round real Tk App |
+| 14 | Save/retry/archive/retention regression | Full audit, coordinator, archival, retention, and Tk suite | Pass; no lifecycle implementation changed |
+
+The R3 full run was `B518_TK_TESTS=1 python3 scripts/run_tests.py`: **286 tests passed in 63.304 seconds** in an accessible desktop session. The project has no configured type-check command; syntax compilation is recorded separately and is not called type checking. Physical equipment acceptance and OS-level global-hotkey acceptance remain separate field work.
+
 - 日期：2026-10-08。來源：`ROUND_START_ASSEMBLY_DISCUSSION_2026-10-08.md` 的 A1–A7；使用者已同意完整結論並要求轉為規格。
 - 討論事實查證基準為 4d7754c；制定規格時 HEAD 為 332a451，新增提交為 C1 合併驗證文件。開始實作前須再次核對最新程式，遇到契約差異先記錄，不暗中改變已確認需求。
-- 遠端規格議題：[GitHub #24](https://github.com/Bowei1121/B518_205_207_ATE/issues/24)，標籤為 ready-for-agent。本次不拆開發票、不直接實作程式。
+- 規格制定時，遠端母議題為 [GitHub #24](https://github.com/Bowei1121/B518_205_207_ATE/issues/24)，標籤為 ready-for-agent；當時只確認規格，沒有拆開發票或實作。本地其後拆成 R1～R3，並依序完成程式與受控桌面驗證；遠端議題狀態未由這些本機實作工作修改。
 - 現場驗收另階段以工程師認可的實際配置與各平台來源，核對正常啟動、位置／結果呈現、停止、失敗提示及保存關閉；記錄設備、配置版本、驗收結果與限制。程式測試不替代現場驗收，設備及時程由後續安排確定。

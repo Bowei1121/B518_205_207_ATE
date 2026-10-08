@@ -2,7 +2,6 @@ import csv
 import io
 import json
 import os
-import queue
 import tkinter as tk
 import time
 import threading
@@ -123,25 +122,6 @@ class ControlledConflictMonitor:
             if result.status not in {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}:
                 self.apply_round_result(result.slot, "STOPPED", result.sn, result.source)
         self.callback(MonitorEvent("stopped", "controlled source stopped"))
-
-
-def install_test_profile(app, station, platform, active=".", final=".", caseinfo=""):
-    """Give a lightweight App fixture the same required profile seam as production."""
-    project = "B482" if platform == "b482" else "B518"
-    with TemporaryDirectory() as temporary:
-        defaults, _project, _machine, _error = MachineProfileStore(
-            Path(temporary) / "preferences.json",
-        ).load()
-    profile = defaults.get(project, station)
-    profile = replace(profile, platform=platform, paths={
-        "active": active, "final": final, "caseinfo": caseinfo,
-    })
-    app.profiles = defaults.with_profile(profile)
-    app.profile_error = None
-    app.project = SimpleNamespace(get=lambda: project, set=lambda _value: None)
-    app.station = SimpleNamespace(get=lambda: station)
-    app.active_profile_snapshot = None
-    return profile
 
 
 def install_snapshot_results(app, results):
@@ -2546,10 +2526,16 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             app_root = Path(temporary) / "B518LogSolution"
             prefs = app_root / "preferences.json"
-            with patch("b518_log_solution.APP_ROOT", app_root), patch("b518_log_solution.PREFS_PATH", prefs):
+            session_root = app_root / "sessions"
+            final = Path(temporary) / "b482-final"
+            final.mkdir()
+            with patch("b518_log_solution.APP_ROOT", app_root), \
+                    patch("b518_log_solution.PREFS_PATH", prefs):
                 root = tk.Tk()
                 root.withdraw()
-                app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=session_root,
+                )
                 try:
                     self.assertEqual(app.project_choice.cget("values"), ("B518", "B482"))
                     app.project.set("B482")
@@ -2558,7 +2544,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     profile = app.profiles.get(app.project.get(), app.station.get())
                     self.assertEqual(profile.platform, "b482")
                     profile_paths = dict(profile.paths)
-                    profile_paths["final"] = temporary
+                    profile_paths["final"] = str(final)
                     profile_timeouts = dict(profile.timeouts)
                     profile_timeouts["round"] = 6300
                     app.profiles = app.profiles.with_profile(
@@ -2574,19 +2560,57 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.destroy()
 
                 restarted_root = tk.Tk()
-                restarted_root.withdraw()
-                restarted = B518LogSolutionApp(restarted_root, hotkey_factory=FakeHotkey)
+                restarted_root.deiconify()
+                restarted = B518LogSolutionApp(
+                    restarted_root, hotkey_factory=FakeHotkey, session_root=session_root,
+                )
+
+                def pump_until(predicate, timeout=8):
+                    deadline = time.monotonic() + timeout
+                    while time.monotonic() < deadline:
+                        restarted_root.update()
+                        if predicate():
+                            return
+                        time.sleep(0.01)
+                    self.fail("Timed out starting the restored configuration: {}".format(
+                        restarted.rounds.snapshot()))
+
+                round_id = None
                 try:
-                    self.assertEqual((restarted.project.get(), restarted.station.get()), ("B482", "BT"))
+                    self.assertEqual((restarted.project.get(), restarted.station.get()),
+                                     ("B482", "BT"))
                     self.assertEqual(restarted.profiles.get("B482", "BT").timeouts["round"], 6300)
-                    with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_factory:
-                        restarted.start_monitor()
-                    self.assertEqual(monitor_factory.call_args.args[0], "b482")
-                    self.assertEqual(monitor_factory.call_args.kwargs["timeouts"]["round"], 6300)
+                    restarted.start_button.invoke()
+                    pump_until(lambda: restarted.rounds.snapshot() is not None
+                               and restarted.rounds.session_path is not None
+                               and not restarted.rounds.snapshot().source_preparation_pending)
+                    round_id = restarted.rounds.snapshot().round_id
+                    session_path = restarted.rounds.session_path
+                    session = json.loads((session_path / "session.json").read_text(encoding="utf-8"))
+                    profile_snapshot = session["settings"]["profile_snapshot"]["profile"]
+                    self.assertEqual(profile_snapshot["platform"], "b482")
+                    self.assertEqual(profile_snapshot["timeouts"]["round"], 6300)
+                    self.assertEqual(profile_snapshot["paths"]["final"], str(final))
+                    self.assertTrue(restarted.rounds.flush_audit(timeout=3))
+                    audit = read_round_audit(session_path / "audit.jsonl")
+                    self.assertTrue(audit["audit_complete"])
+                    self.assertEqual(audit["round"]["config"]["config_snapshot"], profile_snapshot)
+                    self.assertEqual(audit["round"]["config"]["platform"], "b482")
                 finally:
-                    self.wait_for(lambda: restarted.rounds.retention_cleanup_status().status in {
-                        "complete", "failed",
-                    })
+                    restarted.rounds.stop()
+                    closing = restarted.rounds.request_close()
+                    if closing.status not in {"complete", "failed"}:
+                        pump_until(lambda: restarted.rounds.close_status().status
+                                   in {"complete", "failed"})
+                    statuses = self.wait_for_archive_checks(restarted.rounds)
+                    if round_id is not None:
+                        self.assertEqual(restarted.rounds.archive_status(round_id).status,
+                                         "archived", statuses)
+                    cleanup_deadline = time.monotonic() + 5
+                    while (restarted.rounds.retention_cleanup_status().status
+                           not in {"complete", "failed"} and time.monotonic() < cleanup_deadline):
+                        restarted_root.update()
+                        time.sleep(0.01)
                     restarted.hotkey.close()
                     restarted_root.destroy()
 
@@ -2660,134 +2684,97 @@ class LogSolutionUiTests(unittest.TestCase):
 
 
 
-    def test_monitor_lifecycle_never_changes_window_topmost_attribute(self):
-        monitor = MagicMock()
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.events = queue.Queue()
-        app.rounds = RoundCoordinator(app.events.put)
-        app.active_round_id = None
-        install_test_profile(app, "DFU", "atlas")
-        app.start_button = MagicMock()
-        app.monitor_state = MagicMock()
-        app.event_lines = []
-        app.settings_log = None
-        app._save_preferences = MagicMock()
-        app._reset_rows = MagicMock()
-        app._set_monitor_controls = MagicMock()
-        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor", return_value=monitor):
-            app.start_monitor()
-            self.wait_for(lambda: monitor.start.called)
-
-        monitor.start.assert_called_once()
-        self.assertIsNotNone(app.rounds.snapshot())
-        self.assertEqual(app.rounds.snapshot().station, "DFU")
-        app.root.attributes.assert_not_called()
-
-        app._handle_event(MonitorEvent("finished", "monitor ended"))
-        app.root.attributes.assert_not_called()
-        app.rounds.stop()
-
-    def test_existing_monitor_sources_start_through_the_shared_round_entry(self):
-        scenarios = (("DFU", "atlas"), ("FCT", "atlas"), ("BT", "b482"), ("BT", "rswmt"))
-        for station, expected_platform in scenarios:
-            with self.subTest(station=station, platform=expected_platform):
-                app = object.__new__(B518LogSolutionApp)
-                app.root = MagicMock()
-                app.events = queue.Queue()
-                app.rounds = RoundCoordinator(app.events.put)
-                app.active_round_id = None
-                install_test_profile(app, station, expected_platform)
-                app.start_button = MagicMock()
-                app.monitor_state = MagicMock()
-                app.event_lines = []
-                app.settings_log = None
-                app._save_preferences = MagicMock()
-                app._reset_rows = MagicMock()
-                app._set_monitor_controls = MagicMock()
-                with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
-                    app.start_monitor()
-                    self.wait_for(lambda: factory.called)
-                    preparation_deadline = time.monotonic() + 8
-                    while (not factory.return_value.start.called and
-                           app.rounds.snapshot().completion_reason != "start_failed" and
-                           time.monotonic() < preparation_deadline):
-                        time.sleep(0.01)
-
-                snapshot = app.rounds.snapshot()
-                self.assertTrue(factory.return_value.start.called,
-                                "monitor preparation did not start: {}".format(snapshot))
-                self.assertEqual(snapshot.station, station)
-                self.assertEqual(snapshot.state, "RUNNING")
-                factory.assert_called_once()
-                self.assertEqual(factory.call_args.args[0], expected_platform)
-                factory.return_value.start.assert_called_once()
-                app.rounds.stop()
-
-    def test_repeated_app_start_keeps_the_round_and_does_not_reset_rows(self):
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.events = queue.Queue()
-        app.rounds = RoundCoordinator(app.events.put)
-        app.active_round_id = None
-        install_test_profile(app, "DFU", "atlas")
-        app.start_button = MagicMock()
-        app.monitor_state = MagicMock()
-        app.event_lines = []
-        app.settings_log = None
-        app._save_preferences = MagicMock()
-        app._reset_rows = MagicMock()
-        app._set_monitor_controls = MagicMock()
-        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
-            app.start_monitor()
-            first_round_id = app.active_round_id
-            self.wait_for(lambda: factory.called)
-            app.start_monitor()
-            self.wait_for(lambda: factory.return_value.start.called)
-
-        self.assertEqual(app.active_round_id, first_round_id)
-        self.assertEqual(app.rounds.snapshot().state, "RUNNING")
-        factory.assert_called_once()
-        factory.return_value.start.assert_called_once()
-        app._reset_rows.assert_called_once()
-        app.rounds.stop()
-
     def test_queued_prior_round_event_cannot_change_the_new_round_ui(self):
-        app = object.__new__(B518LogSolutionApp)
-        app.root = MagicMock()
-        app.events = queue.Queue()
-        app.rounds = RoundCoordinator(app.events.put)
-        app.active_round_id = None
-        install_test_profile(app, "DFU", "atlas")
-        app.start_button = MagicMock()
-        app.monitor_state = MagicMock()
-        app.event_lines = []
-        app.settings_log = None
-        app._save_preferences = MagicMock()
-        app._reset_rows = MagicMock()
-        app._set_monitor_controls = MagicMock()
-        app._set_row = MagicMock()
-        with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as factory:
-            app.start_monitor()
-            old_round_id = app.active_round_id
-            self.wait_for(lambda: factory.called)
-            app.rounds.stop()
-            app.start_monitor()
-            new_round_id = app.active_round_id
-            self.wait_for(lambda: factory.call_count == 2)
-            before = app.rounds.snapshot()
-            messages_before_stale_event = list(app.event_lines)
-            app._handle_event(RoundEvent(old_round_id, 99, MonitorEvent(
-                "result", "stale PASS", 1, "TESTSERIAL0001", "PASS")))
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            source = Path(temporary) / "source"
+            source.mkdir()
+            (source / "events.jsonl").write_text("", encoding="utf-8")
+            session_root = Path(temporary) / "sessions"
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+            )
+            sample_profile = replace(
+                app.profiles.get("B518", "FCT"), project="SAMPLE",
+                platform="sample-json", capacity=2, paths={"active": str(source)},
+                mapping=((1, 1), (2, 2)),
+            )
+            app.profiles = app.profiles.with_profile(sample_profile)
+            app.project_choice.configure(values=app.profiles.projects)
+            app.project.set("SAMPLE")
+            app._project_changed()
+            app.station.set("FCT")
+            app._profile_changed()
 
-        after = app.rounds.snapshot()
-        self.assertNotEqual(old_round_id, new_round_id)
-        self.assertEqual(after.results, before.results)
-        self.assertEqual(after.result_available, before.result_available)
-        self.assertEqual(app.event_lines, messages_before_stale_event)
-        app._set_row.assert_not_called()
-        self.assertEqual(factory.call_count, 2)
-        app.rounds.stop()
+            def pump_until(predicate, timeout=6):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out waiting for a Tk round transition: {}".format(
+                    app.rounds.snapshot()))
+
+            round_ids = []
+            try:
+                app.start_button.invoke()
+                pump_until(lambda: app.rounds.snapshot() is not None
+                           and app.rounds.session_path is not None
+                           and not app.rounds.snapshot().source_preparation_pending)
+                old_round_id = app.rounds.snapshot().round_id
+                round_ids.append(old_round_id)
+
+                app.stop_button.invoke()
+                pump_until(lambda: app.rounds.snapshot().state == RoundState.STOPPED
+                           and str(app.start_button.cget("state")) == "normal")
+
+                app.start_button.invoke()
+                pump_until(lambda: app.rounds.snapshot().round_id != old_round_id
+                           and app.rounds.session_path is not None
+                           and not app.rounds.snapshot().source_preparation_pending)
+                new_round_id = app.rounds.snapshot().round_id
+                round_ids.append(new_round_id)
+                rows_before = tuple(
+                    (app.status_rows[slot]["sn"].cget("text"),
+                     app.status_rows[slot]["status"].cget("text"))
+                    for slot in app.status_rows
+                )
+                stale = RoundEvent(old_round_id, 99, MonitorEvent(
+                    "result", "stale PASS", 1, "STALE-SERIAL", "PASS",
+                ))
+                queued = threading.Event()
+                root.after(0, lambda: (app.events.put(stale), queued.set()))
+                pump_until(queued.is_set)
+                drained = threading.Event()
+                root.after(250, drained.set)
+                pump_until(drained.is_set)
+
+                self.assertEqual(app.rounds.snapshot().round_id, new_round_id)
+                self.assertNotIn("stale PASS", app.event_lines)
+                self.assertEqual(rows_before, tuple(
+                    (app.status_rows[slot]["sn"].cget("text"),
+                     app.status_rows[slot]["status"].cget("text"))
+                    for slot in app.status_rows
+                ))
+            finally:
+                app.rounds.stop()
+                closing = app.rounds.request_close()
+                if closing.status not in {"complete", "failed"}:
+                    pump_until(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                statuses = self.wait_for_archive_checks(app.rounds)
+                for round_id in round_ids:
+                    self.assertEqual(app.rounds.archive_status(round_id).status, "archived",
+                                     statuses)
+                cleanup_deadline = time.monotonic() + 5
+                while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
+                       and time.monotonic() < cleanup_deadline):
+                    root.update()
+                    time.sleep(0.01)
+                app.hotkey.close()
+                root.destroy()
 
     def test_final_result_brings_dashboard_to_front_without_permanent_topmost(self):
         app = object.__new__(B518LogSolutionApp)
