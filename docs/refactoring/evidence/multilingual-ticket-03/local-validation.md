@@ -7,7 +7,7 @@ Date: 2026-10-08 (Asia/Taipei)
 - Fixed M3 review baseline: `c87c7bcefa334b96c420f255e8c1bf99e7a97370` (`B518-Log-Solution`). M2 is in its ancestry through merge `f128d9f963f60d416d0eaf5917fa5eda87408280`; the M2 implementation and evidence are present. The M2 dependency is resolved for this branch; the ticket README's older `Blocked by #15` text predates that merge.
 - M2 evidence at this baseline records implementation `1d036f0339c2d37ac7907e46c31f92708909ea38`, 303 tests passing with Tk, no unresolved Standards/Spec findings, GitHub mainline merge, and Gitea synchronization deferred by the user until Monday. M3 does not include M2 fixes.
 - M3 branch: `Multilingual/ticket-03`, created from the clean `B518-Log-Solution` baseline above. The fixed review base remains `c87c7bcefa334b96c420f255e8c1bf99e7a97370`.
-- First program batch: `3c0b56f9f96196bdf4abc37cacebee68dea43233` (`Add bilingual platform event migration`), pushed to GitHub branch `Multilingual/ticket-03`; direct GitHub ref checks confirmed the branch at that SHA and mainline at the fixed baseline before documentation work.
+- Program/test commits on the branch: `3c0b56f9f96196bdf4abc37cacebee68dea43233` (`Add bilingual platform event migration`), `ab09586d2a82108a1e56008e606afdc25b621f4c` (preserve Atlas/B482/RS-WMT source diagnostics), `a8cf2254daf95cb70c47ce2b2a59952a44694481` (true Tk bilingual refresh state assertions), and `1394ea25f8dc0b88e896de0854bd0dccc074984e` (final test interaction adjustment). GitHub push commands reported success through `1394ea2`. A fresh direct `git ls-remote github refs/heads/Multilingual/ticket-03` check on 2026-10-08 failed because `github.com` DNS was unavailable, so the current remote SHA is not directly verified.
 - Configured `origin` fetch URL is internal Gitea at `10.64.76.34:3000`; its push configuration also includes a GitHub push URL. A live `git ls-remote origin` attempt on 2026-10-08 waited 30 seconds without returning refs and was interrupted. Gitea state is unverified; no claim of synchronization is made. GitHub remains the only verified push destination for this batch.
 - No GitHub issue was changed. Do not merge or remove the M3 branch until remaining acceptance, review, and destination checks complete.
 
@@ -22,19 +22,19 @@ Date: 2026-10-08 (Asia/Taipei)
 
 `MonitorEvent` accepts an optional stable message ID, parameters, and diagnostic. At the common monitor-to-Session enqueue boundary, the event captures the shared M2 `localized_message` (version 1, message ID, copied parameters, English/Traditional Chinese literals, optional diagnostic). The existing legacy `message`, event type, machine evidence, round identity, and persistence path remain available. This uses the common event contract rather than creating a platform-specific translation or persistence layer. Source values, paths, timestamps, parser output, status codes, and diagnostics are not translated. Language refresh uses the captured message and does not poll/reparse sources or rewrite saved bytes.
 
-This producer list is based on the changed platform paths and tests in this batch, not a claim that every possible platform diagnostic has been exhaustively enumerated. Remaining producer inventory and UI diagnostic review are open acceptance work.
+The inventory covers the producer paths touched by M3 and the exercised source/read/parse error paths. It does not claim exhaustive coverage of every platform diagnostic or every possible partial-source permutation.
 
 ## Evidence and acceptance status
 
 | M3 criterion | Current evidence | Status |
 | --- | --- | --- |
-| 1. Supported platform events/errors use shared IDs/parameters and bilingual display/persistence. | Stable producer IDs added across Atlas, B482, RS-WMT, sample-json; common `BaseMonitor` captures localized values before Session enqueue. Focused tests cover common capture, migrated errors, platform registry and prepared-round persistence. Full GUI display and all producer inventory still need completion. | Partial |
-| 2. Source values, identifiers and timestamps remain original. | New parameters use captured source names, slots, batch/status values or parser diagnostics; tests protect sample-json filename identity and existing platform/round behavior. The full cross-platform source/value matrix has not yet been run. | Partial |
-| 3. Equivalent English/Traditional Chinese operation preserves results, candidates, unknown-source FAIL, timeout and event identity. | Existing M2 round contract plus focused platform and preparation tests pass; no complete two-language, all-platform equivalence matrix has been run for M3. | Partial |
-| 4. Raw parser/system diagnostic remains inspectable, outer message is translated, and language changes do not rewrite saved records. | The true-Tk sample-json App test reads an invalid source record through the actual app and common round, checks the bilingual audit/session diagnostic, changes language through the visible menu, and compares audit bytes immediately before and after the language-only refresh. Its first run exposed a test snapshot taken before later legitimate source events; after moving the byte baseline immediately before the language operation, it passed. | Pass for sample-json path; broader platform UI detail remains partial |
-| 5. Real temporary source across platforms, normal/partial/read-error cases, common round path, Tk display, fresh disk reconstruction, and parser regressions. | The complete suite, including real Tk UI tests and source adapter/preparation/audit reconstruction regressions, passed 310 tests. The true-Tk language refresh integration passed. Platform-specific normal/partial/read-error adapter coverage is present in focused/full tests; the full product-level error-display matrix across every platform has not been run as one integrated matrix. | Partial |
+| 1. Supported platform events/errors use shared IDs/parameters and bilingual display/persistence. | Atlas, B482, RS-WMT and sample-json producers use the M2 event contract. A real Tk App test drives controlled Atlas CSV parse, B482 file-signature and RS-WMT source-read errors through the common round; it verifies visible English/Traditional Chinese text and matching Session/audit records. Sample-json read/parse errors have corresponding true Tk and disk tests. | Partial: the complete platform event producer inventory is not exhaustively exercised. |
+| 2. Source values, identifiers and timestamps remain original. | Tests verify captured filenames, paths, diagnostics, platform/round identity, source event persistence and existing timestamp/slot contracts; `unknown` remains explicit where source facts are absent. No platform parser or source acceptance policy changed. | Partial: not every platform field is asserted in one integrated matrix. |
+| 3. Equivalent English/Traditional Chinese operation preserves results, candidates, unknown-source FAIL, timeout and event identity. | In the true Tk per-platform diagnostic path, switching English → Traditional Chinese → English preserves `round_id`, coordinator events, results, Session/audit event identity, and audit bytes. Existing shared-round tests cover candidate, unknown-source FAIL, timeout and KVM policies. | Partial: those policy scenarios are not all replayed through each platform under both languages. |
+| 4. Raw parser/system diagnostic remains inspectable, outer message is translated, and language changes do not rewrite saved records. | True Tk App tests cover Sample JSON invalid-record diagnostics plus Atlas CSV parse, B482 signature and RS-WMT source-read diagnostics. Fresh audit and Session records contain the same localized message and raw diagnostic; visible text refreshes in both languages while saved audit bytes remain unchanged. | Pass for exercised source-error paths; broader platform diagnostics remain partial. |
+| 5. Real temporary source across platforms, normal/partial/read-error cases, common round path, Tk display, fresh disk reconstruction, and parser regressions. | Full suite passed 313 tests, including real Tk start/error-display paths for registered platforms, B482 normal result display, Sample JSON conflict/reconstruction, and source-adapter partial/normal/parser regressions. Atlas/B482/RS-WMT injected errors were reconstructed from Session/audit and displayed in the App. | Partial: there is not yet one complete all-platform matrix covering every normal, partial, candidate, timeout and disk-reconstruction combination. |
 
-No M3 acceptance checkbox is marked complete in the ticket. The true-Tk sample-json path and complete suite now pass, but the full cross-platform equivalence and error-display matrix and fixed-base review remain open.
+The ticket's acceptance checkboxes remain unchecked until the remaining matrix and final review gaps are closed. The prior review's Atlas/RS-WMT/B482 diagnostic defects are fixed. The remaining Spec gap is the full cross-platform normal/partial/candidate/unknown-source/timeout equivalence matrix under both languages. Gitea and the current GitHub branch SHA are not directly verifiable from the offsite network; do not merge or clean the ticket branch while required destination synchronization is unconfirmed.
 
 ## Commands and results
 
@@ -62,11 +62,20 @@ python3 -c 'import tkinter as tk; root=tk.Tk(); root.destroy()'
 B518_TK_TESTS=1 PYTHONPATH=src python3 -u -m unittest -v tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_language_menu_switches_main_page_and_persists_across_app_instances
 # Passed in authorized desktop GUI session after correcting the audit-byte snapshot point.
 
+B518_TK_TESTS=1 PYTHONPATH=src python3 -u -m unittest -v tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_start_button_prepares_every_registered_platform_profile
+# Passed in authorized desktop GUI session; injected Atlas/B482/RS-WMT source failures were visible, persisted in Session/audit, and remained state-stable during language refresh.
+
+PYTHONPATH=src python3 -m unittest -v tests.test_log_monitoring.LogMonitoringTests.test_atlas_csv_parse_failure_is_reported_without_changing_source_result_policy tests.test_log_monitoring.LogMonitoringTests.test_b482_file_signature_failure_is_reported_as_bilingual_source_error tests.test_rswmt_monitoring.RsWmtTests.test_malformed_csv_warning_preserves_parser_diagnostic tests.test_round_start_preparation.RoundStartPreparationTests.test_sample_json_parse_error_is_bilingual_in_session_and_audit
+# 4 tests, OK; real temporary source and Session/audit reconstruction.
+
 B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py
-# 310 tests, OK (69.502s), including Tk tests
+# 313 tests, OK (67.925s), including Tk tests, after final program/test commit 1394ea25f8dc0b88e896de0854bd0dccc074984e
+
+python3 -m compileall -q src tests
+# Passed after source diagnostic fixes.
 
 git diff --check
-# Passed before the program commit
+# Passed before the program/test commits.
 ```
 
 The exact full runner passed after rerunning it in an authorized desktop GUI session. The ordinary shell still aborts at Tk initialization; that environment distinction is recorded rather than treated as a product defect. The repository has no configured `mypy`, `pyright`, or other type-check command; no type-check pass is claimed.
@@ -75,4 +84,4 @@ The exact full runner passed after rerunning it in an authorized desktop GUI ses
 
 M3 changes platform-originated events only. M4 owns no-round App diagnostics; M5–M7 own other-window translation and close-language policy; M8 owns historical event recognition; M9 owns App-event retention; M10 owns full bundle/release verification. No parser acceptance, source identity policy, result/FAIL policy, timeout, product release, KVM, save, close, archival, or cleanup lifecycle was intentionally changed.
 
-Before merge: complete the all-platform two-language equivalence and integrated error-display evidence, run fixed-base Standards/Spec review and resolve findings, rerun affected tests, refresh evidence with final verified SHA, then recheck all push destinations. Keep the branch if any requirement remains blocked.
+Final code review against fixed base `c87c7bcefa334b96c420f255e8c1bf99e7a97370`: Standards found no documented-standard violations; duplicated source-error handling is a non-blocking judgment call. Spec review confirms the three diagnostic gaps and cross-platform Tk error evidence are addressed, but calls the full two-language normal/partial/candidate/unknown-source/timeout matrix partial. Do not mark those acceptance items complete until that matrix has evidence. Project type-checker configuration was not found; no type-check pass is claimed. Do not merge or delete branches: Gitea is scheduled for Monday, and direct current GitHub ref verification failed due DNS.

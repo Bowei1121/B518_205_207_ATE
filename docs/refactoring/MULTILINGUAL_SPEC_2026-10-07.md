@@ -135,9 +135,7 @@ App 將部署至美國工廠，現場操作員與工程師需要英文介面，�
 
 真正 Tk 測試使用可存取桌面工作階段的環境；必要案例因環境未執行需明記待驗，不以 mock、語法或文件檢查冒充。此次規格交付未執行產品測試或宣告實作完成。
 
-M3（2026-10-08）目前有部分本機證據：平台事件 producer 已開始接入共用雙語契約，聚焦測試及完整含 Tk 套件（310 tests）通過；真正 Tk 的 sample-json 來源錯誤與語言刷新案例也已通過。完整跨平台等價與錯誤顯示矩陣、固定基準審查仍待完成，未因此標記全 App 或發布驗收完成。逐項結果見 [M3 本機驗收](evidence/multilingual-ticket-03/local-validation.md)。
-
-M3（2026-10-08）目前僅有部分本機證據：平台事件 producer 已開始接入共用雙語契約，聚焦測試與排除 Tk UI 模組的套件通過；真 Tk 及完整含 Tk 套件因目前 shell 的 Tk 初始化程序以 exit 134 中止而待驗。相關案例仍由 M3／M10 負責，未因此標記全 App 或發布驗收完成。逐項結果見 [M3 本機驗收](evidence/multilingual-ticket-03/local-validation.md)。
+M3（2026-10-08）本機已有平台雙語來源錯誤、真正 Tk 顯示、語言切換不改業務狀態／audit bytes，以及全套 313 tests 的證據。一般 shell 建立 Tk 仍會以 exit 134 中止；已在可存取桌面圖形工作階段完成真 Tk 與完整套件。固定基準複審確認來源診斷缺口已修正，但全平台正常／部分資料、候選、未知來源 FAIL 與逾時的雙語等價矩陣仍待補足；GitHub 目前票分支 ref 因 DNS 不可用而未能直接確認，Gitea 依使用者指示週一再推送。M3 尚未完成合併條件，不代表全 App 或發布驗收完成。逐項結果見 [M3 本機驗收](evidence/multilingual-ticket-03/local-validation.md)。
 
 ## Out of Scope
 
