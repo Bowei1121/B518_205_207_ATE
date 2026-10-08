@@ -102,6 +102,8 @@ The focused 136-test run preceded the two separately passing tests listed afterw
 - Final complete Tk suite: **289 tests passed in 69.410s** at `88b448438564e55f0ef57457b05b855bb30ea67c`; the four archive-synchronized Tk cases passed in 17.229s and the final profile-update archive assertion passed in 3.267s.
 - Fixed-base re-review through `88b4484`: Standards found no documented-standard violations. Assertions in `finally` may mask an earlier test failure if teardown also fails; this remains a non-blocking maintainability suggestion. Spec found no unresolved implementation or scope issues. Both reviews used `b2816400415364bd033bd4f784bfebf3cda58b2b`.
 - Final validated code/test SHA: `88b448438564e55f0ef57457b05b855bb30ea67c`.
-- Merge SHA, live push destination verification, and branch cleanup: **pending**.
+- Merge SHA: `a4e051a18aa263456f437af724d8f05ea40f2863`.
+- Post-merge main-branch command `B518_TK_TESTS=1 python3 scripts/run_tests.py`: **289 tests passed in 68.912s** in the accessible desktop session. `python3 -m compileall -q src tests` and `git diff --check` also passed on the merged tree.
+- Push destination verification and branch cleanup are recorded in the project summary after direct live ref checks.
 
 Any Tk test temporary directory is isolated. Existing production round data, exports and source logs were not used for failure injection or cleanup.

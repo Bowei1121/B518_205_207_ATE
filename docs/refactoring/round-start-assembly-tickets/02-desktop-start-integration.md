@@ -26,4 +26,4 @@ Part of #24 — https://github.com/Bowei1121/B518_205_207_ATE/issues/24
 
 ## Local verification
 
-R2 implementation, acceptance evidence, complete Tk suite result, limitations, and mother-spec scenario mapping are recorded in [local validation](../evidence/round-start-assembly-ticket-02/local-validation.md). The R2 branch's final review and merge status are recorded there after completion. R3 remains responsible for obsolete-path cleanup and overall release verification.
+R2 implementation, acceptance evidence, complete Tk suite result, limitations, mother-spec scenario mapping, final review, and merge status are recorded in [local validation](../evidence/round-start-assembly-ticket-02/local-validation.md). R3 remains responsible for obsolete-path cleanup and overall release verification.
