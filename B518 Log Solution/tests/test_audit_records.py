@@ -165,6 +165,9 @@ class RoundAuditRecordTests(unittest.TestCase):
                 def update_round_settings(self, settings):
                     self.settings.update(settings)
 
+                def set_event_context_provider(self, provider):
+                    self._event_context_provider = provider
+
                 def apply_round_result(self, slot, status, sn="", source="", detail=None,
                                        lock_terminal=False):
                     result = self.results[slot]

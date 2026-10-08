@@ -73,15 +73,20 @@ class LogMonitoringTests(unittest.TestCase):
     def test_legacy_session_adapter_keeps_its_existing_event_call_shape(self):
         monitor = BaseMonitor("FCT", {}, [1], session_root=self.temp / "legacy")
         captured = []
+        published = []
 
         class LegacySession:
             def enqueue_event(self, message, detail=None):
                 captured.append((message, detail))
 
         monitor.session = LegacySession()
-        monitor.callback = lambda event: None
+        monitor.callback = published.append
         monitor.emit(MonitorEvent("source_prepared", "Source ready"))
-        self.assertEqual(captured, [("Source ready", {})])
+        monitor.emit(MonitorEvent("round_started", "FCT round start accepted"))
+        self.assertEqual(captured, [
+            ("Source ready", {}), ("FCT round start accepted", {}),
+        ])
+        self.assertIsNotNone(published[1].localized_message)
 
     def test_archive_timestamp_accepts_one_and_two_digit_hour(self):
         self.assertEqual(parse_archive_timestamp("20220618_2-28-01.374-04426F"), datetime(2022, 6, 18, 2, 28, 1, 374000))

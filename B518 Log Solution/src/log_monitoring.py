@@ -62,6 +62,17 @@ def _accepts_event_identity(method) -> bool:
     return {"timestamp", "sequence", "round_id"}.issubset(parameters)
 
 
+def _accepts_keyword(method, name: str) -> bool:
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+
+
 @dataclass
 class MonitorEvent:
     kind: str
@@ -379,6 +390,8 @@ class BaseMonitor:
                               "round_timeout_seconds": str(self.round_timeout_seconds)})
         self.callback, self.now, self.monotonic = callback, now, monotonic
         self._event_display_position_mapper = lambda slot: slot
+        self._event_context_provider = None
+        self._emit_lock = threading.RLock()
         self.started = now()
         self._deadline_locked_slots: Set[int] = set()
         self.results = {slot: SlotResult(slot=slot) for slot in self.slots}
@@ -399,6 +412,10 @@ class BaseMonitor:
         """Keep captured event labels aligned with the configured display positions."""
         self._event_display_position_mapper = mapper
 
+    def set_event_context_provider(self, provider: Callable[[MonitorEvent], None]) -> None:
+        """Assign common-round identity before the Session mirror is queued."""
+        self._event_context_provider = provider
+
     def timeout_seconds(self, kind: str) -> int:
         """Expose configured limits through the common round contract."""
         return {
@@ -418,6 +435,13 @@ class BaseMonitor:
         self.emit(event)
 
     def emit(self, event: MonitorEvent) -> None:
+        emit_lock = getattr(self, "_emit_lock", None)
+        if emit_lock is None:
+            emit_lock = self._emit_lock = threading.RLock()
+        with emit_lock:
+            BaseMonitor._emit_locked(self, event)
+
+    def _emit_locked(self, event: MonitorEvent) -> None:
         round_id = getattr(self, "settings", {}).get("round_id")
         if round_id:
             event.detail.setdefault("round_id", str(round_id))
@@ -428,8 +452,10 @@ class BaseMonitor:
                 event.kind, self.station, event.slot, event.status, event.detail,
                 event.message, display_slot,
             )
-        # The common-round callback assigns the canonical sequence and time before
-        # this Session mirror is queued, so Session and audit can be correlated on disk.
+        context_provider = getattr(self, "_event_context_provider", None)
+        if context_provider is not None:
+            context_provider(event)
+        errors = []
         if event.source:
             try:
                 enqueue = getattr(self.session, "enqueue_source", None)
@@ -438,9 +464,18 @@ class BaseMonitor:
                 else:
                     self.session.source(Path(event.source))
             except OSError as error:
-                self._report_session_write_failure("Session 來源保存失敗", error)
+                errors.append(("Session 來源保存失敗", error))
+        if event.kind != "session_write_failed":
+            try:
+                BaseMonitor._persist_session_event(self, event)
+            except OSError as error:
+                errors.append(("Session 事件保存失敗", error))
         if self.callback:
             self.callback(event)
+        for operation, error in errors:
+            self._report_session_write_failure(operation, error)
+
+    def _persist_session_event(self, event: MonitorEvent) -> None:
         try:
             enqueue = getattr(self.session, "enqueue_event", None)
             if callable(enqueue) and _accepts_event_identity(enqueue):
@@ -452,8 +487,10 @@ class BaseMonitor:
                     enqueue(event.message, event.detail, timestamp=event.observed_at,
                             sequence=event.sequence, round_id=event.detail.get("round_id"))
             elif callable(enqueue):
-                if event.localized_message is not None:
-                    enqueue(event.message, event.detail, event.localized_message)
+                if (event.localized_message is not None and
+                        _accepts_keyword(enqueue, "localized_message")):
+                    enqueue(event.message, event.detail,
+                            localized_message=event.localized_message)
                 else:
                     enqueue(event.message, event.detail)
             elif event.localized_message is not None:
@@ -463,9 +500,11 @@ class BaseMonitor:
                                 localized_message=event.localized_message,
                                 sequence=event.sequence,
                                 round_id=event.detail.get("round_id"))
-                else:
+                elif _accepts_keyword(write_event, "localized_message"):
                     write_event(event.message, event.detail,
                                 localized_message=event.localized_message)
+                else:
+                    write_event(event.message, event.detail)
             else:
                 write_event = self.session.event
                 if _accepts_event_identity(write_event):
@@ -475,15 +514,19 @@ class BaseMonitor:
                 else:
                     write_event(event.message, event.detail)
         except OSError as error:
-            self._report_session_write_failure("Session 事件保存失敗", error)
+            raise error
 
     def _report_session_write_failure(self, operation: str, error: OSError) -> None:
-        if self.callback:
-            self.callback(MonitorEvent(
+        with self._emit_lock:
+            event = MonitorEvent(
                 "session_write_failed", "{}；本輪仍依既有狀態流程繼續".format(operation),
                 detail={"error_type": type(error).__name__, "error": str(error),
                         "round_id": self.settings.get("round_id", "unknown")},
-            ))
+            )
+            if self._event_context_provider is not None:
+                self._event_context_provider(event)
+            if self.callback:
+                self.callback(event)
 
     def set_result(self, slot: int, status: str, sn: Optional[str] = None, source: str = "",
                    detail: Optional[Dict[str, str]] = None, lock_terminal: bool = False) -> None:

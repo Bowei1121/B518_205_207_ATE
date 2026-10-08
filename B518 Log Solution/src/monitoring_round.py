@@ -180,6 +180,7 @@ class MonitoringRound:
         self._deadline_slots = set()
         self._result_evidence: Dict[int, Dict[str, str]] = {}
         self._pending_conflicts: Dict[str, RoundConflict] = {}
+        self._next_event_sequence = 1
         self._round_alarm: Optional[RoundAlarm] = None
         self._round_alarm_ready = True
         self._configured_round_timeout = round_timeout_seconds
@@ -666,6 +667,9 @@ class MonitoringRound:
 
     def _prepare_monitor(self) -> None:
         monitor = self._monitor_factory(self._receive_monitor_event)
+        context_provider = getattr(monitor, "set_event_context_provider", None)
+        if callable(context_provider):
+            context_provider(self._prepare_monitor_event)
         with self._lock:
             self._monitor = monitor
             self._monitor_persistence_ready = False
@@ -963,6 +967,7 @@ class MonitoringRound:
                 self._save_errors.append(message)
             self._save_history.append(message)
         with self._lock:
+            self._prepare_monitor_event_locked(event)
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()
                                if item.slot == event.slot), None) if self._monitor is not None else None
@@ -983,12 +988,24 @@ class MonitoringRound:
                 self._collection_stopped = True
                 if self._completion_reason != "start_failed":
                     self._completion_reason = "manual_stop"
-            event.sequence = len(self._events) + 1
-            event.observed_at = self._wall_clock().isoformat(timespec="seconds")
             round_event = RoundEvent(self.round_id, event.sequence, event)
             self._events.append(round_event)
+            self._events.sort(key=lambda item: item.sequence)
         self._persist_audit_event(round_event)
         self._on_event(round_event)
+
+    def _prepare_monitor_event(self, event: MonitorEvent) -> None:
+        with self._lock:
+            self._prepare_monitor_event_locked(event)
+
+    def _prepare_monitor_event_locked(self, event: MonitorEvent) -> None:
+        if event.sequence is None:
+            event.sequence = self._next_event_sequence
+            self._next_event_sequence += 1
+        else:
+            self._next_event_sequence = max(self._next_event_sequence, event.sequence + 1)
+        if event.observed_at is None:
+            event.observed_at = self._wall_clock().isoformat(timespec="seconds")
 
     def _capture_bilingual_message(self, event: MonitorEvent) -> None:
         if event.localized_message is not None:
