@@ -40,6 +40,30 @@ class LanguageCatalogTests(unittest.TestCase):
         self.assertEqual(language_catalog.translate("main.settings", "fr"), "Settings")
         self.assertEqual(language_catalog.validate_translations(), ())
 
+    def test_slotless_round_events_never_invent_slot_zero(self):
+        for kind, detail in (
+                ("conflict_detected", {}),
+                ("conflict_resolved", {"choice": "keep_original"}),
+                ("duplicate_source", {}),
+                ("unknown_round_candidate_rejected", {})):
+            with self.subTest(kind=kind):
+                message = language_catalog.capture_round_event_message(
+                    kind, "FCT", None, "FAIL", detail, "event",
+                )
+                self.assertIsNotNone(message)
+                self.assertIn("unknown position", message.english.lower())
+                self.assertIn("位置未知", message.traditional_chinese)
+                self.assertNotIn("Slot 0", message.english)
+                self.assertNotIn("通道 0", message.traditional_chinese)
+                if kind == "unknown_round_candidate_rejected":
+                    self.assertNotIn("result set to FAIL", message.english)
+                    self.assertNotIn("判定 FAIL", message.traditional_chinese)
+
+        result = language_catalog.capture_round_event_message(
+            "result", "FCT", None, "PASS", {}, "round result",
+        )
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

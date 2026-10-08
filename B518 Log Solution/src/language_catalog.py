@@ -68,10 +68,15 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.alarm.acknowledged': 'Round timeout alarm acknowledged; other review items remain',
         'round.alarm.ignored': 'Round alarm acknowledgement ignored',
         'round.conflict.detected': 'Slot {slot} has a same-round result conflict and awaits review',
+        'round.conflict.detected.unknown_position': 'A result conflict with unknown position awaits review',
         'round.conflict.kept_original': 'Slot {slot}: original result kept',
+        'round.conflict.kept_original.unknown_position': 'Original result kept for a conflict with unknown position',
         'round.conflict.accepted_candidate': 'Slot {slot}: new candidate accepted',
+        'round.conflict.accepted_candidate.unknown_position': 'A new candidate was accepted for a conflict with unknown position',
         'round.duplicate_source': 'Slot {slot}: duplicate source recorded',
+        'round.duplicate_source.unknown_position': 'A duplicate source with unknown position was recorded',
         'round.unknown_candidate_rejected': 'Slot {slot}: source could not be linked to this round; candidate rejected and result set to FAIL',
+        'round.unknown_candidate_rejected.unknown_position': 'A source with unknown position could not be linked to this round; candidate rejected',
         'round.audit_write_failed': '{station} audit event could not be saved',
         'round.session_write_failed': '{station} Session event could not be saved',
         'round.save_recovered': '{station} Session and audit save recovery completed',
@@ -142,10 +147,15 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.alarm.acknowledged': '整輪逾時警報已確認；仍有其他項目待確認',
         'round.alarm.ignored': '整輪警報確認已忽略',
         'round.conflict.detected': '通道 {slot} 發現同輪結果衝突，等待人工確認',
+        'round.conflict.detected.unknown_position': '位置未知的結果衝突等待人工確認',
         'round.conflict.kept_original': '通道 {slot}：已保留原結果',
+        'round.conflict.kept_original.unknown_position': '位置未知的衝突已保留原結果',
         'round.conflict.accepted_candidate': '通道 {slot}：已採用新候選',
+        'round.conflict.accepted_candidate.unknown_position': '位置未知的衝突已採用新候選',
         'round.duplicate_source': '通道 {slot}：已記錄重複來源',
+        'round.duplicate_source.unknown_position': '已記錄位置未知的重複來源',
         'round.unknown_candidate_rejected': '通道 {slot}：無法確認來源屬於本輪；已拒絕候選並判定 FAIL',
+        'round.unknown_candidate_rejected.unknown_position': '無法確認位置未知的來源屬於本輪；已拒絕候選',
         'round.audit_write_failed': '{station} 稽核事件保存失敗',
         'round.session_write_failed': '{station} Session 事件保存失敗',
         'round.save_recovered': '{station} Session 與稽核紀錄已完成保存復原',
@@ -238,11 +248,10 @@ def capture_round_event_message(kind: str, station: str, slot: object, status: s
     parameters = {"station": station}
     diagnostic = ""
     if kind == "result":
-        if slot is not None and display_slot is None:
+        if slot is None or display_slot is None:
             return None
         message_id = "round.result"
-        parameters.update(slot=display_slot if display_slot is not None else 0,
-                          status=status or "unknown")
+        parameters.update(slot=display_slot, status=status or "unknown")
     elif kind == "round_started":
         message_id = "round.started"
     elif kind == "round_ready":
@@ -272,25 +281,37 @@ def capture_round_event_message(kind: str, station: str, slot: object, status: s
     elif kind == "conflict_detected":
         if slot is not None and display_slot is None:
             return None
-        message_id = "round.conflict.detected"
-        parameters["slot"] = display_slot if display_slot is not None else 0
+        if display_slot is None:
+            message_id = "round.conflict.detected.unknown_position"
+        else:
+            message_id = "round.conflict.detected"
+            parameters["slot"] = display_slot
     elif kind == "conflict_resolved":
         if slot is not None and display_slot is None:
             return None
-        message_id = ("round.conflict.accepted_candidate"
-                      if detail.get("choice") == "accept_candidate"
+        accepted = detail.get("choice") == "accept_candidate"
+        message_id = ("round.conflict.accepted_candidate" if accepted
                       else "round.conflict.kept_original")
-        parameters["slot"] = display_slot if display_slot is not None else 0
+        if display_slot is None:
+            message_id += ".unknown_position"
+        else:
+            parameters["slot"] = display_slot
     elif kind == "duplicate_source":
         if slot is not None and display_slot is None:
             return None
-        message_id = "round.duplicate_source"
-        parameters["slot"] = display_slot if display_slot is not None else 0
+        if display_slot is None:
+            message_id = "round.duplicate_source.unknown_position"
+        else:
+            message_id = "round.duplicate_source"
+            parameters["slot"] = display_slot
     elif kind == "unknown_round_candidate_rejected":
         if slot is not None and display_slot is None:
             return None
-        message_id = "round.unknown_candidate_rejected"
-        parameters["slot"] = display_slot if display_slot is not None else 0
+        if display_slot is None:
+            message_id = "round.unknown_candidate_rejected.unknown_position"
+        else:
+            message_id = "round.unknown_candidate_rejected"
+            parameters["slot"] = display_slot
     elif kind == "audit_write_failed":
         message_id, diagnostic = "round.audit_write_failed", legacy_message
     elif kind == "session_write_failed":
