@@ -62,7 +62,12 @@ class LanguageCatalogTests(unittest.TestCase):
         result = language_catalog.capture_round_event_message(
             "result", "FCT", None, "PASS", {}, "round result",
         )
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.message_id, "round.result.unknown_position")
+        self.assertIn("FCT result: PASS", result.english)
+        self.assertIn("位置未知", result.traditional_chinese)
+        self.assertNotIn("Slot 0", result.english)
+        self.assertNotIn("通道 0", result.traditional_chinese)
 
 
 if __name__ == "__main__":

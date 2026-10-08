@@ -93,6 +93,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "monitor.completed": "Round Complete",
         "monitor.stopped": "Stopped",
         "round.result": "{station} Slot {slot} result: {status}",
+        "round.result.unknown_position": "{station} result: {status} (position unknown)",
     },
     TRADITIONAL_CHINESE: {
         "app.title": "B518 Log Solution-V0.1.0",
@@ -172,6 +173,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "monitor.completed": "本輪完成",
         "monitor.stopped": "已停止",
         "round.result": "{station} 通道 {slot} 結果：{status}",
+        "round.result.unknown_position": "{station} 結果：{status}（位置未知）",
     },
 }
 
@@ -248,10 +250,14 @@ def capture_round_event_message(kind: str, station: str, slot: object, status: s
     parameters = {"station": station}
     diagnostic = ""
     if kind == "result":
-        if slot is None or display_slot is None:
+        if slot is not None and display_slot is None:
             return None
-        message_id = "round.result"
-        parameters.update(slot=display_slot, status=status or "unknown")
+        if slot is None:
+            message_id = "round.result.unknown_position"
+            parameters["status"] = status or "unknown"
+        else:
+            message_id = "round.result"
+            parameters.update(slot=display_slot, status=status or "unknown")
     elif kind == "round_started":
         message_id = "round.started"
     elif kind == "round_ready":
