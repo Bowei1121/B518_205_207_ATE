@@ -40,3 +40,11 @@
 - 真 Tk 測試透過已註冊的 `sample-json` 控制平台，從暫存 JSONL 經實際 App、RoundCoordinator 捕捉多筆同位置及跨位置衝突；驗證非首項選取在候選刷新時保持同一 conflict ID、兩區同步、差異紅色粗體、來源改動不改捕捉快照、隱藏重開、逐項裁決、空狀態，以及 audit 與 Session `results.csv` 從磁碟重建。另以 Event 控制背景候選加入時的刷新交錯。
 - 最終程式／測試 SHA `db567ff` 的真 Tk 聚焦案例 3 項通過；完整含 Tk 套件 `B518_TK_TESTS=1 python3 scripts/run_tests.py` 通過 279 tests（63.887 秒）。`py_compile` 與 `git diff --check` 通過。專案沒有既有 mypy／pyright 或其他型別檢查設定，未宣稱型別檢查通過。母規格十二案例依 C1／C2 已合併證據及本票測試逐案列於正式規格覆蓋表。
 - 固定基準雙軸審查：Standards 無未解問題；Spec 在新增平台註冊至實際 App/Tk 多候選測試與完整十二案例證據矩陣後確認 C3 七項均有證據。合併提交 `965d4224218fc96526e8e97141e3bb54b1ec70df` 的完整含 Tk 套件通過 279 tests（53.411 秒）；主線已推送並即時確認 Gitea／GitHub SHA 相同，本地與遠端票分支已清理，正式工作樹停在 `B518-Log-Solution`。交付證據見 [C3 本機驗收紀錄](evidence/conflict-dialog-ticket-03/local-validation.md)。未修改遠端 Issue 狀態。
+
+## R1 配置與輪次啟動集中準備（GitHub #25，母規格 #24）
+
+- 從 `B518-Log-Solution` 的 `c71fb5583364f0a7c4e71d9806cfdec04160cb11` 建立 `RoundStartAssembly/ticket-01`；該 SHA 固定為本票 Standards／Spec 審查基準。開始時工作樹乾淨、主線與兩個既有 push 目的地即時 SHA 相同，票分支原先不存在。
+- 新增無 Tk 相依的公開 `RoundStartPreparation`／`PreparedRoundStart`，以同一 registry 驗證及固定設定，集中檢查路徑、建立 adapter、橋接回呼、配置來源位置映射，並將同一配置資訊交給既有 RoundCoordinator、Session 與 audit。正式 Tk 開始入口未切換；R2 桌面接入、R3 舊流程移除及現場設備驗收仍待後續。
+- 使用真實暫存來源／Session／audit、PlatformRegistry 實際 adapters、Event 控制來源延遲及可注入時鐘驗證。Spec 審查曾指出注入 registry 與全域 validator 不一致，新增反例後已修正為用選定 registry 驗證；來源準備失敗且 Session 未建立時，也修正為 audit 完整落盤後不再永久停在等待狀態。
+- 最新程式提交 `f5e3ff5`；聚焦 PlatformRegistry／mapping／profile／RoundCoordinator 與準備測試共 88 tests 通過。最終完整含 Tk 套件於桌面環境通過 287 tests（50.528 秒）。型別檢查設定查無；compileall 不視為型別檢查。固定基準複審與文件提交完成後才合併。
+- 本票逐項驗收與母規格 14 組情境對照見 [R1 本機驗收紀錄](evidence/round-start-assembly-ticket-01/local-validation.md)。目前已推送 Gitea 與 GitHub；完整套件、複審、合併及分支清理狀態依最終結果續記。未修改遠端議題狀態。
