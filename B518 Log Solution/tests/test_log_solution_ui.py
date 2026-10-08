@@ -1374,6 +1374,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
                 app._close_settings()
                 app.hotkey.close()
                 root.destroy()
