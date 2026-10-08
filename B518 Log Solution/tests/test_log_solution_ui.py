@@ -2795,6 +2795,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 started = app.rounds.start("FCT", source_factory, run_async=True, capacity=2)
                 app.active_round_id = started.round_id
                 pump_until(lambda: sources and app.rounds.session_path is not None)
+                pump_until(lambda: any(
+                    event.event.kind == "round_ready"
+                    for event in app.rounds.snapshot().events
+                ))
                 sources[0].publish_round_event(MonitorEvent(
                     "timeout", "FCT 尚未開始測試逾時", status="TIMEOUT",
                     detail={"kind": "start"},
