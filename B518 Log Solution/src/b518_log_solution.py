@@ -9,7 +9,7 @@ import subprocess
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
 
 from global_hotkey import HotkeyRegistration, create_global_hotkey
@@ -119,6 +119,7 @@ class B518LogSolutionApp:
         self._close_poll_generation = None
         self.resolve_conflict_original_button = None
         self.resolve_conflict_candidate_button = None
+        self.conflict_close_button = None
         self.active_round_id: Optional[str] = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
@@ -138,6 +139,10 @@ class B518LogSolutionApp:
         self.retention_cleanup_status: Optional[tk.StringVar] = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self.conflict_list: Optional[tk.Listbox] = None
+        self.conflict_panes: Optional[ttk.Panedwindow] = None
+        self.conflict_position_label: Optional[ttk.Label] = None
+        self.conflict_comparison: Optional[ttk.Treeview] = None
+        self.conflict_comparison_scrollbar: Optional[ttk.Scrollbar] = None
         self.conflict_details: Optional[tk.Text] = None
         self._conflict_ids: list[str] = []
         self.round_alarm_window: Optional[tk.Toplevel] = None
@@ -889,10 +894,52 @@ class B518LogSolutionApp:
                                             selectbackground="#1d4ed8", selectforeground="#ffffff")
             self.conflict_list.pack(side="left", fill="y")
             self.conflict_list.bind("<<ListboxSelect>>", self._show_selected_conflict)
-            self.conflict_details = tk.Text(body, wrap="word", height=14, state="disabled",
+            self.conflict_panes = ttk.Panedwindow(body, orient="vertical")
+            self.conflict_panes.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+            summary = ttk.Frame(self.conflict_panes)
+            summary.columnconfigure(0, weight=1)
+            summary.rowconfigure(1, weight=1)
+            self.conflict_position_label = ttk.Label(summary, text="顯示位置：未知")
+            self.conflict_position_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
+            self.conflict_comparison = ttk.Treeview(
+                summary, columns=("original", "candidate"), show=("tree", "headings"),
+                height=4, selectmode="none",
+            )
+            self.conflict_comparison.heading("#0", text="項目")
+            self.conflict_comparison.heading("original", text="原結果")
+            self.conflict_comparison.heading("candidate", text="新候選")
+            self.conflict_comparison.column("#0", width=100, minwidth=80, stretch=False)
+            self.conflict_comparison.column("original", width=140, minwidth=100, stretch=False)
+            self.conflict_comparison.column("candidate", width=140, minwidth=100, stretch=False)
+            self.conflict_comparison.grid(row=1, column=0, sticky="nsew")
+            summary_scrollbar = ttk.Scrollbar(
+                summary, orient="vertical", command=self.conflict_comparison.yview,
+            )
+            summary_scrollbar.grid(row=1, column=1, sticky="ns")
+            self.conflict_comparison_scrollbar = ttk.Scrollbar(
+                summary, orient="horizontal", command=self.conflict_comparison.xview,
+            )
+            self.conflict_comparison_scrollbar.grid(row=2, column=0, sticky="ew")
+            self.conflict_comparison.configure(
+                yscrollcommand=summary_scrollbar.set,
+                xscrollcommand=self.conflict_comparison_scrollbar.set,
+            )
+
+            details = ttk.Frame(self.conflict_panes)
+            details.columnconfigure(0, weight=1)
+            details.rowconfigure(0, weight=1)
+            self.conflict_details = tk.Text(details, wrap="word", height=14, state="disabled",
                                             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                                             font=("Menlo", 11), relief="solid", borderwidth=1)
-            self.conflict_details.pack(side="left", fill="both", expand=True, padx=(10, 0))
+            self.conflict_details.grid(row=0, column=0, sticky="nsew")
+            details_scrollbar = ttk.Scrollbar(details, orient="vertical",
+                                              command=self.conflict_details.yview)
+            details_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.conflict_details.configure(yscrollcommand=details_scrollbar.set)
+            self.conflict_panes.add(summary, weight=4)
+            self.conflict_panes.add(details, weight=6)
+            window.after_idle(self._set_initial_conflict_sash)
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=12, pady=(8, 12))
             self.resolve_conflict_original_button = ttk.Button(
@@ -905,7 +952,8 @@ class B518LogSolutionApp:
                 command=lambda: self._resolve_selected_conflict("accept_candidate"),
             )
             self.resolve_conflict_candidate_button.pack(side="left")
-            ttk.Button(actions, text="關閉", command=window.withdraw).pack(side="right")
+            self.conflict_close_button = ttk.Button(actions, text="關閉", command=window.withdraw)
+            self.conflict_close_button.pack(side="right")
         self._refresh_conflict_review()
         if self.conflict_window and self.conflict_window.winfo_exists():
             self.conflict_window.deiconify()
@@ -954,16 +1002,36 @@ class B518LogSolutionApp:
                 self.conflict_list.activate(index)
                 self._show_selected_conflict()
             elif self.conflict_details:
-                self.conflict_details.configure(state="normal")
-                self.conflict_details.delete("1.0", "end")
-                self.conflict_details.insert("1.0", "目前沒有待確認項目。")
-                self.conflict_details.configure(state="disabled")
+                self._clear_conflict_comparison()
+
+    def _set_initial_conflict_sash(self) -> None:
+        if not self.conflict_panes or not self.conflict_panes.winfo_exists():
+            return
+        height = self.conflict_panes.winfo_height()
+        if height > 1:
+            self.conflict_panes.sashpos(0, int(height * 0.4))
+
+    def _clear_conflict_comparison(self) -> None:
+        if self.conflict_comparison:
+            self.conflict_comparison.delete(*self.conflict_comparison.get_children(""))
+            self.conflict_comparison.column("original", width=140)
+            self.conflict_comparison.column("candidate", width=140)
+            self.conflict_comparison.xview_moveto(0)
+        if self.conflict_position_label:
+            self.conflict_position_label.configure(text="顯示位置：未知")
+        if self.conflict_details:
+            self.conflict_details.configure(state="normal")
+            self.conflict_details.delete("1.0", "end")
+            self.conflict_details.insert("1.0", "目前沒有待確認項目。")
+            self.conflict_details.configure(state="disabled")
 
     def _show_selected_conflict(self, _event=None) -> None:
-        if not self.conflict_list or not self.conflict_details:
+        if (not self.conflict_list or not self.conflict_details or
+                not self.conflict_comparison or not self.conflict_position_label):
             return
         selected = self.conflict_list.curselection()
         if not selected or selected[0] >= len(self._conflict_ids):
+            self._clear_conflict_comparison()
             return
         snapshot = self.rounds.snapshot()
         if not snapshot:
@@ -972,7 +1040,35 @@ class B518LogSolutionApp:
         conflict = next((item for item in snapshot.pending_conflicts
                          if item.conflict_id == conflict_id), None)
         if not conflict:
+            self._clear_conflict_comparison()
             return
+
+        def source_filename(side):
+            if not side.source:
+                return "未知"
+            filename = Path(side.source).name
+            return filename if filename else "未知"
+
+        rows = (
+            ("結果", conflict.original.status or "未知", conflict.candidate.status or "未知"),
+            ("SN", conflict.original.sn or "未知", conflict.candidate.sn or "未知"),
+            ("來源時間", conflict.original.source_time or "未知",
+             conflict.candidate.source_time or "未知"),
+            ("來源檔名", source_filename(conflict.original), source_filename(conflict.candidate)),
+        )
+        self.conflict_position_label.configure(text="顯示位置：{}".format(conflict.slot))
+        self.conflict_comparison.delete(*self.conflict_comparison.get_children(""))
+        for label, original, candidate in rows:
+            self.conflict_comparison.insert("", "end", text=label,
+                                            values=(original, candidate))
+        display_font = tkfont.nametofont("TkDefaultFont")
+        for column, heading, value_index in (
+                ("original", "原結果", 1), ("candidate", "新候選", 2)):
+            content_width = max(display_font.measure(row[value_index]) for row in rows)
+            column_width = max(140, display_font.measure(heading) + 24, content_width + 24)
+            self.conflict_comparison.column(column, width=column_width)
+        self.conflict_comparison.xview_moveto(0)
+
         def render(side):
             return ("SN：{}\n結果：{}\n來源：{}\n來源識別：{}\n來源時間：{}\n證據：{}".format(
                 side.sn or "未知", side.status or "未知", side.source or "未知",
