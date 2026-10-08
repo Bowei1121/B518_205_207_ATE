@@ -141,7 +141,7 @@ class B518LogSolutionApp:
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
         self.conflict_position_label: Optional[ttk.Label] = None
-        self.conflict_comparison: Optional[ttk.Treeview] = None
+        self.conflict_comparison: Optional[tk.Text] = None
         self.conflict_comparison_scrollbar: Optional[ttk.Scrollbar] = None
         self.conflict_details: Optional[tk.Text] = None
         self._conflict_ids: list[str] = []
@@ -902,16 +902,28 @@ class B518LogSolutionApp:
             summary.rowconfigure(1, weight=1)
             self.conflict_position_label = ttk.Label(summary, text="顯示位置：未知")
             self.conflict_position_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
-            self.conflict_comparison = ttk.Treeview(
-                summary, columns=("original", "candidate"), show=("tree", "headings"),
-                height=4, selectmode="none",
+            comparison_font = tkfont.nametofont("TkDefaultFont")
+            self.conflict_comparison = tk.Text(
+                summary, wrap="none", height=5, state="disabled", font=comparison_font,
+                background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR, relief="flat",
+                borderwidth=0, padx=4, pady=4,
             )
-            self.conflict_comparison.heading("#0", text="項目")
-            self.conflict_comparison.heading("original", text="原結果")
-            self.conflict_comparison.heading("candidate", text="新候選")
-            self.conflict_comparison.column("#0", width=100, minwidth=80, stretch=False)
-            self.conflict_comparison.column("original", width=140, minwidth=100, stretch=False)
-            self.conflict_comparison.column("candidate", width=140, minwidth=100, stretch=False)
+            self.conflict_comparison_header_font = tkfont.Font(
+                root=window, font=comparison_font,
+            )
+            self.conflict_comparison_header_font.configure(weight="bold")
+            self.conflict_comparison_difference_font = tkfont.Font(
+                root=window, font=comparison_font,
+            )
+            self.conflict_comparison_difference_font.configure(weight="bold")
+            self.conflict_comparison.tag_configure(
+                "comparison_header", font=self.conflict_comparison_header_font,
+            )
+            self.conflict_comparison.tag_configure(
+                "comparison_difference", foreground="#b00020",
+                font=self.conflict_comparison_difference_font,
+            )
+            self._conflict_value_ranges = {}
             self.conflict_comparison.grid(row=1, column=0, sticky="nsew")
             summary_scrollbar = ttk.Scrollbar(
                 summary, orient="vertical", command=self.conflict_comparison.yview,
@@ -1013,9 +1025,11 @@ class B518LogSolutionApp:
 
     def _clear_conflict_comparison(self) -> None:
         if self.conflict_comparison:
-            self.conflict_comparison.delete(*self.conflict_comparison.get_children(""))
-            self.conflict_comparison.column("original", width=140)
-            self.conflict_comparison.column("candidate", width=140)
+            self.conflict_comparison.configure(state="normal")
+            self.conflict_comparison.delete("1.0", "end")
+            self.conflict_comparison.configure(tabs=("120p", "280p"))
+            self.conflict_comparison.configure(state="disabled")
+            self._conflict_value_ranges = {}
             self.conflict_comparison.xview_moveto(0)
         if self.conflict_position_label:
             self.conflict_position_label.configure(text="顯示位置：未知")
@@ -1043,30 +1057,82 @@ class B518LogSolutionApp:
             self._clear_conflict_comparison()
             return
 
-        def source_filename(side):
+        def source_parts(side):
             if not side.source:
-                return "未知"
-            filename = Path(side.source).name
-            return filename if filename else "未知"
+                return "", "未知", (), (False, ())
+            normalized = side.source.replace("\\", "/").rstrip("/")
+            parts = tuple(part for part in normalized.split("/") if part)
+            return (side.source, parts[-1] if parts else "未知", parts[:-1],
+                    (normalized.startswith("/"), parts))
+
+        original_path, original_filename, original_directories, original_path_key = source_parts(
+            conflict.original,
+        )
+        candidate_path, candidate_filename, candidate_directories, candidate_path_key = source_parts(
+            conflict.candidate,
+        )
+        original_source = original_filename
+        candidate_source = candidate_filename
+        paths_differ = original_path_key != candidate_path_key
+        if (original_path and candidate_path and paths_differ and
+                original_filename == candidate_filename):
+            for directory_count in range(1, max(len(original_directories),
+                                                len(candidate_directories)) + 1):
+                original_hint = "/".join(original_directories[-directory_count:])
+                candidate_hint = "/".join(candidate_directories[-directory_count:])
+                if original_hint != candidate_hint:
+                    original_source = "{} · {}".format(original_filename, original_hint)
+                    candidate_source = "{} · {}".format(candidate_filename, candidate_hint)
+                    break
+            else:
+                original_hint = "根目錄" if original_path_key[0] else "相對路徑"
+                candidate_hint = "根目錄" if candidate_path_key[0] else "相對路徑"
+                original_source = "{} · {}".format(original_filename, original_hint)
+                candidate_source = "{} · {}".format(candidate_filename, candidate_hint)
 
         rows = (
-            ("結果", conflict.original.status or "未知", conflict.candidate.status or "未知"),
-            ("SN", conflict.original.sn or "未知", conflict.candidate.sn or "未知"),
-            ("來源時間", conflict.original.source_time or "未知",
-             conflict.candidate.source_time or "未知"),
-            ("來源檔名", source_filename(conflict.original), source_filename(conflict.candidate)),
+            ("結果", conflict.original.status or "", conflict.candidate.status or "",
+             (conflict.original.status or "") != (conflict.candidate.status or "")),
+            ("SN", conflict.original.sn or "", conflict.candidate.sn or "",
+             (conflict.original.sn or "") != (conflict.candidate.sn or "")),
+            ("來源時間", conflict.original.source_time or "",
+             conflict.candidate.source_time or "",
+             (conflict.original.source_time or "") != (conflict.candidate.source_time or "")),
+            ("來源檔名", original_source if original_path else "",
+             candidate_source if candidate_path else "", paths_differ),
         )
+        display_rows = tuple((label, original or "未知", candidate or "未知", differs)
+                             for label, original, candidate, differs in rows)
         self.conflict_position_label.configure(text="顯示位置：{}".format(conflict.slot))
-        self.conflict_comparison.delete(*self.conflict_comparison.get_children(""))
-        for label, original, candidate in rows:
-            self.conflict_comparison.insert("", "end", text=label,
-                                            values=(original, candidate))
+        self.conflict_comparison.configure(state="normal")
+        self.conflict_comparison.delete("1.0", "end")
+        self.conflict_comparison.insert("end", "項目\t原結果\t新候選\n", "comparison_header")
+        self._conflict_value_ranges = {}
+        for label, original, candidate, differs in display_rows:
+            self.conflict_comparison.insert("end", label + "\t")
+            row_ranges = []
+            for value in (original, candidate):
+                start = self.conflict_comparison.index("end-1c")
+                self.conflict_comparison.insert("end", value)
+                end = self.conflict_comparison.index("end-1c")
+                row_ranges.append((start, end))
+                self.conflict_comparison.insert("end", "\t")
+            self.conflict_comparison.insert("end", "\n")
+            self._conflict_value_ranges[label] = tuple(row_ranges)
+            if differs:
+                for start, end in row_ranges:
+                    self.conflict_comparison.tag_add("comparison_difference", start, end)
         display_font = tkfont.nametofont("TkDefaultFont")
-        for column, heading, value_index in (
-                ("original", "原結果", 1), ("candidate", "新候選", 2)):
-            content_width = max(display_font.measure(row[value_index]) for row in rows)
-            column_width = max(140, display_font.measure(heading) + 24, content_width + 24)
-            self.conflict_comparison.column(column, width=column_width)
+        label_width = max(display_font.measure("項目"),
+                          max(display_font.measure(row[0]) for row in display_rows)) + 24
+        original_width = max(display_font.measure("原結果"),
+                             max(display_font.measure(row[1]) for row in display_rows)) + 24
+        original_width = max(140, original_width)
+        self.conflict_comparison.configure(
+            tabs=("{}p".format(label_width),
+                  "{}p".format(label_width + original_width)),
+            state="disabled",
+        )
         self.conflict_comparison.xview_moveto(0)
 
         def render(side):

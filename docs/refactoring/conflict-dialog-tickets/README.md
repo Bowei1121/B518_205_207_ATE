@@ -10,7 +10,7 @@
 | [C2](02-difference-and-source-disambiguation.md) | [#11](https://github.com/Bowei1121/B518_205_207_ATE/issues/11) | 差異兩側紅色粗體，同名不同路徑以短目錄提示辨識 | #10 |
 | [C3](03-multiple-candidate-consistency.md) | [#12](https://github.com/Bowei1121/B518_205_207_ATE/issues/12) | 多候選、持續刷新、裁決移除與重開時，上下資訊及樣式一致 | #11 |
 
-目前可開工為 #10，接續 #11、#12；發布不代表已認領或開始產品實作。內容、標籤及原生依賴已核對，原規格 Issue #9 保持原狀態及更新時間。
+票務依賴 #10 → #11 → #12。#10 已合併；#11 的 C2 本機實作及驗收已完成，等待固定基準雙軸審查與遠端同步；#12 C3 尚未實作。Issue 狀態不在本次修改，原規格 Issue #9 保持原狀態及更新時間。
 
 每票皆包含真實衝突捕捉到 Tk 顯示／操作的完整路徑與必要測試。C1 先交付可用的基本對照與分區；C2 增加差異辨識，不另拆 formatter 或 widget 票；C3 完成新雙區與樣式在多候選動態流程中的同步行為，不是僅補測試的橫向票。沒有必須先獨立發布的大範圍重構；局部顯示組裝整理放在 C1。
 
@@ -18,7 +18,7 @@
 
 ## 2026-10-08 本機交付狀態
 
-C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2（#11）與 C3（#12）仍未實作，依賴關係不變。命令及證據詳見[本票驗收證據](../evidence/conflict-dialog-ticket-01/local-validation.md)。未修改遠端議題狀態。
+C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2 本機實作提交 `fad583e`，受控 Atlas 真 Tk 補測提交 `5f2f846`，276 項含 Tk 全套測試通過；固定基準雙軸複審無未解決問題，Standards 記錄一項不阻擋的局部資料群／方法職責氣味。最新即時查核確認 Gitea 與 GitHub 的主線均為 `341a5ab`、票分支均為 `5f2f846`。C2 尚待主線合併及合併後驗證；C3（#12）仍未實作，依賴關係不變。命令及證據詳見 [C1](../evidence/conflict-dialog-ticket-01/local-validation.md) 與 [C2](../evidence/conflict-dialog-ticket-02/local-validation.md)。未修改遠端議題狀態。
 
 ## 規格驗收覆蓋
 

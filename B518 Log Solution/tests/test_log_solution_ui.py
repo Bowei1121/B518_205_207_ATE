@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from tkinter import ttk
+from tkinter import font as tkfont, ttk
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -71,6 +71,11 @@ def install_snapshot_results(app, results):
     app.rounds = MagicMock()
     app.rounds.snapshot.return_value = snapshot
     app._apply_round_snapshot = MagicMock()
+
+
+def conflict_summary_rows(app):
+    lines = app.conflict_comparison.get("1.0", "end-1c").splitlines()
+    return [tuple(line.split("\t")[:3]) for line in lines]
 
 
 class LogSolutionUiTests(unittest.TestCase):
@@ -746,24 +751,32 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(conflict.original.status, "PASS")
                 self.assertEqual(conflict.candidate.status, "FAIL")
 
-                self.assertEqual(app.conflict_comparison.heading("#0")["text"], "項目")
-                self.assertEqual(app.conflict_comparison.heading("original")["text"], "原結果")
-                self.assertEqual(app.conflict_comparison.heading("candidate")["text"], "新候選")
-                comparison_rows = [
-                    (app.conflict_comparison.item(row, "text"),
-                     app.conflict_comparison.item(row, "values"))
-                    for row in app.conflict_comparison.get_children("")
-                ]
-                self.assertEqual([row[0] for row in comparison_rows],
+                comparison_rows = conflict_summary_rows(app)
+                self.assertEqual(comparison_rows[0], ("項目", "原結果", "新候選"))
+                self.assertEqual([row[0] for row in comparison_rows[1:]],
                                  ["結果", "SN", "來源時間", "來源檔名"])
-                self.assertEqual(comparison_rows[0][1], ("PASS", "FAIL"))
-                self.assertEqual(comparison_rows[1][1],
+                self.assertEqual(comparison_rows[1][1:], ("PASS", "FAIL"))
+                self.assertEqual(comparison_rows[2][1:],
                                  (conflict.original.sn, conflict.candidate.sn))
-                self.assertEqual(comparison_rows[2][1],
+                self.assertEqual(comparison_rows[3][1:],
                                  (conflict.original.source_time, conflict.candidate.source_time))
-                self.assertEqual(comparison_rows[3][1],
+                self.assertEqual(comparison_rows[4][1:],
                                  (Path(conflict.original.source).name,
                                   Path(conflict.candidate.source).name))
+                for field, expected in (("結果", [True, True]), ("SN", [False, False]),
+                                        ("來源時間", [False, False]),
+                                        ("來源檔名", [False, False])):
+                    self.assertEqual(["comparison_difference" in
+                                      app.conflict_comparison.tag_names(start)
+                                      for start, _end in app._conflict_value_ranges[field]],
+                                     expected, field)
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                actual_difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(actual_difference_font.actual("weight"), "bold")
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：2")
                 detail_text = app.conflict_details.get("1.0", "end")
                 self.assertIn(conflict.round_id, detail_text)
@@ -824,9 +837,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._open_conflict_review()
                 app.conflict_list.selection_set(0)
                 root.update_idletasks()
-                selected_source_row = app.conflict_comparison.item(
-                    app.conflict_comparison.get_children("")[3], "values",
-                )
+                selected_source_row = conflict_summary_rows(app)[4][1:]
                 self.assertEqual(selected_source_row[1], captured_candidate_path.name)
                 self.assertIn(conflict.candidate.source,
                               app.conflict_details.get("1.0", "end"))
@@ -888,9 +899,43 @@ class LogSolutionUiTests(unittest.TestCase):
                      "2026-10-08T10:02:00", {"round_evidence_id": "evidence-second"}),
                 (("round_evidence_id", "evidence-second"),), "2026-10-08T10:03:00",
             )
+            third = RoundConflict(
+                "conflict-third", "round-first", 3,
+                side("SN-SAME", "PASS", "/line-A/group0-slot1/system/records.csv",
+                     "third-original", "2026-10-08T10:04:00",
+                     {"round_evidence_id": "evidence-third"}),
+                side("SN-SAME", "PASS", "/line-B/group0-slot1/system/records.csv",
+                     "third-candidate", "2026-10-08T10:04:00",
+                     {"round_evidence_id": "evidence-third"}),
+                (("round_evidence_id", "evidence-third"),), "2026-10-08T10:04:01",
+            )
+            fourth = RoundConflict(
+                "conflict-fourth", "round-first", 4,
+                side("SN-SHARED", "PASS", "/same/source/records.csv", "fourth-original",
+                     "2026-10-08T10:05:00", {"round_evidence_id": "evidence-fourth"}),
+                side("SN-SHARED", "FAIL", "/same/source/records.csv", "fourth-candidate",
+                     "2026-10-08T10:05:00", {"round_evidence_id": "evidence-fourth"}),
+                (("round_evidence_id", "evidence-fourth"),), "2026-10-08T10:05:01",
+            )
+            fifth = RoundConflict(
+                "conflict-fifth", "round-first", 5,
+                side("SN-OLD", "PASS", "/same/sn/source.csv", "fifth-original",
+                     "2026-10-08T10:06:00", {"round_evidence_id": "evidence-fifth"}),
+                side("SN-NEW", "PASS", "/same/sn/source.csv", "fifth-candidate",
+                     "2026-10-08T10:06:00", {"round_evidence_id": "evidence-fifth"}),
+                (("round_evidence_id", "evidence-fifth"),), "2026-10-08T10:06:01",
+            )
+            sixth = RoundConflict(
+                "conflict-sixth", "round-first", 6,
+                side("SN-TIME", "PASS", "/same/time/source.csv", "sixth-original",
+                     "", {"round_evidence_id": "evidence-sixth"}),
+                side("SN-TIME", "PASS", "/same/time/source.csv", "sixth-candidate",
+                     "2026-10-08T10:08:00", {"round_evidence_id": "evidence-sixth"}),
+                (("round_evidence_id", "evidence-sixth"),), "2026-10-08T10:08:01",
+            )
             snapshot = RoundSnapshot(
                 "round-first", "FCT", RoundState.AWAITING_REVIEW, (), False, 0, (),
-                pending_conflicts=(first, second),
+                pending_conflicts=(first, second, third, fourth, fifth, sixth),
             )
 
             class SnapshotCoordinator:
@@ -915,15 +960,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.conflict_window and app.conflict_window.winfo_exists())
                 root.update_idletasks()
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
-                first_rows = [
-                    (app.conflict_comparison.item(row, "text"),
-                     app.conflict_comparison.item(row, "values"))
-                    for row in app.conflict_comparison.get_children("")
-                ]
-                self.assertEqual(first_rows[0], ("結果", ("PASS", "FAIL")))
-                self.assertEqual(first_rows[1], ("SN", ("SN-FIRST", "未知")))
-                self.assertEqual(first_rows[2], ("來源時間", ("未知", "未知")))
-                self.assertEqual(first_rows[3], ("來源檔名", ("first.csv", "未知")))
+                first_rows = conflict_summary_rows(app)
+                self.assertEqual(first_rows[1], ("結果", "PASS", "FAIL"))
+                self.assertEqual(first_rows[2], ("SN", "SN-FIRST", "未知"))
+                self.assertEqual(first_rows[3], ("來源時間", "未知", "未知"))
+                self.assertEqual(first_rows[4], ("來源檔名", "first.csv", "未知"))
+                result_ranges = app._conflict_value_ranges["結果"]
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in result_ranges], [True, True])
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(difference_font.actual("weight"), "bold")
+                same_unknown_time = app._conflict_value_ranges["來源時間"]
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in same_unknown_time], [False, False])
                 first_detail = app.conflict_details.get("1.0", "end")
                 self.assertIn("candidate-id-must-not-become-a-path", first_detail)
                 self.assertIn("/capture/original/first.csv", first_detail)
@@ -933,17 +989,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.selection_set(1)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update_idletasks()
-                second_rows = [
-                    (app.conflict_comparison.item(row, "text"),
-                     app.conflict_comparison.item(row, "values"))
-                    for row in app.conflict_comparison.get_children("")
-                ]
+                second_rows = conflict_summary_rows(app)
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：2")
-                self.assertEqual(second_rows[0], ("結果", ("FAIL", "PASS")))
-                self.assertEqual(second_rows[1], ("SN", ("SN-SECOND", "SN-SECOND-NEW")))
+                self.assertEqual(second_rows[1], ("結果", "FAIL", "PASS"))
+                self.assertEqual(second_rows[2], ("SN", "SN-SECOND", "SN-SECOND-NEW"))
                 self.assertEqual(second_rows[3],
-                                 ("來源檔名", ("original.csv", ("long-candidate-" * 12) + ".csv")))
-                self.assertGreater(app.conflict_comparison.column("candidate")["width"], 500)
+                                 ("來源時間", "2026-10-08T10:01:00", "2026-10-08T10:02:00"))
+                self.assertEqual(second_rows[4],
+                                 ("來源檔名", "original.csv", ("long-candidate-" * 12) + ".csv"))
+                for field in ("結果", "SN", "來源時間", "來源檔名"):
+                    self.assertEqual(["comparison_difference" in
+                                      app.conflict_comparison.tag_names(start)
+                                      for start, _end in app._conflict_value_ranges[field]],
+                                     [True, True], field)
                 self.assertLess(app.conflict_comparison.xview()[1], 1.0)
                 second_detail = app.conflict_details.get("1.0", "end")
                 self.assertIn("conflict-second", second_detail)
@@ -951,11 +1009,74 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_comparison.xview_moveto(1)
                 self.assertGreater(app.conflict_comparison.xview()[0], 0.0)
                 app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(2)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                third_rows = conflict_summary_rows(app)
+                self.assertEqual(third_rows[4], (
+                    "來源檔名",
+                    "records.csv · line-A/group0-slot1/system",
+                    "records.csv · line-B/group0-slot1/system",
+                ))
+                self.assertTrue(all("comparison_difference" in
+                                    app.conflict_comparison.tag_names(start)
+                                    for start, _end in app._conflict_value_ranges["來源檔名"]))
+                third_detail = app.conflict_details.get("1.0", "end")
+                self.assertIn("/line-A/group0-slot1/system/records.csv", third_detail)
+                self.assertIn("/line-B/group0-slot1/system/records.csv", third_detail)
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(3)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                fourth_rows = conflict_summary_rows(app)
+                self.assertEqual(fourth_rows[4], ("來源檔名", "records.csv", "records.csv"))
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in app._conflict_value_ranges["來源檔名"]],
+                                 [False, False])
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in app._conflict_value_ranges["結果"]],
+                                 [True, True])
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(4)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[2], ("SN", "SN-OLD", "SN-NEW"))
+                for field, expected in (("結果", [False, False]), ("SN", [True, True]),
+                                        ("來源時間", [False, False]),
+                                        ("來源檔名", [False, False])):
+                    self.assertEqual(["comparison_difference" in
+                                      app.conflict_comparison.tag_names(start)
+                                      for start, _end in app._conflict_value_ranges[field]],
+                                     expected, field)
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(5)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[3], (
+                    "來源時間", "未知", "2026-10-08T10:08:00",
+                ))
+                for field, expected in (("結果", [False, False]), ("SN", [False, False]),
+                                        ("來源時間", [True, True]),
+                                        ("來源檔名", [False, False])):
+                    self.assertEqual(["comparison_difference" in
+                                      app.conflict_comparison.tag_names(start)
+                                      for start, _end in app._conflict_value_ranges[field]],
+                                     expected, field)
+                app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.selection_set(0)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update_idletasks()
                 self.assertEqual(app.conflict_comparison.xview()[0], 0.0)
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：1")
+                for field, expected in (("結果", [True, True]), ("SN", [True, True]),
+                                        ("來源時間", [False, False]),
+                                        ("來源檔名", [True, True])):
+                    self.assertEqual(["comparison_difference" in
+                                      app.conflict_comparison.tag_names(start)
+                                      for start, _end in app._conflict_value_ranges[field]],
+                                     expected, field)
                 app.conflict_window.geometry("720x360")
                 root.update_idletasks()
                 self.assertTrue(app.conflict_comparison_scrollbar.winfo_viewable())
@@ -967,6 +1088,109 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds = coordinator
                 app.hotkey.close()
                 coordinator.request_close()
+                root.destroy()
+
+    def test_atlas_conflict_with_same_filename_from_new_archive_path_shows_real_tk_hint(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+            )
+
+            def wait_ui(predicate, timeout=6):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.02)
+                self.fail("Timed out waiting for the controlled Atlas path-conflict flow: {} / {}"
+                          .format(app.rounds.snapshot(), app.event_lines[-8:]))
+
+            def write_records(path, serial, status):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("MLB_SN,status\n{},{}\n".format(serial, status),
+                                encoding="utf-8")
+
+            try:
+                app.open_settings()
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("2")
+                app.profile_editor_mapping.set("1:1, 2:2")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_monitor()
+                wait_ui(lambda: app.rounds.session_path is not None)
+
+                serial = "SERIAL00000091"
+                active_record = active / "group0-slot1" / "system" / "records.csv"
+                second_active_record = active / "group0-slot2" / "system" / "records.csv"
+                write_records(active_record, serial, "Pass")
+                write_records(second_active_record, "SERIAL00000092", "Pass")
+                wait_ui(lambda: len(app.rounds.snapshot().results) == 2 and all(
+                    result.status == "TESTING" for result in app.rounds.snapshot().results))
+                first_stamp = (datetime.now() + timedelta(seconds=1)).strftime(
+                    "%Y%m%d_%H-%M-%S.000-run",
+                )
+                first_archive = final / serial / first_stamp / "system" / "records.csv"
+                active_record.unlink()
+                active_record.parent.rmdir()
+                (active / "group0-slot1").rmdir()
+                write_records(first_archive, serial, "Pass")
+                wait_ui(lambda: app.rounds.snapshot().results and
+                        app.rounds.snapshot().results[0].status == "PASS")
+
+                second_stamp = (datetime.now() + timedelta(seconds=3)).strftime(
+                    "%Y%m%d_%H-%M-%S.000-run",
+                )
+                second_archive = final / serial / second_stamp / "system" / "records.csv"
+                write_records(second_archive, serial, "Fail")
+                wait_ui(lambda: app.rounds.snapshot().pending_conflicts, timeout=8)
+                wait_ui(lambda: app.conflict_window and app.conflict_window.winfo_viewable())
+                root.update_idletasks()
+
+                conflict = app.rounds.snapshot().pending_conflicts[0]
+                self.assertEqual(conflict.original.source, str(first_archive))
+                self.assertEqual(conflict.candidate.source, str(second_archive))
+                self.assertEqual(Path(conflict.original.source).name,
+                                 Path(conflict.candidate.source).name)
+                rows = conflict_summary_rows(app)
+                self.assertEqual(rows[4], (
+                    "來源檔名", "records.csv · {}/system".format(first_stamp),
+                    "records.csv · {}/system".format(second_stamp),
+                ))
+                self.assertEqual(["comparison_difference" in
+                                  app.conflict_comparison.tag_names(start)
+                                  for start, _end in app._conflict_value_ranges["來源檔名"]],
+                                 [True, True])
+                detail = app.conflict_details.get("1.0", "end")
+                self.assertIn(str(first_archive), detail)
+                self.assertIn(str(second_archive), detail)
+                self.assertEqual(app.conflict_comparison.tag_cget(
+                    "comparison_difference", "foreground"), "#b00020")
+                difference_font = tkfont.Font(
+                    root=root,
+                    font=app.conflict_comparison.tag_cget("comparison_difference", "font"),
+                )
+                self.assertEqual(difference_font.actual("weight"), "bold")
+            finally:
+                if app._round_is_active():
+                    app.rounds.stop()
+                app.rounds.flush_session(timeout=3)
+                app.rounds.flush_audit(timeout=3)
+                app._close_settings()
+                app.hotkey.close()
+                app.rounds.request_close()
                 root.destroy()
 
     def test_unknown_atlas_identity_change_is_visible_as_fail_and_audited_without_reason(self):
