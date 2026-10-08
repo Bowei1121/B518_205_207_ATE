@@ -928,7 +928,7 @@ class LogSolutionUiTests(unittest.TestCase):
             sixth = RoundConflict(
                 "conflict-sixth", "round-first", 6,
                 side("SN-TIME", "PASS", "/same/time/source.csv", "sixth-original",
-                     "2026-10-08T10:07:00", {"round_evidence_id": "evidence-sixth"}),
+                     "", {"round_evidence_id": "evidence-sixth"}),
                 side("SN-TIME", "PASS", "/same/time/source.csv", "sixth-candidate",
                      "2026-10-08T10:08:00", {"round_evidence_id": "evidence-sixth"}),
                 (("round_evidence_id", "evidence-sixth"),), "2026-10-08T10:08:01",
@@ -1055,7 +1055,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update_idletasks()
                 self.assertEqual(conflict_summary_rows(app)[3], (
-                    "來源時間", "2026-10-08T10:07:00", "2026-10-08T10:08:00",
+                    "來源時間", "未知", "2026-10-08T10:08:00",
                 ))
                 for field, expected in (("結果", [False, False]), ("SN", [False, False]),
                                         ("來源時間", [True, True]),
