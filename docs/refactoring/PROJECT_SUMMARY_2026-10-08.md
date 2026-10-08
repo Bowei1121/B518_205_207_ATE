@@ -75,3 +75,11 @@
 - 最後人員驗收：使用者於 `44826d4` 真 Tk 修正版確認滑鼠可展開並即時切換，另確認 Tab／Space／方向鍵／Enter 選取及 Escape 取消、焦點返回「全部正常」。操作紀錄快照保存於 M1 evidence，六項驗收均有證據；先前待驗描述為歷史查核，現進行最後 Spec 複核及主線合併。尚未開始 M2。
 
 - M1 最後交付：驗收文件 `f2504e7`，實際合併 `83d8a68018ef4d6f78f0f68ff7f6f93caf2df8ce`。主線完整含 Tk 299 tests／108.078 秒通過，compileall 與 diff check 通過；無型別檢查設定。Standards 0 硬違反、2 非阻擋觀察，Spec 沒有剩餘必要問題。Gitea／GitHub 直接查詢均確認合併 SHA 後，安全刪除本地及兩端 `Multilingual/ticket-01`，再次確認不存在。最後文件更新另提交及推送，交付主線為 B518-Log-Solution；未開始 M2，未修改 #14／#13。
+
+## M2 共同輪次事件雙語持久化（GitHub #15，母規格 #13）
+
+- M2 以 `44567457f0c94ae4667ab0c06e82cbacc9a001a6` 為固定 Standards／Spec 審查基準，確認 M1 合併與主頁語言選單、全域偏好、真 Tk 滑鼠／鍵盤證據均在祖先歷史及實際程式中。分支 `Multilingual/ticket-02` 從該主線建立；本次離開公司網路後即時查到 GitHub，Gitea `10.64.76.34:3000` 連線逾時，故只推進 GitHub，不合併或清除分支。
+- 新增相容的 `localized_message` 版本 1：穩定訊息 ID、固定參數、英文／繁中內容與原始診斷；共同輪次 producer 在事件產生時捕捉。主頁依目前語言重繪既有事件，不重新產生事件、不保存、不改寫 audit／Session。Legacy message 與機器欄位保留，未遷移平台 producer 及無輪次 App 診斷留待後續票。
+- Session 與 audit 的共同事件使用相同 round ID、序號、時間及雙語內容。準備流程的 `ConfiguredMonitor` 轉交輪次事件上下文；Session adapter 保留舊兩參數呼叫並用關鍵字傳遞新增欄位。未形成 audit 紀錄的來源候選不消耗 audit 序號，避免未知來源 FAIL 事件造成序號缺口。真實 `RoundStartPreparation`、RoundCoordinator、sample-json、Session／audit 暫存磁碟讀取驗證來源映射及紀錄一致。
+- 最終程式／測試提交 `1d036f0339c2d37ac7907e46c31f92708909ea38`。完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 303 tests（80.331 秒）、0 跳過；包含真 Tk 事件語言切換與人工操作、未知來源 FAIL、Session／audit 重建，以及關閉保存、封存與清理回歸。`compileall` 與 `git diff --check` 通過；專案沒有既有型別檢查設定，未宣稱型別檢查通過。固定基準 Standards／Spec 審查均無未解阻擋。
+- M2 六項驗收和本地交付文件已更新。程式提交已推送 GitHub 並直接核對 SHA；Gitea 因人在公司網路外不可達，尚未合併主線或刪除 `Multilingual/ticket-02`。未修改 GitHub #15 或母規格 #13。證據見 [M2 本機驗收紀錄](evidence/multilingual-ticket-02/local-validation.md)。
