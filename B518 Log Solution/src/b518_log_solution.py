@@ -233,18 +233,19 @@ class B518LogSolutionApp:
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
         self.language_choice = tk.StringVar(value=self.current_language)
-        self.language_menu = tk.Menu(self.root, tearoff=False)
+        self.language_button = tk.Menubutton(
+            selection, text="English ▾",
+            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+            activebackground="#e5e7eb", relief="raised", borderwidth=1,
+            font=("Helvetica", 10), takefocus=True,
+        )
+        self.language_menu = tk.Menu(self.language_button, tearoff=False)
         for language, native_name in LANGUAGE_OPTIONS:
             self.language_menu.add_radiobutton(
                 label=native_name, variable=self.language_choice, value=language,
                 command=lambda selected=language: self._select_language(selected),
             )
-        self.language_button = tk.Menubutton(
-            selection, text="English ▾", menu=self.language_menu,
-            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
-            activebackground="#e5e7eb", relief="raised", borderwidth=1,
-            font=("Helvetica", 10), takefocus=True,
-        )
+        self.language_button.configure(menu=self.language_menu)
         self.language_button.grid(row=0, column=2, rowspan=2, sticky="ne", padx=(3, 0))
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
