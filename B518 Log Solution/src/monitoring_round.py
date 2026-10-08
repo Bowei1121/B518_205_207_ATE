@@ -644,6 +644,10 @@ class MonitoringRound:
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
                 self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
+                # Source setup has terminated. The round audit store remains the
+                # durable record when no Session was created, so close must not
+                # wait forever for monitor persistence that cannot become ready.
+                self._monitor_persistence_ready = True
             self._append_event(MonitorEvent(
                 "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
                 detail={"round_id": self.round_id, "reason": "start_failed",

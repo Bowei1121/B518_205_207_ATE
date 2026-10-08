@@ -10,6 +10,8 @@
 | R2 | [桌面開始操作接入集中準備流程](02-desktop-start-integration.md) | [#26](https://github.com/Bowei1121/B518_205_207_ATE/issues/26) | #25 |
 | R3 | [移除舊組裝流程，完成交付驗證](03-contract-and-release-verification.md) | [#27](https://github.com/Bowei1121/B518_205_207_ATE/issues/27) | #26 |
 
+R1 implementation and local verification are recorded in [R1 local validation](../evidence/round-start-assembly-ticket-01/local-validation.md). R1 keeps the formal Tk start entry on the existing assembly path; R2 desktop integration and R3 old-path removal remain separate.
+
 ## 執行與交付
 
 - R1 是第一階段：完成可直接驗證的集中準備流程，正式 Tk 入口維持原樣。

@@ -260,10 +260,10 @@ class RoundAuditRecordTests(unittest.TestCase):
 
         started = coordinator.start("FCT", broken_factory, run_async=True, capacity=1)
         self.assertTrue(start_failed.wait(2))
-        snapshot = coordinator.snapshot()
-        self.assertEqual(snapshot.save_state, "waiting")
-        self.assertEqual(snapshot.save_errors, ())
         self.assertTrue(coordinator.flush_audit(timeout=2))
+        snapshot = coordinator.snapshot()
+        self.assertEqual(snapshot.save_state, "complete")
+        self.assertEqual(snapshot.save_errors, ())
         rebuilt = read_round_audit(self.audit_path(started.round_id))
         self.assertTrue(any(event["kind"] == "start_failed" for event in rebuilt["events"]))
 
