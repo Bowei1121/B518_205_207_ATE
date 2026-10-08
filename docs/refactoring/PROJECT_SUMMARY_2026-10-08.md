@@ -24,4 +24,4 @@
 - 依 C1／GitHub #10 完成右側精簡四項對照、完整詳細內容、約 40%／60% 可拖曳分區及一般選取同步；保留左側選單、原裁決按鈕、非模態流程及其他位置收集。C2 差異樣式／來源消歧與 C3 多候選動態一致性未納入。
 - 工作分支 `ConflictDialog/ticket-01`；程式提交 `5240a21`、`ebe7364` 已推送至 Gitea 與 GitHub。固定 code-review 基準為 `d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`。
 - 聚焦真 Tk 衝突流程、選取同步、分隔拖曳、最小尺寸、長檔名、捕捉後來源改名、既有裁決/audit 重建曾通過；證據及限制記於[本票驗收紀錄](evidence/conflict-dialog-ticket-01/local-validation.md)。
-- 一般沙盒中的 Tk 建窗以 SIGABRT 結束；改用已核准的桌面執行權限後，兩個聚焦真 Tk 案例及完整含 Tk 套件均通過（275 tests，49.283 秒）。固定基準 Standards／Spec 審查沒有未解決問題；首次 Spec P2 的全套測試證據缺口已由完整套件結果解除。驗收細節見上述證據文件。
+- 第一次合併後套件發現 UI 測試 teardown 與 App 啟動清理背景工作競爭。測試改用公開 RoundCoordinator 清理狀態等待兩個 App 實例的啟動清理完成；隔離案例連續 3 次通過，修正後完整含 Tk 套件 275 tests 通過（54.894 秒）。最終固定基準 Standards／Spec 審查沒有未解決問題。產品提交 `5240a21`、`ebe7364`，測試修正提交 `c0ed2dc`；驗收細節見上述證據文件。

@@ -10,7 +10,9 @@ Python 程式／測試目錄：`B518 Log Solution/B518 Log Solution`
 
 固定 code-review 基準：`d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`
 
-最後已驗證程式提交：`ebe7364`（其父提交 `5240a21`；後續僅有驗收文件提交）
+最後已驗證產品程式提交：`ebe7364`（其父提交 `5240a21`）
+
+最後已驗證測試提交：`c0ed2dc`（加入啟動清理 teardown 同步；其後沒有程式或測試修改）
 
 ## 交付內容
 
@@ -49,12 +51,14 @@ python3 scripts/run_tests.py test_verify_macos_bundle test_log_monitoring test_a
 
 結果：232 tests passed（26.507 秒）。這組命令刻意排除會建立 Tk 視窗的 `test_log_solution_ui`，只作為完整套件的非 Tk 對照。
 
-最終完整套件以桌面存取權限執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，結果 **275 tests passed（49.283 秒）**，含完整 `test_log_solution_ui`。一般沙盒中的 Tk 建窗會以 SIGABRT 結束；使用已核准的桌面執行權限後，真 Tk 測試及完整套件均通過。早期 `python3 scripts/run_tests.py test_conflict` 不是有效測試識別，已確認 runner 要求 unittest module 名稱；不列為產品測試結果。
+合併後第一次全套測試發現既有 `test_operator_selects_project_and_machine_and_choice_survives_restart` 會在啟動清理背景工作寫入時刪除暫存目錄。測試現在透過公開 `RoundCoordinator.retention_cleanup_status()` 等待兩個 App 執行個體的啟動清理各自完成，再銷毀視窗。該測試單獨連續 3 次通過。
+
+修正後最終完整套件以桌面存取權限執行 `B518_TK_TESTS=1 python3 scripts/run_tests.py`，結果 **275 tests passed（54.894 秒）**，含完整 `test_log_solution_ui`。一般沙盒中的 Tk 建窗會以 SIGABRT 結束；使用已核准的桌面執行權限後，真 Tk 測試及完整套件均通過。早期 `python3 scripts/run_tests.py test_conflict` 不是有效測試識別，已確認 runner 要求 unittest module 名稱；不列為產品測試結果。
 
 
 ## 固定基準審查
 
-- Standards（基準 `d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`）：沒有文件標準違規或可行性異味發現。
-- Spec（相同固定基準）：C1 實作與聚焦驗收相符。首次審查的 P2 指出全套測試證據尚缺；其後 275 項含 Tk 完整套件通過，該交付缺口已解除，沒有未解決的程式審查問題。
+- Standards（最終程式／測試 diff，以基準 `d0f4535dc74753cbb6a457828b7b5c1d6ecacac9` 審查）：沒有文件標準違規或可行性異味發現。
+- Spec（同一固定基準）：C1 實作與聚焦驗收相符。首次審查指出全套測試證據尚缺；其後 275 項含 Tk 完整套件通過，該缺口已解除。測試 teardown 修正使用公開 RoundCoordinator 清理狀態，沒有改變 C1 行為或擴大範圍；無未解決問題。
 
-聚焦 GUI、完整 UI 檔、完整套件與 Standards／Spec 審查均已有通過證據。完整套件對應程式 SHA `ebe7364`；之後僅新增驗收文件，沒有改動程式或測試。
+聚焦 GUI、完整 UI 檔、完整套件與最終 Standards／Spec 審查均已有通過證據。產品程式 SHA 為 `ebe7364`，測試同步修正 SHA 為 `c0ed2dc`。固定審查基準仍為 `d0f4535dc74753cbb6a457828b7b5c1d6ecacac9`。

@@ -18,7 +18,7 @@
 
 ## 2026-10-08 本機交付狀態
 
-C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；目前實作提交為 `5240a21`、`ebe7364`。完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2（#11）與 C3（#12）仍未實作，依賴關係不變。命令及證據詳見[本票驗收證據](../evidence/conflict-dialog-ticket-01/local-validation.md)。未修改遠端議題狀態。
+C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。修正後完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2（#11）與 C3（#12）仍未實作，依賴關係不變。命令及證據詳見[本票驗收證據](../evidence/conflict-dialog-ticket-01/local-validation.md)。未修改遠端議題狀態。
 
 ## 規格驗收覆蓋
 
