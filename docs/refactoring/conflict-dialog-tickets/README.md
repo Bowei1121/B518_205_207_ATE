@@ -18,7 +18,7 @@
 
 ## 2026-10-08 本機交付狀態
 
-C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2 已實作並合併，受控 Atlas 真 Tk 測試及合併後完整含 Tk 套件 276 項通過（51.441 秒）；固定基準雙軸複審無未解決問題，Standards 記錄一項不阻擋的局部資料群／方法職責氣味。C2 合併提交 `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d`，目前正推送合併後主線並完成分支清理。C3（#12）仍未實作，依賴關係不變。命令及證據詳見 [C1](../evidence/conflict-dialog-ticket-01/local-validation.md) 與 [C2](../evidence/conflict-dialog-ticket-02/local-validation.md)。未修改遠端議題狀態。
+C1 已在 `ConflictDialog/ticket-01` 實作並完成聚焦真 Tk 驗收；產品提交為 `5240a21`、`ebe7364`，測試 teardown 同步修正為 `c0ed2dc`。最終合併提交 `d7d82e8405ef8839820cc727b15f256c24353389` 的 post-merge 完整含 Tk 套件 275 項通過，固定基準 Standards／Spec 審查無未解決問題。C2 已實作並合併，受控 Atlas 真 Tk 測試及合併後完整含 Tk 套件 276 項通過（51.441 秒）；固定基準雙軸複審無未解決問題，Standards 記錄一項不阻擋的局部資料群／方法職責氣味。C2 合併提交 `a56cfa5b0d532cfcb582794d5e76150cd7aeed9d`，主線已同步至 Gitea 與 GitHub；本地及遠端 `ConflictDialog/ticket-02` 已清理，正式工作樹位於 `B518-Log-Solution`。C3（#12）仍未實作，依賴關係不變。命令及證據詳見 [C1](../evidence/conflict-dialog-ticket-01/local-validation.md) 與 [C2](../evidence/conflict-dialog-ticket-02/local-validation.md)。未修改遠端議題狀態。
 
 ## 規格驗收覆蓋
 
