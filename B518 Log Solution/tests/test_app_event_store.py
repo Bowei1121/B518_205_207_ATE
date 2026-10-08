@@ -48,8 +48,6 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(record["diagnostic"], "OS permission denied")
 
     def test_failed_write_keeps_same_event_for_ordered_retry_and_disk_rebuild(self):
-        first = self.store.record("app.profile.save_failed", {"reason": "read-only"}, "read-only")
-        second = self.store.record("app.hotkey.unavailable", {}, "permission")
         entered = threading.Event()
         release = threading.Event()
         from app_event_store import _atomic_replace
@@ -57,11 +55,13 @@ class AppEventStoreTests(unittest.TestCase):
         def blocked_replace(path, content):
             if not entered.is_set():
                 entered.set()
-                release.wait(2)
+                release.wait(10)
                 raise OSError("disk full")
             return _atomic_replace(path, content)
 
         with patch("app_event_store._atomic_replace", side_effect=blocked_replace):
+            first = self.store.record("app.profile.save_failed", {"reason": "read-only"}, "read-only")
+            second = self.store.record("app.hotkey.unavailable", {}, "permission")
             self.assertTrue(entered.wait(2))
             self.wait_until(lambda: self.store.status().pending_count == 2)
             release.set()

@@ -430,10 +430,42 @@ class B518LogSolutionApp:
         self._refresh_unsaved_rounds()
         self._refresh_archive_statuses()
         self._refresh_main_round_labels()
+        self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
         self._refresh_app_event_status()
+        if self._close_window and self._close_window.winfo_exists():
+            self._render_close_status(self.rounds.close_status())
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records()
+
+    def _restore_captured_round_messages_for_display(self) -> None:
+        """Reuse captured round messages when an early callback reached the UI first."""
+        snapshot = self.rounds.snapshot()
+        if snapshot is None or snapshot.round_id != self.active_round_id:
+            return
+        available = [item for item in snapshot.events if item.event.localized_message is not None]
+        used = set()
+        refreshed = []
+        changed = False
+        for fallback, localized, round_id in self._event_records:
+            if localized is None:
+                captured = next((item for item in available
+                                 if (item.round_id, item.sequence) not in used and
+                                 any(fallback == captured_text or fallback.endswith(captured_text)
+                                     for captured_text in (
+                                         item.event.message,
+                                         item.event.localized_message.english,
+                                         item.event.localized_message.traditional_chinese,
+                                     )) and
+                                 (round_id is None or round_id == item.round_id)), None)
+                if captured is not None:
+                    localized = captured.event.localized_message
+                    round_id = captured.round_id
+                    used.add((captured.round_id, captured.sequence))
+                    changed = True
+            refreshed.append((fallback, localized, round_id))
+        if changed:
+            self._event_records = refreshed
 
     def _refresh_main_round_labels(self) -> None:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
@@ -514,6 +546,7 @@ class B518LogSolutionApp:
                 state="normal" if status.status == "failed" else "disabled")
 
     def _refresh_app_event_records(self) -> None:
+        added_to_main_log = False
         for record in self.rounds.app_event_records():
             event_id = record.get("event_id")
             if not isinstance(event_id, str) or event_id in self._app_event_ids:
@@ -522,7 +555,9 @@ class B518LogSolutionApp:
             localized = record.get("localized_message")
             fallback = record.get("message", "")
             self._event_records.append((fallback, localized, None))
-        self._refresh_event_log()
+            added_to_main_log = True
+        if added_to_main_log:
+            self._refresh_event_log()
         if self.app_diagnostics_list and self.app_diagnostics_list.winfo_exists():
             selected = self.app_diagnostics_list.curselection()
             prior_id = getattr(self, "_selected_app_event_id", None)
@@ -1162,15 +1197,32 @@ class B518LogSolutionApp:
             self._log("無法將結果看板帶到前景：{}".format(error))
 
     def _handle_event(self, event: MonitorEvent) -> None:
+        round_id = None
+        coordinator = getattr(self, "rounds", None)
+        snapshot = coordinator.snapshot() if coordinator is not None else None
         if isinstance(event, RoundEvent):
             if event.round_id != self.active_round_id:
                 if event.event.kind in {"audit_write_failed", "save_recovered"}:
                     self._log(event.event.message, event.event.localized_message, event.round_id)
                 self._refresh_unsaved_rounds()
                 return
-            event = event.event
-        self._log(event.message, event.localized_message)
-        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+            captured = next((item for item in getattr(snapshot, "events", ())
+                             if item.round_id == event.round_id and
+                             item.sequence == event.sequence), None) if snapshot else None
+            round_id = event.round_id
+            event = captured.event if captured is not None else event.event
+        elif snapshot is not None:
+            captured = next((item for item in getattr(snapshot, "events", ())
+                             if item.event is event or
+                             (event.detail.get("round_id") == item.round_id and
+                              event.kind == item.event.kind and
+                              event.message == item.event.message and
+                              event.slot == item.event.slot)), None)
+            if captured is not None:
+                event = captured.event
+                round_id = captured.round_id
+        self._log(event.message, event.localized_message, round_id)
+        snapshot = coordinator.snapshot() if coordinator is not None else None
         self._apply_round_snapshot(snapshot)
         if event.slot and snapshot:
             result = next((item for item in snapshot.results if item.slot == event.slot), None)
@@ -1999,13 +2051,14 @@ class B518LogSolutionApp:
         if not self._close_status_label or not self._close_status_label.winfo_exists():
             return
         labels = {
-            "saving": "正在停止來源並保存本次執行中所有輪次…",
-            "waiting": "正在等待來源準備及背景保存完成…",
-            "failed": "保存尚未完整。修復保存位置或磁碟問題後可重試；視窗仍保持開啟。",
-            "complete": "本次執行的所有必要 Session 與 audit 紀錄均已完整保存。",
-            "cancelled": "已取消關閉；保存工作會繼續，來源不會自動重新啟動。",
+            "saving": "app.close.saving",
+            "waiting": "app.close.waiting",
+            "failed": "app.close.failed",
+            "complete": "app.close.complete",
+            "cancelled": "app.close.cancelled",
         }
-        self._close_status_label.configure(text=labels.get(status.status, "正在確認保存狀態…"))
+        self._close_status_label.configure(
+            text=self._t(labels.get(status.status, "app.close.waiting")))
         self._close_error_label.configure(text=status.message)
         if self._close_retry_button:
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
