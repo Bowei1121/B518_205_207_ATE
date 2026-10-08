@@ -2493,6 +2493,43 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(audit_event["operation_at"])
                 self.assertEqual(audit_event["detail"]["candidate_sn"], "SERIAL00000002")
                 self.assertNotIn("reason", audit_event["detail"])
+                self.assertIsNotNone(rejected.localized_message)
+                audit_bytes_before_refresh = (app.rounds.session_path / "audit.jsonl").read_bytes()
+                state_before_refresh = app.rounds.snapshot()
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
+
+                self.assertTrue(any(
+                    rejected.localized_message.traditional_chinese in line
+                    for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().round_id, state_before_refresh.round_id)
+                self.assertEqual(app.rounds.snapshot().results, state_before_refresh.results)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual((app.rounds.session_path / "audit.jsonl").read_bytes(),
+                                 audit_bytes_before_refresh)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English"
+                )
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertTrue(any(
+                    rejected.localized_message.english in line for line in app.event_lines
+                ), app.event_lines)
+                self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
+                self.assertEqual((app.rounds.session_path / "audit.jsonl").read_bytes(),
+                                 audit_bytes_before_refresh)
             finally:
                 if app._round_is_active():
                     app.rounds.stop()
