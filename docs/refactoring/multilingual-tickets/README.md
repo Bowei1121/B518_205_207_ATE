@@ -10,7 +10,7 @@ M4 六項本機驗收及完整含 Tk 套件已通過：最終程式／測試提�
 
 M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選資料夾、匯入、匯出、取消及拒絕覆寫；兩份匯出與原始配置相符，原檔雜湊不變，新的 App journal 讀取器驗證七筆同筆雙語及連續序號。完整含 Tk 套件與固定基準複審已通過；GitHub 合併 SHA `cfb35480d890abeb8a03bc74360260dcd8d739e1`，合併後完整含 Tk 套件通過 334 項（95.026 秒），固定基準至 `240d801` 的 Standards／Spec 複審沒有未解阻擋。主線推送後直接確認合併 SHA，最後文件提交另行查證；Gitea 週一直接確認前保留票分支。見 [M5 本機驗收](../evidence/multilingual-ticket-05/local-validation.md)。
 
-M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用中英資源；語言刷新保留 conflict_id 選取、候選快照、閱讀位置及未確認警報。真正 Tk 驗證受控 Atlas 衝突、其他位置持續收集、KVM 標記、逐項裁決／警報確認及全新 audit 讀取器重建；空選取在正常排程刷新時清除舊比較與詳細內容並停用裁決。最終程式／測試提交 `da94db305547307b8a0370c9da9569f07f671986` 的完整含 Tk 套件通過 335 tests（83.317 秒），固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審為零項可執行發現。完整證據見 [M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md)。GitHub 合併及合併後驗證完成前不更新合併狀態；Gitea 週一同步直接確認前保留 M6 本地與 GitHub 票分支。
+M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用中英資源；語言刷新保留 conflict_id 選取、候選快照、閱讀位置及未確認警報。真正 Tk 驗證受控 Atlas 衝突、其他位置持續收集、KVM 標記、逐項裁決／警報確認及全新 audit 讀取器重建；空選取在正常排程刷新時清除舊比較與詳細內容並停用裁決。最終程式／測試提交 `da94db305547307b8a0370c9da9569f07f671986` 的完整含 Tk 套件通過 335 tests（83.317 秒），固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審為零項可執行發現。GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後完整含 Tk 套件通過 335 tests（85.007 秒）。完整證據見 [M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md)。公司 Gitea 週一同步直接確認前保留 M6 本地與 GitHub 票分支。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |

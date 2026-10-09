@@ -48,4 +48,12 @@ Standards and Spec reviews were run in parallel against the fixed baseline above
 
 M6 delivers conflict/alarm window translations and in-place state-preserving refresh. It retains C1–C3 layouts and policies. M7 save/close language policy, M8 historical-message recognition, M9 App-event retention, and M10 full bundle/release verification remain outside this ticket. The parent spec's remaining full-app and deployment cases are not marked complete here.
 
-No remote issue was modified. GitHub ticket-branch synchronization was confirmed for the final program/test commit. Company Gitea synchronization remains deferred to Monday by user instruction; keep the local and GitHub M6 ticket branches until Gitea is directly confirmed, then complete the authorized cleanup.
+## GitHub merge and post-merge verification
+
+Before merge, the target worktree was clean, local `B518-Log-Solution` was exactly the direct GitHub head `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4`, and the ticket branch was `41bf0fc5ad5d19044cb6e4aae1b59490a156d786`. The ticket branch contained the target; no remote commits needed integration.
+
+GitHub merge commit: `daba4822566f944e603d065b5319674f83c99311`.
+
+On merged `B518-Log-Solution`, `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` passed all 335 tests in 85.007 seconds. `python3 -m compileall -q src tests` and `git diff --check` also passed. The merged test run used the desktop Tk session.
+
+The merge and post-merge test passed. GitHub main and final documentation push SHA checks will be recorded after publication. No remote issue was modified. Company Gitea synchronization remains deferred to Monday by user instruction. Keep the local and GitHub M6 ticket branches until Gitea is directly confirmed, then complete the authorized cleanup.

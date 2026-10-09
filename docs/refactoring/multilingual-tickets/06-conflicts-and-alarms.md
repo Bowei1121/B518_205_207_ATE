@@ -16,7 +16,7 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 - [x] 保留原／採用新及警報確認各寫出同一筆雙語操作，不改未知來源 FAIL 或禁止採用政策。
 - [x] 真正 Tk 從受控衝突與警報到切換、裁決及磁碟重建驗證；不遮住固定 KVM 標記、不阻塞其他位置收集。
 
-Local acceptance completed 2026-10-09. See [M6 local validation](../evidence/multilingual-ticket-06/local-validation.md) for commands, test results, fixed review baseline, and scope boundaries. GitHub merge and post-merge validation are recorded there after completion; company Gitea synchronization remains deferred to Monday.
+Local acceptance and GitHub merge completed 2026-10-09. See [M6 local validation](../evidence/multilingual-ticket-06/local-validation.md) for commands, test results, fixed review baseline, merge SHA, and scope boundaries. Company Gitea synchronization remains deferred to Monday; retain the ticket branches until direct synchronization is confirmed.
 
 ## Blocked by
 
