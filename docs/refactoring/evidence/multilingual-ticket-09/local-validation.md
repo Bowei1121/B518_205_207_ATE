@@ -59,6 +59,8 @@ Git 根目錄：`B518-Log-Solution`；Python 專案目錄：`B518-Log-Solution/B
 
 - M9 固定 review baseline：`01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f`。
 - 最後程式／測試提交及完整套件驗證 SHA：`523660779d20b375c1c3f925ed9fce78e381532f`；聚焦 44 tests（12.102 秒）、完整含 Tk 套件 363 tests（104.336 秒）通過，`compileall`／`git diff --check` 通過。
-- 固定基準 Standards／Spec 最終複審均無未解阻擋；Standards 留一項非阻擋的 orchestration 密度建議，因其操作共同構成安全清理交易而保留目前 cohesive 流程。2026-10-09 16:42（台北）直接查詢 GitHub：票分支 `523660779d20b375c1c3f925ed9fce78e381532f`，主線 `01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f`。最後文件提交、重新直接查詢、合併及合併後套件仍待完成；本紀錄不表示已合併。
-- 2026-10-09 16:43（台北）再次直接執行 `git ls-remote github refs/heads/Multilingual/ticket-09 refs/heads/B518-Log-Solution`，因 `github.com` DNS 未解析而失敗。16:42 是最後一次成功的直接查詢；本次文件提交後的目的地 SHA 尚待可連線時重新查詢。
+- 固定基準 Standards／Spec 最終複審均無未解阻擋；Standards 留一項非阻擋的 orchestration 密度建議，因其操作共同構成安全清理交易而保留目前 cohesive 流程。2026-10-09 16:42（台北）直接查詢 GitHub：票分支 `523660779d20b375c1c3f925ed9fce78e381532f`，主線 `01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f`。
+- 2026-10-09 16:43（台北）一次直接執行 `git ls-remote github refs/heads/Multilingual/ticket-09 refs/heads/B518-Log-Solution` 因 `github.com` DNS 未解析而失敗；之後恢復連線並完成以下合併與直接查詢。
+- 本機 merge commit：`d891dd10925e1074d2674b2ed68b36847250fd87`（2026-10-09 16:44 台北，`--no-ff`）。合併後在 `B518-Log-Solution` 執行完整命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py`，363 tests 通過（97.541 秒）；最初 sandbox 內 Tk 建窗程序 abort（exit 134），以已授權桌面執行權限確認 Tk 8.6.8 可建窗後，在可存取桌面的執行環境重跑並通過，未將 sandbox 中止算作測試通過。
+- 推送 GitHub `B518-Log-Solution` 後，2026-10-09 16:45（台北）直接 `git ls-remote` 確認 main=`d891dd10925e1074d2674b2ed68b36847250fd87`、票分支=`ebbdbc34532d6bb58a16c3321c687a540356dbfe`。Gitea 仍待週一內網同步及直接確認；因此保留本地與 GitHub 的 `Multilingual/ticket-09`，未刪除任何分支或 push 目的地。最後文件提交後仍須直接查詢所有目的地。
 - Gitea 週一內網同步直接確認前，保留本地與 GitHub `Multilingual/ticket-09` 分支；不移除目的地、不強推、不強制刪除。

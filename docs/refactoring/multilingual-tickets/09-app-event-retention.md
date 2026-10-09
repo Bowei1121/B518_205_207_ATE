@@ -23,4 +23,4 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 - Existing round-retention Ticket 07 / #8 is also an ancestor. M9 reuses its trusted archive timestamps, cleanup coordination, durable summaries, protection checks and close coordination.
 - Exact ancestry checks, implementation details and acceptance evidence are in [M9 local validation](../evidence/multilingual-ticket-09/local-validation.md).
 
-M9 implementation and six acceptance criteria are verified in the linked evidence. Fixed-baseline Standards/Spec review is complete with no unresolved blockers. Final evidence-file commit and merge are pending; this does not complete M10 bundle or release verification.
+M9 implementation and six acceptance criteria are verified in the linked evidence. Fixed-baseline Standards/Spec review is complete with no unresolved blockers. M9 is merged into the local and GitHub `B518-Log-Solution`; Gitea synchronization and ticket-branch cleanup remain pending until the Monday intranet sync is directly verified. This does not complete M10 bundle or release verification.
