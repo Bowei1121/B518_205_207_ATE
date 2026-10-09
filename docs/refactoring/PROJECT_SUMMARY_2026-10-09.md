@@ -46,4 +46,4 @@
 - 程式批次 `e641dd0` 新增共用中英資源及即時刷新；`8be176e` 整理重複刷新程式並修正共用術語／KVM 與持續收集驗收；`da94db3` 修正定期刷新遇到空選取時殘留舊比較與詳細內容、裁決按鈕仍可用的問題，並重用來源時間／檔名共用術語。每批均驗證、commit 並推送 GitHub 同名票分支。
 - 最終程式／測試 SHA `da94db305547307b8a0370c9da9569f07f671986`。聚焦測試 13 項通過（11.538 秒）；完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 335 tests（83.317 秒）；`python3 -m compileall -q src tests` 與 `git diff --check` 通過。真 Tk 覆蓋實際語言切換、候選選取及空狀態、受控 Atlas 衝突、警報不自動確認、逐項人工操作、其他位置繼續收集、KVM 可視性及全新 audit 讀取器重建。型別檢查設定未找到，未宣稱通過。
 - 固定基準的最終 Standards／Spec 平行複審皆零項可執行發現。證據及五項驗收對照見 [M6 本機驗收](evidence/multilingual-ticket-06/local-validation.md)；ticket 五項驗收已據此勾選，母規格只更新案例 3、4、7、14、15 的 M6 適用部分，未宣稱全 App／bundle 完成。
-- M6 程式／測試已推送並由 GitHub 直接查詢確認同名分支 SHA `da94db305547307b8a0370c9da9569f07f671986`。交付文件待提交後將另行推送與直接查證。公司 Gitea 依使用者指示延至週一；在 Gitea 直接確認前保留 M6 本地與 GitHub 票分支。遠端 Issue #19／#13 均未修改；M7～M10 仍待各票交付。
+- M6 程式／測試已推送並由 GitHub 直接查詢確認同名分支 SHA `da94db305547307b8a0370c9da9569f07f671986`。文件提交 `9d45ae4a333d3ca49d2fc122bfd9f613bc90d78e` 推送後，GitHub 直接查詢確認票分支為同一 SHA；本次查詢時間為 2026-10-09。公司 Gitea 依使用者指示延至週一；在 Gitea 直接確認前保留 M6 本地與 GitHub 票分支。遠端 Issue #19／#13 均未修改；M7～M10 仍待各票交付。
