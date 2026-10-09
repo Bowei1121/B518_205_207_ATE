@@ -1238,6 +1238,71 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_localizes_timezone_missing_app_event_cleanup_reason(self):
+        with TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            preferences = root_path / "preferences.json"
+            profile_store = MachineProfileStore(preferences)
+            profile_store.load()
+            profile_store.save_retention_days(30)
+            app_event_path = root_path / "app-events.json"
+            store = AppEventStore(app_event_path)
+            store.record("app.hotkey.unavailable", {}, "time fixture")
+            self.assertTrue(store.flush())
+            store.stop()
+
+            root = tk.Tk()
+            root.withdraw()
+            with patch("b518_log_solution.PREFS_PATH", preferences), \
+                    patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=root_path / "sessions",
+                    app_event_path=app_event_path)
+            payload = json.loads(app_event_path.read_text(encoding="utf-8"))
+            payload["events"][0]["occurred_at"] = "2026-10-09T08:00:00"
+            app_event_path.write_text(json.dumps(payload), encoding="utf-8")
+            malformed_bytes = app_event_path.read_bytes()
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out while pumping malformed-time cleanup UI")
+
+            try:
+                with patch("b518_log_solution.messagebox.showerror", return_value="ok"):
+                    app.open_settings()
+                    app.settings_notebook.select(2)
+                    app.rounds.request_retention_cleanup(30, "malformed-time")
+                    pump_until(lambda: app.rounds.retention_cleanup_status().status == "failed")
+                    app._refresh_retention_cleanup_status()
+                    self.assertIn("An App event original time has no time zone",
+                                  app.retention_cleanup_status.get())
+                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
+                                     "An App event original time has no time zone.")
+
+                    app.language_button.event_generate("<Button-1>")
+                    root.update()
+                    chinese_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    app.language_menu.invoke(chinese_index)
+                    root.update()
+                    self.assertIn("App 事件原始時間缺少時區", app.retention_cleanup_status.get())
+                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
+                                     "App 事件原始時間缺少時區。")
+                    self.assertEqual(app_event_path.read_bytes(), malformed_bytes)
+                app.rounds.request_close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
     def test_real_tk_distinguishes_unsaved_saved_and_archived_round_states(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

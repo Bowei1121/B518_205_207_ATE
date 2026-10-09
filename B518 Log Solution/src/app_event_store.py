@@ -173,9 +173,10 @@ def _atomic_replace_guarded(path: Path, content: bytes,
 def _open_managed_directory(root: Path, parts: Tuple[str, ...]) -> int:
     """Open a managed directory component-by-component without following links."""
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(str(root), flags)
+    absolute_root = Path(root).absolute()
+    descriptor = os.open(os.path.abspath(os.sep), flags)
     try:
-        for part in parts:
+        for part in absolute_root.parts[1:] + tuple(parts):
             next_descriptor = _openat(descriptor, part, flags)
             os.close(descriptor)
             descriptor = next_descriptor

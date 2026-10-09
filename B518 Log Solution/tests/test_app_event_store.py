@@ -242,6 +242,46 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(outside.read_bytes(), original_external_bytes)
         self.assertEqual((moved_parent / managed_store_path.name).read_bytes(), original_managed_bytes)
 
+    def test_retention_ancestor_swap_before_managed_root_pin_cannot_reach_external_journal(self):
+        base = Path(self.temp.name) / "managed-parent"
+        managed_root = base / "app"
+        managed_root.mkdir(parents=True)
+        managed_store_path = managed_root / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(store.flush())
+
+        external_parent = Path(self.temp.name) / "external-parent"
+        external_root = external_parent / "app"
+        external_root.mkdir(parents=True)
+        external_journal = external_root / managed_store_path.name
+        external_store = AppEventStore(external_journal, clock=lambda: self.now[0])
+        external_store.record("app.hotkey.unavailable", {}, "external sentinel")
+        self.assertTrue(external_store.flush())
+        external_store.stop()
+        external_bytes = external_journal.read_bytes()
+        moved_base = Path(self.temp.name) / "managed-parent-moved"
+
+        from app_event_store import _open_managed_directory as real_open_managed_directory
+        swapped = [False]
+
+        def swap_ancestor_before_pin(root, parts):
+            if not swapped[0]:
+                swapped[0] = True
+                base.rename(moved_base)
+                base.symlink_to(external_parent, target_is_directory=True)
+            return real_open_managed_directory(root, parts)
+
+        with patch("app_event_store._open_managed_directory",
+                   side_effect=swap_ancestor_before_pin):
+            result = store.cleanup_expired(
+                self.now[0] + timedelta(days=30), managed_root)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(external_journal.read_bytes(), external_bytes)
+        self.assertTrue((moved_base / "app" / managed_store_path.name).exists())
+
     def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
         real_fsync = __import__("os").fsync
         calls = [0]
