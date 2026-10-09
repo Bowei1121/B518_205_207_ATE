@@ -2666,6 +2666,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(conflict.conflict_id, detail_text)
                 self.assertIn(conflict.original.source, detail_text)
                 self.assertIn(conflict.candidate.source, detail_text)
+                selected_conflict_id = app._conflict_ids[app.conflict_list.curselection()[0]]
+                marker_position = (app.kvm_state_marker.winfo_rootx(),
+                                   app.kvm_state_marker.winfo_rooty(),
+                                   app.kvm_state_marker.winfo_width(),
+                                   app.kvm_state_marker.winfo_height())
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[0], (
+                    "Item", "Original Result", "New Candidate",
+                ))
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(app.kvm_state_marker.winfo_viewable(), 1)
+                self.assertEqual((app.kvm_state_marker.winfo_rootx(),
+                                  app.kvm_state_marker.winfo_rooty(),
+                                  app.kvm_state_marker.winfo_width(),
+                                  app.kvm_state_marker.winfo_height()), marker_position)
                 root.update_idletasks()
                 pane_height = app.conflict_panes.winfo_height()
                 initial_sash = app.conflict_panes.sashpos(0)
@@ -2707,6 +2727,19 @@ class LogSolutionUiTests(unittest.TestCase):
                                  if result.slot == 1).status == "PASS", timeout=5)
                 self.assertFalse(app.rounds.snapshot().result_available)
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(app.rounds.snapshot().results[0].status, "PASS")
+                self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id,
+                                 selected_conflict_id)
+
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[0], ("項目", "原結果", "新候選"))
 
                 app.conflict_close_button.invoke()
                 root.update_idletasks()

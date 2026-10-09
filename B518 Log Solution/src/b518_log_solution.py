@@ -1325,7 +1325,6 @@ class B518LogSolutionApp:
         if not self.conflict_window or not self.conflict_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.conflict_window = window
-            window.title(self._t("conflict.title"))
             self.root.update_idletasks()
             window_x = max(self.root.winfo_rootx() - 820 - 12, 0)
             window_y = max(self.root.winfo_rooty(), 0)
@@ -1334,7 +1333,7 @@ class B518LogSolutionApp:
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)
             self.conflict_instructions = ttk.Label(
-                window, text=self._t("conflict.instructions"), wraplength=780,
+                window, text="", wraplength=780,
             )
             self.conflict_instructions.pack(fill="x", padx=12, pady=(12, 8))
             body = ttk.Frame(window)
@@ -1407,17 +1406,17 @@ class B518LogSolutionApp:
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=12, pady=(8, 12))
             self.resolve_conflict_original_button = ttk.Button(
-                actions, text=self._t("conflict.button.keep_original"),
+                actions, text="",
                 command=lambda: self._resolve_selected_conflict("keep_original"),
             )
             self.resolve_conflict_original_button.pack(side="left", padx=(0, 8))
             self.resolve_conflict_candidate_button = ttk.Button(
-                actions, text=self._t("conflict.button.accept_candidate"),
+                actions, text="",
                 command=lambda: self._resolve_selected_conflict("accept_candidate"),
             )
             self.resolve_conflict_candidate_button.pack(side="left")
             self.conflict_close_button = ttk.Button(
-                actions, text=self._t("conflict.button.close"), command=window.withdraw,
+                actions, text="", command=window.withdraw,
             )
             self.conflict_close_button.pack(side="right")
         self._refresh_conflict_review()
@@ -1428,17 +1427,7 @@ class B518LogSolutionApp:
     def _refresh_conflict_review(self, preserve_reading: bool = False) -> None:
         if not hasattr(self, "review_button"):
             return
-        if self.conflict_window and self.conflict_window.winfo_exists():
-            self.conflict_window.title(self._t("conflict.title"))
-            if self.conflict_instructions and self.conflict_instructions.winfo_exists():
-                self.conflict_instructions.configure(text=self._t("conflict.instructions"))
-            for button, message_id in (
-                (self.resolve_conflict_original_button, "conflict.button.keep_original"),
-                (self.resolve_conflict_candidate_button, "conflict.button.accept_candidate"),
-                (self.conflict_close_button, "conflict.button.close"),
-            ):
-                if button and button.winfo_exists():
-                    button.configure(text=self._t(message_id))
+        self._apply_conflict_window_language()
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_button.configure(
@@ -1505,6 +1494,20 @@ class B518LogSolutionApp:
             elif self.conflict_details:
                 if index < 0 and (list_changed or selected):
                     self._clear_conflict_comparison()
+
+    def _apply_conflict_window_language(self) -> None:
+        if not self.conflict_window or not self.conflict_window.winfo_exists():
+            return
+        self.conflict_window.title(self._t("conflict.title"))
+        if self.conflict_instructions and self.conflict_instructions.winfo_exists():
+            self.conflict_instructions.configure(text=self._t("conflict.instructions"))
+        for button, message_id in (
+            (self.resolve_conflict_original_button, "conflict.button.keep_original"),
+            (self.resolve_conflict_candidate_button, "conflict.button.accept_candidate"),
+            (self.conflict_close_button, "conflict.button.close"),
+        ):
+            if button and button.winfo_exists():
+                button.configure(text=self._t(message_id))
 
     def _set_initial_conflict_sash(self) -> None:
         if not self.conflict_panes or not self.conflict_panes.winfo_exists():

@@ -98,6 +98,14 @@ class LanguageCatalogTests(unittest.TestCase):
                                                            **sample_parameters)
                     self.assertTrue(rendered.strip())
                     self.assertNotEqual(rendered, message_id)
+            self.assertEqual(
+                language_catalog.translate("conflict.detail.round", language),
+                language_catalog.translate("term.test_round", language),
+            )
+            self.assertEqual(
+                language_catalog.translate("alarm.round", language),
+                language_catalog.translate("term.test_round", language),
+            )
 
         self.assertEqual(
             language_catalog.translate("conflict.comparison.original", language_catalog.ENGLISH),
