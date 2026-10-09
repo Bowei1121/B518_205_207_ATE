@@ -28,6 +28,7 @@ class HistoricalEvent:
     station: str = ""
     platform: str = ""
     unrecognized: bool = False
+    source_order: int = 0
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,11 @@ def read_historical_events(session_root: Path, app_event_path: Optional[Path] = 
                     event.get("localized_message", {}).get("parameters", {}), event,
                 ))
 
-    return tuple(sorted(records, key=lambda item: (item.occurred_at, item.key)))
+    return tuple(sorted(records, key=lambda item: (
+        item.occurred_at,
+        item.sequence if item.sequence is not None else item.source_order,
+        item.key,
+    )))
 
 
 def render_historical_event(event: HistoricalEvent, language: str
@@ -157,7 +162,7 @@ def _read_legacy_session_events(path: Path):
             "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
             raw["message"], "", raw.get("round_id"), raw.get("sequence"),
             localized if isinstance(localized, dict) else None,
-            _diagnostic(raw), raw.get("detail", {}), raw,
+            _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
         ))
     return records
 

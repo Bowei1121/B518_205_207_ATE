@@ -59,6 +59,18 @@ class HistoricalEventDisplayTests(unittest.TestCase):
         self.assertIn('"original_message": "FCT 本輪已接受開始"', unknown.detail)
         self.assertEqual(path.read_bytes(), before)
 
+    def test_equal_timestamp_round_events_keep_numeric_audit_sequence_order(self):
+        round_id = "round-sequence-order"
+        self._write_audit(round_id, "FCT", [
+            self._legacy_event(round_id, 2, "round_started", "FCT 本輪已接受開始"),
+            self._legacy_event(round_id, 10, "round_ready", "FCT 來源已就緒"),
+        ])
+
+        records = read_historical_events(self.sessions)
+
+        self.assertEqual([record.sequence for record in records if record.source == "round"],
+                         [2, 10])
+
     def test_legacy_result_requires_real_position_and_status_instead_of_filling_values(self):
         round_id = "round-result"
         path = self._write_audit(round_id, "FCT", [
