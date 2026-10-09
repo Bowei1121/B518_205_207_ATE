@@ -48,3 +48,12 @@
 - 固定基準的最終 Standards／Spec 平行複審皆零項可執行發現。證據及五項驗收對照見 [M6 本機驗收](evidence/multilingual-ticket-06/local-validation.md)；ticket 五項驗收已據此勾選，母規格只更新案例 3、4、7、14、15 的 M6 適用部分，未宣稱全 App／bundle 完成。
 - M6 程式／測試已推送並由 GitHub 直接查詢確認同名分支 SHA `da94db305547307b8a0370c9da9569f07f671986`。文件提交 `9d45ae4a333d3ca49d2fc122bfd9f613bc90d78e` 推送後，GitHub 直接查詢確認票分支為同一 SHA；本次查詢時間為 2026-10-09。公司 Gitea 依使用者指示延至週一；在 Gitea 直接確認前保留 M6 本地與 GitHub 票分支。遠端 Issue #19／#13 均未修改；M7～M10 仍待各票交付。
 - 預合併查核時，GitHub `B518-Log-Solution` 直接查詢為固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4`，M6 票分支為 `41bf0fc5ad5d19044cb6e4aae1b59490a156d786`，目標工作樹乾淨且票分支包含目標。合併提交為 `daba4822566f944e603d065b5319674f83c99311`；合併後完整含 Tk 套件通過 335 tests（85.007 秒），在 Python 子目錄的 compileall／diff check 通過。主線驗收文件提交 `8cdbbc0b0aa250e5c8d3c9f34316c41a840d45cf` 推送後，GitHub 直接查詢回傳同一 SHA。該文件的這筆遠端查詢記錄是後續最終摘要更新前的查核；最新推送 SHA 仍以最後直接查詢為準。
+
+## M7：保存與關閉語言協調（GitHub #20）
+
+- 固定 M7 Standards／Spec review baseline：`45df1e36895cdb8bbb313de0a4c038cdeef13ac4`。M4 merge `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 已由 Git ancestry 確認為基準祖先，並核對 M4 本地驗收紀錄；M1～M6 程式基準均在主線。M7 起始工作樹乾淨、票分支原先不存在，從此主線建立 `Multilingual/ticket-07`。
+- 真 Tk 新增／改寫 close-save 行為證據：關閉期間禁用語言按鈕及選單、拒絕呼叫／排入的切換並解除已展開選單；目前語言顯示禁用原因；close 標題、狀態與原始錯誤診斷採集中資源。取消後恢復語言入口，但保留待保存／重試工作，且不重啟已停止來源。被拒切換不增加 App 事件 revision。
+- 新增驗收測試紅燈確認先前入口仍可於 close-save 中切換；修正後三個聚焦 Tk 測試通過：等待及取消後重關、跨輪保存失敗／非重入重試／取消後繁中重關、衝突與警報操作和 close-save 切換保護。測試使用 Event 控制寫入，並由全新 audit 讀取器確認完整紀錄。原 M4 App journal 雙語顯示、no-round 事件關閉等待及歷史錯誤恢復案例在完整回歸中重跑。
+- 程式／測試最終驗證包含真 Tk 已排入事件迴圈的語言切換拒絕案例，測試／證據批次 `db1535259f64d68206b0a0badedf6d862dcedabf`；完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 最終通過 335 tests（86.356 秒）。中間一次遇到既有 detached-round archival 測試的暫存目錄清理競爭；該單例連續五次隔離通過，完整套件重跑通過。`python3 -m compileall -q src tests` 與 `git diff --check` 通過。專案無既有型別檢查設定；未宣稱型別檢查通過。固定基準 Standards／Spec 複審無未解問題。
+- GitHub 同名票分支程式提交 `fb0598736bc83c9faa8ef1c3695554f2aefb1257`、`098d8cbebdf266d11fc5255eafd47c9971336487` 及測試／證據提交 `db1535259f64d68206b0a0badedf6d862dcedabf` 已推送；該測試批次推送後直接查詢票分支為 `db1535259f64d68206b0a0badedf6d862dcedabf`，同次主線為 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`。最終文件提交推送後另行直接確認。公司 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` 直接查詢連線失敗／無回應，透過 origin 多目的地推送無回應後停止；未移除 push URL。因一個既有目的地未同步，依要求不合併、不刪除票分支。週一重查 Gitea，可達後再同步、完成合併後主線驗證與直接 SHA 確認；確認全部目的地後才清理分支。無遠端 Issue 狀態變更。
+- 完整證據：[M7 local validation](evidence/multilingual-ticket-07/local-validation.md)。M8 歷史辨識、M9 App 事件期限清理及 M10 bundle／發布驗證維持待交付。

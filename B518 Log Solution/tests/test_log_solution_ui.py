@@ -4734,15 +4734,39 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(root.winfo_exists())
                     self.assertIn("responsive", ticks)
                     self.assertTrue(app._close_window.winfo_exists())
+                    self.assertEqual(str(app.language_button["state"]), "disabled")
+                    self.assertEqual(app._close_retry_button.cget("text"), "Retry Save")
+                    self.assertEqual(app._close_cancel_button.cget("text"), "Cancel Closing")
+                    self.assertIn("Cancel closing to change language",
+                                  app._close_language_reason_label.cget("text"))
+                    language_before_request = app.current_language
+                    app_event_revision = app.app_events.revision
+                    queued_language_result = []
+                    root.after(0, lambda: queued_language_result.append(
+                        app._select_language(TRADITIONAL_CHINESE)
+                    ))
+                    root.update()
+                    app._select_language(TRADITIONAL_CHINESE)
+                    self.assertEqual(len(queued_language_result), 1)
+                    self.assertEqual(app.current_language, language_before_request)
+                    self.assertEqual(app.language_choice.get(), language_before_request)
+                    self.assertEqual(app.app_events.revision, app_event_revision)
 
                     app.cancel_close()
                     self.assertFalse(app.hotkey.closed)
+                    self.assertEqual(str(app.language_button["state"]), "normal")
+                    app._select_language(TRADITIONAL_CHINESE)
+                    self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                     release.set()
                     self.wait_for(lambda: rounds.round_snapshot(started.round_id).save_state == "complete")
                     self.assertEqual(monitor_holder["monitor"].start_count, 1)
                     self.assertTrue(root.winfo_exists())
 
                 app.close()
+                self.assertEqual(app._close_window.title(), "關閉前保存")
+                self.assertEqual(app._close_retry_button.cget("text"), "重試保存")
+                self.assertEqual(app._close_cancel_button.cget("text"), "取消關閉")
+                self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
                 self.wait_for(lambda: rounds.close_status().status == "complete")
                 deadline = time.monotonic() + 2
                 while root_is_alive() and time.monotonic() < deadline:
@@ -4859,6 +4883,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertFalse(rounds.round_snapshot(current.round_id).audit_complete)
                     self.assertTrue(root_is_alive())
                     self.assertEqual(str(app._close_retry_button["state"]), "normal")
+                    self.assertEqual(str(app.language_button["state"]), "disabled")
+                    self.assertIn("Cancel closing to change language",
+                                  app._close_language_reason_label.cget("text"))
                     self.assertIn("persistent close audit fault", app._close_error_label.cget("text"))
 
                     failed_generation = rounds.close_status().generation
@@ -4876,11 +4903,16 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(root_is_alive())
                     pump_until(lambda: all(not rounds.round_snapshot(round_id).retry_in_progress
                                            for round_id in (previous.round_id, current.round_id)))
+                    app._select_language(TRADITIONAL_CHINESE)
                     app.close()
+                    self.assertEqual(app._close_window.title(), "關閉前保存")
                     pump_until(lambda: rounds.close_status().status == "failed" and
                                rounds.close_status().generation > cancelled_generation and
                                str(app._close_retry_button["state"]) == "normal")
                     self.assertTrue(root_is_alive())
+                    self.assertIn("尚未完整保存", app._close_status_label.cget("text"))
+                    self.assertIn("暫時無法切換語言",
+                                  app._close_language_reason_label.cget("text"))
                     ui_tick = []
                     root.after(0, lambda: ui_tick.append(True))
                     root.update()
@@ -5122,6 +5154,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(root_is_alive())
                 self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
+                self.assertIn("Cancel closing to change language",
+                              app._close_language_reason_label.cget("text"))
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertEqual(app.current_language, ENGLISH)
+                self.assertEqual(str(app.language_button["state"]), "disabled")
+                self.assertIn("Cancel closing to change language",
+                              app._close_language_reason_label.cget("text"))
 
                 selected_conflict_id = app._conflict_ids[app.conflict_list.curselection()[0]]
                 alarm_identity = app._shown_round_alarm_identity
@@ -5130,6 +5169,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     if app.language_menu.entrycget(index, "label") == "English")
                 app.language_menu.invoke(english_index)
                 root.update_idletasks()
+                self.assertEqual(app.current_language, ENGLISH)
                 self.assertEqual(app.conflict_window.title(), "Same-Round Result Conflict")
                 self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
                 self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
@@ -5145,8 +5185,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     if app.language_menu.entrycget(index, "label") == "繁體中文")
                 app.language_menu.invoke(chinese_index)
                 root.update_idletasks()
-                self.assertIn("輪次", app.round_alarm_message.cget("text"))
-                self.assertIn("請確認此警報", app.round_alarm_message.cget("text"))
+                self.assertEqual(app.current_language, ENGLISH)
+                self.assertIn("Round", app.round_alarm_message.cget("text"))
+                self.assertIn("Acknowledge this alarm", app.round_alarm_message.cget("text"))
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
 
                 app.conflict_list.selection_set(0)
