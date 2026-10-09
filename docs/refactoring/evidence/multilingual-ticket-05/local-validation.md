@@ -8,7 +8,7 @@ Date: 2026-10-09 (Asia/Taipei)
 - Python project directory: `B518 Log Solution/` inside the Git root.
 - M4 dependency is present in the baseline ancestry at merge `f7e24cd265fc173d5d113e7fb122083602f5e5fa`. The M4 evidence verifies the App-owned event store, bilingual message IDs and captured parameters, raw diagnostic retention, public disk reader/retry/status API, and save-before-close coordination. M5 did not modify that persistence lifecycle.
 - M1 language preference, actual main-page language control, and M2/M3 bilingual round/platform event contracts are present in the same baseline. Evidence: [M1](../multilingual-ticket-01/local-validation.md), [M2](../multilingual-ticket-02/local-validation.md), [M3](../multilingual-ticket-03/local-validation.md), [M4](../multilingual-ticket-04/local-validation.md).
-- Current work branch: `Multilingual/ticket-05`, created from the verified GitHub mainline baseline; local base was clean. No existing local changes were included.
+- Implementation branch: `Multilingual/ticket-05`, created from the verified GitHub mainline baseline; local base was clean. No existing local changes were included. After acceptance and review passed, the formal worktree returned to `B518-Log-Solution`; the ticket branch remains retained for deferred Gitea synchronization.
 - Push destinations are `github` and `origin`; `origin` retains the company Gitea fetch/push URL and also has its GitHub push URL. Gitea remains deferred to Monday by the user. M5 pushes use the dedicated `github` remote; no destination is removed.
 
 ## Screen, operation, and event-producer inventory
@@ -57,5 +57,14 @@ Tk tests ran with desktop access after a sandboxed Tk attempt exited 134. The pr
 - M5 changes settings copy, in-place view refresh, translated retention summary presentation, App event producer IDs for settings actions, and real Tk coverage only.
 - M5 does not translate OS-owned chooser UI, SN/path/custom values/raw diagnostics, or machine/platform data. It does not alter configuration schema, event format, round/session/audit/close/retention lifecycle, or background cleanup ownership.
 - M6–M10 remain out of scope. M5 does not claim complete App translation or bundle verification.
-- Fixed review baseline remains `740b26c23f5fb6fcc0988272183159b4405df5da`; record final reviewed commit and any post-review revalidation below.
+- Fixed review baseline remains `740b26c23f5fb6fcc0988272183159b4405df5da`; final delivery review and merged-version validation are recorded below.
 - Company Gitea synchronization is deferred until Monday. GitHub merge is permitted after all acceptance and required validation pass; keep local and remote `Multilingual/ticket-05` branches until direct Gitea SHA verification. Do not delete either branch before that confirmation.
+
+## GitHub integration and post-merge verification — 2026-10-09
+
+- Final delivery Standards and Spec reviews used the fixed baseline through `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848`. Standards: no documented breaches or blockers; one non-blocking exact-string reason-mapping smell remains. Spec: no missing acceptance, incorrect behavior or scope expansion; actual native operations and their OS presentation boundary are adequately evidenced.
+- Before merging, the worktree was clean; a fresh GitHub fetch and direct query confirmed local/GitHub mainline both at `740b26c23f5fb6fcc0988272183159b4405df5da` and the ticket branch at `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848`. No code/test changes exist after validated revision `a90be28c8b1615b408aaf6147572e603dff5338e`.
+- Merge commit: `cfb35480d890abeb8a03bc74360260dcd8d739e1`, created with `git merge --no-ff Multilingual/ticket-05` on `B518-Log-Solution`.
+- On that merged mainline, `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` passed **334 tests in 95.026 seconds**, exit 0. `python3 -m compileall -q src tests` and `git diff --check` passed. No configured type checker exists; none is claimed.
+- The merge was pushed with `git push github B518-Log-Solution`. The direct query immediately after this merge push returned `cfb35480d890abeb8a03bc74360260dcd8d739e1` for GitHub mainline and `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848` for the retained ticket branch. These are the SHA values from that query, not an assertion that later documentation HEAD equals the merge SHA. A subsequent documentation-only delivery commit is pushed and directly verified separately; its final SHA is reported in the delivery response.
+- All six M5 product acceptance items are passed. GitHub delivery is complete after the final documentation push. Company Gitea sync is deferred by the user's explicit exception; no destination was removed. Local and GitHub `Multilingual/ticket-05` remain at `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848`; no ticket branch is deleted. On Monday, synchronize the final mainline to Gitea, directly verify its SHA, then safely clean up retained ticket branches.

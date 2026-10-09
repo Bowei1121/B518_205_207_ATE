@@ -8,7 +8,7 @@ M3 五項驗收已由完整 producer 清單（含共同加入的 `station` 參�
 
 M4 六項本機驗收及完整含 Tk 套件已通過：最終程式／測試提交 `be4f091` 的 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（92.409 秒），並通過 compileall 與 `git diff --check`。已建立無輪次 App 事件雙語持久格式、公開重試／狀態及正常關閉協調；真 Tk 覆蓋初始化、語言／配置／匯入匯出／熱鍵失敗、原始診斷、歷史錯誤復原、耐久性重試及完整關閉。固定基準 `648b0c2126aaa6ab29016f2f95deb24ca7c8145f` 的 Standards／Spec 複審至 `be4f091` 無未解問題。GitHub 合併提交 `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 的合併後完整含 Tk 套件亦通過 330 tests（93.584 秒）；GitHub 主線直接查詢曾確認 `a14548e4afa93f1ca00cba3eb165cb1bf4eab7ff`，票分支 `e663e430d9fed1541bc0e4c20447d2f630c698de` 保留。最終文件更新推送及直接查證見 M4 [本機驗收紀錄](../evidence/multilingual-ticket-04/local-validation.md)。公司 Gitea 依使用者指示週一同步；Gitea 直接查證前保留 M4 本地與遠端票分支，不清理分支。
 
-M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選資料夾、匯入、匯出、取消及拒絕覆寫；兩份匯出與原始配置相符，原檔雜湊不變，新的 App journal 讀取器驗證七筆同筆雙語及連續序號。完整含 Tk 套件與固定基準複審已通過；GitHub 合併與合併後驗證另行記錄，Gitea 週一直接確認前保留票分支。見 [M5 本機驗收](../evidence/multilingual-ticket-05/local-validation.md)。
+M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選資料夾、匯入、匯出、取消及拒絕覆寫；兩份匯出與原始配置相符，原檔雜湊不變，新的 App journal 讀取器驗證七筆同筆雙語及連續序號。完整含 Tk 套件與固定基準複審已通過；GitHub 合併 SHA `cfb35480d890abeb8a03bc74360260dcd8d739e1`，合併後完整含 Tk 套件通過 334 項（95.026 秒），固定基準至 `240d801` 的 Standards／Spec 複審沒有未解阻擋。主線推送後直接確認合併 SHA，最後文件提交另行查證；Gitea 週一直接確認前保留票分支。見 [M5 本機驗收](../evidence/multilingual-ticket-05/local-validation.md)。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |

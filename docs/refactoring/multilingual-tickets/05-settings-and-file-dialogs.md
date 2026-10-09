@@ -26,3 +26,5 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 本票六項驗收已通過；最後的原生選檔實際桌面操作於 2026-10-09 由使用者完成，兩語匯出及拒絕覆寫的磁碟核對亦通過。程式、測試、測試命令、M4 依賴及環境限制見 [M5 本機驗收紀錄](../evidence/multilingual-ticket-05/local-validation.md)。
 
 最終程式／測試版本 `a90be28c8b1615b408aaf6147572e603dff5338e` 的完整含 Tk 套件通過 334 項，真 Tk UI 模組通過 57 項；固定 Standards／Spec 基準為 `740b26c23f5fb6fcc0988272183159b4405df5da`，複審發現已修正。此 SHA 已直接確認在 GitHub `Multilingual/ticket-05`。第五項驗收已有 [真正原生操作與磁碟證據](../evidence/multilingual-ticket-05/native-dialog-validation.md)。依遠端交付例外可先完成 GitHub 合併與合併後驗證；公司 Gitea 週一同步直接確認前，保留票分支、不清理。
+
+GitHub 合併已完成：`cfb35480d890abeb8a03bc74360260dcd8d739e1`；合併後主線完整含 Tk 套件通過 334 項（95.026 秒），`compileall` 與差異檢查通過。固定基準至 `240d801` 的最終 Standards／Spec 複審無未解阻擋。GitHub 主線推送後直接確認合併 SHA；最後文件提交另行推送／查證，詳見驗收紀錄。公司 Gitea 與分支清理仍依使用者例外延至週一。

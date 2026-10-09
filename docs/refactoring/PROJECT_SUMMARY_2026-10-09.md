@@ -31,3 +31,11 @@
 - 真 Tk 驗收：設定頁英文／繁中即時切換保留草稿、選取、分頁與驗證狀態；保存期限與清理摘要、profile／匯入匯出錯誤、App 診斷磁碟讀取及 680×560 版面已驗。修正關閉保存期間略過清理的可見狀態與封存保護原因翻譯，並讓測試在刪除暫存根目錄前等待公開清理狀態。最終完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 334 tests（83.098 秒）；完整 `test_log_solution_ui` 模組通過 57 tests（58.704 秒），`test_language_catalog` 與 `test_machine_profiles` 共 29 tests 通過。`compileall` 及 `git diff --check` 通過。型別檢查設定查無，不宣稱通過。
 - M5 母規格案例 1、4、14 的設定畫面適用部分已通過；案例 6 原有真 Tk 受控返回與標題／類型參數測試，於 2026-10-09 再由使用者完成兩語真原生選檔、取消、返回路徑及拒絕覆寫；兩份匯出一致、原檔雜湊不變，七筆 App 雙語事件由新讀取器核對。M5 六項產品驗收全部通過。所需人工步驟與逐項證據見 [M5 本機驗收](evidence/multilingual-ticket-05/local-validation.md)。
 - 固定 M5 review baseline 為 `740b26c23f5fb6fcc0988272183159b4405df5da`。Standards／Spec 複審指出的可見狀態、封存原因本地化與測試收尾問題已修正；最終程式／測試提交 `a90be28c8b1615b408aaf6147572e603dff5338e` 已推送 GitHub `Multilingual/ticket-05`，並由 `git ls-remote` 直接確認。原生選檔人工驗收已通過；使用者確認隔離 App 正常關閉，程序 exit 0。依既有授權接續 GitHub 合併與主線完整驗證。公司 Gitea 依使用者指示週一同步；Gitea 直接確認前保留 M5 票分支。本票未更新任何遠端 Issue 狀態。
+
+## M5 人工驗收與 GitHub 合併完成
+
+- 使用者以實際 macOS 原生視窗完成英文／繁中資料夾選取、匯入、匯出、取消與拒絕覆寫，並確認隔離 App 正常關閉；程式 exit 0。兩份匯出與配置一致，原 sentinel SHA-256 不變；全新讀取器驗證七筆連續雙語 App 事件，不虛構 round_id、不因取消多出操作。原生資料夾視窗未渲染 App 提供標題的 OS 邊界如實記錄。
+- 人工驗收文件提交 `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848` 已推送 GitHub 票分支；固定基準至該 SHA 的 Standards／Spec 最終複審無未解阻擋。Standards 留一項非阻擋 exact-string reason-mapping 氣味。
+- 合併前主線與 GitHub 最新 `740b26c` 一致、工作樹乾淨；合併提交 `cfb35480d890abeb8a03bc74360260dcd8d739e1`。合併後主線完整含 Tk 套件通過 334 tests（95.026 秒），compileall 與 diff check 通過。最終程式／測試內容仍與 `a90be28` 相同，沒有審查後產品修改。
+- GitHub 合併推送後直接查詢確認主線 `cfb35480d890abeb8a03bc74360260dcd8d739e1`、票分支 `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848`。這是該次查詢結果；最後文件提交另行推送與直接確認，不把合併 SHA 當成新增文件後的最終 HEAD。正式工作樹已切回 B518-Log-Solution。
+- 六項產品驗收已通過；公司 Gitea 依使用者例外待週一同步並直接確認。在此之前保留本地與 GitHub Multilingual/ticket-05，未強推、未刪分支、未改遠端 Issue。
