@@ -4374,6 +4374,94 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_integrated_language_refresh_keeps_open_settings_diagnostics_and_history(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def select_language(language):
+                app.language_button.event_generate("<ButtonPress-1>")
+                app.language_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                native_name = "English" if language == ENGLISH else "繁體中文"
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == native_name
+                )
+                app.language_menu.invoke(index)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.open_settings()
+                settings_window = app.settings_window
+                app.profile_editor_project.set("Unsaved Integrated Draft")
+                selected_tab = app.settings_notebook.tabs()[2]
+                app.settings_notebook.select(selected_tab)
+
+                app.open_app_diagnostics()
+                diagnostics_window = app.app_diagnostics_window
+                self.assertGreater(app.app_diagnostics_list.size(), 0)
+                app.app_diagnostics_list.selection_set(0)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                diagnostic_selection = tuple(app.app_diagnostics_list.curselection())
+
+                app.open_historical_events()
+                history_window = app.historical_event_window
+                self.assertGreater(app.historical_event_list.size(), 0)
+                app.historical_event_list.selection_set(0)
+                app.historical_event_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                history_selection = tuple(app.historical_event_list.curselection())
+
+                event_bytes = app.app_events.path.read_bytes()
+                event_revision = app.rounds.app_event_revision()
+                select_language(TRADITIONAL_CHINESE)
+                self.assertIs(app.settings_window, settings_window)
+                self.assertIs(app.app_diagnostics_window, diagnostics_window)
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertTrue(all(window.winfo_exists() for window in (
+                    settings_window, diagnostics_window, history_window,
+                )))
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Integrated Draft")
+                self.assertEqual(app.settings_notebook.select(), selected_tab)
+                self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
+                                 diagnostic_selection)
+                self.assertEqual(tuple(app.historical_event_list.curselection()), history_selection)
+                self.assertEqual(settings_window.title(), app._t("app.settings.title"))
+                self.assertEqual(diagnostics_window.title(), app._t("app.diagnostic.heading"))
+                self.assertEqual(history_window.title(), app._t("app.settings.history.title"))
+                self.assertEqual(event_bytes, app.app_events.path.read_bytes())
+                self.assertEqual(app.rounds.app_event_revision(), event_revision)
+
+                select_language(ENGLISH)
+                self.assertIs(app.settings_window, settings_window)
+                self.assertIs(app.app_diagnostics_window, diagnostics_window)
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Integrated Draft")
+                self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
+                                 diagnostic_selection)
+                self.assertEqual(tuple(app.historical_event_list.curselection()), history_selection)
+                self.assertEqual(event_bytes, app.app_events.path.read_bytes())
+                self.assertEqual(app.rounds.app_event_revision(), event_revision)
+            finally:
+                if app.historical_event_window and app.historical_event_window.winfo_exists():
+                    app._close_historical_event_window()
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app.app_diagnostics_window.destroy()
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_open_settings_refreshes_language_in_place_and_keeps_invalid_draft(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

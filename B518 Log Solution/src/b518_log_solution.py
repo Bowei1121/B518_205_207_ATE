@@ -627,6 +627,7 @@ class B518LogSolutionApp:
     def _refresh_app_event_records(self, force: bool = False) -> None:
         if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
             return
+        self.app_diagnostics_window.title(self._t("app.diagnostic.heading"))
         revision = self.rounds.app_event_revision()
         if not force and revision == self._last_app_event_revision:
             return
@@ -2444,6 +2445,7 @@ class B518LogSolutionApp:
         window = self.historical_event_window
         if window is None or not window.winfo_exists():
             return
+        window.title(self._t("app.settings.history.title"))
         selected = self._historical_event_selected_key
         event_list = self.historical_event_list
         detail_view = self.historical_event_detail
