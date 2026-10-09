@@ -12,7 +12,7 @@ M8 開始時工作樹乾淨；固定 review baseline 是當時 `B518-Log-Solutio
 
 以 ancestry 和實際程式／已提交驗收紀錄確認 M3、M4 已包含於基準：M3 GitHub merge `fb4ffb2286d9c113511482b738a101a11616bd14`、M4 GitHub merge `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 均為該基準祖先；M3/M4 驗收文件分別記錄平台事件與無輪次 App 事件的固定雙語、磁碟重建、原始診斷及保存恢復契約。README 原先將 #16/#17 列為 M8 阻擋，與 Git ancestry 及交付證據不符，已在本票文件中修正。M5～M7 不屬 M8 直接依賴。
 
-開始時本地／GitHub 同名票分支皆在 M8 起始基準；M8 修改期間已提交並推送 `d20cc579`、`ebfa2a91`、`b076e6c`、`06c6559`。每批完成相應測試後 commit，再 push 至 `github/Multilingual/ticket-08`。2026-10-09 15:23（台北）直接 `git ls-remote github` 查得票分支 `06c65592958970f38aa9330fb218ab2da66a3581`、主線 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`。主線尚待此最終驗收及審查結果後合併。`origin` 的既有 fetch URL 為公司 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`，push URL 包含 Gitea 與 GitHub；本次直接查詢 Gitea 未於 10 秒內回應，依使用者指示週一於公司內網重試，未移除目的地。Gitea 尚未直接確認前保留本地及 GitHub 票分支。
+開始時本地／GitHub 同名票分支皆在 M8 起始基準；M8 修改期間已提交並推送 `d20cc579`、`ebfa2a91`、`b076e6c`、`06c6559`。每批完成相應測試後 commit，再 push 至 `github/Multilingual/ticket-08`。2026-10-09 15:23（台北）直接 `git ls-remote github` 查得票分支 `06c65592958970f38aa9330fb218ab2da66a3581`、主線 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`。固定基準複審後已於本機以 merge SHA `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf` 合併；合併後完整含 Tk 套件 350 tests（98.606 秒）通過。2026-10-09 15:29（台北）最後推送後直接 `git ls-remote github` 確認主線為 `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf`，票分支當時為 `f762360dc8e709de9945cbf721fd08e7dc412b16`。本次最終交付文件後續另提交，提交後會再推送並重新查詢。`origin` 的既有 fetch URL 為公司 Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`，push URL 包含 Gitea 與 GitHub；本次直接查詢 Gitea 未於 10 秒內回應，依使用者指示週一於公司內網重試，未移除目的地。Gitea 尚未直接確認前保留本地及 GitHub 票分支。
 
 ## 事件讀取與辨識契約
 
@@ -79,6 +79,6 @@ git diff --check
 
 Standards／Spec 雙軸審查均使用固定 baseline `98a3e5c388cb993154d3302c70c10cbb608398c2` 對最終 diff 複審，沒有未解決的可行動問題。Standards 提醒大型歷史列表同步讀取／呈現可能延遲 Tk；屬非阻擋建議，本票不擴增 M9 清理或背景載入架構。Spec 確認新舊資料契約、未知回退、唯讀 bytes、Tk 選取與捲動、錯誤型別拒絕符合 M8。原生 menu 導覽不由 M8 的 `.invoke()` 單獨宣稱通過；援引既有 M1 真 Tk 測試及使用者於 `44826d4` 視窗實際確認滑鼠、鍵盤切換與取消。
 
-GitHub 票分支最後直接查詢 SHA 為 `06c65592958970f38aa9330fb218ab2da66a3581`（2026-10-09 15:23 台北）；GitHub main 在查詢時為 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`，其合併及合併後驗證仍待執行。公司 Gitea 位於內網，直接查詢逾 10 秒未回應，依使用者指示週一同步；未宣稱已同步且未移除目的地。Gitea 同步並直接確認前保留本地及 GitHub `Multilingual/ticket-08` 分支，不清理。
+Standards／Spec 雙軸審查完成後，M8 以 merge SHA `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf` 合併至本機 `B518-Log-Solution`；合併後執行 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py`，350 tests（98.606 秒）通過，`compileall`／`git diff --check` 通過。2026-10-09 15:29（台北）直接查詢確認 GitHub `B518-Log-Solution` 已同步到該 merge SHA；之後文件提交會再次 push 並直接查詢。票分支仍保留，因為 GitHub ticket ref 尚需包含最終 merge-result 文件，而 Gitea 位於公司內網，直接查詢逾 10 秒未回應；依使用者指示週一同步並直接確認前，不清理本地或遠端票分支。未移除任何既有 push 目的地。
 
 母規格案例 11 僅標記 M8 已實測的歷史相容、未知原文、目前資源顯示、磁碟唯讀及真 Tk 部分；M8 不代表全 App 多語言或 bundle 發布完成。M9 App event retention、M10 全 App／bundle 驗收仍待後續票。

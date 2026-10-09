@@ -19,7 +19,7 @@ M7 五項程式驗收已由真正 Tk 等待／失敗／重試／取消／再次�
 - 固定 review baseline 為 `98a3e5c388cb993154d3302c70c10cbb608398c2`。以 ancestry、程式契約及已提交驗收紀錄確認 M3 (`fb4ffb2`)／M4 (`f7e24cd`) 已在 `B518-Log-Solution`；M3／M4 直接依賴解除。文件中 M8 對 #16／#17 的阻擋狀態因此已修正。M5～M7 非直接阻擋，不混入本票。
 - M8 新增唯讀歷史讀取／呈現：新版 App 事件及 audit 事件依版本化 `localized_message` 的穩定 ID、參數和目前資源重顯示；缺 ID、版本不適用或參數失效回退保存英文。舊 audit 只按明確 schema、producer kind、必要欄位與 round header 的 platform 辨識；傳統 `events.log` 沒有穩定 kind 時保留原文。未辨識訊息提供本地化外層說明及原始詳細資料。主頁 Events & Session 分頁提供 Browse Event History，可從新讀取器讀取輪次 audit、舊 Session events.log 及 App event store；刷新與換語言不寫回來源。
 - TDD 補上歷史閱讀、混合資料真正 Tk 案例、讀取／排序／malformed legacy fallback 回歸，以及相同時間序號 2／10 順序測試（紅燈時觀察到 `[10, 2]`）。最終程式／測試 SHA `06c65592958970f38aa9330fb218ab2da66a3581` 的完整含 Tk 套件通過 350 tests（100.778 秒）；歷史讀取聚焦套件 13 tests 通過，`compileall`／`git diff --check` 通過，沒有既有型別檢查設定。固定 baseline 雙軸複審沒有未解問題；詳見 [M8 驗收紀錄](../evidence/multilingual-ticket-08/local-validation.md)。
-- GitHub 同名票分支直接查詢確認為 `06c65592958970f38aa9330fb218ab2da66a3581`；GitHub main 目前查詢 SHA `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`，M8 merge 及主線驗證接續辦理。公司 Gitea 直接查詢未於 10 秒內回應，依使用者指定週一於內網同步；在 Gitea 確認前保留本地及 GitHub 票分支。M9 App 事件清理與 M10 完整 bundle／發布驗收維持待交付。
+- M8 本機 merge SHA `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf`；合併後完整含 Tk 套件通過 350 tests（98.606 秒）。2026-10-09 15:29（台北）直接查詢 GitHub main 已同步至 merge SHA；最後文件提交／票分支快轉後需再直接核對。Gitea 直接查詢未於 10 秒內回應，依使用者指定週一內網同步；同步及直接確認前保留本地與 GitHub 票分支。M9 App 事件清理與 M10 完整 bundle／發布驗收維持待交付。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ M7 五項程式驗收已由真正 Tk 等待／失敗／重試／取消／再次�
 | [M5](05-settings-and-file-dialogs.md) | [#18](https://github.com/Bowei1121/B518_205_207_ATE/issues/18) | 工程師設定、配置與選檔流程換語言且不丟輸入 | #17（M4 已合併解除；M5 六項驗收已通過） |
 | [M6](06-conflicts-and-alarms.md) | [#19](https://github.com/Bowei1121/B518_205_207_ATE/issues/19) | 衝突與警報同步翻譯，保留選取、快照與人工決定；[M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md) | #15（M2 已納入 GitHub 主線，依賴解除） |
 | [M7](07-save-and-close-language.md) | [#20](https://github.com/Bowei1121/B518_205_207_ATE/issues/20) | 保存／重試／關閉提示一致，關閉保存停用切換、取消後恢復；五項程式驗收、完整含 Tk 測試與固定基準複審已通過，Gitea 同步待完成 | #17（M4 已合併至工作基準，已解除） |
-| [M8](08-historical-event-display.md) | [#21](https://github.com/Bowei1121/B518_205_207_ATE/issues/21) | 新舊紀錄依語言閱讀，舊檔不改寫、無法辨識原文詳細保留；五項驗收、350-test Tk 套件及固定基準雙軸複審通過；GitHub main merge／Gitea 同步分開辦理 | #16、#17（由 ancestry／交付證據確認已解除） |
+| [M8](08-historical-event-display.md) | [#21](https://github.com/Bowei1121/B518_205_207_ATE/issues/21) | 新舊紀錄依語言閱讀，舊檔不改寫、無法辨識原文詳細保留；五項驗收、350-test Tk 套件與固定基準雙軸複審通過；已合併並同步 GitHub main，Gitea／票分支清理待週一直接確認 | #16、#17（由 ancestry／交付證據確認已解除） |
 | [M9](09-app-event-retention.md) | [#22](https://github.com/Bowei1121/B518_205_207_ATE/issues/22) | App 事件按原事件時間清理，待補存保護與清理摘要 | #17、既有 [#8](https://github.com/Bowei1121/B518_205_207_ATE/issues/8) |
 | [M10](10-integrated-release-verification.md) | [#23](https://github.com/Bowei1121/B518_205_207_ATE/issues/23) | 全 App 翻譯覆蓋、跨視窗操作、KVM 與發布資源驗收完成 | #18、#19、#20、#21、#22 |
 
