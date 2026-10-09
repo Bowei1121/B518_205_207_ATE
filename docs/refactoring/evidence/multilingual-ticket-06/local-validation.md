@@ -56,4 +56,4 @@ GitHub merge commit: `daba4822566f944e603d065b5319674f83c99311`.
 
 On merged `B518-Log-Solution`, `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` passed all 335 tests in 85.007 seconds. `python3 -m compileall -q src tests` and `git diff --check` also passed. The merged test run used the desktop Tk session.
 
-The merge and post-merge test passed. GitHub main and final documentation push SHA checks will be recorded after publication. No remote issue was modified. Company Gitea synchronization remains deferred to Monday by user instruction. Keep the local and GitHub M6 ticket branches until Gitea is directly confirmed, then complete the authorized cleanup.
+The post-merge evidence commit `8cdbbc0b0aa250e5c8d3c9f34316c41a840d45cf` was pushed to GitHub `B518-Log-Solution`; a direct `git ls-remote` query returned that same SHA. The Python compile check was run from the verified `B518 Log Solution/` directory. No remote issue was modified. Company Gitea synchronization remains deferred to Monday by user instruction. Keep the local and GitHub M6 ticket branches until Gitea is directly confirmed, then complete the authorized cleanup.

@@ -173,4 +173,4 @@ M5 整合更新（2026-10-09）：五項原有驗收加上使用者完成的兩�
 
 M6 的衝突／整輪警報視窗以集中雙語資源即時刷新，保留候選、conflict_id 選取、警報待確認狀態及 C1～C3 的證據呈現契約。受控 Atlas 來源經共同輪次進入真正 Tk 視窗，驗證切換、其他位置繼續收集、KVM 標記、逐項操作及全新 audit 讀取器重建；完整含 Tk 套件在最終程式／測試 SHA `da94db305547307b8a0370c9da9569f07f671986` 通過 335 tests（83.317 秒）。固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審沒有可執行發現。母規格案例 3、4、7、14、15 中與 M6 衝突／警報視窗、事件翻譯、操作狀態及 KVM 相關的適用部分已有證據；各案例的全 App、多視窗或發布範圍仍依 M7～M10 完成，不據此標示整體案例完成。詳見 [M6 本機驗收](evidence/multilingual-ticket-06/local-validation.md)。
 
-M6 整合更新（2026-10-09）：GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後，完整含 Tk 套件再次通過 335 tests（85.007 秒），compileall 與 diff check 通過。Gitea 尚未同步；M6 本地與 GitHub 票分支保留至週一直接確認 Gitea 後再清理。
+M6 整合更新（2026-10-09）：GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後，完整含 Tk 套件再次通過 335 tests（85.007 秒），正確 Python 目錄的 compileall 與 diff check 通過。包含合併驗收文件的 GitHub 主線推送提交 `8cdbbc0b0aa250e5c8d3c9f34316c41a840d45cf` 已由直接遠端查詢確認。Gitea 尚未同步；M6 本地與 GitHub 票分支保留至週一直接確認 Gitea 後再清理。

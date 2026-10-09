@@ -18,6 +18,6 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 Local acceptance and GitHub merge completed 2026-10-09. See [M6 local validation](../evidence/multilingual-ticket-06/local-validation.md) for commands, test results, fixed review baseline, merge SHA, and scope boundaries. Company Gitea synchronization remains deferred to Monday; retain the ticket branches until direct synchronization is confirmed.
 
-## Blocked by
+## Dependency (cleared)
 
-- [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15)
+- [#15：共同輪次事件同筆雙語保存與即時重新顯示](https://github.com/Bowei1121/B518_205_207_ATE/issues/15) 已由 M2 merge `f128d9f963f60d416d0eaf5917fa5eda87408280` 納入 `B518-Log-Solution`；依賴已解除。
