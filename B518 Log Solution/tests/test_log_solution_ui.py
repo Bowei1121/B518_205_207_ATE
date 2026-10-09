@@ -5043,7 +5043,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                        detail={"kind": "start"}))
 
         app._set_row.assert_not_called()
-        app._set_monitor_controls.assert_called_once_with(False, "逾時停止")
+        app._set_monitor_controls.assert_called_once_with(False, "monitor.timeout_stopped")
 
     def test_test_timeout_keeps_monitoring_other_slots(self):
         app = object.__new__(B518LogSolutionApp)

@@ -1134,7 +1134,7 @@ class B518LogSolutionApp:
         messagebox.showwarning(self._t("app.hotkey.title"),
                                self._t("app.hotkey.unavailable"), parent=self.root)
 
-    def _set_monitor_controls(self, monitoring: bool, state_text: Optional[str] = None) -> None:
+    def _set_monitor_controls(self, monitoring: bool, state_message_id: Optional[str] = None) -> None:
         if getattr(self, "_closing_ui", False):
             self.start_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
@@ -1142,12 +1142,9 @@ class B518LogSolutionApp:
         else:
             self.start_button.configure(state="disabled" if monitoring else "normal")
             self.stop_button.configure(state="normal" if monitoring else "disabled")
-            message_by_text = {
-                "啟動中": "monitor.starting", "逾時停止": "monitor.timeout_stopped",
-                "啟動失敗": "monitor.start_failed", "監控中": "monitor.active", "待命": "monitor.idle",
-            }
-            self._set_main_monitor_state(message_by_text.get(
-                state_text, "monitor.active" if monitoring else "monitor.idle"))
+            self._set_main_monitor_state(
+                state_message_id or ("monitor.active" if monitoring else "monitor.idle")
+            )
         for name in ("project_choice", "machine_choice"):
             choice = getattr(self, name, None)
             if choice:
@@ -1342,13 +1339,13 @@ class B518LogSolutionApp:
         if event.kind == "conflict_detected":
             self._open_conflict_review()
         if event.kind == "timeout" and event.detail.get("kind") == "start":
-            self._set_monitor_controls(False, "逾時停止")
+            self._set_monitor_controls(False, "monitor.timeout_stopped")
         if event.kind == "timeout" and event.detail.get("kind") == "round":
-            self._set_monitor_controls(False, "逾時停止")
+            self._set_monitor_controls(False, "monitor.timeout_stopped")
             self._open_round_alarm()
         if event.kind == "start_failed":
             self.active_profile_snapshot = None
-            self._set_monitor_controls(False, "啟動失敗")
+            self._set_monitor_controls(False, "monitor.start_failed")
             message = render_bilingual_message(
                 event.localized_message, self.current_language, event.message,
             )
