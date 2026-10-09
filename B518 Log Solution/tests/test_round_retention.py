@@ -129,15 +129,15 @@ class RoundRetentionTests(unittest.TestCase):
             rounds.register_app_event_store(store, root)
             entered = threading.Event()
             release = threading.Event()
-            original_replace = app_event_store._atomic_replace
+            original_replace = app_event_store._atomic_replace_guarded
 
-            def paused_replace(path, content):
+            def paused_replace(path, content, commit_gate):
                 if Path(path) == store.path and not entered.is_set():
                     entered.set()
                     self.assertTrue(release.wait(3))
-                return original_replace(path, content)
+                return original_replace(path, content, commit_gate)
 
-            with patch("app_event_store._atomic_replace", side_effect=paused_replace):
+            with patch("app_event_store._atomic_replace_guarded", side_effect=paused_replace):
                 rounds.request_retention_cleanup(30, "app-startup")
                 self.assertTrue(entered.wait(2))
                 rounds.save_retention_setting(365, lambda: None)

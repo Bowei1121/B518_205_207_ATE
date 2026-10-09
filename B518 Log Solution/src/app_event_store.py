@@ -100,6 +100,36 @@ def _atomic_replace(path: Path, content: bytes) -> None:
         raise
 
 
+def _atomic_replace_guarded(path: Path, content: bytes,
+                           commit_gate: Callable[[Callable[[], None]], None]) -> None:
+    """Prepare durable bytes off-lock, then gate only the atomic path replacement."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".{}-".format(path.name), dir=str(path.parent))
+    replaced = False
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        def replace_entry() -> None:
+            nonlocal replaced
+            os.replace(temporary, str(path))
+            replaced = True
+
+        commit_gate(replace_entry)
+        if not replaced:
+            raise RuntimeError("App 事件清理提交閘門未完成原子替換")
+        _fsync_directory(path.parent)
+    except Exception:
+        if not replaced:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        raise
+
+
 def read_app_event_store(path: Path) -> dict:
     """Read and validate a fresh App event store without mutating old data."""
     try:
@@ -323,11 +353,15 @@ class AppEventStore:
                 self._validate_managed_path(self.path.absolute())
                 if self.path.read_bytes() != original_bytes:
                     raise ValueError("App 事件紀錄在清理期間已變更")
-                replace = lambda: _atomic_replace(self.path, _json_bytes(updated))
+                content = _json_bytes(updated)
+                replace = lambda: _atomic_replace_guarded(
+                    self.path, content,
+                    lambda commit: before_replace(max(expired_times), commit)
+                    if before_replace is not None else commit())
                 if before_replace is not None:
-                    before_replace(max(expired_times), replace)
-                else:
                     replace()
+                else:
+                    _atomic_replace(self.path, content)
                 with self._condition:
                     self._events = retained
                     self._retired_sequences = merged
