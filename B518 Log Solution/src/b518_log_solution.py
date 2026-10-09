@@ -1492,7 +1492,13 @@ class B518LogSolutionApp:
                 else:
                     self._show_selected_conflict(preserve_reading=preserve_reading)
             elif self.conflict_details:
-                if index < 0 and (list_changed or selected):
+                has_enabled_decision = any(
+                    button and button.winfo_exists() and button.instate(("!disabled",))
+                    for button in (self.resolve_conflict_original_button,
+                                   self.resolve_conflict_candidate_button)
+                )
+                if index < 0 and (list_changed or selected or self._conflict_value_ranges or
+                                  has_enabled_decision):
                     self._clear_conflict_comparison()
 
     def _apply_conflict_window_language(self) -> None:
@@ -1605,10 +1611,10 @@ class B518LogSolutionApp:
              (conflict.original.status or "") != (conflict.candidate.status or "")),
             (self._t("conflict.field.sn"), conflict.original.sn or "", conflict.candidate.sn or "",
              (conflict.original.sn or "") != (conflict.candidate.sn or "")),
-            (self._t("conflict.field.source_time"), conflict.original.source_time or "",
+            (self._t("term.source_time"), conflict.original.source_time or "",
              conflict.candidate.source_time or "",
              (conflict.original.source_time or "") != (conflict.candidate.source_time or "")),
-            (self._t("conflict.field.source_filename"), original_source if original_path else "",
+            (self._t("term.source_filename"), original_source if original_path else "",
              candidate_source if candidate_path else "", paths_differ),
         )
         unknown = self._t("conflict.unknown")

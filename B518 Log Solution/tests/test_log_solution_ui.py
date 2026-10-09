@@ -2146,8 +2146,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "normal")
 
                 app.conflict_list.selection_clear(0, "end")
-                app.conflict_list.event_generate("<<ListboxSelect>>")
-                root.update_idletasks()
+                pump_until(lambda: app.conflict_details.get("1.0", "end-1c") ==
+                           app._t("conflict.empty") and
+                           str(app.resolve_conflict_original_button["state"]) == "disabled")
 
                 self.assertFalse(app.conflict_list.curselection())
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：未知")
