@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -95,11 +96,25 @@ def read_historical_events(session_root: Path, app_event_path: Optional[Path] = 
                     event.get("localized_message", {}).get("parameters", {}), event,
                 ))
 
-    return tuple(sorted(records, key=lambda item: (
-        item.occurred_at,
-        item.sequence if item.sequence is not None else item.source_order,
-        item.key,
-    )))
+    return tuple(sorted(records, key=_event_sort_key))
+
+
+def _event_sort_key(event: HistoricalEvent):
+    timestamp = _timestamp_sort_key(event.occurred_at)
+    sequence = event.sequence if type(event.sequence) is int else event.source_order
+    return timestamp, sequence, event.key
+
+
+def _timestamp_sort_key(value: str):
+    if not value:
+        return 1, ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return 1, value
+        return 0, parsed.timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return 1, value
 
 
 def render_historical_event(event: HistoricalEvent, language: str
@@ -154,22 +169,33 @@ def _read_legacy_session_events(path: Path):
             if not isinstance(timestamp, str):
                 raise ValueError("事件時間格式不正確")
         except (json.JSONDecodeError, ValueError) as error:
-            records.append(_read_error("legacy_session", path, "第 {} 行：{}".format(index, error)))
+            records.append(_read_error(
+                "legacy_session", path, "第 {} 行：{}".format(index, error),
+                view_key="line:{}".format(index), source_order=index,
+                raw_record={"path": str(path), "line_number": index,
+                            "raw_line": line, "reason": str(error)},
+            ))
             continue
         # Legacy Session events.log did not carry a stable kind. Do not infer an ID from prose.
         localized = raw.get("localized_message")
         records.append(HistoricalEvent(
             "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
-            raw["message"], "", raw.get("round_id"), raw.get("sequence"),
+            raw["message"], "", raw.get("round_id"),
+            raw.get("sequence") if type(raw.get("sequence")) is int else None,
             localized if isinstance(localized, dict) else None,
             _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
         ))
     return records
 
 
-def _read_error(source: str, path: Path, reason: str) -> HistoricalEvent:
-    return HistoricalEvent("error:{}:{}".format(source, path), "read_error", "", reason,
-                           diagnostic=reason, raw_record={"path": str(path), "reason": reason})
+def _read_error(source: str, path: Path, reason: str, view_key: str = "",
+                source_order: int = 0, raw_record=None) -> HistoricalEvent:
+    suffix = ":{}".format(view_key) if view_key else ""
+    return HistoricalEvent("error:{}:{}{}".format(source, path, suffix), "read_error", "", reason,
+                           diagnostic=reason,
+                           raw_record=(raw_record if raw_record is not None else
+                                       {"path": str(path), "reason": reason}),
+                           source_order=source_order)
 
 
 def _diagnostic(record: dict) -> str:
@@ -184,7 +210,8 @@ def _diagnostic(record: dict) -> str:
 
 def _recognize_legacy_audit_event(event: HistoricalEvent):
     """Translate only version-1 audit kinds whose old producer contract is explicit."""
-    if event.source != "round" or not event.station or not event.kind:
+    if (event.source != "round" or not isinstance(event.station, str) or
+            not event.station or not event.kind):
         return None
     detail = event.detail if isinstance(event.detail, dict) else {}
     display_position = event.raw_record.get("display_position") if isinstance(event.raw_record, dict) else None
@@ -198,7 +225,9 @@ def _recognize_legacy_audit_event(event: HistoricalEvent):
     if event.kind == "timeout":
         if "elapsed_seconds" not in event.raw_record or "deadline_seconds" not in detail:
             return None
-        if display_position is not None and (type(display_position) is not int or not status):
+        if display_position is not None and (
+                type(display_position) is not int or display_position < 1 or
+                not isinstance(status, str) or not status):
             return None
     if event.kind == "conflict_resolved" and detail.get("choice") not in {
             "accept_candidate", "keep_original"}:
@@ -231,7 +260,8 @@ def _recognize_legacy_platform_event(event: HistoricalEvent, detail: dict,
         elif event.kind == "sn_locked" and type(display_position) is int and display_position > 0:
             message_id = "platform.atlas.sn_locked"
             parameters["slot"] = display_position
-        elif event.kind == "final" and type(display_position) is int and display_position > 0 and status:
+        elif (event.kind == "final" and type(display_position) is int and
+              display_position > 0 and isinstance(status, str) and status):
             message_id = "platform.atlas.final"
             parameters.update(slot=display_position, status=status)
         elif (event.kind == "unresolved_source_conflict" and
@@ -239,7 +269,7 @@ def _recognize_legacy_platform_event(event: HistoricalEvent, detail: dict,
             message_id = "platform.atlas.unresolved_conflict"
             parameters["slot"] = display_position
         elif event.kind == "warning" and event.message.startswith("Atlas source read failed: "):
-            filename = Path(event.raw_record.get("source") or "").name
+            filename = _source_filename(event.raw_record.get("source"))
             if filename:
                 message_id = "platform.atlas.source_error"
                 parameters["source_filename"] = filename
@@ -253,16 +283,18 @@ def _recognize_legacy_platform_event(event: HistoricalEvent, detail: dict,
             message_id = "platform.b482.batch_mismatch"
             parameters["slot"] = display_position
         elif event.kind == "warning" and event.message.startswith("B482 source read failed: "):
-            filename = Path(event.raw_record.get("source") or "").name
+            filename = _source_filename(event.raw_record.get("source"))
             if filename:
                 message_id = "platform.b482.source_error"
                 parameters["source_filename"] = filename
     elif platform == "rswmt":
         if event.kind == "batch":
             message_id = "platform.rswmt.batch"
-        elif event.kind == "warning" and event.raw_record.get("source"):
-            message_id = "platform.rswmt.warning"
-            parameters["source_filename"] = Path(event.raw_record["source"]).name
+        elif event.kind == "warning" and _is_rswmt_warning(event.message):
+            filename = _source_filename(event.raw_record.get("source"))
+            if filename:
+                message_id = "platform.rswmt.warning"
+                parameters["source_filename"] = filename
     if message_id is None:
         return None
     try:
@@ -271,10 +303,33 @@ def _recognize_legacy_platform_event(event: HistoricalEvent, detail: dict,
         return None
 
 
+def _source_filename(source) -> Optional[str]:
+    if not isinstance(source, str) or not source:
+        return None
+    try:
+        return Path(source).name or None
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _is_rswmt_warning(message: str) -> bool:
+    return isinstance(message, str) and message.startswith((
+        "RS-WMT: source log could not be read:",
+        "RS-WMT: source file could not be inspected:",
+        "RS-WMT: incomplete or unsupported CSV;",
+        "RS-WMT: different test start time;",
+        "RS-WMT: source round is incomplete or ambiguous;",
+    ))
+
+
 def _format_detail(event: HistoricalEvent) -> str:
     values = {"original_message": event.message}
     if event.round_id is not None:
         values["round_id"] = event.round_id
+    if event.station:
+        values["station"] = event.station
+    if event.platform:
+        values["platform"] = event.platform
     if event.sequence is not None:
         values["sequence"] = event.sequence
     if event.occurred_at:

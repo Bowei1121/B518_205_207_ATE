@@ -2402,12 +2402,16 @@ class B518LogSolutionApp:
         if window is None or not window.winfo_exists():
             return
         selected = self._historical_event_selected_key
+        event_list = self.historical_event_list
+        detail_view = self.historical_event_detail
+        list_top = event_list.yview()[0]
+        detail_top = detail_view.index("@0,0")
         self.historical_event_heading.configure(text=self._t("app.settings.history.events"))
         self.historical_event_detail_heading.configure(
             text=self._t("app.settings.history.detail"))
         self.historical_event_refresh_button.configure(
             text=self._t("app.settings.history.refresh"))
-        self.historical_event_list.delete(0, "end")
+        event_list.delete(0, "end")
         selected_index = None
         for index, event in enumerate(self._historical_event_records):
             presentation = render_historical_event(event, self.current_language)
@@ -2417,21 +2421,31 @@ class B518LogSolutionApp:
                            "app.settings.history.source.round" if event.round_id else
                            "app.settings.history.source.legacy")
             category = self._t(category_id)
-            self.historical_event_list.insert("end", "{} · {} · {}".format(
+            event_list.insert("end", "{} · {} · {}".format(
                 event.occurred_at or "—", category, presentation.message))
             if event.key == selected:
                 selected_index = index
         if selected_index is None and self._historical_event_records:
             selected_index = 0
         if selected_index is not None:
-            self.historical_event_list.selection_clear(0, "end")
-            self.historical_event_list.selection_set(selected_index)
-            self.historical_event_list.activate(selected_index)
+            event_list.selection_clear(0, "end")
+            event_list.selection_set(selected_index)
+            event_list.activate(selected_index)
             self._historical_event_selected_key = self._historical_event_records[selected_index].key
             self._render_historical_event_detail(self._historical_event_records[selected_index])
         else:
             self._historical_event_selected_key = None
             self._set_historical_event_detail(self._t("app.settings.history.empty"))
+        window.after_idle(self._restore_historical_event_view,
+                          window, event_list, detail_view, list_top, detail_top)
+
+    @staticmethod
+    def _restore_historical_event_view(window, event_list, detail_view,
+                                       list_top: float, detail_top: str) -> None:
+        if not window.winfo_exists():
+            return
+        event_list.yview_moveto(list_top)
+        detail_view.yview(detail_top)
 
     def _select_historical_event(self, _event=None) -> None:
         if self.historical_event_list is None:
