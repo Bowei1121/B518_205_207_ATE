@@ -31,7 +31,7 @@ import app_event_store
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
-from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE
+from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE, language_name
 
 
 class FakeHotkey:
@@ -4335,6 +4335,143 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting(self):
+        from audit_records import AuditEvent, RoundAuditStore
+        from language_catalog import make_bilingual_message
+
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            app_path = root_path / "app-events.json"
+            legacy_path = session_root / "legacy-session" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_text(json.dumps({
+                "timestamp": "2026-10-08T10:00:03+08:00",
+                "message": "Legacy operator note — keep this original wording",
+                "detail": {"operator_note": "raw legacy detail"},
+            }, ensure_ascii=False) + "\n", encoding="utf-8")
+            legacy_before = legacy_path.read_bytes()
+            audit = RoundAuditStore(
+                session_root, "round-history-1", "FCT", "2026-10-08T10:00:00+08:00",
+                10.0, {"platform": "atlas"},
+            )
+            audit.append_event(AuditEvent(1, "round_started", "FCT 本輪已接受開始", None),
+                               "2026-10-08T10:00:01+08:00", 1.0)
+            audit.append_event(AuditEvent(
+                2, "final", "slot1 最終 PASS", 1, "SN-HISTORY", "PASS",
+                "/sources/history.csv", {}, make_bilingual_message(
+                    "platform.atlas.final", {"station": "FCT", "slot": 1, "status": "PASS"}),
+            ), "2026-10-08T10:00:02+08:00", 2.0)
+            long_diagnostic = "diagnostic evidence " * 500
+            for sequence in range(3, 41):
+                detail = {"raw_diagnostic": long_diagnostic} if sequence == 40 else {}
+                audit.append_event(AuditEvent(
+                    sequence, "round_ready", "FCT 來源已就緒", None,
+                    detail=detail,
+                ), "2026-10-08T10:00:02+08:00", float(sequence))
+            self.assertTrue(audit.flush())
+            audit_path = audit.audit_path
+            audit_before = audit_path.read_bytes()
+
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=session_root, app_event_path=app_path)
+
+            def click_history_row(index):
+                app.historical_event_list.see(index)
+                root.update()
+                bounds = app.historical_event_list.bbox(index)
+                self.assertIsNotNone(bounds)
+                x, y, _width, height = bounds
+                point = (max(5, x + 5), y + max(1, height // 2))
+                app.historical_event_list.event_generate(
+                    "<ButtonPress-1>", x=point[0], y=point[1])
+                app.historical_event_list.event_generate(
+                    "<ButtonRelease-1>", x=point[0], y=point[1])
+                root.update()
+
+            def select_language_with_real_menu(language):
+                index = next(i for i in range(app.language_menu.index("end") + 1)
+                             if app.language_menu.entrycget(i, "label") == language_name(language))
+                app.language_menu.invoke(index)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                root.update_idletasks()
+                self.assertTrue(app.historical_event_window.winfo_exists())
+                keys = [record.key for record in app._historical_event_records]
+                round_index = keys.index("round:round-history-1:1")
+                click_history_row(round_index)
+                self.assertIn("FCT round start accepted",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("FCT 本輪已接受開始",
+                              app.historical_event_detail.get("1.0", "end"))
+                platform_key = "round:round-history-1:2"
+                platform_index = [record.key for record in app._historical_event_records].index(
+                    platform_key)
+                click_history_row(platform_index)
+                self.assertIn("Atlas Slot 1 final result: PASS",
+                              app.historical_event_detail.get("1.0", "end"))
+
+                selected_key = app._historical_event_selected_key
+                select_language_with_real_menu(TRADITIONAL_CHINESE)
+                root.update_idletasks()
+                self.assertTrue(app.historical_event_window.winfo_exists())
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+                self.assertIn("Atlas 通道 1 最終結果：PASS",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(app._historical_event_selected_key, platform_key)
+                self.assertEqual(audit_path.read_bytes(), audit_before)
+                self.assertEqual(app.historical_event_heading.cget("text"), "事件")
+                app_record = next(record for record in app._historical_event_records
+                                  if record.source == "app")
+                app_index = [record.key for record in app._historical_event_records].index(
+                    app_record.key)
+                click_history_row(app_index)
+                self.assertIn("App 已啟動", app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("Application started", app.historical_event_detail.get("1.0", "end"))
+                select_language_with_real_menu(ENGLISH)
+                self.assertIn("FCT round start accepted",
+                              app.historical_event_list.get(round_index))
+
+                long_key = "round:round-history-1:40"
+                long_index = [record.key for record in app._historical_event_records].index(long_key)
+                click_history_row(long_index)
+                app.historical_event_list.yview_moveto(0.65)
+                app.historical_event_detail.yview_moveto(0.5)
+                root.update_idletasks()
+                list_top_before = app.historical_event_list.yview()[0]
+                detail_top_before = app.historical_event_detail.index("@0,0")
+                select_language_with_real_menu(TRADITIONAL_CHINESE)
+                root.update_idletasks()
+                self.assertEqual(app._historical_event_selected_key, long_key)
+                self.assertAlmostEqual(app.historical_event_list.yview()[0],
+                                       list_top_before, places=2)
+                self.assertEqual(app.historical_event_detail.index("@0,0"),
+                                 detail_top_before)
+                self.assertIn(long_diagnostic,
+                              app.historical_event_detail.get("1.0", "end"))
+
+                legacy_key = "legacy:legacy-session:1"
+                legacy_index = [record.key for record in app._historical_event_records].index(
+                    legacy_key)
+                click_history_row(legacy_index)
+                self.assertIn("無法安全翻譯此歷史事件",
+                              app.historical_event_list.get(legacy_index))
+                self.assertIn("Legacy operator note — keep this original wording",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("raw legacy detail",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(legacy_path.read_bytes(), legacy_before)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+                self.assertTrue(audit.flush())
+
     def test_file_dialog_buttons_use_current_language_and_cancel_without_changes(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

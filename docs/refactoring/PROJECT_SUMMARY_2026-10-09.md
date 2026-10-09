@@ -57,3 +57,11 @@
 - M7 合併前真 Tk 測試驗證關閉等待／失敗／重試／取消／再次關閉及直接／排入事件迴圈的語言切換拒絕；原始程式／測試提交 `db1535259f64d68206b0a0badedf6d862dcedabf` 時完整套件通過 335 tests（86.356 秒）。使用者授權後，本機 merge commit `35fb3ab640356c5277e2026285757a20cc87c98a` 將票併回 `B518-Log-Solution`。合併後完整 Tk 套件找出舊 close worker 可覆寫取消後新關閉 generation 狀態的競爭；修正及 Event 控制封存等待測試在 commit `d8e105e2ac83463c95176d3138bff26c598208cb`，最終完整套件通過 336 tests（95.425 秒），compileall／diff check 通過。固定基準 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4` Standards／Spec 最終複審無未解問題；專案無型別檢查設定，未宣稱通過。
 - 修正已 fast-forward 到本地 `Multilingual/ticket-07` 並推送 GitHub 同名分支；推送命令成功，但隨後直接 `git ls-remote` 遇到 GitHub DNS 解析失敗，故最新 SHA 尚未直接確認。GitHub 主線未推送，本機主線停在 `d8e105e2ac83463c95176d3138bff26c598208cb`。公司 Gitea 依使用者指示週一同步；週一直接確認兩個目的地 SHA 前保留本地及遠端票分支，不做清理。遠端 Issue 未變更。詳見 [M7 驗收紀錄](evidence/multilingual-ticket-07/local-validation.md)。
 - 完整證據：[M7 local validation](evidence/multilingual-ticket-07/local-validation.md)。M8 歷史辨識、M9 App 事件期限清理及 M10 bundle／發布驗證維持待交付。
+
+## M8：歷史事件顯示（GitHub #21）
+
+- 固定 review baseline `98a3e5c388cb993154d3302c70c10cbb608398c2`。Git ancestry、實際程式及已提交交付證據確認 M3 merge `fb4ffb2286d9c113511482b738a101a11616bd14` 與 M4 merge `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 都在基準內；M3/M4 直接依賴解除。README／M8 ticket 舊 #16/#17 blocked 描述已按可查證依據修正。
+- 新增唯讀歷史事件入口，可查看 round audit、舊 Session `events.log` 及 App event store。新格式依目前資源重呈現，資源缺少／參數無效／版本不適用回退捕捉英文；舊格式只按 audit schema、穩定 producer kind、header platform 和必要欄位精確匹配。無穩定 kind 的舊 `events.log` 及不符合條件的內容保留原文，詳細區保留 raw record／診斷。語言刷新不重讀來源、不改 bytes。
+- TDD 加入混合資料真正 Tk 選取／切語案例，涵蓋舊 Session `events.log`、列表／詳細閱讀位置及原文；同時間序號 2／10 順序 regression 紅燈時得到 `[10, 2]`，修正後按數字排序，舊 `events.log` 同時間維持行序。審查後補足 malformed source/station/status/timeout、重複壞行 key 與捲動位置修正。程式／測試 SHA `06c65592958970f38aa9330fb218ab2da66a3581`；完整含 Tk 套件 350 tests（100.778 秒）及歷史讀取聚焦 13 tests 通過，compileall／diff check 通過。型別檢查設定未找到，未宣稱通過。
+- M8 五項驗收逐項記錄；固定 baseline `98a3e5c388cb993154d3302c70c10cbb608398c2` 的 Standards／Spec 複審無未解必要問題。GitHub 票分支 direct query 確認 `06c65592958970f38aa9330fb218ab2da66a3581`；GitHub main 查詢 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`，即將按授權合併並驗證。Gitea 內網直接查詢未於 10 秒內回應，週一重試；Gitea 確認前保留票分支。M9 清理及 M10 完整發布驗收未包含在 M8。
+- 詳細 producer／格式辨識規則、拒絕條件、測試結果、真 Tk／磁碟證據及遠端查核見 [M8 本機驗收](evidence/multilingual-ticket-08/local-validation.md)。
