@@ -107,6 +107,7 @@ class B518LogSolutionApp:
         self._close_language_reason_label = None
         self._close_error_label = None
         self._close_retry_button = None
+        self._close_cancel_button = None
         self._close_poll_generation = None
         self.resolve_conflict_original_button = None
         self.resolve_conflict_candidate_button = None
@@ -2392,10 +2393,13 @@ class B518LogSolutionApp:
             self._close_error_label.pack(fill="x", padx=18, pady=6)
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=18, pady=(12, 16))
-            self._close_retry_button = ttk.Button(actions, text="重試保存", command=self.retry_close_saves,
+            self._close_retry_button = ttk.Button(
+                actions, text=self._t("app.close.retry"), command=self.retry_close_saves,
                                                   state="disabled")
             self._close_retry_button.pack(side="left")
-            ttk.Button(actions, text="取消關閉", command=self.cancel_close).pack(side="right")
+            self._close_cancel_button = ttk.Button(
+                actions, text=self._t("app.close.cancel"), command=self.cancel_close)
+            self._close_cancel_button.pack(side="right")
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.deiconify()
             self._close_window.lift()
@@ -2419,7 +2423,10 @@ class B518LogSolutionApp:
         self._close_error_label.configure(
             text=self._t("app.close.diagnostic", reason=diagnostic) if diagnostic else "")
         if self._close_retry_button:
+            self._close_retry_button.configure(text=self._t("app.close.retry"))
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
+        if self._close_cancel_button:
+            self._close_cancel_button.configure(text=self._t("app.close.cancel"))
 
     def _schedule_close_poll(self, generation: int) -> None:
         self._close_poll_generation = generation

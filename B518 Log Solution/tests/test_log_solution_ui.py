@@ -4735,6 +4735,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("responsive", ticks)
                     self.assertTrue(app._close_window.winfo_exists())
                     self.assertEqual(str(app.language_button["state"]), "disabled")
+                    self.assertEqual(app._close_retry_button.cget("text"), "Retry Save")
+                    self.assertEqual(app._close_cancel_button.cget("text"), "Cancel Closing")
                     self.assertIn("Cancel closing to change language",
                                   app._close_language_reason_label.cget("text"))
                     language_before_request = app.current_language
@@ -4756,6 +4758,8 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app.close()
                 self.assertEqual(app._close_window.title(), "關閉前保存")
+                self.assertEqual(app._close_retry_button.cget("text"), "重試保存")
+                self.assertEqual(app._close_cancel_button.cget("text"), "取消關閉")
                 self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
                 self.wait_for(lambda: rounds.close_status().status == "complete")
                 deadline = time.monotonic() + 2
