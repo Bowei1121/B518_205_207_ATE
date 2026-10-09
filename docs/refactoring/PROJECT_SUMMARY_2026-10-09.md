@@ -65,3 +65,13 @@
 - TDD 加入混合資料真正 Tk 選取／切語案例，涵蓋舊 Session `events.log`、列表／詳細閱讀位置及原文；同時間序號 2／10 順序 regression 紅燈時得到 `[10, 2]`，修正後按數字排序，舊 `events.log` 同時間維持行序。審查後補足 malformed source/station/status/timeout、重複壞行 key 與捲動位置修正。程式／測試 SHA `06c65592958970f38aa9330fb218ab2da66a3581`；完整含 Tk 套件 350 tests（100.778 秒）及歷史讀取聚焦 13 tests 通過，compileall／diff check 通過。型別檢查設定未找到，未宣稱通過。
 - M8 五項驗收逐項記錄；固定 baseline `98a3e5c388cb993154d3302c70c10cbb608398c2` 的 Standards／Spec 複審無未解必要問題。本機 merge SHA `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf`；合併後完整含 Tk 套件 350 tests（98.606 秒）通過。2026-10-09 15:29（台北）直接查詢確認 GitHub main 已同步至 merge SHA，票分支此前為 `f762360dc8e709de9945cbf721fd08e7dc412b16`；最後文件提交及分支快轉後會再次查詢。Gitea 內網直接查詢未於 10 秒內回應，週一同步並確認前保留本地／GitHub ticket ref。M9 清理及 M10 完整發布驗收未包含在 M8。
 - 詳細 producer／格式辨識規則、拒絕條件、測試結果、真 Tk／磁碟證據及遠端查核見 [M8 本機驗收](evidence/multilingual-ticket-08/local-validation.md)。
+
+## M9：App 事件保存期限清理（GitHub #22）
+
+- M9 固定 Standards／Spec review baseline：`01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f`。以 Git ancestry 核對 M4 `8f8b3a1286bc561e239395f9e52bd19efb6244df` 與既有輪次清理 Ticket 07 `d8e105e2ac83463c95176d3138bff26c598208cb` 均為基準祖先；M4 App 事件雙語／保存／關閉及 #8 可信封存／背景清理依賴已解除。
+- M9 依 App 事件原始帶時區 `occurred_at` 清理；輪次仍用可信封存時間。保存容器無退休序號時維持 schema v1，清理後有退休序號範圍時使用 v2，讀取器兼讀並驗證連續序號解釋。混合 journal 只移除確定到期事件，保護 pending、保存／耐久性故障、未知／損壞資料；沿用既有 RoundCoordinator 清理協調、每日排程及摘要 ledger，不新建 scheduler。
+- 固定基準複審期間修正三項問題：清理逐層以 `O_NOFOLLOW` pin 管理路徑，並新增呼叫前已存在的祖先 symlink 測試，確認外部 journal bytes 不變、清理不回報完成；容器有退休序號範圍時明確升為 schema v2；期限格式／時區缺失及清理目標類型原因加入中英資源，真 Tk 設定狀態 label 可切換且保留診斷。
+- Spec 複審另找出 rename 成功但父目錄 fsync 失敗後，重試可能未重新確認耐久性；以 red-green 增加故障測試，修正無到期事件的重試仍須 fsync pin 住的目錄並以磁碟序號狀態同步記憶體。最後程式／測試 commit `523660779d20b375c1c3f925ed9fce78e381532f`；聚焦 44 tests 通過（12.102 秒），兩項真正 Tk M9 案例通過，完整命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 363 tests（104.336 秒）。`compileall`、`git diff --check` 通過；本專案沒有既有型別檢查設定，未宣稱型別檢查通過。
+- 固定基準 `01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f` 的 Standards／Spec 最終複審均無未解阻擋；Standards 留一項非阻擋建議，認為 `cleanup_expired` orchestration 較密集，但同一流程共同保護路徑、資料完整性與耐久性，未為行數拆開。
+- 2026-10-09 16:42（台北）直接查詢 GitHub：`Multilingual/ticket-09`=`523660779d20b375c1c3f925ed9fce78e381532f`、`B518-Log-Solution`=`01ab62993cdbc79b3a38a56a7218e63e4ac4ca7f`。最後驗收文件提交及提交後直接查詢、合併與主線驗證仍待完成；目前尚未合併。公司 Gitea 週一內網同步，Gitea 直接確認前依授權保留本地與 GitHub 票分支，不清理分支、不移除目的地。詳見 [M9 本機驗收](evidence/multilingual-ticket-09/local-validation.md)。
+- M9 六項驗收命令、細節及限制見 [M9 本機驗收](evidence/multilingual-ticket-09/local-validation.md)。M9 只覆蓋母規格案例 12／13 適用部分；M10 全 App／bundle 發布驗收仍待交付。
