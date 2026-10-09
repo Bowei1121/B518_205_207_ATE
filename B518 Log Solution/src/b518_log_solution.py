@@ -104,6 +104,7 @@ class B518LogSolutionApp:
         self._closing_ui = False
         self._close_window = None
         self._close_status_label = None
+        self._close_language_reason_label = None
         self._close_error_label = None
         self._close_retry_button = None
         self._close_poll_generation = None
@@ -417,6 +418,7 @@ class B518LogSolutionApp:
         self.language_button.configure(text="{} ▾".format(language_name(self.current_language)))
         self.language_button.configure(
             relief="sunken" if self._language_save_error else "raised")
+        self._refresh_language_entry()
         self.project_label.configure(text=self._t("main.project"))
         self.machine_label.configure(text=self._t("main.machine_type"))
         self.settings_button.configure(text=self._t("main.settings"))
@@ -721,6 +723,9 @@ class B518LogSolutionApp:
         self._refresh_app_event_status()
 
     def _select_language(self, language: str) -> None:
+        if self._closing_ui:
+            self.language_choice.set(self.current_language)
+            return
         if language == self.current_language:
             self.language_choice.set(self.current_language)
             return
@@ -743,10 +748,27 @@ class B518LogSolutionApp:
             self.language_button.configure(relief="raised")
 
     def _post_language_menu(self, _event=None):
+        if self._closing_ui:
+            return "break"
         self.language_menu.post(self.language_button.winfo_rootx(),
                                 self.language_button.winfo_rooty() + self.language_button.winfo_height())
         self.language_menu.focus_set()
         return "break"
+
+    def _refresh_language_entry(self) -> None:
+        """Keep the visible and programmatic language entry in the close gate."""
+        if not hasattr(self, "language_button"):
+            return
+        state = "disabled" if self._closing_ui else "normal"
+        self.language_button.configure(state=state)
+        if hasattr(self, "language_menu"):
+            for index in range(self.language_menu.index("end") + 1):
+                self.language_menu.entryconfigure(index, state=state)
+            if self._closing_ui:
+                try:
+                    self.language_menu.unpost()
+                except tk.TclError:
+                    pass
 
     def _cancel_language_menu(self, _event=None):
         try:
@@ -2345,6 +2367,7 @@ class B518LogSolutionApp:
             messagebox.showerror(self._t("app.profile.save_title"),
                                  self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
         self._closing_ui = True
+        self._refresh_language_entry()
         self._set_monitor_controls(self._round_is_active())
         status = rounds.request_close()
         self._show_close_progress(status)
@@ -2354,14 +2377,17 @@ class B518LogSolutionApp:
         if self._close_window is None or not self._close_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self._close_window = window
-            window.title("關閉前保存紀錄")
-            window.geometry("500x210")
+            window.title(self._t("app.close.title"))
+            window.geometry("500x240")
             window.resizable(False, False)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", self.cancel_close)
             self._close_status_label = ttk.Label(window, text="正在停止來源並確認所有輪次紀錄…",
                                                   wraplength=460, justify="left")
             self._close_status_label.pack(fill="x", padx=18, pady=(18, 8))
+            self._close_language_reason_label = ttk.Label(
+                window, text="", wraplength=460, justify="left")
+            self._close_language_reason_label.pack(fill="x", padx=18, pady=(0, 6))
             self._close_error_label = ttk.Label(window, text="", wraplength=460, justify="left")
             self._close_error_label.pack(fill="x", padx=18, pady=6)
             actions = ttk.Frame(window)
@@ -2387,7 +2413,11 @@ class B518LogSolutionApp:
         }
         self._close_status_label.configure(
             text=self._t(labels.get(status.status, "app.close.waiting")))
-        self._close_error_label.configure(text=status.message)
+        self._close_language_reason_label.configure(
+            text=self._t("app.close.language_disabled") if self._closing_ui else "")
+        diagnostic = status.message if status.status == "failed" else ""
+        self._close_error_label.configure(
+            text=self._t("app.close.diagnostic", reason=diagnostic) if diagnostic else "")
         if self._close_retry_button:
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
 
@@ -2420,6 +2450,7 @@ class B518LogSolutionApp:
         status = self.rounds.cancel_close()
         self._closing_ui = False
         self._close_poll_generation = None
+        self._refresh_language_entry()
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.destroy()
         self._close_window = None
