@@ -76,6 +76,10 @@ class AppEventStoreTests(unittest.TestCase):
             release.set()
             self.wait_until(lambda: self.store.status().status == "failed")
             self.assertFalse(self.store.flush(.05))
+            protected = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+            self.assertEqual(protected.status, "skipped")
+            self.assertEqual(protected.skipped_count, 1)
         self.assertEqual(self.store.status().pending_count, 2)
         self.assertTrue(self.store.retry())
         self.assertTrue(self.store.flush())
@@ -139,7 +143,7 @@ class AppEventStoreTests(unittest.TestCase):
 
         rebuilt = read_app_event_store(self.path)
         self.assertEqual(result.deleted_count, 1)
-        self.assertEqual(result.skipped_count, 0)
+        self.assertEqual(result.skipped_count, 1)
         self.assertEqual([item["event_id"] for item in rebuilt["events"]], [retained.event_id])
         self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2])
         self.assertEqual(rebuilt["events"][0]["diagnostic"], "new failure")

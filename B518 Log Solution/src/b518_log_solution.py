@@ -1892,8 +1892,17 @@ class B518LogSolutionApp:
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
         ttk.Label(parent, textvariable=self.retention_cleanup_status, wraplength=650,
                   justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+        self.retention_retry_button = self._settings_button(
+            parent, "app.settings.retention.cleanup.retry", self._retry_retention_cleanup)
+        self.retention_retry_button.grid(row=6, column=0, sticky="w", pady=(8, 4))
         self._refresh_retention_cleanup_status()
         parent.columnconfigure(1, weight=1)
+
+    def _retry_retention_cleanup(self) -> None:
+        """Retry App and round cleanup through the existing coordinator entry point."""
+        self.rounds.request_retention_cleanup(
+            self.profile_store.retention_days, "manual-retry")
+        self._refresh_retention_cleanup_status()
 
     def _save_retention_days(self) -> None:
         """Validate and persist the global retention duration from the settings UI."""
@@ -1996,11 +2005,13 @@ class B518LogSolutionApp:
             if latest.app_events is not None and latest.app_events.reason:
                 detail += "\n" + self._t(
                     "app.settings.retention.cleanup.app_events_reason",
-                    reason=latest.app_events.reason)
+                    reason=self._retention_reason_text(latest.app_events.reason))
         variable.set(detail)
 
     def _retention_reason_text(self, reason: str) -> str:
         """Translate known cleanup status copy while leaving diagnostic details intact."""
+        if reason == "尚未到保存期限":
+            return self._t("app.settings.retention.reason.app_events_not_expired")
         diagnostic_prefixes = {
             "封存資訊無法讀取：": "archive_read_failed",
             "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",

@@ -1018,6 +1018,12 @@ class LogSolutionUiTests(unittest.TestCase):
             self.wait_for(lambda: writer.archive_status(archived_round.round_id) is not None and
                           writer.archive_status(archived_round.round_id).cleanup_eligible)
             archive_path = writer.archive_status(archived_round.round_id).path
+            app_event_path = Path(temporary) / "app-events.json"
+            old_app_events = AppEventStore(app_event_path, clock=lambda: archived_at)
+            old_app_event = old_app_events.record(
+                "app.hotkey.unavailable", {}, "old hotkey diagnostic")
+            self.assertTrue(old_app_events.flush())
+            old_app_events.stop()
             protected_files = {
                 Path(temporary) / "manual-export.json": b'{"keep": true}',
                 Path(temporary) / "source-log.txt": b"external source log",
@@ -1025,7 +1031,8 @@ class LogSolutionUiTests(unittest.TestCase):
             for path, contents in protected_files.items():
                 path.write_bytes(contents)
 
-            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root,
+                                     app_event_path=app_event_path)
             try:
                 app.open_settings()
                 heartbeat = [0]
@@ -1046,6 +1053,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._refresh_retention_cleanup_status()
                 self.assertEqual(app.retention_cleanup_heading.cget("text"), "Background Cleanup Summary")
                 self.assertIn("retained 1", app.retention_cleanup_status.get())
+                self.assertIn("App events deleted 0, retained 2", app.retention_cleanup_status.get())
                 self.assertTrue(archive_path.parent.exists())
 
                 previous_count = len(app.rounds.retention_cleanup_summaries())
@@ -1065,6 +1073,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertFalse(archive_path.parent.exists())
                 app._refresh_retention_cleanup_status()
                 self.assertIn("deleted 1 rounds", app.retention_cleanup_status.get())
+                self.assertIn("App events deleted 1", app.retention_cleanup_status.get())
+                remaining = read_app_event_store(app_event_path)
+                self.assertNotIn(old_app_event.event_id,
+                                 [item["event_id"] for item in remaining["events"]])
+                self.assertEqual(remaining["retired_sequences"], [[1, 1]])
                 persisted = MachineProfileStore(Path(temporary) / "preferences.json")
                 persisted.load()
                 self.assertEqual(persisted.retention_days, 180)
@@ -1072,6 +1085,20 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), contents)
                 self.assertFalse(archive_path.parent.exists())
                 self.assertGreater(heartbeat[0], 1)
+                self.assertEqual(app.retention_retry_button.cget("text"),
+                                 "Retry Background Cleanup")
+                before_retry = len(app.rounds.retention_cleanup_summaries())
+                app.retention_retry_button.invoke()
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    if (len(app.rounds.retention_cleanup_summaries()) > before_retry and
+                            app.rounds.retention_cleanup_status().status in {"complete", "failed"}):
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
+                self.assertEqual(app.rounds.retention_cleanup_summaries()[-1].trigger,
+                                 "manual-retry")
             finally:
                 app._close_settings()
                 app.rounds.request_close()

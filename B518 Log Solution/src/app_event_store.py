@@ -306,7 +306,9 @@ class AppEventStore:
                     else:
                         retained.append(event)
                 if not expired_sequences:
-                    return AppEventCleanupResult("complete")
+                    return AppEventCleanupResult(
+                        "complete", skipped_count=len(retained),
+                        reason="尚未到保存期限" if retained else "")
                 retired = list(payload.get("retired_sequences", []))
                 retired.extend([[sequence, sequence] for sequence in expired_sequences])
                 merged = []
@@ -331,7 +333,9 @@ class AppEventStore:
                     self._retired_sequences = merged
                     self._revision += 1
                     self._error = ""
-                return AppEventCleanupResult("complete", deleted_count=len(expired_sequences))
+                return AppEventCleanupResult("complete", deleted_count=len(expired_sequences),
+                                             skipped_count=len(retained),
+                                             reason="尚未到保存期限" if retained else "")
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
                 return AppEventCleanupResult("failed", failed_count=1, reason=str(error))
 
