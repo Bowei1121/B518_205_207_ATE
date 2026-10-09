@@ -148,6 +148,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def setUp(self):
         self._isolated_app_root = TemporaryDirectory()
         self._app_event_stores = []
+        self._app_round_coordinators = []
         app_root = Path(self._isolated_app_root.name)
         app_root_patcher = patch("b518_log_solution.APP_ROOT", app_root)
         preferences_patcher = patch("b518_log_solution.PREFS_PATH", app_root / "preferences.json")
@@ -158,17 +159,35 @@ class LogSolutionUiTests(unittest.TestCase):
             self._app_event_stores.append(store)
             return store
 
+        real_coordinator = RoundCoordinator
+
+        def create_coordinator(*args, **kwargs):
+            coordinator = real_coordinator(*args, **kwargs)
+            self._app_round_coordinators.append(coordinator)
+            return coordinator
+
         store_patcher = patch("b518_log_solution.AppEventStore", side_effect=create_store)
+        coordinator_patcher = patch(
+            "b518_log_solution.RoundCoordinator", side_effect=create_coordinator)
         app_root_patcher.start()
         preferences_patcher.start()
         store_patcher.start()
+        coordinator_patcher.start()
         self.addCleanup(app_root_patcher.stop)
         self.addCleanup(preferences_patcher.stop)
         self.addCleanup(store_patcher.stop)
+        self.addCleanup(coordinator_patcher.stop)
         self.addCleanup(self._isolated_app_root.cleanup)
         self.addCleanup(self._settle_app_event_writes)
 
     def _settle_app_event_writes(self):
+        for coordinator in self._app_round_coordinators:
+            deadline = time.monotonic() + 5
+            while (coordinator.retention_cleanup_status().status in {"idle", "running"} and
+                   time.monotonic() < deadline):
+                time.sleep(.01)
+            self.assertNotIn(coordinator.retention_cleanup_status().status, {"idle", "running"},
+                             "Background cleanup must finish before temporary data cleanup")
         for store in self._app_event_stores:
             deadline = time.monotonic() + 5
             while store.status().status == "saving" and time.monotonic() < deadline:
