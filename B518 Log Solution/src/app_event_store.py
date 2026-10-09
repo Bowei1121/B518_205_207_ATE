@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import errno
 import os
 import stat
 import tempfile
@@ -60,6 +61,19 @@ def _unlinkat(directory_fd: int, name: str) -> None:
     if not _HAS_RELATIVE_FILE_OPERATIONS:
         raise OSError("Secure directory-relative cleanup is unavailable on this platform")
     _at_call(_LIBC.unlinkat(directory_fd, os.fsencode(name), 0), "unlinkat", name)
+
+
+def _absolute_managed_path(path: Path) -> Path:
+    """Normalize only standard macOS /var and /tmp aliases, never user links."""
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    if len(absolute.parts) > 2:
+        alias, remainder = absolute.parts[1], absolute.parts[2:]
+        expected = {"var": "private/var", "tmp": "private/tmp"}.get(alias)
+        alias_path = "/" + alias
+        if (expected and os.path.islink(alias_path) and
+                os.readlink(alias_path) == expected):
+            return Path("/").joinpath(*expected.split("/"), *remainder)
+    return absolute
 
 
 @dataclass(frozen=True)
@@ -173,7 +187,7 @@ def _atomic_replace_guarded(path: Path, content: bytes,
 def _open_managed_directory(root: Path, parts: Tuple[str, ...]) -> int:
     """Open a managed directory component-by-component without following links."""
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    absolute_root = Path(root).absolute()
+    absolute_root = _absolute_managed_path(root)
     descriptor = os.open(os.path.abspath(os.sep), flags)
     try:
         for part in absolute_root.parts[1:] + tuple(parts):
@@ -424,24 +438,33 @@ class AppEventStore:
             return AppEventCleanupResult("skipped", skipped_count=1,
                                           reason="期限時間缺少時區")
         try:
-            requested_root = Path(managed_root).absolute()
-            if requested_root.is_symlink() or not requested_root.is_dir():
-                raise ValueError("App 事件管理根目錄不是實體目錄")
-            root = requested_root.resolve()
-            requested_path = self.path.absolute()
-            if requested_path.is_symlink():
-                raise ValueError("App 事件清理拒絕符號連結")
-            resolved_path = requested_path.resolve()
-            resolved_path.relative_to(root)
-            self._validate_managed_path(root)
-            relative = resolved_path.relative_to(root)
+            # Keep the caller's lexical root. Resolving first would follow an
+            # already-present symlink in any ancestor and bless its target as
+            # managed data. Pin every component from `/` with O_NOFOLLOW.
+            root = _absolute_managed_path(managed_root)
+            requested_path = _absolute_managed_path(self.path)
+            relative = requested_path.relative_to(root)
             if not relative.parts or any(part in {".", ".."} for part in relative.parts):
                 raise ValueError("App 事件檔不在管理根目錄")
-            candidate = root
-            for part in relative.parts[:-1]:
-                candidate = candidate / part
-                self._validate_managed_path(candidate)
-            self._validate_managed_path(resolved_path)
+            root_probe = _open_managed_directory(root, ())
+            try:
+                parent_probe = _open_managed_directory(root, relative.parts[:-1])
+                try:
+                    try:
+                        entry_fd = _openat(parent_probe, relative.parts[-1],
+                                           os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                    except FileNotFoundError:
+                        entry_fd = None
+                    except OSError as error:
+                        if error.errno in {errno.ELOOP, errno.EMLINK}:
+                            raise ValueError("App 事件清理拒絕符號連結")
+                        raise
+                    if entry_fd is not None:
+                        os.close(entry_fd)
+                finally:
+                    os.close(parent_probe)
+            finally:
+                os.close(root_probe)
         except (OSError, ValueError) as error:
             return AppEventCleanupResult("skipped", skipped_count=1, reason=str(error))
 

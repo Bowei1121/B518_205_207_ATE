@@ -278,9 +278,40 @@ class AppEventStoreTests(unittest.TestCase):
             result = store.cleanup_expired(
                 self.now[0] + timedelta(days=30), managed_root)
 
-        self.assertEqual(result.status, "failed")
+        self.assertNotEqual(result.status, "complete")
+        self.assertEqual(result.deleted_count, 0)
         self.assertEqual(external_journal.read_bytes(), external_bytes)
         self.assertTrue((moved_base / "app" / managed_store_path.name).exists())
+
+    def test_retention_rejects_preexisting_symlink_in_managed_root_ancestor(self):
+        base = Path(self.temp.name) / "managed-parent"
+        managed_root = base / "app"
+        managed_root.mkdir(parents=True)
+        managed_store_path = managed_root / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "managed")
+        self.assertTrue(store.flush())
+
+        external_parent = Path(self.temp.name) / "external-parent"
+        external_root = external_parent / "app"
+        external_root.mkdir(parents=True)
+        external_journal = external_root / managed_store_path.name
+        external_store = AppEventStore(external_journal, clock=lambda: self.now[0])
+        external_store.record("app.hotkey.unavailable", {}, "external sentinel")
+        self.assertTrue(external_store.flush())
+        external_store.stop()
+        original_external_bytes = external_journal.read_bytes()
+
+        moved_base = Path(self.temp.name) / "managed-parent-moved"
+        base.rename(moved_base)
+        base.symlink_to(external_parent, target_is_directory=True)
+        result = store.cleanup_expired(
+            self.now[0] + timedelta(days=30), managed_root)
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(external_journal.read_bytes(), original_external_bytes)
+        self.assertEqual(len(read_app_event_store(external_journal)["events"]), 1)
 
     def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
         real_fsync = __import__("os").fsync
