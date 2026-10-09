@@ -12,7 +12,7 @@ M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選�
 
 M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用中英資源；語言刷新保留 conflict_id 選取、候選快照、閱讀位置及未確認警報。真正 Tk 驗證受控 Atlas 衝突、其他位置持續收集、KVM 標記、逐項裁決／警報確認及全新 audit 讀取器重建；空選取在正常排程刷新時清除舊比較與詳細內容並停用裁決。最終程式／測試提交 `da94db305547307b8a0370c9da9569f07f671986` 的完整含 Tk 套件通過 335 tests（83.317 秒），固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審為零項可執行發現。GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後完整含 Tk 套件通過 335 tests（85.007 秒）。完整證據見 [M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md)。公司 Gitea 週一同步直接確認前保留 M6 本地與 GitHub 票分支。
 
-M7 五項程式驗收已由真正 Tk 等待／失敗／重試／取消／再次關閉操作驗證；關閉期間主語言按鈕與選單停用，直接及已排入 Tk 事件迴圈的切換請求均不改語言／增加事件，停用原因、儲存狀態及重試／取消按鈕依目前語言顯示，取消後語言入口恢復而保存與已停止來源狀態保留。完整含 Tk 套件最後重跑通過 335 tests（86.356 秒），真 Tk 包含已排程切換拒絕；先前一次執行出現既有封存案例暫存目錄清理競爭，該案例連續五次隔離重跑及後續完整套件均通過。compileall 與 diff check 通過。固定 M7 review baseline `45df1e36895cdb8bbb313de0a4c038cdeef13ac4` 的 Standards／Spec 複審無未解問題。測試／證據批次 `db1535259f64d68206b0a0badedf6d862dcedabf` 推送後直接查詢 GitHub 票分支即為該 SHA，主線為 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`；最終文件提交的 SHA 另於交付回報直接確認。Gitea 目前不可達；因此尚未合併或清理票分支。細節見 [M7 本機驗收紀錄](../evidence/multilingual-ticket-07/local-validation.md)。
+M7 五項程式驗收已由真正 Tk 等待／失敗／重試／取消／再次關閉操作驗證；關閉期間主語言按鈕與選單停用，直接及已排入 Tk 事件迴圈的切換請求均不改語言／增加事件，停用原因、儲存狀態及重試／取消按鈕依目前語言顯示，取消後語言入口恢復而保存與已停止來源狀態保留。使用者授權後已在本機合併回 `B518-Log-Solution`，merge SHA `35fb3ab640356c5277e2026285757a20cc87c98a`。合併後完整含 Tk 套件通過 336 tests（95.425 秒）；測試發現的取消後再次關閉 generation 競爭已修正，固定基準 Standards／Spec 複審無未解問題。收尾修正 commit `d8e105e2ac83463c95176d3138bff26c598208cb` 已快轉到同名票分支並推送 GitHub；推送後的直接查詢遭遇 DNS 解析失敗，該 SHA 尚待再次直接確認。GitHub 主線尚未推送；公司 Gitea 依使用者指示週一同步，兩目的地與分支清理待同步後處理。細節見 [M7 本機驗收紀錄](../evidence/multilingual-ticket-07/local-validation.md)。
 
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |

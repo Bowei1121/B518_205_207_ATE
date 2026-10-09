@@ -174,3 +174,7 @@ M5 整合更新（2026-10-09）：五項原有驗收加上使用者完成的兩�
 M6 的衝突／整輪警報視窗以集中雙語資源即時刷新，保留候選、conflict_id 選取、警報待確認狀態及 C1～C3 的證據呈現契約。受控 Atlas 來源經共同輪次進入真正 Tk 視窗，驗證切換、其他位置繼續收集、KVM 標記、逐項操作及全新 audit 讀取器重建；完整含 Tk 套件在最終程式／測試 SHA `da94db305547307b8a0370c9da9569f07f671986` 通過 335 tests（83.317 秒）。固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審沒有可執行發現。母規格案例 3、4、7、14、15 中與 M6 衝突／警報視窗、事件翻譯、操作狀態及 KVM 相關的適用部分已有證據；各案例的全 App、多視窗或發布範圍仍依 M7～M10 完成，不據此標示整體案例完成。詳見 [M6 本機驗收](evidence/multilingual-ticket-06/local-validation.md)。
 
 M6 整合更新（2026-10-09）：GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後，完整含 Tk 套件再次通過 335 tests（85.007 秒），正確 Python 目錄的 compileall 與 diff check 通過。包含合併驗收文件的 GitHub 主線推送提交 `8cdbbc0b0aa250e5c8d3c9f34316c41a840d45cf` 已由直接遠端查詢確認。Gitea 尚未同步；M6 本地與 GitHub 票分支保留至週一直接確認 Gitea 後再清理。
+
+## M7 適用驗收覆蓋（2026-10-09）
+
+M7 覆蓋案例 4（已開啟的 App 保存／診斷視窗依語言刷新並保留狀態）、案例 5（關閉保存時語言入口停用、取消後恢復）、案例 7（保存錯誤的雙語外層說明及原始診斷）、案例 10（App 與輪次全部必要資料完整保存才正常關閉）及案例 14（真正 Tk 的關閉進度／操作可用性）中屬本票的部分。真 Tk 驗證等待、失敗、重試、取消、再次關閉、已排入事件迴圈的語言請求拒絕及最終 destroy；全新 audit 讀取器確認保存結果。M7 合併後完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 336 tests（95.425 秒）。套件揭露取消後舊 close worker 可覆寫新 generation 狀態，已修正並新增 Event 控制封存驗證等待測試；固定 M7 基準的 Standards／Spec 複審無未解問題。母規格其餘全視窗翻譯、保存／清理全範圍及 bundle 發布仍分屬 M8～M10；此處只標示 M7 適用部分，不代表案例或全 App 多語言整體完成。詳細命令、合併／修正 SHA 及遠端狀態見 [M7 本機驗收](evidence/multilingual-ticket-07/local-validation.md)。公司 Gitea 同步及票分支清理依使用者指示延至週一。
