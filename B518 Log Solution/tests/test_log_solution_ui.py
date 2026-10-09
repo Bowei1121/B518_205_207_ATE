@@ -1154,10 +1154,13 @@ class LogSolutionUiTests(unittest.TestCase):
             profile_store.load()
             profile_store.save_retention_days(30)
             app_event_path = root_path / "app-events.json"
-            event_time = datetime.now(timezone.utc) - timedelta(days=31)
-            seeded_store = AppEventStore(app_event_path, clock=lambda: event_time)
+            event_time = [datetime.now(timezone.utc) - timedelta(days=31)]
+            seeded_store = AppEventStore(app_event_path, clock=lambda: event_time[0])
             expired_event = seeded_store.record(
                 "app.hotkey.unavailable", {}, "original expired diagnostic")
+            event_time[0] += timedelta(days=30)
+            retained_event = seeded_store.record(
+                "app.profile.save_failed", {"reason": "current"}, "retained diagnostic")
             self.assertTrue(seeded_store.flush())
             seeded_store.stop()
             root = tk.Tk()
@@ -1182,7 +1185,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.open_settings()
                 app.settings_notebook.select(2)
                 root.update()
-                with patch("app_event_store._atomic_replace_guarded",
+                with patch("app_event_store._atomic_replace_at",
                            side_effect=OSError("retention media unavailable")):
                     app.rounds.request_retention_cleanup(30, "manual-retry")
                     pump_until(lambda: app.rounds.retention_cleanup_status().status == "failed")
@@ -1206,6 +1209,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertNotIn(expired_event.event_id,
                                   [item["event_id"] for item in
                                    read_app_event_store(app_event_path)["events"]])
+                self.assertIn(retained_event.event_id,
+                              [item["event_id"] for item in
+                               read_app_event_store(app_event_path)["events"]])
+                self.assertIn("not yet expired", app.retention_cleanup_status.get())
+                self.assertEqual(
+                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
+                    "App event saves are pending or completeness is not confirmed.")
                 self.assertIn("retention media unavailable",
                               app.rounds.retention_cleanup_summaries()[0].app_events.reason)
 
@@ -1218,6 +1228,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app.retention_retry_button.cget("text"), "重試背景清理")
                 self.assertIn("App 事件：刪除 1", app.retention_cleanup_status.get())
+                self.assertIn("尚未到保存期限", app.retention_cleanup_status.get())
+                self.assertEqual(
+                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
+                    "App 事件仍有待補存，或完整保存狀態尚未確認。")
                 app.rounds.request_close()
                 pump_until(lambda: app.rounds.close_status().status == "complete")
             finally:

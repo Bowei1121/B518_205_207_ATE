@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import uuid
+import ctypes
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,8 +19,47 @@ from typing import Callable, Deque, Optional, Tuple
 from language_catalog import BilingualMessage, make_bilingual_message
 
 
+APP_EVENT_RECORD_VERSION = 1
 APP_EVENT_STORE_VERSION = 1
+APP_EVENT_STORE_RETENTION_VERSION = 2
 _IDLE_WORKER_TIMEOUT_SECONDS = 0.2
+_LIBC = ctypes.CDLL(None, use_errno=True)
+_HAS_RELATIVE_FILE_OPERATIONS = all(
+    hasattr(_LIBC, name) for name in ("openat", "renameat", "unlinkat"))
+if _HAS_RELATIVE_FILE_OPERATIONS:
+    _LIBC.openat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint)
+    _LIBC.openat.restype = ctypes.c_int
+    _LIBC.renameat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
+    _LIBC.renameat.restype = ctypes.c_int
+    _LIBC.unlinkat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+    _LIBC.unlinkat.restype = ctypes.c_int
+
+
+def _at_call(result: int, operation: str, path: str) -> int:
+    if result < 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, "{} failed: {}".format(operation, os.strerror(error_number)),
+                      path)
+    return result
+
+
+def _openat(directory_fd: int, name: str, flags: int, mode: int = 0) -> int:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    return _at_call(_LIBC.openat(directory_fd, os.fsencode(name), flags, mode), "openat", name)
+
+
+def _renameat(source_fd: int, source: str, target_fd: int, target: str) -> None:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    _at_call(_LIBC.renameat(source_fd, os.fsencode(source), target_fd,
+                            os.fsencode(target)), "renameat", target)
+
+
+def _unlinkat(directory_fd: int, name: str) -> None:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    _at_call(_LIBC.unlinkat(directory_fd, os.fsencode(name), 0), "unlinkat", name)
 
 
 @dataclass(frozen=True)
@@ -36,7 +76,7 @@ class AppEvent:
     def as_record(self) -> dict:
         return {
             "record_type": "app_event",
-            "schema_version": APP_EVENT_STORE_VERSION,
+            "schema_version": APP_EVENT_RECORD_VERSION,
             "event_id": self.event_id,
             "sequence": self.sequence,
             "occurred_at": self.occurred_at,
@@ -130,20 +170,110 @@ def _atomic_replace_guarded(path: Path, content: bytes,
         raise
 
 
+def _open_managed_directory(root: Path, parts: Tuple[str, ...]) -> int:
+    """Open a managed directory component-by-component without following links."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(str(root), flags)
+    try:
+        for part in parts:
+            next_descriptor = _openat(descriptor, part, flags)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _read_at(directory_fd: int, name: str) -> Tuple[bytes, os.stat_result]:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _openat(directory_fd, name, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("App 事件目標不是一般檔案")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks), metadata
+    finally:
+        os.close(descriptor)
+
+
+def _same_file_entry(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino, left.st_size, left.st_mtime_ns) == (
+        right.st_dev, right.st_ino, right.st_size, right.st_mtime_ns)
+
+
+def _same_directory(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _atomic_replace_at(directory_fd: int, name: str, content: bytes,
+                       expected: os.stat_result,
+                       commit_gate: Callable[[Callable[[], None]], None]) -> None:
+    """Atomically replace one journal entry through its already-pinned directory."""
+    temporary_name = ".{}-{}".format(name, uuid.uuid4().hex)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _openat(directory_fd, temporary_name, flags, 0o600)
+    replaced = False
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        def replace_entry() -> None:
+            nonlocal replaced
+            current_fd = _openat(directory_fd, name,
+                                 os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                current = os.fstat(current_fd)
+            finally:
+                os.close(current_fd)
+            if not stat.S_ISREG(current.st_mode) or not _same_file_entry(current, expected):
+                raise ValueError("App 事件紀錄在清理期間已變更")
+            _renameat(directory_fd, temporary_name, directory_fd, name)
+            replaced = True
+
+        commit_gate(replace_entry)
+        if not replaced:
+            raise RuntimeError("App 事件清理提交閘門未完成原子替換")
+        os.fsync(directory_fd)
+    except Exception:
+        if not replaced:
+            try:
+                _unlinkat(directory_fd, temporary_name)
+            except OSError:
+                pass
+        raise
+
+
 def read_app_event_store(path: Path) -> dict:
     """Read and validate a fresh App event store without mutating old data."""
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("App 事件紀錄無法讀取：{}".format(error))
+    return _validate_app_event_store_payload(payload)
+
+
+def _validate_app_event_store_payload(payload: object) -> dict:
     if (not isinstance(payload, dict) or payload.get("record_type") != "app_event_store" or
             type(payload.get("schema_version")) is not int or
-            payload["schema_version"] != APP_EVENT_STORE_VERSION or
+            payload["schema_version"] not in {APP_EVENT_STORE_VERSION,
+                                                APP_EVENT_STORE_RETENTION_VERSION} or
             not isinstance(payload.get("events"), list)):
         raise ValueError("App 事件紀錄格式或版本不受支援")
+    store_version = payload["schema_version"]
     retired = payload.get("retired_sequences")
     next_sequence = payload.get("next_sequence")
-    if "retired_sequences" not in payload and "next_sequence" not in payload:
+    if store_version == APP_EVENT_STORE_VERSION:
+        if "retired_sequences" in payload or "next_sequence" in payload:
+            raise ValueError("App 事件紀錄序號保留資訊需要新版格式")
         retired = []
         next_sequence = len(payload["events"]) + 1
     elif "retired_sequences" not in payload or "next_sequence" not in payload:
@@ -166,7 +296,7 @@ def read_app_event_store(path: Path) -> dict:
     live_sequences = set()
     for event in payload["events"]:
         if (not isinstance(event, dict) or event.get("record_type") != "app_event" or
-                event.get("schema_version") != APP_EVENT_STORE_VERSION or
+                event.get("schema_version") != APP_EVENT_RECORD_VERSION or
                 type(event.get("sequence")) is not int or event["sequence"] <= previous_sequence or
                 event["sequence"] >= next_sequence or
                 not isinstance(event.get("event_id"), str) or not event["event_id"] or
@@ -190,8 +320,8 @@ def read_app_event_store(path: Path) -> dict:
         seen.add(event["event_id"])
         live_sequences.add(event["sequence"])
         previous_sequence = event["sequence"]
-    if "retired_sequences" not in payload and [item["sequence"] for item in payload["events"]] != list(
-            range(1, next_sequence)):
+    if store_version == APP_EVENT_STORE_VERSION and [
+            item["sequence"] for item in payload["events"]] != list(range(1, next_sequence)):
         raise ValueError("App 事件紀錄內容不完整或序號不連續")
     retired_count = sum(end - start + 1 for start, end in retired_ranges)
     if len(live_sequences) + retired_count != next_sequence - 1:
@@ -232,10 +362,13 @@ class AppEventStore:
 
     @staticmethod
     def _payload(events, next_sequence=None, retired_sequences=()) -> dict:
-        payload = {"record_type": "app_event_store", "schema_version": APP_EVENT_STORE_VERSION,
+        retained_ranges = [list(item) for item in retired_sequences]
+        payload = {"record_type": "app_event_store",
+                   "schema_version": (APP_EVENT_STORE_RETENTION_VERSION if retained_ranges
+                                      else APP_EVENT_STORE_VERSION),
                    "events": list(events)}
-        if retired_sequences:
-            payload["retired_sequences"] = [list(item) for item in retired_sequences]
+        if retained_ranges:
+            payload["retired_sequences"] = retained_ranges
             payload["next_sequence"] = next_sequence
         return payload
 
@@ -303,9 +436,10 @@ class AppEventStore:
             relative = resolved_path.relative_to(root)
             if not relative.parts or any(part in {".", ".."} for part in relative.parts):
                 raise ValueError("App 事件檔不在管理根目錄")
+            candidate = root
             for part in relative.parts[:-1]:
-                root = root / part
-                self._validate_managed_path(root)
+                candidate = candidate / part
+                self._validate_managed_path(candidate)
             self._validate_managed_path(resolved_path)
         except (OSError, ValueError) as error:
             return AppEventCleanupResult("skipped", skipped_count=1, reason=str(error))
@@ -316,14 +450,19 @@ class AppEventStore:
                     return AppEventCleanupResult(
                         "skipped", skipped_count=1,
                         reason="App 事件保存待補存或狀態尚未確認完整")
-            if not self.path.exists():
-                return AppEventCleanupResult("complete")
+            root_fd = parent_fd = None
             try:
-                original_stat = self.path.lstat()
-                if not stat.S_ISREG(original_stat.st_mode):
-                    raise ValueError("App 事件目標不是一般檔案")
-                original_bytes = self.path.read_bytes()
-                payload = read_app_event_store(self.path)
+                root_fd = _open_managed_directory(root, ())
+                parent_fd = _open_managed_directory(root, relative.parts[:-1])
+                try:
+                    original_bytes, original_stat = _read_at(parent_fd, relative.parts[-1])
+                except FileNotFoundError:
+                    return AppEventCleanupResult("complete")
+                try:
+                    payload = _validate_app_event_store_payload(
+                        json.loads(original_bytes.decode("utf-8")))
+                except (UnicodeError, json.JSONDecodeError) as error:
+                    raise ValueError("App 事件紀錄無法讀取：{}".format(error))
                 cutoff_utc = cutoff.astimezone(timezone.utc)
                 retained = []
                 expired_sequences = []
@@ -349,19 +488,30 @@ class AppEventStore:
                         merged.append([start, end])
                 updated = self._payload(retained, payload.get("next_sequence", max(
                     (item["sequence"] for item in payload["events"]), default=0) + 1), merged)
-                # Refuse a path/content swap discovered after qualification.
-                self._validate_managed_path(self.path.absolute())
-                if self.path.read_bytes() != original_bytes:
-                    raise ValueError("App 事件紀錄在清理期間已變更")
                 content = _json_bytes(updated)
-                replace = lambda: _atomic_replace_guarded(
-                    self.path, content,
-                    lambda commit: before_replace(max(expired_times), commit)
-                    if before_replace is not None else commit())
-                if before_replace is not None:
-                    replace()
-                else:
-                    _atomic_replace(self.path, content)
+                def commit_gate(commit):
+                    def verify_then_commit():
+                        current_root_fd = _open_managed_directory(root, ())
+                        current_parent_fd = None
+                        try:
+                            current_parent_fd = _open_managed_directory(root, relative.parts[:-1])
+                            if (not _same_directory(os.fstat(current_root_fd), os.fstat(root_fd)) or
+                                    not _same_directory(os.fstat(current_parent_fd),
+                                                        os.fstat(parent_fd))):
+                                raise ValueError("App 事件管理路徑在清理期間已變更")
+                            commit()
+                        finally:
+                            if current_parent_fd is not None:
+                                os.close(current_parent_fd)
+                            os.close(current_root_fd)
+
+                    if before_replace is not None:
+                        before_replace(max(expired_times), verify_then_commit)
+                    else:
+                        verify_then_commit()
+
+                _atomic_replace_at(parent_fd, relative.parts[-1], content,
+                                   original_stat, commit_gate)
                 with self._condition:
                     self._events = retained
                     self._retired_sequences = merged
@@ -372,6 +522,11 @@ class AppEventStore:
                                              reason="尚未到保存期限" if retained else "")
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
                 return AppEventCleanupResult("failed", failed_count=1, reason=str(error))
+            finally:
+                if parent_fd is not None:
+                    os.close(parent_fd)
+                if root_fd is not None:
+                    os.close(root_fd)
 
     @staticmethod
     def _validate_managed_path(path: Path) -> None:

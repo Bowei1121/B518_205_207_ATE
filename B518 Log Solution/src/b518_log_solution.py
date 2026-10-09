@@ -2013,6 +2013,7 @@ class B518LogSolutionApp:
         if reason == "尚未到保存期限":
             return self._t("app.settings.retention.reason.app_events_not_expired")
         diagnostic_prefixes = {
+            "App 事件紀錄無法讀取：": "app_events_read_failed",
             "封存資訊無法讀取：": "archive_read_failed",
             "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",
             "必要輪次紀錄無法重建：": "archive_component_rebuild_failed",
@@ -2022,6 +2023,23 @@ class B518LogSolutionApp:
                 return self._t("app.settings.retention.reason." + message_id,
                                diagnostic=reason[len(prefix):])
         message_ids = {
+            "期限時間缺少時區": "app_events_timezone",
+            "App 事件管理根目錄不是實體目錄": "app_events_root_invalid",
+            "App 事件清理拒絕符號連結": "app_events_symlink",
+            "App 事件檔不在管理根目錄": "app_events_outside",
+            "App 事件目標不是一般檔案": "app_events_not_regular",
+            "App 事件紀錄在清理期間已變更": "app_events_changed",
+            "App 事件管理路徑在清理期間已變更": "app_events_path_changed",
+            "App 事件保存待補存或狀態尚未確認完整": "app_events_pending",
+            "App 事件紀錄格式或版本不受支援": "app_events_unknown_format",
+            "App 事件紀錄內容不完整或序號不連續": "app_events_invalid",
+            "App 事件紀錄序號保留資訊需要新版格式": "app_events_sequence_invalid",
+            "App 事件紀錄序號保留資訊不完整": "app_events_sequence_missing",
+            "App 事件紀錄序號保留資訊無效": "app_events_sequence_invalid",
+            "App 事件紀錄序號保留範圍無效": "app_events_sequence_invalid",
+            "App 事件紀錄存在未解釋的序號缺口": "app_events_sequence_gap",
+            "App 事件紀錄已刪除序號仍有事件": "app_events_sequence_invalid",
+            "App 事件清理提交閘門未完成原子替換": "app_events_invalid",
             "關閉保存期間不啟動新清理": "close",
             "封存資訊版本未知": "archive_unknown_version",
             "封存時間無效或缺少時區": "archive_invalid_time",

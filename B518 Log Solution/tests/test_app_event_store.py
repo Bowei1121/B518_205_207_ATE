@@ -34,6 +34,7 @@ class AppEventStoreTests(unittest.TestCase):
 
         self.assertTrue(self.store.flush())
         rebuilt = read_app_event_store(self.path)
+        self.assertEqual(rebuilt["schema_version"], 1)
         self.assertEqual(len(rebuilt["events"]), 1)
         record = rebuilt["events"][0]
         self.assertEqual(record["event_id"], event.event_id)
@@ -148,6 +149,7 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2])
         self.assertEqual(rebuilt["events"][0]["diagnostic"], "new failure")
         self.assertEqual(rebuilt["retired_sequences"], [[1, 1]])
+        self.assertEqual(rebuilt["schema_version"], 2)
 
         next_event = self.store.record("app.hotkey.unavailable", {}, "later")
         self.assertTrue(self.store.flush())
@@ -210,6 +212,35 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(result.status, "skipped")
         self.assertEqual(outside.read_bytes(), original)
         self.assertTrue(self.path.is_symlink())
+
+    def test_retention_parent_swap_cannot_redirect_replace_outside_managed_directory(self):
+        parent = Path(self.temp.name) / "managed"
+        parent.mkdir()
+        managed_store_path = parent / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(store.flush())
+        original_managed_bytes = managed_store_path.read_bytes()
+        outside_dir = Path(self.temp.name) / "outside"
+        outside_dir.mkdir()
+        outside = outside_dir / managed_store_path.name
+        outside.write_bytes(b"external sentinel")
+        original_external_bytes = outside.read_bytes()
+        moved_parent = Path(self.temp.name) / "managed-moved"
+
+        def replace_after_swap(instant, commit):
+            parent.rename(moved_parent)
+            parent.symlink_to(outside_dir, target_is_directory=True)
+            commit()
+
+        result = store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name),
+            before_replace=replace_after_swap)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(outside.read_bytes(), original_external_bytes)
+        self.assertEqual((moved_parent / managed_store_path.name).read_bytes(), original_managed_bytes)
 
     def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
         real_fsync = __import__("os").fsync
