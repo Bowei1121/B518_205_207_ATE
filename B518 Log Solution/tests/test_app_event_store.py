@@ -197,6 +197,37 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(at_deadline.deleted_count, 1)
         self.assertEqual(read_app_event_store(self.path)["events"], [])
 
+    def test_retention_retry_resyncs_directory_after_replace_succeeded_but_fsync_failed(self):
+        expired = self.store.record("app.hotkey.unavailable", {}, "old permission")
+        self.assertTrue(self.store.flush())
+        real_fsync = __import__("os").fsync
+        directory_syncs = [0]
+
+        def fail_first_directory_sync(descriptor):
+            metadata = __import__("os").fstat(descriptor)
+            if __import__("stat").S_ISDIR(metadata.st_mode):
+                directory_syncs[0] += 1
+                if directory_syncs[0] == 1:
+                    raise OSError("retention directory fsync unavailable")
+            return real_fsync(descriptor)
+
+        with patch("app_event_store.os.fsync", side_effect=fail_first_directory_sync):
+            first = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+            self.assertEqual(first.status, "failed")
+            self.assertEqual(first.deleted_count, 0)
+            self.assertEqual(read_app_event_store(self.path)["events"], [])
+
+            retried = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(retried.status, "complete")
+        self.assertEqual(directory_syncs[0], 2)
+        self.assertEqual(self.store.records, ())
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(rebuilt["events"], [])
+        self.assertEqual(rebuilt["retired_sequences"], [[expired.sequence, expired.sequence]])
+
     def test_retention_refuses_event_journal_symlink_to_external_file(self):
         self.store.record("app.hotkey.unavailable", {}, "protected")
         self.assertTrue(self.store.flush())

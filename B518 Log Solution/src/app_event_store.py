@@ -154,36 +154,6 @@ def _atomic_replace(path: Path, content: bytes) -> None:
         raise
 
 
-def _atomic_replace_guarded(path: Path, content: bytes,
-                           commit_gate: Callable[[Callable[[], None]], None]) -> None:
-    """Prepare durable bytes off-lock, then gate only the atomic path replacement."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".{}-".format(path.name), dir=str(path.parent))
-    replaced = False
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-
-        def replace_entry() -> None:
-            nonlocal replaced
-            os.replace(temporary, str(path))
-            replaced = True
-
-        commit_gate(replace_entry)
-        if not replaced:
-            raise RuntimeError("App 事件清理提交閘門未完成原子替換")
-        _fsync_directory(path.parent)
-    except Exception:
-        if not replaced:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-        raise
-
-
 def _open_managed_directory(root: Path, parts: Tuple[str, ...]) -> int:
     """Open a managed directory component-by-component without following links."""
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -499,6 +469,20 @@ class AppEventStore:
                     else:
                         retained.append(event)
                 if not expired_sequences:
+                    # A previous replace may have committed the shortened journal
+                    # before its directory fsync reported failure. Reconfirm the
+                    # pinned directory entry before treating this retry as complete.
+                    os.fsync(parent_fd)
+                    next_sequence = payload.get("next_sequence", max(
+                        (item["sequence"] for item in payload["events"]), default=0) + 1)
+                    with self._condition:
+                        if (self._events != payload["events"] or
+                                self._retired_sequences != payload.get("retired_sequences", []) or
+                                self._next_sequence != next_sequence):
+                            self._revision += 1
+                        self._events = list(payload["events"])
+                        self._retired_sequences = payload.get("retired_sequences", [])
+                        self._next_sequence = next_sequence
                     return AppEventCleanupResult(
                         "complete", skipped_count=len(retained),
                         reason="尚未到保存期限" if retained else "")
@@ -551,13 +535,6 @@ class AppEventStore:
                     os.close(parent_fd)
                 if root_fd is not None:
                     os.close(root_fd)
-
-    @staticmethod
-    def _validate_managed_path(path: Path) -> None:
-        if path.is_symlink():
-            raise ValueError("App 事件清理拒絕符號連結")
-        if path.exists() and path != path.parent and not (path.is_dir() or path.is_file()):
-            raise ValueError("App 事件清理目標不是一般檔案或目錄")
 
     def status(self) -> AppEventSaveStatus:
         with self._condition:
