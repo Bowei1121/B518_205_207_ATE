@@ -85,6 +85,15 @@ class RetentionRoundResult:
 
 
 @dataclass(frozen=True)
+class RetentionAppEventResult:
+    outcome: str
+    deleted_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class RetentionSummary:
     run_id: str
     started_at: str
@@ -94,6 +103,7 @@ class RetentionSummary:
     status: str
     results: Tuple[RetentionRoundResult, ...] = ()
     message: str = ""
+    app_events: Optional[RetentionAppEventResult] = None
 
     @property
     def deleted_round_ids(self) -> Tuple[str, ...]:
@@ -125,6 +135,8 @@ class RoundRetentionStore:
         self._cleanup_allowed = cleanup_allowed
         self._effective_retention_days = effective_retention_days
         self._delete_if_expired = delete_if_expired
+        self._app_event_store = None
+        self._app_event_root = None
         self._lock = threading.RLock()
         self._status = RetentionStatus()
         self._summaries = ()
@@ -148,6 +160,12 @@ class RoundRetentionStore:
     def summaries(self) -> Tuple[RetentionSummary, ...]:
         with self._lock:
             return self._summaries
+
+    def register_app_event_store(self, store, managed_root: Path) -> None:
+        """Include App events in the existing cleanup run and ownership boundary."""
+        with self._lock:
+            self._app_event_store = store
+            self._app_event_root = Path(managed_root)
 
     def run(self, retention_days: int, trigger: str) -> RetentionStatus:
         if type(retention_days) is not int or retention_days <= 0:
@@ -195,17 +213,34 @@ class RoundRetentionStore:
                     results.append(RetentionRoundResult(round_id, "deleted", "已完整刪除可信輪次資料"))
                 except Exception as error:
                     results.append(RetentionRoundResult(round_id, "failed", str(error)))
+            app_events = None
+            if self._app_event_store is not None:
+                if not self._cleanup_allowed():
+                    app_events = RetentionAppEventResult(
+                        "skipped", skipped_count=1, reason="關閉保存期間暫停清理")
+                else:
+                    cutoff = normalize_archive_time(self._wall_clock()) - timedelta(days=retention_days)
+                    outcome = self._app_event_store.cleanup_expired(
+                        cutoff, self._app_event_root, before_replace=self._delete_if_expired)
+                    app_events = RetentionAppEventResult(
+                        outcome.status, outcome.deleted_count, outcome.skipped_count,
+                        outcome.failed_count, outcome.reason)
         except Exception as error:
             results.append(RetentionRoundResult("", "failed", str(error)))
+            app_events = None
 
         completed = self._wall_clock().astimezone().isoformat(timespec="seconds")
-        status = "failed" if any(item.outcome == "failed" for item in results) else "complete"
-        message = "清理完成：刪除 {} 輪、保留 {} 輪、失敗 {} 輪".format(
+        status = "failed" if (any(item.outcome == "failed" for item in results) or
+                              (app_events is not None and app_events.outcome == "failed")) else "complete"
+        message = "清理完成：刪除 {} 輪、保留 {} 輪、失敗 {} 輪；App 事件刪除 {}、保留 {}、失敗 {}".format(
             sum(item.outcome == "deleted" for item in results),
             sum(item.outcome == "skipped" for item in results),
-            sum(item.outcome == "failed" for item in results))
+            sum(item.outcome == "failed" for item in results),
+            app_events.deleted_count if app_events else 0,
+            app_events.skipped_count if app_events else 0,
+            app_events.failed_count if app_events else 0)
         final = RetentionSummary(run_id, started, completed, retention_days, trigger,
-                                 status, tuple(results), message)
+                                 status, tuple(results), message, app_events)
         with self._lock:
             try:
                 ledger = self._load_ledger()
@@ -778,15 +813,29 @@ def _summary_to_dict(item: RetentionSummary) -> dict:
     return {"run_id": item.run_id, "started_at": item.started_at,
             "completed_at": item.completed_at, "retention_days": item.retention_days,
             "trigger": item.trigger, "status": item.status, "message": item.message,
+            "app_events": ({"outcome": item.app_events.outcome,
+                            "deleted_count": item.app_events.deleted_count,
+                            "skipped_count": item.app_events.skipped_count,
+                            "failed_count": item.app_events.failed_count,
+                            "reason": item.app_events.reason}
+                           if item.app_events is not None else None),
             "results": [{"round_id": result.round_id, "outcome": result.outcome,
                          "reason": result.reason} for result in item.results]}
 
 
 def _summary_from_dict(item: dict) -> RetentionSummary:
+    app_events = item.get("app_events")
     return RetentionSummary(item["run_id"], item["started_at"], item.get("completed_at", ""),
                             item["retention_days"], item.get("trigger", "unknown"),
                             item.get("status", "failed"), tuple(
                                 RetentionRoundResult(row.get("round_id", ""),
                                                      row.get("outcome", "failed"),
                                                      row.get("reason", ""))
-                                for row in item.get("results", [])), item.get("message", ""))
+                                for row in item.get("results", [])), item.get("message", ""),
+                            RetentionAppEventResult(
+                                app_events.get("outcome", "failed"),
+                                app_events.get("deleted_count", 0),
+                                app_events.get("skipped_count", 0),
+                                app_events.get("failed_count", 0),
+                                app_events.get("reason", ""))
+                            if isinstance(app_events, dict) else None)

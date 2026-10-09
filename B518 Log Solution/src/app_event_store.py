@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -58,6 +59,17 @@ class AppEventSaveStatus:
         return self.status == "complete" and self.pending_count == 0
 
 
+@dataclass(frozen=True)
+class AppEventCleanupResult:
+    """Outcome of pruning eligible records from the managed App journal."""
+
+    status: str
+    deleted_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    reason: str = ""
+
+
 def _json_bytes(payload: object) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
@@ -99,11 +111,34 @@ def read_app_event_store(path: Path) -> dict:
             payload["schema_version"] != APP_EVENT_STORE_VERSION or
             not isinstance(payload.get("events"), list)):
         raise ValueError("App 事件紀錄格式或版本不受支援")
+    retired = payload.get("retired_sequences")
+    next_sequence = payload.get("next_sequence")
+    if "retired_sequences" not in payload and "next_sequence" not in payload:
+        retired = []
+        next_sequence = len(payload["events"]) + 1
+    elif "retired_sequences" not in payload or "next_sequence" not in payload:
+        raise ValueError("App 事件紀錄序號保留資訊不完整")
+    if (not isinstance(retired, list) or type(next_sequence) is not int or
+            next_sequence < 1):
+        raise ValueError("App 事件紀錄序號保留資訊無效")
+    retired_ranges = []
+    previous_end = 0
+    for item in retired:
+        if (not isinstance(item, list) or len(item) != 2 or
+                type(item[0]) is not int or type(item[1]) is not int or
+                item[0] <= previous_end or item[1] < item[0] or
+                item[1] >= next_sequence):
+            raise ValueError("App 事件紀錄序號保留範圍無效")
+        retired_ranges.append((item[0], item[1]))
+        previous_end = item[1]
     seen = set()
-    for expected, event in enumerate(payload["events"], 1):
+    previous_sequence = 0
+    live_sequences = set()
+    for event in payload["events"]:
         if (not isinstance(event, dict) or event.get("record_type") != "app_event" or
                 event.get("schema_version") != APP_EVENT_STORE_VERSION or
-                event.get("sequence") != expected or
+                type(event.get("sequence")) is not int or event["sequence"] <= previous_sequence or
+                event["sequence"] >= next_sequence or
                 not isinstance(event.get("event_id"), str) or not event["event_id"] or
                 event["event_id"] in seen or "round_id" in event or
                 not isinstance(event.get("occurred_at"), str) or
@@ -123,6 +158,17 @@ def read_app_event_store(path: Path) -> dict:
         if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
             raise ValueError("App 事件時間缺少時區")
         seen.add(event["event_id"])
+        live_sequences.add(event["sequence"])
+        previous_sequence = event["sequence"]
+    if "retired_sequences" not in payload and [item["sequence"] for item in payload["events"]] != list(
+            range(1, next_sequence)):
+        raise ValueError("App 事件紀錄內容不完整或序號不連續")
+    retired_count = sum(end - start + 1 for start, end in retired_ranges)
+    if len(live_sequences) + retired_count != next_sequence - 1:
+        raise ValueError("App 事件紀錄存在未解釋的序號缺口")
+    for start, end in retired_ranges:
+        if any(start <= sequence <= end for sequence in live_sequences):
+            raise ValueError("App 事件紀錄已刪除序號仍有事件")
     return payload
 
 
@@ -133,8 +179,11 @@ class AppEventStore:
         self.path = Path(path)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._condition = threading.Condition()
+        self._io_lock = threading.Lock()
         self._pending: Deque[AppEvent] = deque()
         self._events = []
+        self._next_sequence = 1
+        self._retired_sequences = []
         self._revision = 0
         self._error = ""
         self._error_history = []
@@ -142,16 +191,23 @@ class AppEventStore:
         self._stopped = False
         try:
             if self.path.exists():
-                self._events = read_app_event_store(self.path)["events"]
+                payload = read_app_event_store(self.path)
+                self._events = payload["events"]
+                self._next_sequence = payload.get("next_sequence", len(self._events) + 1)
+                self._retired_sequences = payload.get("retired_sequences", [])
                 self._revision = len(self._events)
         except Exception as error:
             self._error = str(error)
             self._error_history.append(self._error)
 
     @staticmethod
-    def _payload(events) -> dict:
-        return {"record_type": "app_event_store", "schema_version": APP_EVENT_STORE_VERSION,
-                "events": list(events)}
+    def _payload(events, next_sequence=None, retired_sequences=()) -> dict:
+        payload = {"record_type": "app_event_store", "schema_version": APP_EVENT_STORE_VERSION,
+                   "events": list(events)}
+        if retired_sequences:
+            payload["retired_sequences"] = [list(item) for item in retired_sequences]
+            payload["next_sequence"] = next_sequence
+        return payload
 
     @property
     def events(self) -> Tuple[AppEvent, ...]:
@@ -182,13 +238,109 @@ class AppEventStore:
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
         with self._condition:
-            sequence = len(self._events) + len(self._pending) + 1
+            sequence = self._next_sequence
+            self._next_sequence += 1
             event = AppEvent(uuid.uuid4().hex, sequence, moment.isoformat(timespec="microseconds"),
                              kind, message, diagnostic)
             self._pending.append(event)
             self._revision += 1
             self._ensure_worker_locked()
             return event
+
+    def cleanup_expired(self, cutoff: datetime, managed_root: Path,
+                        before_replace: Callable[[datetime, Callable[[], None]], None] = None
+                        ) -> AppEventCleanupResult:
+        """Delete only fully persisted, timezone-valid App events at or before cutoff.
+
+        This runs inside the existing background retention worker. It rewrites only
+        the App-owned journal, records retired sequence ranges, and refuses links,
+        corrupt input, pending writes, or journals outside the managed root.
+        """
+        if (cutoff.tzinfo is None or cutoff.utcoffset() is None):
+            return AppEventCleanupResult("skipped", skipped_count=1,
+                                          reason="期限時間缺少時區")
+        try:
+            requested_root = Path(managed_root).absolute()
+            if requested_root.is_symlink() or not requested_root.is_dir():
+                raise ValueError("App 事件管理根目錄不是實體目錄")
+            root = requested_root.resolve()
+            requested_path = self.path.absolute()
+            if requested_path.is_symlink():
+                raise ValueError("App 事件清理拒絕符號連結")
+            resolved_path = requested_path.resolve()
+            resolved_path.relative_to(root)
+            self._validate_managed_path(root)
+            relative = resolved_path.relative_to(root)
+            if not relative.parts or any(part in {".", ".."} for part in relative.parts):
+                raise ValueError("App 事件檔不在管理根目錄")
+            for part in relative.parts[:-1]:
+                root = root / part
+                self._validate_managed_path(root)
+            self._validate_managed_path(resolved_path)
+        except (OSError, ValueError) as error:
+            return AppEventCleanupResult("skipped", skipped_count=1, reason=str(error))
+
+        with self._io_lock:
+            with self._condition:
+                if self._pending or self._worker_active or self._error:
+                    return AppEventCleanupResult(
+                        "skipped", skipped_count=1,
+                        reason="App 事件保存待補存或狀態尚未確認完整")
+            if not self.path.exists():
+                return AppEventCleanupResult("complete")
+            try:
+                original_stat = self.path.lstat()
+                if not stat.S_ISREG(original_stat.st_mode):
+                    raise ValueError("App 事件目標不是一般檔案")
+                original_bytes = self.path.read_bytes()
+                payload = read_app_event_store(self.path)
+                cutoff_utc = cutoff.astimezone(timezone.utc)
+                retained = []
+                expired_sequences = []
+                expired_times = []
+                for event in payload["events"]:
+                    occurred_at = datetime.fromisoformat(event["occurred_at"])
+                    if occurred_at.astimezone(timezone.utc) <= cutoff_utc:
+                        expired_sequences.append(event["sequence"])
+                        expired_times.append(occurred_at)
+                    else:
+                        retained.append(event)
+                if not expired_sequences:
+                    return AppEventCleanupResult("complete")
+                retired = list(payload.get("retired_sequences", []))
+                retired.extend([[sequence, sequence] for sequence in expired_sequences])
+                merged = []
+                for start, end in sorted((item[0], item[1]) for item in retired):
+                    if merged and start <= merged[-1][1] + 1:
+                        merged[-1][1] = max(merged[-1][1], end)
+                    else:
+                        merged.append([start, end])
+                updated = self._payload(retained, payload.get("next_sequence", max(
+                    (item["sequence"] for item in payload["events"]), default=0) + 1), merged)
+                # Refuse a path/content swap discovered after qualification.
+                self._validate_managed_path(self.path.absolute())
+                if self.path.read_bytes() != original_bytes:
+                    raise ValueError("App 事件紀錄在清理期間已變更")
+                replace = lambda: _atomic_replace(self.path, _json_bytes(updated))
+                if before_replace is not None:
+                    before_replace(max(expired_times), replace)
+                else:
+                    replace()
+                with self._condition:
+                    self._events = retained
+                    self._retired_sequences = merged
+                    self._revision += 1
+                    self._error = ""
+                return AppEventCleanupResult("complete", deleted_count=len(expired_sequences))
+            except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+                return AppEventCleanupResult("failed", failed_count=1, reason=str(error))
+
+    @staticmethod
+    def _validate_managed_path(path: Path) -> None:
+        if path.is_symlink():
+            raise ValueError("App 事件清理拒絕符號連結")
+        if path.exists() and path != path.parent and not (path.is_dir() or path.is_file()):
+            raise ValueError("App 事件清理目標不是一般檔案或目錄")
 
     def status(self) -> AppEventSaveStatus:
         with self._condition:
@@ -246,29 +398,34 @@ class AppEventStore:
                         self._condition.notify_all()
                         return
                     event = self._pending[0]
-                    current = list(self._events)
                 try:
-                    # Detect a replace that succeeded before a filesystem wrapper reported failure.
-                    disk_events = (read_app_event_store(self.path)["events"]
-                                   if self.path.exists() else [])
-                    if not any(item["event_id"] == event.event_id for item in disk_events):
-                        record = event.as_record()
-                        if record["sequence"] != len(disk_events) + 1:
-                            record["sequence"] = len(disk_events) + 1
-                            event = AppEvent(event.event_id, record["sequence"], event.occurred_at,
-                                             event.kind, event.message, event.diagnostic)
-                        _atomic_replace(self.path, _json_bytes(self._payload(disk_events + [record])))
-                        disk_events.append(record)
-                    else:
-                        # A prior replace may have succeeded before directory fsync failed.
-                        # Reconfirm the directory entry before reporting durable completion.
-                        _fsync_directory(self.path.parent)
-                    with self._condition:
-                        self._events = disk_events
-                        if self._pending and self._pending[0].event_id == event.event_id:
-                            self._pending.popleft()
-                        self._error = ""
-                        self._condition.notify_all()
+                    with self._io_lock:
+                        disk_payload = (read_app_event_store(self.path)
+                                        if self.path.exists() else self._payload([]))
+                        disk_events = list(disk_payload["events"])
+                        disk_next_sequence = disk_payload.get("next_sequence", len(disk_events) + 1)
+                        if not any(item["event_id"] == event.event_id for item in disk_events):
+                            record = event.as_record()
+                            if record["sequence"] != disk_next_sequence:
+                                raise ValueError("App 事件待補存序號與磁碟進度不一致")
+                            next_sequence = disk_next_sequence + 1
+                            _atomic_replace(self.path, _json_bytes(self._payload(
+                                disk_events + [record], next_sequence,
+                                disk_payload.get("retired_sequences", []))))
+                            disk_events.append(record)
+                        else:
+                            # A prior replace may have succeeded before directory fsync failed.
+                            # Reconfirm the directory entry before reporting durable completion.
+                            _fsync_directory(self.path.parent)
+                            next_sequence = disk_next_sequence
+                        with self._condition:
+                            self._events = disk_events
+                            self._next_sequence = max(self._next_sequence, next_sequence)
+                            self._retired_sequences = disk_payload.get("retired_sequences", [])
+                            if self._pending and self._pending[0].event_id == event.event_id:
+                                self._pending.popleft()
+                            self._error = ""
+                            self._condition.notify_all()
                 except Exception as error:
                     with self._condition:
                         self._error = str(error)

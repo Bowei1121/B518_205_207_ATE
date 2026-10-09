@@ -101,7 +101,7 @@ class B518LogSolutionApp:
             self.events.put, audit_root=self.session_root,
             retention_ledger_path=self.session_root.parent / "round-retention-ledger.json")
         self.app_events = AppEventStore(app_event_path or APP_ROOT / "app-events.json", clock=app_event_clock)
-        self.rounds.register_app_event_store(self.app_events)
+        self.rounds.register_app_event_store(self.app_events, self.session_root.parent)
         self._closing_ui = False
         self._close_window = None
         self._close_status_label = None
@@ -1975,7 +1975,10 @@ class B518LogSolutionApp:
                 days=latest.retention_days,
                 deleted=sum(item.outcome == "deleted" for item in outcomes),
                 skipped=sum(item.outcome == "skipped" for item in outcomes),
-                failed=sum(item.outcome == "failed" for item in outcomes))
+                failed=sum(item.outcome == "failed" for item in outcomes),
+                app_deleted=latest.app_events.deleted_count if latest.app_events else 0,
+                app_skipped=latest.app_events.skipped_count if latest.app_events else 0,
+                app_failed=latest.app_events.failed_count if latest.app_events else 0)
             failures = [item for item in outcomes if item.outcome == "failed"]
             if failures:
                 items = "；".join(self._t(
@@ -1990,6 +1993,10 @@ class B518LogSolutionApp:
                     round_id=item.round_id or self._t("term.test_round"),
                     reason=self._retention_reason_text(item.reason)) for item in skipped[:3])
                 detail += "\n" + self._t("app.settings.retention.cleanup.protected", items=items)
+            if latest.app_events is not None and latest.app_events.reason:
+                detail += "\n" + self._t(
+                    "app.settings.retention.cleanup.app_events_reason",
+                    reason=latest.app_events.reason)
         variable.set(detail)
 
     def _retention_reason_text(self, reason: str) -> str:

@@ -3,7 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -126,6 +126,86 @@ class AppEventStoreTests(unittest.TestCase):
         rebuilt = read_app_event_store(self.path)["events"]
         self.assertEqual([item["event_id"] for item in rebuilt], [event.event_id])
         self.assertEqual([item["sequence"] for item in rebuilt], [1])
+
+    def test_retention_removes_only_expired_events_and_preserves_live_identity_and_sequence(self):
+        expired = self.store.record("app.hotkey.unavailable", {}, "old permission")
+        self.assertTrue(self.store.flush())
+        self.now[0] += timedelta(days=10)
+        retained = self.store.record("app.profile.save_failed", {"reason": "new"}, "new failure")
+        self.assertTrue(self.store.flush())
+
+        result = self.store.cleanup_expired(
+            self.now[0] - timedelta(days=5), Path(self.temp.name))
+
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(result.deleted_count, 1)
+        self.assertEqual(result.skipped_count, 0)
+        self.assertEqual([item["event_id"] for item in rebuilt["events"]], [retained.event_id])
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2])
+        self.assertEqual(rebuilt["events"][0]["diagnostic"], "new failure")
+        self.assertEqual(rebuilt["retired_sequences"], [[1, 1]])
+
+        next_event = self.store.record("app.hotkey.unavailable", {}, "later")
+        self.assertTrue(self.store.flush())
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(next_event.sequence, 3)
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2, 3])
+
+    def test_retention_keeps_corrupt_or_unknown_journal_bytes(self):
+        self.store.record("app.hotkey.unavailable", {}, "diagnostic")
+        self.assertTrue(self.store.flush())
+        original = self.path.read_bytes()
+        self.path.write_bytes(original + b"corruption")
+        corrupt = self.path.read_bytes()
+
+        result = self.store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(self.path.read_bytes(), corrupt)
+
+    def test_retention_uses_absolute_instant_for_deadline_comparison(self):
+        old = self.store.record("app.hotkey.unavailable", {}, "old")
+        self.assertTrue(self.store.flush())
+        same_instant_other_offset = datetime(2026, 10, 8, 9, 2, 3,
+                                             tzinfo=timezone(timedelta(hours=8)))
+
+        result = self.store.cleanup_expired(
+            same_instant_other_offset, Path(self.temp.name))
+
+        self.assertEqual(result.deleted_count, 1)
+        self.assertEqual(read_app_event_store(self.path)["events"], [])
+        self.assertEqual(result.status, "complete")
+
+    def test_retention_deadline_is_inclusive_and_preserves_event_just_before_cutoff(self):
+        event = self.store.record("app.hotkey.unavailable", {}, "boundary")
+        self.assertTrue(self.store.flush())
+        event_time = datetime.fromisoformat(event.occurred_at)
+
+        before = self.store.cleanup_expired(
+            event_time - timedelta(microseconds=1), Path(self.temp.name))
+        self.assertEqual(before.deleted_count, 0)
+        self.assertEqual(len(read_app_event_store(self.path)["events"]), 1)
+
+        at_deadline = self.store.cleanup_expired(event_time, Path(self.temp.name))
+        self.assertEqual(at_deadline.deleted_count, 1)
+        self.assertEqual(read_app_event_store(self.path)["events"], [])
+
+    def test_retention_refuses_event_journal_symlink_to_external_file(self):
+        self.store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(self.store.flush())
+        outside = Path(self.temp.name) / "outside.json"
+        outside.write_bytes(self.path.read_bytes())
+        original = outside.read_bytes()
+        self.path.unlink()
+        self.path.symlink_to(outside)
+
+        result = self.store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(outside.read_bytes(), original)
+        self.assertTrue(self.path.is_symlink())
 
     def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
         real_fsync = __import__("os").fsync

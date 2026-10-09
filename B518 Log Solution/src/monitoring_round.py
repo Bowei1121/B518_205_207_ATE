@@ -1320,12 +1320,16 @@ class RoundCoordinator:
             target = self._tracked_rounds.get(target_id) if target_id is not None else None
         return target.retry_saves() if target is not None else False
 
-    def register_app_event_store(self, store) -> None:
+    def register_app_event_store(self, store, managed_root: Optional[Path] = None) -> None:
         """Register the App-owned, no-round journal used by save-before-close."""
         with self._lock:
             if self._closing:
                 raise RuntimeError("關閉保存進行中，不能替換 App 事件保存來源")
             self._app_event_store = store
+            retention_store = self._retention_store
+            root = managed_root or (self._audit_root.parent if self._audit_root is not None else None)
+        if retention_store is not None and root is not None:
+            retention_store.register_app_event_store(store, root)
 
     def record_app_event(self, message_id: str, parameters=None, diagnostic: str = "",
                          kind: str = "app_diagnostic"):
