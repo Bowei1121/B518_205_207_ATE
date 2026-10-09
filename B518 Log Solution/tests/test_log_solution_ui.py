@@ -4741,7 +4741,13 @@ class LogSolutionUiTests(unittest.TestCase):
                                   app._close_language_reason_label.cget("text"))
                     language_before_request = app.current_language
                     app_event_revision = app.app_events.revision
+                    queued_language_result = []
+                    root.after(0, lambda: queued_language_result.append(
+                        app._select_language(TRADITIONAL_CHINESE)
+                    ))
+                    root.update()
                     app._select_language(TRADITIONAL_CHINESE)
+                    self.assertEqual(len(queued_language_result), 1)
                     self.assertEqual(app.current_language, language_before_request)
                     self.assertEqual(app.language_choice.get(), language_before_request)
                     self.assertEqual(app.app_events.revision, app_event_revision)

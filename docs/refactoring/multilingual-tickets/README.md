@@ -12,6 +12,8 @@ M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選�
 
 M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用中英資源；語言刷新保留 conflict_id 選取、候選快照、閱讀位置及未確認警報。真正 Tk 驗證受控 Atlas 衝突、其他位置持續收集、KVM 標記、逐項裁決／警報確認及全新 audit 讀取器重建；空選取在正常排程刷新時清除舊比較與詳細內容並停用裁決。最終程式／測試提交 `da94db305547307b8a0370c9da9569f07f671986` 的完整含 Tk 套件通過 335 tests（83.317 秒），固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審為零項可執行發現。GitHub 合併提交 `daba4822566f944e603d065b5319674f83c99311` 合併後完整含 Tk 套件通過 335 tests（85.007 秒）。完整證據見 [M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md)。公司 Gitea 週一同步直接確認前保留 M6 本地與 GitHub 票分支。
 
+M7 五項程式驗收已由真正 Tk 等待／失敗／重試／取消／再次關閉操作驗證；關閉期間主語言按鈕與選單停用，直接及已排入 Tk 事件迴圈的切換請求均不改語言／增加事件，停用原因、儲存狀態及重試／取消按鈕依目前語言顯示，取消後語言入口恢復而保存與已停止來源狀態保留。完整含 Tk 套件最後重跑通過 335 tests（86.356 秒），真 Tk 包含已排程切換拒絕；先前一次執行出現既有封存案例暫存目錄清理競爭，該案例連續五次隔離重跑及後續完整套件均通過。compileall 與 diff check 通過。固定 M7 review baseline `45df1e36895cdb8bbb313de0a4c038cdeef13ac4` 的 Standards／Spec 複審無未解問題。最終直接 GitHub SHA 查核待最後文件推送後記錄；GitHub 主線為 `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`。Gitea 目前不可達；因此尚未合併或清理票分支。細節見 [M7 本機驗收紀錄](../evidence/multilingual-ticket-07/local-validation.md)。
+
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |
 | [M1](01-main-language-menu.md) | [#14](https://github.com/Bowei1121/B518_205_207_ATE/issues/14) | 主頁直覺語言選單、英文／繁中即時切換、上次語言持久保存；[本機驗收](../evidence/multilingual-ticket-01/local-validation.md) | 無 |
@@ -20,7 +22,7 @@ M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用�
 | [M4](04-app-diagnostic-events.md) | [#17](https://github.com/Bowei1121/B518_205_207_ATE/issues/17) | 無輪次 App 事件雙語保存、可理解錯誤、原始診斷與故障補存；[M4 本機驗收](../evidence/multilingual-ticket-04/local-validation.md) | #15（M2 已納入 GitHub 主線，依賴解除） |
 | [M5](05-settings-and-file-dialogs.md) | [#18](https://github.com/Bowei1121/B518_205_207_ATE/issues/18) | 工程師設定、配置與選檔流程換語言且不丟輸入 | #17（M4 已合併解除；M5 六項驗收已通過） |
 | [M6](06-conflicts-and-alarms.md) | [#19](https://github.com/Bowei1121/B518_205_207_ATE/issues/19) | 衝突與警報同步翻譯，保留選取、快照與人工決定；[M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md) | #15（M2 已納入 GitHub 主線，依賴解除） |
-| [M7](07-save-and-close-language.md) | [#20](https://github.com/Bowei1121/B518_205_207_ATE/issues/20) | 保存／重試／關閉提示一致，關閉保存停用切換、取消後恢復 | #17 |
+| [M7](07-save-and-close-language.md) | [#20](https://github.com/Bowei1121/B518_205_207_ATE/issues/20) | 保存／重試／關閉提示一致，關閉保存停用切換、取消後恢復；五項程式驗收、完整含 Tk 測試與固定基準複審已通過，Gitea 同步待完成 | #17（M4 已合併至工作基準，已解除） |
 | [M8](08-historical-event-display.md) | [#21](https://github.com/Bowei1121/B518_205_207_ATE/issues/21) | 新舊紀錄依語言閱讀，舊檔不改寫、無法辨識原文詳細保留 | #16、#17 |
 | [M9](09-app-event-retention.md) | [#22](https://github.com/Bowei1121/B518_205_207_ATE/issues/22) | App 事件按原事件時間清理，待補存保護與清理摘要 | #17、既有 [#8](https://github.com/Bowei1121/B518_205_207_ATE/issues/8) |
 | [M10](10-integrated-release-verification.md) | [#23](https://github.com/Bowei1121/B518_205_207_ATE/issues/23) | 全 App 翻譯覆蓋、跨視窗操作、KVM 與發布資源驗收完成 | #18、#19、#20、#21、#22 |
@@ -47,16 +49,16 @@ M1（#14）六項必要驗收通過，程式版本 `44826d4`，合併提交 `83d
 | 2：直覺選單、鍵盤與取消 | M1（原生選單人員滑鼠切換、鍵盤導覽／選取／取消已驗） |
 | 3：監控／待確認即時切換不改流程 | M1（主頁 RUNNING／AWAITING_REVIEW 狀態已驗）、M2、M6（雙語事件與其他自有視窗待驗） |
 | 4：全視窗／既有事件刷新及保留狀態 | M2、M5（設定視窗即時刷新與草稿／選取／驗證狀態保留已驗）、M6、M7、M10 |
-| 5：關閉保存停用及取消恢復 | M7 |
+| 5：關閉保存停用及取消恢復 | M7（真 Tk 已驗：等待與失敗期間停用按鈕／選單及拒絕切換，理由本地化；取消後恢復且不重啟來源） |
 | 6：原生選檔例外 | M5（App 標題／類型參數已驗；兩語原生選擇／取消／返回路徑及拒絕覆寫已由使用者操作並核對磁碟） |
-| 7：錯誤雙語、診斷及回退 | M4、M6、M7 |
+| 7：錯誤雙語、診斷及回退 | M4、M6、M7（保存失敗外層訊息與原始診斷於真 Tk 驗證） |
 | 8：翻譯完整性與關鍵提示 | M1（主頁資源鍵／參數與核准術語已驗）、M10（全 App 覆蓋待驗） |
 | 9：同筆雙語與磁碟不重寫 | M2、M3、M4 |
 | 10：有序保存、補存及無輪次事件 | M2、M4 |
 | 11：歷史相容與原文保留 | M8 |
 | 12：App 事件期限及保護 | M9 |
 | 13：清理協調與摘要 | M9 |
-| 14：真實版面及 KVM 契約 | M1（主頁選單／KVM 標記與色帶已驗）、M5（680×560 設定視窗英文版面已驗）、M6、M7、M10（其他視窗待驗） |
+| 14：真實版面及 KVM 契約 | M1（主頁選單／KVM 標記與色帶已驗）、M5（680×560 設定視窗英文版面已驗）、M6、M7（關閉進度視窗真 Tk 驗；完整多視窗／bundle 覆蓋仍待 M10）、M10 |
 | 15：兩語業務結果一致 | M1（切換未改當輪結果與 audit／Session）、M2、M3、M6、M10（雙語事件及全 App 一致性待驗） |
 | 16：發布資源、bundle 證據與全套回歸 | M10 |
 
