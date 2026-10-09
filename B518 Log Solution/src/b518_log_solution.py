@@ -101,7 +101,7 @@ class B518LogSolutionApp:
             self.events.put, audit_root=self.session_root,
             retention_ledger_path=self.session_root.parent / "round-retention-ledger.json")
         self.app_events = AppEventStore(app_event_path or APP_ROOT / "app-events.json", clock=app_event_clock)
-        self.rounds.register_app_event_store(self.app_events)
+        self.rounds.register_app_event_store(self.app_events, self.session_root.parent)
         self._closing_ui = False
         self._close_window = None
         self._close_status_label = None
@@ -1892,8 +1892,17 @@ class B518LogSolutionApp:
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
         ttk.Label(parent, textvariable=self.retention_cleanup_status, wraplength=650,
                   justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+        self.retention_retry_button = self._settings_button(
+            parent, "app.settings.retention.cleanup.retry", self._retry_retention_cleanup)
+        self.retention_retry_button.grid(row=6, column=0, sticky="w", pady=(8, 4))
         self._refresh_retention_cleanup_status()
         parent.columnconfigure(1, weight=1)
+
+    def _retry_retention_cleanup(self) -> None:
+        """Retry App and round cleanup through the existing coordinator entry point."""
+        self.rounds.request_retention_cleanup(
+            self.profile_store.retention_days, "manual-retry")
+        self._refresh_retention_cleanup_status()
 
     def _save_retention_days(self) -> None:
         """Validate and persist the global retention duration from the settings UI."""
@@ -1975,7 +1984,10 @@ class B518LogSolutionApp:
                 days=latest.retention_days,
                 deleted=sum(item.outcome == "deleted" for item in outcomes),
                 skipped=sum(item.outcome == "skipped" for item in outcomes),
-                failed=sum(item.outcome == "failed" for item in outcomes))
+                failed=sum(item.outcome == "failed" for item in outcomes),
+                app_deleted=latest.app_events.deleted_count if latest.app_events else 0,
+                app_skipped=latest.app_events.skipped_count if latest.app_events else 0,
+                app_failed=latest.app_events.failed_count if latest.app_events else 0)
             failures = [item for item in outcomes if item.outcome == "failed"]
             if failures:
                 items = "；".join(self._t(
@@ -1990,11 +2002,18 @@ class B518LogSolutionApp:
                     round_id=item.round_id or self._t("term.test_round"),
                     reason=self._retention_reason_text(item.reason)) for item in skipped[:3])
                 detail += "\n" + self._t("app.settings.retention.cleanup.protected", items=items)
+            if latest.app_events is not None and latest.app_events.reason:
+                detail += "\n" + self._t(
+                    "app.settings.retention.cleanup.app_events_reason",
+                    reason=self._retention_reason_text(latest.app_events.reason))
         variable.set(detail)
 
     def _retention_reason_text(self, reason: str) -> str:
         """Translate known cleanup status copy while leaving diagnostic details intact."""
+        if reason == "尚未到保存期限":
+            return self._t("app.settings.retention.reason.app_events_not_expired")
         diagnostic_prefixes = {
+            "App 事件紀錄無法讀取：": "app_events_read_failed",
             "封存資訊無法讀取：": "archive_read_failed",
             "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",
             "必要輪次紀錄無法重建：": "archive_component_rebuild_failed",
@@ -2004,6 +2023,26 @@ class B518LogSolutionApp:
                 return self._t("app.settings.retention.reason." + message_id,
                                diagnostic=reason[len(prefix):])
         message_ids = {
+            "期限時間缺少時區": "app_events_timezone",
+            "App 事件管理根目錄不是實體目錄": "app_events_root_invalid",
+            "App 事件清理拒絕符號連結": "app_events_symlink",
+            "App 事件檔不在管理根目錄": "app_events_outside",
+            "App 事件目標不是一般檔案": "app_events_not_regular",
+            "App 事件紀錄在清理期間已變更": "app_events_changed",
+            "App 事件管理路徑在清理期間已變更": "app_events_path_changed",
+            "App 事件保存待補存或狀態尚未確認完整": "app_events_pending",
+            "App 事件紀錄格式或版本不受支援": "app_events_unknown_format",
+            "App 事件紀錄內容不完整或序號不連續": "app_events_invalid",
+            "App 事件紀錄序號保留資訊需要新版格式": "app_events_sequence_invalid",
+            "App 事件紀錄序號保留資訊不完整": "app_events_sequence_missing",
+            "App 事件紀錄序號保留資訊無效": "app_events_sequence_invalid",
+            "App 事件紀錄序號保留範圍無效": "app_events_sequence_invalid",
+            "App 事件紀錄存在未解釋的序號缺口": "app_events_sequence_gap",
+            "App 事件紀錄已刪除序號仍有事件": "app_events_sequence_invalid",
+            "App 事件時間格式無效": "app_events_time_invalid",
+            "App 事件時間缺少時區": "app_events_time_missing",
+            "App 事件清理目標不是一般檔案或目錄": "app_events_path_invalid",
+            "App 事件清理提交閘門未完成原子替換": "app_events_invalid",
             "關閉保存期間不啟動新清理": "close",
             "封存資訊版本未知": "archive_unknown_version",
             "封存時間無效或缺少時區": "archive_invalid_time",

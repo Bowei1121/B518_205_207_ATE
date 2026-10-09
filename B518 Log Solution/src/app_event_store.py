@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import errno
 import os
+import stat
 import tempfile
 import threading
 import time
 import uuid
+import ctypes
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,8 +20,60 @@ from typing import Callable, Deque, Optional, Tuple
 from language_catalog import BilingualMessage, make_bilingual_message
 
 
+APP_EVENT_RECORD_VERSION = 1
 APP_EVENT_STORE_VERSION = 1
+APP_EVENT_STORE_RETENTION_VERSION = 2
 _IDLE_WORKER_TIMEOUT_SECONDS = 0.2
+_LIBC = ctypes.CDLL(None, use_errno=True)
+_HAS_RELATIVE_FILE_OPERATIONS = all(
+    hasattr(_LIBC, name) for name in ("openat", "renameat", "unlinkat"))
+if _HAS_RELATIVE_FILE_OPERATIONS:
+    _LIBC.openat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint)
+    _LIBC.openat.restype = ctypes.c_int
+    _LIBC.renameat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
+    _LIBC.renameat.restype = ctypes.c_int
+    _LIBC.unlinkat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+    _LIBC.unlinkat.restype = ctypes.c_int
+
+
+def _at_call(result: int, operation: str, path: str) -> int:
+    if result < 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, "{} failed: {}".format(operation, os.strerror(error_number)),
+                      path)
+    return result
+
+
+def _openat(directory_fd: int, name: str, flags: int, mode: int = 0) -> int:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    return _at_call(_LIBC.openat(directory_fd, os.fsencode(name), flags, mode), "openat", name)
+
+
+def _renameat(source_fd: int, source: str, target_fd: int, target: str) -> None:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    _at_call(_LIBC.renameat(source_fd, os.fsencode(source), target_fd,
+                            os.fsencode(target)), "renameat", target)
+
+
+def _unlinkat(directory_fd: int, name: str) -> None:
+    if not _HAS_RELATIVE_FILE_OPERATIONS:
+        raise OSError("Secure directory-relative cleanup is unavailable on this platform")
+    _at_call(_LIBC.unlinkat(directory_fd, os.fsencode(name), 0), "unlinkat", name)
+
+
+def _absolute_managed_path(path: Path) -> Path:
+    """Normalize only standard macOS /var and /tmp aliases, never user links."""
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    if len(absolute.parts) > 2:
+        alias, remainder = absolute.parts[1], absolute.parts[2:]
+        expected = {"var": "private/var", "tmp": "private/tmp"}.get(alias)
+        alias_path = "/" + alias
+        if (expected and os.path.islink(alias_path) and
+                os.readlink(alias_path) == expected):
+            return Path("/").joinpath(*expected.split("/"), *remainder)
+    return absolute
 
 
 @dataclass(frozen=True)
@@ -35,7 +90,7 @@ class AppEvent:
     def as_record(self) -> dict:
         return {
             "record_type": "app_event",
-            "schema_version": APP_EVENT_STORE_VERSION,
+            "schema_version": APP_EVENT_RECORD_VERSION,
             "event_id": self.event_id,
             "sequence": self.sequence,
             "occurred_at": self.occurred_at,
@@ -56,6 +111,17 @@ class AppEventSaveStatus:
     @property
     def complete(self) -> bool:
         return self.status == "complete" and self.pending_count == 0
+
+
+@dataclass(frozen=True)
+class AppEventCleanupResult:
+    """Outcome of pruning eligible records from the managed App journal."""
+
+    status: str
+    deleted_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    reason: str = ""
 
 
 def _json_bytes(payload: object) -> bytes:
@@ -88,22 +154,136 @@ def _atomic_replace(path: Path, content: bytes) -> None:
         raise
 
 
+def _open_managed_directory(root: Path, parts: Tuple[str, ...]) -> int:
+    """Open a managed directory component-by-component without following links."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    absolute_root = _absolute_managed_path(root)
+    descriptor = os.open(os.path.abspath(os.sep), flags)
+    try:
+        for part in absolute_root.parts[1:] + tuple(parts):
+            next_descriptor = _openat(descriptor, part, flags)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _read_at(directory_fd: int, name: str) -> Tuple[bytes, os.stat_result]:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _openat(directory_fd, name, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("App 事件目標不是一般檔案")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks), metadata
+    finally:
+        os.close(descriptor)
+
+
+def _same_file_entry(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino, left.st_size, left.st_mtime_ns) == (
+        right.st_dev, right.st_ino, right.st_size, right.st_mtime_ns)
+
+
+def _same_directory(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _atomic_replace_at(directory_fd: int, name: str, content: bytes,
+                       expected: os.stat_result,
+                       commit_gate: Callable[[Callable[[], None]], None]) -> None:
+    """Atomically replace one journal entry through its already-pinned directory."""
+    temporary_name = ".{}-{}".format(name, uuid.uuid4().hex)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _openat(directory_fd, temporary_name, flags, 0o600)
+    replaced = False
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        def replace_entry() -> None:
+            nonlocal replaced
+            current_fd = _openat(directory_fd, name,
+                                 os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                current = os.fstat(current_fd)
+            finally:
+                os.close(current_fd)
+            if not stat.S_ISREG(current.st_mode) or not _same_file_entry(current, expected):
+                raise ValueError("App 事件紀錄在清理期間已變更")
+            _renameat(directory_fd, temporary_name, directory_fd, name)
+            replaced = True
+
+        commit_gate(replace_entry)
+        if not replaced:
+            raise RuntimeError("App 事件清理提交閘門未完成原子替換")
+        os.fsync(directory_fd)
+    except Exception:
+        if not replaced:
+            try:
+                _unlinkat(directory_fd, temporary_name)
+            except OSError:
+                pass
+        raise
+
+
 def read_app_event_store(path: Path) -> dict:
     """Read and validate a fresh App event store without mutating old data."""
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("App 事件紀錄無法讀取：{}".format(error))
+    return _validate_app_event_store_payload(payload)
+
+
+def _validate_app_event_store_payload(payload: object) -> dict:
     if (not isinstance(payload, dict) or payload.get("record_type") != "app_event_store" or
             type(payload.get("schema_version")) is not int or
-            payload["schema_version"] != APP_EVENT_STORE_VERSION or
+            payload["schema_version"] not in {APP_EVENT_STORE_VERSION,
+                                                APP_EVENT_STORE_RETENTION_VERSION} or
             not isinstance(payload.get("events"), list)):
         raise ValueError("App 事件紀錄格式或版本不受支援")
+    store_version = payload["schema_version"]
+    retired = payload.get("retired_sequences")
+    next_sequence = payload.get("next_sequence")
+    if store_version == APP_EVENT_STORE_VERSION:
+        if "retired_sequences" in payload or "next_sequence" in payload:
+            raise ValueError("App 事件紀錄序號保留資訊需要新版格式")
+        retired = []
+        next_sequence = len(payload["events"]) + 1
+    elif "retired_sequences" not in payload or "next_sequence" not in payload:
+        raise ValueError("App 事件紀錄序號保留資訊不完整")
+    if (not isinstance(retired, list) or type(next_sequence) is not int or
+            next_sequence < 1):
+        raise ValueError("App 事件紀錄序號保留資訊無效")
+    retired_ranges = []
+    previous_end = 0
+    for item in retired:
+        if (not isinstance(item, list) or len(item) != 2 or
+                type(item[0]) is not int or type(item[1]) is not int or
+                item[0] <= previous_end or item[1] < item[0] or
+                item[1] >= next_sequence):
+            raise ValueError("App 事件紀錄序號保留範圍無效")
+        retired_ranges.append((item[0], item[1]))
+        previous_end = item[1]
     seen = set()
-    for expected, event in enumerate(payload["events"], 1):
+    previous_sequence = 0
+    live_sequences = set()
+    for event in payload["events"]:
         if (not isinstance(event, dict) or event.get("record_type") != "app_event" or
-                event.get("schema_version") != APP_EVENT_STORE_VERSION or
-                event.get("sequence") != expected or
+                event.get("schema_version") != APP_EVENT_RECORD_VERSION or
+                type(event.get("sequence")) is not int or event["sequence"] <= previous_sequence or
+                event["sequence"] >= next_sequence or
                 not isinstance(event.get("event_id"), str) or not event["event_id"] or
                 event["event_id"] in seen or "round_id" in event or
                 not isinstance(event.get("occurred_at"), str) or
@@ -123,6 +303,17 @@ def read_app_event_store(path: Path) -> dict:
         if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
             raise ValueError("App 事件時間缺少時區")
         seen.add(event["event_id"])
+        live_sequences.add(event["sequence"])
+        previous_sequence = event["sequence"]
+    if store_version == APP_EVENT_STORE_VERSION and [
+            item["sequence"] for item in payload["events"]] != list(range(1, next_sequence)):
+        raise ValueError("App 事件紀錄內容不完整或序號不連續")
+    retired_count = sum(end - start + 1 for start, end in retired_ranges)
+    if len(live_sequences) + retired_count != next_sequence - 1:
+        raise ValueError("App 事件紀錄存在未解釋的序號缺口")
+    for start, end in retired_ranges:
+        if any(start <= sequence <= end for sequence in live_sequences):
+            raise ValueError("App 事件紀錄已刪除序號仍有事件")
     return payload
 
 
@@ -133,8 +324,11 @@ class AppEventStore:
         self.path = Path(path)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._condition = threading.Condition()
+        self._io_lock = threading.Lock()
         self._pending: Deque[AppEvent] = deque()
         self._events = []
+        self._next_sequence = 1
+        self._retired_sequences = []
         self._revision = 0
         self._error = ""
         self._error_history = []
@@ -142,16 +336,26 @@ class AppEventStore:
         self._stopped = False
         try:
             if self.path.exists():
-                self._events = read_app_event_store(self.path)["events"]
+                payload = read_app_event_store(self.path)
+                self._events = payload["events"]
+                self._next_sequence = payload.get("next_sequence", len(self._events) + 1)
+                self._retired_sequences = payload.get("retired_sequences", [])
                 self._revision = len(self._events)
         except Exception as error:
             self._error = str(error)
             self._error_history.append(self._error)
 
     @staticmethod
-    def _payload(events) -> dict:
-        return {"record_type": "app_event_store", "schema_version": APP_EVENT_STORE_VERSION,
-                "events": list(events)}
+    def _payload(events, next_sequence=None, retired_sequences=()) -> dict:
+        retained_ranges = [list(item) for item in retired_sequences]
+        payload = {"record_type": "app_event_store",
+                   "schema_version": (APP_EVENT_STORE_RETENTION_VERSION if retained_ranges
+                                      else APP_EVENT_STORE_VERSION),
+                   "events": list(events)}
+        if retained_ranges:
+            payload["retired_sequences"] = retained_ranges
+            payload["next_sequence"] = next_sequence
+        return payload
 
     @property
     def events(self) -> Tuple[AppEvent, ...]:
@@ -182,13 +386,155 @@ class AppEventStore:
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
         with self._condition:
-            sequence = len(self._events) + len(self._pending) + 1
+            sequence = self._next_sequence
+            self._next_sequence += 1
             event = AppEvent(uuid.uuid4().hex, sequence, moment.isoformat(timespec="microseconds"),
                              kind, message, diagnostic)
             self._pending.append(event)
             self._revision += 1
             self._ensure_worker_locked()
             return event
+
+    def cleanup_expired(self, cutoff: datetime, managed_root: Path,
+                        before_replace: Callable[[datetime, Callable[[], None]], None] = None
+                        ) -> AppEventCleanupResult:
+        """Delete only fully persisted, timezone-valid App events at or before cutoff.
+
+        This runs inside the existing background retention worker. It rewrites only
+        the App-owned journal, records retired sequence ranges, and refuses links,
+        corrupt input, pending writes, or journals outside the managed root.
+        """
+        if (cutoff.tzinfo is None or cutoff.utcoffset() is None):
+            return AppEventCleanupResult("skipped", skipped_count=1,
+                                          reason="期限時間缺少時區")
+        try:
+            # Keep the caller's lexical root. Resolving first would follow an
+            # already-present symlink in any ancestor and bless its target as
+            # managed data. Pin every component from `/` with O_NOFOLLOW.
+            root = _absolute_managed_path(managed_root)
+            requested_path = _absolute_managed_path(self.path)
+            relative = requested_path.relative_to(root)
+            if not relative.parts or any(part in {".", ".."} for part in relative.parts):
+                raise ValueError("App 事件檔不在管理根目錄")
+            root_probe = _open_managed_directory(root, ())
+            try:
+                parent_probe = _open_managed_directory(root, relative.parts[:-1])
+                try:
+                    try:
+                        entry_fd = _openat(parent_probe, relative.parts[-1],
+                                           os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                    except FileNotFoundError:
+                        entry_fd = None
+                    except OSError as error:
+                        if error.errno in {errno.ELOOP, errno.EMLINK}:
+                            raise ValueError("App 事件清理拒絕符號連結")
+                        raise
+                    if entry_fd is not None:
+                        os.close(entry_fd)
+                finally:
+                    os.close(parent_probe)
+            finally:
+                os.close(root_probe)
+        except (OSError, ValueError) as error:
+            return AppEventCleanupResult("skipped", skipped_count=1, reason=str(error))
+
+        with self._io_lock:
+            with self._condition:
+                if self._pending or self._worker_active or self._error:
+                    return AppEventCleanupResult(
+                        "skipped", skipped_count=1,
+                        reason="App 事件保存待補存或狀態尚未確認完整")
+            root_fd = parent_fd = None
+            try:
+                root_fd = _open_managed_directory(root, ())
+                parent_fd = _open_managed_directory(root, relative.parts[:-1])
+                try:
+                    original_bytes, original_stat = _read_at(parent_fd, relative.parts[-1])
+                except FileNotFoundError:
+                    return AppEventCleanupResult("complete")
+                try:
+                    payload = _validate_app_event_store_payload(
+                        json.loads(original_bytes.decode("utf-8")))
+                except (UnicodeError, json.JSONDecodeError) as error:
+                    raise ValueError("App 事件紀錄無法讀取：{}".format(error))
+                cutoff_utc = cutoff.astimezone(timezone.utc)
+                retained = []
+                expired_sequences = []
+                expired_times = []
+                for event in payload["events"]:
+                    occurred_at = datetime.fromisoformat(event["occurred_at"])
+                    if occurred_at.astimezone(timezone.utc) <= cutoff_utc:
+                        expired_sequences.append(event["sequence"])
+                        expired_times.append(occurred_at)
+                    else:
+                        retained.append(event)
+                if not expired_sequences:
+                    # A previous replace may have committed the shortened journal
+                    # before its directory fsync reported failure. Reconfirm the
+                    # pinned directory entry before treating this retry as complete.
+                    os.fsync(parent_fd)
+                    next_sequence = payload.get("next_sequence", max(
+                        (item["sequence"] for item in payload["events"]), default=0) + 1)
+                    with self._condition:
+                        if (self._events != payload["events"] or
+                                self._retired_sequences != payload.get("retired_sequences", []) or
+                                self._next_sequence != next_sequence):
+                            self._revision += 1
+                        self._events = list(payload["events"])
+                        self._retired_sequences = payload.get("retired_sequences", [])
+                        self._next_sequence = next_sequence
+                    return AppEventCleanupResult(
+                        "complete", skipped_count=len(retained),
+                        reason="尚未到保存期限" if retained else "")
+                retired = list(payload.get("retired_sequences", []))
+                retired.extend([[sequence, sequence] for sequence in expired_sequences])
+                merged = []
+                for start, end in sorted((item[0], item[1]) for item in retired):
+                    if merged and start <= merged[-1][1] + 1:
+                        merged[-1][1] = max(merged[-1][1], end)
+                    else:
+                        merged.append([start, end])
+                updated = self._payload(retained, payload.get("next_sequence", max(
+                    (item["sequence"] for item in payload["events"]), default=0) + 1), merged)
+                content = _json_bytes(updated)
+                def commit_gate(commit):
+                    def verify_then_commit():
+                        current_root_fd = _open_managed_directory(root, ())
+                        current_parent_fd = None
+                        try:
+                            current_parent_fd = _open_managed_directory(root, relative.parts[:-1])
+                            if (not _same_directory(os.fstat(current_root_fd), os.fstat(root_fd)) or
+                                    not _same_directory(os.fstat(current_parent_fd),
+                                                        os.fstat(parent_fd))):
+                                raise ValueError("App 事件管理路徑在清理期間已變更")
+                            commit()
+                        finally:
+                            if current_parent_fd is not None:
+                                os.close(current_parent_fd)
+                            os.close(current_root_fd)
+
+                    if before_replace is not None:
+                        before_replace(max(expired_times), verify_then_commit)
+                    else:
+                        verify_then_commit()
+
+                _atomic_replace_at(parent_fd, relative.parts[-1], content,
+                                   original_stat, commit_gate)
+                with self._condition:
+                    self._events = retained
+                    self._retired_sequences = merged
+                    self._revision += 1
+                    self._error = ""
+                return AppEventCleanupResult("complete", deleted_count=len(expired_sequences),
+                                             skipped_count=len(retained),
+                                             reason="尚未到保存期限" if retained else "")
+            except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+                return AppEventCleanupResult("failed", failed_count=1, reason=str(error))
+            finally:
+                if parent_fd is not None:
+                    os.close(parent_fd)
+                if root_fd is not None:
+                    os.close(root_fd)
 
     def status(self) -> AppEventSaveStatus:
         with self._condition:
@@ -246,29 +592,34 @@ class AppEventStore:
                         self._condition.notify_all()
                         return
                     event = self._pending[0]
-                    current = list(self._events)
                 try:
-                    # Detect a replace that succeeded before a filesystem wrapper reported failure.
-                    disk_events = (read_app_event_store(self.path)["events"]
-                                   if self.path.exists() else [])
-                    if not any(item["event_id"] == event.event_id for item in disk_events):
-                        record = event.as_record()
-                        if record["sequence"] != len(disk_events) + 1:
-                            record["sequence"] = len(disk_events) + 1
-                            event = AppEvent(event.event_id, record["sequence"], event.occurred_at,
-                                             event.kind, event.message, event.diagnostic)
-                        _atomic_replace(self.path, _json_bytes(self._payload(disk_events + [record])))
-                        disk_events.append(record)
-                    else:
-                        # A prior replace may have succeeded before directory fsync failed.
-                        # Reconfirm the directory entry before reporting durable completion.
-                        _fsync_directory(self.path.parent)
-                    with self._condition:
-                        self._events = disk_events
-                        if self._pending and self._pending[0].event_id == event.event_id:
-                            self._pending.popleft()
-                        self._error = ""
-                        self._condition.notify_all()
+                    with self._io_lock:
+                        disk_payload = (read_app_event_store(self.path)
+                                        if self.path.exists() else self._payload([]))
+                        disk_events = list(disk_payload["events"])
+                        disk_next_sequence = disk_payload.get("next_sequence", len(disk_events) + 1)
+                        if not any(item["event_id"] == event.event_id for item in disk_events):
+                            record = event.as_record()
+                            if record["sequence"] != disk_next_sequence:
+                                raise ValueError("App 事件待補存序號與磁碟進度不一致")
+                            next_sequence = disk_next_sequence + 1
+                            _atomic_replace(self.path, _json_bytes(self._payload(
+                                disk_events + [record], next_sequence,
+                                disk_payload.get("retired_sequences", []))))
+                            disk_events.append(record)
+                        else:
+                            # A prior replace may have succeeded before directory fsync failed.
+                            # Reconfirm the directory entry before reporting durable completion.
+                            _fsync_directory(self.path.parent)
+                            next_sequence = disk_next_sequence
+                        with self._condition:
+                            self._events = disk_events
+                            self._next_sequence = max(self._next_sequence, next_sequence)
+                            self._retired_sequences = disk_payload.get("retired_sequences", [])
+                            if self._pending and self._pending[0].event_id == event.event_id:
+                                self._pending.popleft()
+                            self._error = ""
+                            self._condition.notify_all()
                 except Exception as error:
                     with self._condition:
                         self._error = str(error)

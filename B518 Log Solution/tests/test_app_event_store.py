@@ -3,7 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,6 +34,7 @@ class AppEventStoreTests(unittest.TestCase):
 
         self.assertTrue(self.store.flush())
         rebuilt = read_app_event_store(self.path)
+        self.assertEqual(rebuilt["schema_version"], 1)
         self.assertEqual(len(rebuilt["events"]), 1)
         record = rebuilt["events"][0]
         self.assertEqual(record["event_id"], event.event_id)
@@ -76,6 +77,10 @@ class AppEventStoreTests(unittest.TestCase):
             release.set()
             self.wait_until(lambda: self.store.status().status == "failed")
             self.assertFalse(self.store.flush(.05))
+            protected = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+            self.assertEqual(protected.status, "skipped")
+            self.assertEqual(protected.skipped_count, 1)
         self.assertEqual(self.store.status().pending_count, 2)
         self.assertTrue(self.store.retry())
         self.assertTrue(self.store.flush())
@@ -126,6 +131,218 @@ class AppEventStoreTests(unittest.TestCase):
         rebuilt = read_app_event_store(self.path)["events"]
         self.assertEqual([item["event_id"] for item in rebuilt], [event.event_id])
         self.assertEqual([item["sequence"] for item in rebuilt], [1])
+
+    def test_retention_removes_only_expired_events_and_preserves_live_identity_and_sequence(self):
+        expired = self.store.record("app.hotkey.unavailable", {}, "old permission")
+        self.assertTrue(self.store.flush())
+        self.now[0] += timedelta(days=10)
+        retained = self.store.record("app.profile.save_failed", {"reason": "new"}, "new failure")
+        self.assertTrue(self.store.flush())
+
+        result = self.store.cleanup_expired(
+            self.now[0] - timedelta(days=5), Path(self.temp.name))
+
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(result.deleted_count, 1)
+        self.assertEqual(result.skipped_count, 1)
+        self.assertEqual([item["event_id"] for item in rebuilt["events"]], [retained.event_id])
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2])
+        self.assertEqual(rebuilt["events"][0]["diagnostic"], "new failure")
+        self.assertEqual(rebuilt["retired_sequences"], [[1, 1]])
+        self.assertEqual(rebuilt["schema_version"], 2)
+
+        next_event = self.store.record("app.hotkey.unavailable", {}, "later")
+        self.assertTrue(self.store.flush())
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(next_event.sequence, 3)
+        self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2, 3])
+
+    def test_retention_keeps_corrupt_or_unknown_journal_bytes(self):
+        self.store.record("app.hotkey.unavailable", {}, "diagnostic")
+        self.assertTrue(self.store.flush())
+        original = self.path.read_bytes()
+        self.path.write_bytes(original + b"corruption")
+        corrupt = self.path.read_bytes()
+
+        result = self.store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(self.path.read_bytes(), corrupt)
+
+    def test_retention_uses_absolute_instant_for_deadline_comparison(self):
+        old = self.store.record("app.hotkey.unavailable", {}, "old")
+        self.assertTrue(self.store.flush())
+        same_instant_other_offset = datetime(2026, 10, 8, 9, 2, 3,
+                                             tzinfo=timezone(timedelta(hours=8)))
+
+        result = self.store.cleanup_expired(
+            same_instant_other_offset, Path(self.temp.name))
+
+        self.assertEqual(result.deleted_count, 1)
+        self.assertEqual(read_app_event_store(self.path)["events"], [])
+        self.assertEqual(result.status, "complete")
+
+    def test_retention_deadline_is_inclusive_and_preserves_event_just_before_cutoff(self):
+        event = self.store.record("app.hotkey.unavailable", {}, "boundary")
+        self.assertTrue(self.store.flush())
+        event_time = datetime.fromisoformat(event.occurred_at)
+
+        before = self.store.cleanup_expired(
+            event_time - timedelta(microseconds=1), Path(self.temp.name))
+        self.assertEqual(before.deleted_count, 0)
+        self.assertEqual(len(read_app_event_store(self.path)["events"]), 1)
+
+        at_deadline = self.store.cleanup_expired(event_time, Path(self.temp.name))
+        self.assertEqual(at_deadline.deleted_count, 1)
+        self.assertEqual(read_app_event_store(self.path)["events"], [])
+
+    def test_retention_retry_resyncs_directory_after_replace_succeeded_but_fsync_failed(self):
+        expired = self.store.record("app.hotkey.unavailable", {}, "old permission")
+        self.assertTrue(self.store.flush())
+        real_fsync = __import__("os").fsync
+        directory_syncs = [0]
+
+        def fail_first_directory_sync(descriptor):
+            metadata = __import__("os").fstat(descriptor)
+            if __import__("stat").S_ISDIR(metadata.st_mode):
+                directory_syncs[0] += 1
+                if directory_syncs[0] == 1:
+                    raise OSError("retention directory fsync unavailable")
+            return real_fsync(descriptor)
+
+        with patch("app_event_store.os.fsync", side_effect=fail_first_directory_sync):
+            first = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+            self.assertEqual(first.status, "failed")
+            self.assertEqual(first.deleted_count, 0)
+            self.assertEqual(read_app_event_store(self.path)["events"], [])
+
+            retried = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(retried.status, "complete")
+        self.assertEqual(directory_syncs[0], 2)
+        self.assertEqual(self.store.records, ())
+        rebuilt = read_app_event_store(self.path)
+        self.assertEqual(rebuilt["events"], [])
+        self.assertEqual(rebuilt["retired_sequences"], [[expired.sequence, expired.sequence]])
+
+    def test_retention_refuses_event_journal_symlink_to_external_file(self):
+        self.store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(self.store.flush())
+        outside = Path(self.temp.name) / "outside.json"
+        outside.write_bytes(self.path.read_bytes())
+        original = outside.read_bytes()
+        self.path.unlink()
+        self.path.symlink_to(outside)
+
+        result = self.store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(outside.read_bytes(), original)
+        self.assertTrue(self.path.is_symlink())
+
+    def test_retention_parent_swap_cannot_redirect_replace_outside_managed_directory(self):
+        parent = Path(self.temp.name) / "managed"
+        parent.mkdir()
+        managed_store_path = parent / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(store.flush())
+        original_managed_bytes = managed_store_path.read_bytes()
+        outside_dir = Path(self.temp.name) / "outside"
+        outside_dir.mkdir()
+        outside = outside_dir / managed_store_path.name
+        outside.write_bytes(b"external sentinel")
+        original_external_bytes = outside.read_bytes()
+        moved_parent = Path(self.temp.name) / "managed-moved"
+
+        def replace_after_swap(instant, commit):
+            parent.rename(moved_parent)
+            parent.symlink_to(outside_dir, target_is_directory=True)
+            commit()
+
+        result = store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name),
+            before_replace=replace_after_swap)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(outside.read_bytes(), original_external_bytes)
+        self.assertEqual((moved_parent / managed_store_path.name).read_bytes(), original_managed_bytes)
+
+    def test_retention_ancestor_swap_before_managed_root_pin_cannot_reach_external_journal(self):
+        base = Path(self.temp.name) / "managed-parent"
+        managed_root = base / "app"
+        managed_root.mkdir(parents=True)
+        managed_store_path = managed_root / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(store.flush())
+
+        external_parent = Path(self.temp.name) / "external-parent"
+        external_root = external_parent / "app"
+        external_root.mkdir(parents=True)
+        external_journal = external_root / managed_store_path.name
+        external_store = AppEventStore(external_journal, clock=lambda: self.now[0])
+        external_store.record("app.hotkey.unavailable", {}, "external sentinel")
+        self.assertTrue(external_store.flush())
+        external_store.stop()
+        external_bytes = external_journal.read_bytes()
+        moved_base = Path(self.temp.name) / "managed-parent-moved"
+
+        from app_event_store import _open_managed_directory as real_open_managed_directory
+        swapped = [False]
+
+        def swap_ancestor_before_pin(root, parts):
+            if not swapped[0]:
+                swapped[0] = True
+                base.rename(moved_base)
+                base.symlink_to(external_parent, target_is_directory=True)
+            return real_open_managed_directory(root, parts)
+
+        with patch("app_event_store._open_managed_directory",
+                   side_effect=swap_ancestor_before_pin):
+            result = store.cleanup_expired(
+                self.now[0] + timedelta(days=30), managed_root)
+
+        self.assertNotEqual(result.status, "complete")
+        self.assertEqual(result.deleted_count, 0)
+        self.assertEqual(external_journal.read_bytes(), external_bytes)
+        self.assertTrue((moved_base / "app" / managed_store_path.name).exists())
+
+    def test_retention_rejects_preexisting_symlink_in_managed_root_ancestor(self):
+        base = Path(self.temp.name) / "managed-parent"
+        managed_root = base / "app"
+        managed_root.mkdir(parents=True)
+        managed_store_path = managed_root / "app-events.json"
+        store = AppEventStore(managed_store_path, clock=lambda: self.now[0])
+        self.addCleanup(store.stop)
+        store.record("app.hotkey.unavailable", {}, "managed")
+        self.assertTrue(store.flush())
+
+        external_parent = Path(self.temp.name) / "external-parent"
+        external_root = external_parent / "app"
+        external_root.mkdir(parents=True)
+        external_journal = external_root / managed_store_path.name
+        external_store = AppEventStore(external_journal, clock=lambda: self.now[0])
+        external_store.record("app.hotkey.unavailable", {}, "external sentinel")
+        self.assertTrue(external_store.flush())
+        external_store.stop()
+        original_external_bytes = external_journal.read_bytes()
+
+        moved_base = Path(self.temp.name) / "managed-parent-moved"
+        base.rename(moved_base)
+        base.symlink_to(external_parent, target_is_directory=True)
+        result = store.cleanup_expired(
+            self.now[0] + timedelta(days=30), managed_root)
+
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(external_journal.read_bytes(), original_external_bytes)
+        self.assertEqual(len(read_app_event_store(external_journal)["events"]), 1)
 
     def test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability(self):
         real_fsync = __import__("os").fsync

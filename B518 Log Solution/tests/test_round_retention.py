@@ -12,7 +12,9 @@ from unittest.mock import patch
 from log_monitoring import BaseMonitor
 from monitoring_round import RoundCoordinator
 import round_retention
+import app_event_store
 from round_archival import read_round_archive, write_round_archive
+from app_event_store import AppEventStore, read_app_event_store
 
 
 class CompleteMonitor(BaseMonitor):
@@ -79,6 +81,74 @@ class RoundRetentionTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), contents)
             self.assertEqual(json.loads((root / "round-retention-ledger.json").read_text())[
                 "schema_version"], 2)
+
+    def test_existing_cleanup_schedule_prunes_expired_app_events_and_persists_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)]
+            event_time = [now[0] - timedelta(days=31)]
+            store = AppEventStore(root / "app-events.json", clock=lambda: event_time[0])
+            old = store.record("app.hotkey.unavailable", {}, "old diagnostic")
+            self.assertTrue(store.flush())
+            event_time[0] = now[0]
+            current = store.record("app.profile.save_failed", {"reason": "new"}, "new diagnostic")
+            self.assertTrue(store.flush())
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            rounds.register_app_event_store(store, root)
+
+            rounds.request_retention_cleanup(30, "app-startup")
+            self.wait_until(lambda: rounds.retention_cleanup_status().status in {"complete", "failed"})
+
+            disk = read_app_event_store(root / "app-events.json")
+            self.assertEqual([item["event_id"] for item in disk["events"]], [current.event_id])
+            self.assertEqual(disk["events"][0]["sequence"], 2)
+            self.assertEqual(disk["events"][0]["diagnostic"], "new diagnostic")
+            summary = rounds.retention_cleanup_summaries()[-1]
+            self.assertEqual(summary.app_events.deleted_count, 1)
+            self.assertEqual(summary.app_events.status if hasattr(summary.app_events, "status")
+                             else summary.app_events.outcome, "complete")
+            fresh_reader = RoundCoordinator(
+                audit_root=root / "sessions", wall_clock=lambda: now[0],
+                retention_ledger_path=root / "round-retention-ledger.json")
+            restored_summary = fresh_reader.retention_cleanup_summaries()[-1]
+            self.assertEqual(restored_summary.app_events.deleted_count, 1)
+            self.assertEqual(restored_summary.app_events.outcome, "complete")
+            self.assertEqual(disk["events"][0]["localized_message"]["message_id"],
+                             "app.profile.save_failed")
+            self.assertNotIn("round_id", disk["events"][0])
+
+    def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)]
+            event_time = now[0] - timedelta(days=31)
+            store = AppEventStore(root / "app-events.json", clock=lambda: event_time)
+            expired = store.record("app.hotkey.unavailable", {}, "still protected after extension")
+            self.assertTrue(store.flush())
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            rounds.register_app_event_store(store, root)
+            entered = threading.Event()
+            release = threading.Event()
+            original_replace = app_event_store._atomic_replace_at
+
+            def paused_replace(directory_fd, name, content, expected, commit_gate):
+                if name == store.path.name and not entered.is_set():
+                    entered.set()
+                    self.assertTrue(release.wait(3))
+                return original_replace(directory_fd, name, content, expected, commit_gate)
+
+            with patch("app_event_store._atomic_replace_at", side_effect=paused_replace):
+                rounds.request_retention_cleanup(30, "app-startup")
+                self.assertTrue(entered.wait(2))
+                rounds.save_retention_setting(365, lambda: None)
+                release.set()
+                self.wait_until(lambda: (len(rounds.retention_cleanup_summaries()) >= 2 and
+                                         rounds.retention_cleanup_status().status == "complete"))
+
+            events = read_app_event_store(store.path)["events"]
+            self.assertEqual([item["event_id"] for item in events], [expired.event_id])
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
+            self.assertEqual(rounds.retention_cleanup_summaries()[-1].app_events.deleted_count, 0)
 
     def test_deadline_is_inclusive_and_a_round_before_deadline_is_preserved(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -182,3 +182,7 @@ M7 覆蓋案例 4（已開啟的 App 保存／診斷視窗依語言刷新並保�
 ## M8 適用驗收覆蓋（2026-10-09）
 
 M8 覆蓋案例 11 中已實測的歷史相容、可靠契約辨識、未知原文保留、目前資源呈現及唯讀磁碟行為；真正 Tk 從主頁歷史入口選讀舊輪次事件、新版 Atlas 平台事件、新版 App 診斷與舊 Session `events.log`，切換 English／繁體中文並查看詳細原始資料，選取及列表／文字閱讀位置保持。全新 Session／audit／App event store 讀取器重建混合資料；測試比較語言切換前後來源 bytes。另補同時間戳 audit 序號 2／10 數字順序、malformed legacy 欄位拒絕及錯誤列唯一識別。完整含 Tk 套件於最終程式／測試 SHA `06c65592958970f38aa9330fb218ab2da66a3581` 通過 350 tests（100.778 秒），並於本機 merge SHA `dd4306f07a853abbf2a7647f26c7ed3ce3854ccf` 重跑 350 tests（98.606 秒）。固定 M8 review baseline 為 `98a3e5c388cb993154d3302c70c10cbb608398c2`；Standards／Spec 雙軸複審無未解必要問題。GitHub main 已直接確認同步至 merge SHA；Gitea 及票分支清理依內網週一同步另行確認。此覆蓋只屬 M8 已驗部分，不代表 M9 清理或 M10 全 App／bundle 發布；詳細格式、producer 依據、拒絕規則及測試限制見 [M8 本機驗收](evidence/multilingual-ticket-08/local-validation.md)。
+
+## M9 適用驗收覆蓋（2026-10-09）
+
+M9 僅標記案例 12（App 事件依自身原時間、可信完整保存後安全到期清理）及案例 13（與既有輪次清理協調、摘要及安全重試）中實際驗證的部分。保護待補存／故障／未知／損壞事件、混合保存段、序號保留、不同時區同一瞬間、期限邊界、路徑替換競爭、真 Tk 雙語摘要及外部資料隔離均有本票證據；其他母規格案例不因 M9 完成而勾選。M9 不代表 M10 的全 App／bundle 發布驗收。實際命令、固定基準、測試結果及 GitHub／Gitea 同步界線見 [M9 本機驗收](evidence/multilingual-ticket-09/local-validation.md)。

@@ -148,6 +148,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def setUp(self):
         self._isolated_app_root = TemporaryDirectory()
         self._app_event_stores = []
+        self._app_round_coordinators = []
         app_root = Path(self._isolated_app_root.name)
         app_root_patcher = patch("b518_log_solution.APP_ROOT", app_root)
         preferences_patcher = patch("b518_log_solution.PREFS_PATH", app_root / "preferences.json")
@@ -158,17 +159,35 @@ class LogSolutionUiTests(unittest.TestCase):
             self._app_event_stores.append(store)
             return store
 
+        real_coordinator = RoundCoordinator
+
+        def create_coordinator(*args, **kwargs):
+            coordinator = real_coordinator(*args, **kwargs)
+            self._app_round_coordinators.append(coordinator)
+            return coordinator
+
         store_patcher = patch("b518_log_solution.AppEventStore", side_effect=create_store)
+        coordinator_patcher = patch(
+            "b518_log_solution.RoundCoordinator", side_effect=create_coordinator)
         app_root_patcher.start()
         preferences_patcher.start()
         store_patcher.start()
+        coordinator_patcher.start()
         self.addCleanup(app_root_patcher.stop)
         self.addCleanup(preferences_patcher.stop)
         self.addCleanup(store_patcher.stop)
+        self.addCleanup(coordinator_patcher.stop)
         self.addCleanup(self._isolated_app_root.cleanup)
         self.addCleanup(self._settle_app_event_writes)
 
     def _settle_app_event_writes(self):
+        for coordinator in self._app_round_coordinators:
+            deadline = time.monotonic() + 5
+            while (coordinator.retention_cleanup_status().status in {"idle", "running"} and
+                   time.monotonic() < deadline):
+                time.sleep(.01)
+            self.assertNotIn(coordinator.retention_cleanup_status().status, {"idle", "running"},
+                             "Background cleanup must finish before temporary data cleanup")
         for store in self._app_event_stores:
             deadline = time.monotonic() + 5
             while store.status().status == "saving" and time.monotonic() < deadline:
@@ -1018,6 +1037,12 @@ class LogSolutionUiTests(unittest.TestCase):
             self.wait_for(lambda: writer.archive_status(archived_round.round_id) is not None and
                           writer.archive_status(archived_round.round_id).cleanup_eligible)
             archive_path = writer.archive_status(archived_round.round_id).path
+            app_event_path = Path(temporary) / "app-events.json"
+            old_app_events = AppEventStore(app_event_path, clock=lambda: archived_at)
+            old_app_event = old_app_events.record(
+                "app.hotkey.unavailable", {}, "old hotkey diagnostic")
+            self.assertTrue(old_app_events.flush())
+            old_app_events.stop()
             protected_files = {
                 Path(temporary) / "manual-export.json": b'{"keep": true}',
                 Path(temporary) / "source-log.txt": b"external source log",
@@ -1025,7 +1050,8 @@ class LogSolutionUiTests(unittest.TestCase):
             for path, contents in protected_files.items():
                 path.write_bytes(contents)
 
-            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root,
+                                     app_event_path=app_event_path)
             try:
                 app.open_settings()
                 heartbeat = [0]
@@ -1046,7 +1072,24 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._refresh_retention_cleanup_status()
                 self.assertEqual(app.retention_cleanup_heading.cget("text"), "Background Cleanup Summary")
                 self.assertIn("retained 1", app.retention_cleanup_status.get())
+                self.assertIn("App events deleted 0, retained 2", app.retention_cleanup_status.get())
                 self.assertTrue(archive_path.parent.exists())
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertIn("App 事件：刪除 0、保留 2、失敗 0",
+                              app.retention_cleanup_status.get())
+                self.assertIn("App 事件從各自原事件時間起算",
+                              app.retention_help_label.cget("text"))
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                app.language_menu.invoke(0)
+                root.update()
 
                 previous_count = len(app.rounds.retention_cleanup_summaries())
                 app.retention_days_var.set("180")
@@ -1065,6 +1108,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertFalse(archive_path.parent.exists())
                 app._refresh_retention_cleanup_status()
                 self.assertIn("deleted 1 rounds", app.retention_cleanup_status.get())
+                self.assertIn("App events deleted 1", app.retention_cleanup_status.get())
+                remaining = read_app_event_store(app_event_path)
+                self.assertNotIn(old_app_event.event_id,
+                                 [item["event_id"] for item in remaining["events"]])
+                self.assertEqual(remaining["retired_sequences"], [[1, 1]])
                 persisted = MachineProfileStore(Path(temporary) / "preferences.json")
                 persisted.load()
                 self.assertEqual(persisted.retention_days, 180)
@@ -1072,6 +1120,20 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), contents)
                 self.assertFalse(archive_path.parent.exists())
                 self.assertGreater(heartbeat[0], 1)
+                self.assertEqual(app.retention_retry_button.cget("text"),
+                                 "Retry Background Cleanup")
+                before_retry = len(app.rounds.retention_cleanup_summaries())
+                app.retention_retry_button.invoke()
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    if (len(app.rounds.retention_cleanup_summaries()) > before_retry and
+                            app.rounds.retention_cleanup_status().status in {"complete", "failed"}):
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
+                self.assertEqual(app.rounds.retention_cleanup_summaries()[-1].trigger,
+                                 "manual-retry")
             finally:
                 app._close_settings()
                 app.rounds.request_close()
@@ -1079,6 +1141,165 @@ class LogSolutionUiTests(unittest.TestCase):
                 while time.monotonic() < deadline and app.rounds.close_status().status != "complete":
                     root.update()
                     time.sleep(0.01)
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_app_event_cleanup_failure_is_visible_and_retryable(self):
+        with TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            preferences = root_path / "preferences.json"
+            profile_store = MachineProfileStore(preferences)
+            profile_store.load()
+            profile_store.save_retention_days(30)
+            app_event_path = root_path / "app-events.json"
+            event_time = [datetime.now(timezone.utc) - timedelta(days=31)]
+            seeded_store = AppEventStore(app_event_path, clock=lambda: event_time[0])
+            expired_event = seeded_store.record(
+                "app.hotkey.unavailable", {}, "original expired diagnostic")
+            event_time[0] += timedelta(days=30)
+            retained_event = seeded_store.record(
+                "app.profile.save_failed", {"reason": "current"}, "retained diagnostic")
+            self.assertTrue(seeded_store.flush())
+            seeded_store.stop()
+            root = tk.Tk()
+            root.withdraw()
+            with patch("b518_log_solution.PREFS_PATH", preferences), \
+                    patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=root_path / "sessions",
+                    app_event_path=app_event_path)
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out while pumping App-event cleanup UI")
+
+            try:
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                app.open_settings()
+                app.settings_notebook.select(2)
+                root.update()
+                with patch("app_event_store._atomic_replace_at",
+                           side_effect=OSError("retention media unavailable")):
+                    app.rounds.request_retention_cleanup(30, "manual-retry")
+                    pump_until(lambda: app.rounds.retention_cleanup_status().status == "failed")
+                    app._refresh_retention_cleanup_status()
+                    self.assertIn("retention media unavailable",
+                                  app.retention_cleanup_status.get())
+                    still_saved = read_app_event_store(app_event_path)["events"]
+                    self.assertIn(expired_event.event_id,
+                                  [item["event_id"] for item in still_saved])
+
+                retry_x = app.retention_retry_button.winfo_width() // 2
+                retry_y = app.retention_retry_button.winfo_height() // 2
+                app.retention_retry_button.event_generate(
+                    "<ButtonPress-1>", x=retry_x, y=retry_y)
+                app.retention_retry_button.event_generate(
+                    "<ButtonRelease-1>", x=retry_x, y=retry_y)
+                pump_until(lambda: (app.rounds.retention_cleanup_status().status == "complete" and
+                                    app.rounds.retention_cleanup_summaries()[-1].trigger ==
+                                    "manual-retry"))
+                app._refresh_retention_cleanup_status()
+                self.assertNotIn(expired_event.event_id,
+                                  [item["event_id"] for item in
+                                   read_app_event_store(app_event_path)["events"]])
+                self.assertIn(retained_event.event_id,
+                              [item["event_id"] for item in
+                               read_app_event_store(app_event_path)["events"]])
+                self.assertIn("not yet expired", app.retention_cleanup_status.get())
+                self.assertEqual(
+                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
+                    "App event saves are pending or completeness is not confirmed.")
+                self.assertIn("retention media unavailable",
+                              app.rounds.retention_cleanup_summaries()[0].app_events.reason)
+
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app.retention_retry_button.cget("text"), "重試背景清理")
+                self.assertIn("App 事件：刪除 1", app.retention_cleanup_status.get())
+                self.assertIn("尚未到保存期限", app.retention_cleanup_status.get())
+                self.assertEqual(
+                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
+                    "App 事件仍有待補存，或完整保存狀態尚未確認。")
+                app.rounds.request_close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_localizes_timezone_missing_app_event_cleanup_reason(self):
+        with TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            preferences = root_path / "preferences.json"
+            profile_store = MachineProfileStore(preferences)
+            profile_store.load()
+            profile_store.save_retention_days(30)
+            app_event_path = root_path / "app-events.json"
+            store = AppEventStore(app_event_path)
+            store.record("app.hotkey.unavailable", {}, "time fixture")
+            self.assertTrue(store.flush())
+            store.stop()
+
+            root = tk.Tk()
+            root.withdraw()
+            with patch("b518_log_solution.PREFS_PATH", preferences), \
+                    patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey, session_root=root_path / "sessions",
+                    app_event_path=app_event_path)
+            payload = json.loads(app_event_path.read_text(encoding="utf-8"))
+            payload["events"][0]["occurred_at"] = "2026-10-09T08:00:00"
+            app_event_path.write_text(json.dumps(payload), encoding="utf-8")
+            malformed_bytes = app_event_path.read_bytes()
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out while pumping malformed-time cleanup UI")
+
+            try:
+                with patch("b518_log_solution.messagebox.showerror", return_value="ok"):
+                    app.open_settings()
+                    app.settings_notebook.select(2)
+                    app.rounds.request_retention_cleanup(30, "malformed-time")
+                    pump_until(lambda: app.rounds.retention_cleanup_status().status == "failed")
+                    app._refresh_retention_cleanup_status()
+                    self.assertIn("An App event original time has no time zone",
+                                  app.retention_cleanup_status.get())
+                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
+                                     "An App event original time has no time zone.")
+
+                    app.language_button.event_generate("<Button-1>")
+                    root.update()
+                    chinese_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    app.language_menu.invoke(chinese_index)
+                    root.update()
+                    self.assertIn("App 事件原始時間缺少時區", app.retention_cleanup_status.get())
+                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
+                                     "App 事件原始時間缺少時區。")
+                    self.assertEqual(app_event_path.read_bytes(), malformed_bytes)
+                app.rounds.request_close()
+                pump_until(lambda: app.rounds.close_status().status == "complete")
+            finally:
                 app.hotkey.close()
                 root.destroy()
 
@@ -4609,6 +4830,10 @@ class LogSolutionUiTests(unittest.TestCase):
         app.open_settings()
         root.update_idletasks()
         try:
+            self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                "complete", "failed"
+            })
+            self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
             style = ttk.Style(root)
             self.assertEqual(style.theme_use(), "clam")
             self.assertEqual(style.lookup("TLabel", "foreground"), "#111827")
@@ -4629,6 +4854,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(label.cget("foreground"))
         finally:
             app._close_settings()
+            app.rounds.request_close()
+            self.wait_for(lambda: app.rounds.close_status().status == "complete")
             app.hotkey.close()
             root.destroy()
 
