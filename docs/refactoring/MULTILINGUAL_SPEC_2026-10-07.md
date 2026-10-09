@@ -178,3 +178,7 @@ M6 整合更新（2026-10-09）：GitHub 合併提交 `daba4822566f944e603d065b5
 ## M7 適用驗收覆蓋（2026-10-09）
 
 M7 覆蓋案例 4（已開啟的 App 保存／診斷視窗依語言刷新並保留狀態）、案例 5（關閉保存時語言入口停用、取消後恢復）、案例 7（保存錯誤的雙語外層說明及原始診斷）、案例 10（App 與輪次全部必要資料完整保存才正常關閉）及案例 14（真正 Tk 的關閉進度／操作可用性）中屬本票的部分。真 Tk 驗證等待、失敗、重試、取消、再次關閉、已排入事件迴圈的語言請求拒絕及最終 destroy；全新 audit 讀取器確認保存結果。M7 合併後完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 336 tests（95.425 秒）。套件揭露取消後舊 close worker 可覆寫新 generation 狀態，已修正並新增 Event 控制封存驗證等待測試；固定 M7 基準的 Standards／Spec 複審無未解問題。母規格其餘全視窗翻譯、保存／清理全範圍及 bundle 發布仍分屬 M8～M10；此處只標示 M7 適用部分，不代表案例或全 App 多語言整體完成。詳細命令、合併／修正 SHA 及遠端狀態見 [M7 本機驗收](evidence/multilingual-ticket-07/local-validation.md)。公司 Gitea 同步及票分支清理依使用者指示延至週一。
+
+## M8 適用驗收覆蓋（2026-10-09）
+
+M8 覆蓋案例 11 中已實測的歷史相容、可靠契約辨識、未知原文保留、目前資源呈現及唯讀磁碟行為；真正 Tk 從主頁歷史入口選讀舊輪次事件、新版 Atlas 平台事件、新版 App 診斷與舊 Session `events.log`，切換 English／繁體中文並查看詳細原始資料，選取及列表／文字閱讀位置保持。全新 Session／audit／App event store 讀取器重建混合資料；測試比較語言切換前後來源 bytes。另補同時間戳 audit 序號 2／10 數字順序、malformed legacy 欄位拒絕及錯誤列唯一識別。完整含 Tk 套件於最終程式／測試 SHA `06c65592958970f38aa9330fb218ab2da66a3581` 通過 350 tests（100.778 秒）。固定 M8 review baseline 為 `98a3e5c388cb993154d3302c70c10cbb608398c2`；Standards／Spec 雙軸複審無未解必要問題。此覆蓋只屬 M8 已驗部分，不代表 M9 清理或 M10 全 App／bundle 發布；詳細格式、producer 依據、拒絕規則及測試限制見 [M8 本機驗收](evidence/multilingual-ticket-08/local-validation.md)。
