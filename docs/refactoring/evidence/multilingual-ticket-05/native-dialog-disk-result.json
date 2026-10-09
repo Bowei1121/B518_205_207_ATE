@@ -1,0 +1,24 @@
+{
+  "fresh_language": "zh-TW",
+  "profile_count": 4,
+  "reader_error": null,
+  "event_count": 7,
+  "message_ids": {
+    "app.startup.started": 1,
+    "app.settings.event.profile.path_selected": 2,
+    "app.settings.event.profile.imported": 2,
+    "app.settings.event.profile.exported": 2
+  },
+  "all_without_round_id": true,
+  "all_bilingual": true,
+  "sequence_contiguous": true,
+  "source_folder_returned": "/private/tmp/B518-M5-native-muzx9vrb/source-folder",
+  "exports_match_saved_profiles": {
+    "en": true,
+    "zh-TW": true
+  },
+  "existing_export_sha256_before": "7f35d158622eebba7595986d7a7754a040c1a96394bac3eef50a57d256029ae0",
+  "existing_export_sha256_after": "7f35d158622eebba7595986d7a7754a040c1a96394bac3eef50a57d256029ae0",
+  "code_test_sha": "a90be28c8b1615b408aaf6147572e603dff5338e",
+  "launched_head": "ef6222220423aee83de5910a0bc1c6309b1df2f6"
+}

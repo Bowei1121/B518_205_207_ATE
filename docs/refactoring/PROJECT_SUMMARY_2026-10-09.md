@@ -23,3 +23,11 @@
 - 最終程式／測試驗證 SHA：`be4f091`。完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（92.409 秒）；`python3 -m compileall -q src tests`、`git diff --check` 通過。真正 Tk 涵蓋保存歷史故障與修復、匯入／匯出診斷、fsync／關閉重試。完整輸出與逐項連結見 M4 [本機驗收紀錄](evidence/multilingual-ticket-04/local-validation.md)。
 - 型別檢查設定查無；未宣稱型別檢查通過。固定雙軸審查使用 M4 開始前基準 SHA，未沿用 M2／M3 基準。
 - GitHub 已以合併提交 `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 將 M4 併入 `B518-Log-Solution`；合併後完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 330 tests（93.584 秒）。合併主線與驗收文件推送後直接查詢曾確認 SHA `a14548e4afa93f1ca00cba3eb165cb1bf4eab7ff`；之後的文件更新也已推送，最後直接查詢確認主線 SHA `8f8b3a1286bc561e239395f9e52bd19efb6244df`，GitHub 票分支仍為 `e663e430d9fed1541bc0e4c20447d2f630c698de`。公司 Gitea 同步延至週一；Gitea 直接確認前保留本地及 GitHub `Multilingual/ticket-04`，不清理票分支。M4 不修改任何 GitHub Issue 狀態。
+
+## M5：設定與檔案對話框（GitHub #18）進度
+
+- M4 依賴已由 ancestry 與實際交付證據確認：M4 merge `f7e24cd265fc173d5d113e7fb122083602f5e5fa` 是 M5 固定基準 `740b26c23f5fb6fcc0988272183159b4405df5da` 的祖先；M4 本機驗收記錄涵蓋雙語 App 事件、診斷、重試及正常關閉。README／M5 ticket 的 #17 阻擋描述已更新為已解除。
+- 在乾淨的 GitHub 基準上建立 `Multilingual/ticket-05`。程式批次加入集中設定／配置／保存期限文案、既有設定視窗原地刷新、設定操作 M4 雙語事件、檔案選擇器 App 標題與類型文字，以及英文最小視窗重排。配置／語言／保存天數持久資料仍分開，未改設定格式或輪次生命週期。
+- 真 Tk 驗收：設定頁英文／繁中即時切換保留草稿、選取、分頁與驗證狀態；保存期限與清理摘要、profile／匯入匯出錯誤、App 診斷磁碟讀取及 680×560 版面已驗。修正關閉保存期間略過清理的可見狀態與封存保護原因翻譯，並讓測試在刪除暫存根目錄前等待公開清理狀態。最終完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 334 tests（83.098 秒）；完整 `test_log_solution_ui` 模組通過 57 tests（58.704 秒），`test_language_catalog` 與 `test_machine_profiles` 共 29 tests 通過。`compileall` 及 `git diff --check` 通過。型別檢查設定查無，不宣稱通過。
+- M5 母規格案例 1、4、14 的設定畫面適用部分已通過；案例 6 原有真 Tk 受控返回與標題／類型參數測試，於 2026-10-09 再由使用者完成兩語真原生選檔、取消、返回路徑及拒絕覆寫；兩份匯出一致、原檔雜湊不變，七筆 App 雙語事件由新讀取器核對。M5 六項產品驗收全部通過。所需人工步驟與逐項證據見 [M5 本機驗收](evidence/multilingual-ticket-05/local-validation.md)。
+- 固定 M5 review baseline 為 `740b26c23f5fb6fcc0988272183159b4405df5da`。Standards／Spec 複審指出的可見狀態、封存原因本地化與測試收尾問題已修正；最終程式／測試提交 `a90be28c8b1615b408aaf6147572e603dff5338e` 已推送 GitHub `Multilingual/ticket-05`，並由 `git ls-remote` 直接確認。原生選檔人工驗收已通過；使用者確認隔離 App 正常關閉，程序 exit 0。依既有授權接續 GitHub 合併與主線完整驗證。公司 Gitea 依使用者指示週一同步；Gitea 直接確認前保留 M5 票分支。本票未更新任何遠端 Issue 狀態。

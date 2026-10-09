@@ -140,9 +140,14 @@ class B518LogSolutionApp:
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
+        self._settings_text_widgets: list[tuple[tk.Widget, str]] = []
+        self._settings_tab_ids: list[str] = []
+        self._profile_editor_status_message: Optional[tuple[str, dict[str, object]]] = None
+        self._retention_status_message: Optional[tuple[str, dict[str, object]]] = None
         self.retention_days_var: Optional[tk.StringVar] = None
         self.retention_status: Optional[tk.StringVar] = None
         self.retention_cleanup_status: Optional[tk.StringVar] = None
+        self._retention_cleanup_request_status = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
@@ -435,10 +440,59 @@ class B518LogSolutionApp:
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
         self._refresh_app_event_status()
+        self._apply_settings_language()
         if self._close_window and self._close_window.winfo_exists():
             self._render_close_status(self.rounds.close_status())
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records(force=True)
+
+    def _settings_label(self, parent, message_id: str, **kwargs):
+        widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
+        self._settings_text_widgets.append((widget, message_id))
+        return widget
+
+    def _settings_button(self, parent, message_id: str, command):
+        widget = ttk.Button(parent, text=self._t(message_id), command=command)
+        self._settings_text_widgets.append((widget, message_id))
+        return widget
+
+    def _set_profile_editor_status(self, message_id: str, **parameters: object) -> None:
+        self._profile_editor_status_message = (message_id, dict(parameters))
+        if self.profile_editor_status is not None:
+            self.profile_editor_status.set(self._t(message_id, **parameters))
+
+    def _set_retention_status(self, message_id: str, **parameters: object) -> None:
+        self._retention_status_message = (message_id, dict(parameters))
+        if self.retention_status is not None:
+            self.retention_status.set(self._t(message_id, **parameters))
+
+    def _apply_settings_language(self) -> None:
+        """Refresh settings labels in place without touching draft or validation state."""
+        dialog = self.settings_window
+        if dialog is None or not dialog.winfo_exists():
+            return
+        dialog.title(self._t("app.settings.title"))
+        for widget, message_id in self._settings_text_widgets:
+            try:
+                if widget.winfo_exists():
+                    widget.configure(text=self._t(message_id))
+            except tk.TclError:
+                continue
+        notebook = getattr(self, "settings_notebook", None)
+        if notebook is not None and notebook.winfo_exists():
+            for tab, message_id in zip(notebook.tabs(), self._settings_tab_ids):
+                notebook.tab(tab, text=self._t(message_id))
+        if getattr(self, "retention_effective_label", None) is not None:
+            self.retention_effective_label.configure(
+                text=self._t("app.settings.retention.effective",
+                             days=self.profile_store.retention_days))
+        if self._profile_editor_status_message is not None:
+            message_id, parameters = self._profile_editor_status_message
+            self.profile_editor_status.set(self._t(message_id, **parameters))
+        if self._retention_status_message is not None:
+            message_id, parameters = self._retention_status_message
+            self.retention_status.set(self._t(message_id, **parameters))
+        self._refresh_retention_cleanup_status()
 
     def _restore_captured_round_messages_for_display(self) -> None:
         """Reuse captured round messages when an early callback reached the UI first."""
@@ -1644,8 +1698,10 @@ class B518LogSolutionApp:
             return
         dialog = tk.Toplevel(self.root)
         self.settings_window = dialog
+        self._settings_text_widgets = []
+        self._settings_tab_ids = []
         dialog.configure(background=LIGHT_BACKGROUND)
-        dialog.title("B518 Log Solution 設定")
+        dialog.title(self._t("app.settings.title"))
         dialog.geometry("720x620")
         dialog.minsize(680, 560)
         dialog.transient(self.root)
@@ -1656,39 +1712,46 @@ class B518LogSolutionApp:
         profile_tab = ttk.Frame(notebook, padding=12)
         log_tab = ttk.Frame(notebook, padding=12)
         retention_tab = ttk.Frame(notebook, padding=12)
-        notebook.add(profile_tab, text="工程師配置")
-        notebook.add(log_tab, text="事件與 Session")
-        notebook.add(retention_tab, text="保存期限")
+        self._settings_tab_ids = [
+            "app.settings.tab.configuration", "app.settings.tab.events",
+            "app.settings.tab.retention",
+        ]
+        notebook.add(profile_tab, text=self._t(self._settings_tab_ids[0]))
+        notebook.add(log_tab, text=self._t(self._settings_tab_ids[1]))
+        notebook.add(retention_tab, text=self._t(self._settings_tab_ids[2]))
         self._build_profile_editor_tab(profile_tab)
         self._build_log_tab(log_tab)
         self._build_retention_tab(retention_tab)
+        self._apply_settings_language()
 
     def _build_retention_tab(self, parent: ttk.Frame) -> None:
         """Build the global round-record retention settings tab."""
         self.retention_days_var = tk.StringVar(value=str(self.profile_store.retention_days))
-        self.retention_status = tk.StringVar(value="設定已保存。")
+        self.retention_status = tk.StringVar()
+        self._set_retention_status("app.settings.retention.status.saved")
         self.retention_effective_label = ttk.Label(
-            parent, text="目前生效：{} 天".format(self.profile_store.retention_days))
+            parent, text=self._t("app.settings.retention.effective",
+                                 days=self.profile_store.retention_days))
         self.retention_effective_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(4, 10))
-        ttk.Label(parent, text="全域保存天數").grid(row=1, column=0, sticky="w", pady=4)
+        self._settings_label(parent, "app.settings.retention.days").grid(
+            row=1, column=0, sticky="w", pady=4)
         self.retention_days_entry = ttk.Entry(parent, textvariable=self.retention_days_var, width=16)
         self.retention_days_entry.grid(row=1, column=1, sticky="w", padx=8, pady=4)
-        self.retention_save_button = ttk.Button(
-            parent, text="保存設定", command=self._save_retention_days)
+        self.retention_save_button = self._settings_button(
+            parent, "app.settings.retention.save", self._save_retention_days)
         self.retention_save_button.grid(row=2, column=0, sticky="w", pady=(8, 4))
         ttk.Label(parent, textvariable=self.retention_status, wraplength=620,
                   foreground=TEXT_COLOUR).grid(row=2, column=1, sticky="w", padx=8, pady=(8, 4))
-        self.retention_help_label = ttk.Label(
-            parent,
-            text=("保存期限從輪次可信封存時間起算，每天按完整 24 小時計算。\n"
-                  "縮短期限可能使既有符合條件的紀錄於下一次背景清理時到期。\n"
-                  "符合期限且可信完整保存的輪次會在背景清理，執行結果列於下方摘要。"),
+        self.retention_help_label = self._settings_label(
+            parent, "app.settings.retention.help")
+        self.retention_help_label.configure(
             wraplength=650, justify="left", foreground=TEXT_COLOUR,
         )
         self.retention_help_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
         self.retention_cleanup_status = tk.StringVar(value="背景清理尚未執行")
-        self.retention_cleanup_heading = ttk.Label(
-            parent, text="背景清理摘要", font=("Helvetica", 10, "bold"))
+        self.retention_cleanup_heading = self._settings_label(
+            parent, "app.settings.retention.cleanup.heading")
+        self.retention_cleanup_heading.configure(font=("Helvetica", 10, "bold"))
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
         ttk.Label(parent, textvariable=self.retention_cleanup_status, wraplength=650,
                   justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
@@ -1702,27 +1765,43 @@ class B518LogSolutionApp:
         try:
             days = int(text)
         except ValueError:
-            self.retention_status.set("設定無效：保存天數必須是正整數。")
+            reason = "retention days must be a positive integer"
+            self._set_retention_status("app.settings.retention.status.invalid")
+            self._record_app_event("app.settings.event.retention.invalid", {"reason": reason}, text)
+            return
+        if days <= 0:
+            reason = "retention days must be a positive integer"
+            self._set_retention_status("app.settings.retention.status.invalid")
+            self._record_app_event("app.settings.event.retention.invalid", {"reason": reason}, text)
             return
 
         previous = self.profile_store.retention_days
         try:
-            self.rounds.save_retention_setting(
+            cleanup_request = self.rounds.save_retention_setting(
                 days, lambda: self.profile_store.save_retention_days(days))
         except ProfileError as error:
-            self.retention_status.set(
-                "設定無效或偏好檔無法讀取，目前仍生效 {} 天：{}".format(previous, error))
+            self._set_retention_status("app.settings.retention.status.read_failed",
+                                       days=previous, reason=str(error))
+            self._record_app_event("app.settings.event.retention.save_failed",
+                                   {"reason": str(error)}, str(error))
             return
         except (OSError, TypeError, ValueError) as error:
-            self.retention_status.set("保存失敗，目前仍生效 {} 天：{}".format(previous, error))
+            self._set_retention_status("app.settings.retention.status.save_failed",
+                                       days=previous, reason=str(error))
+            self._record_app_event("app.settings.event.retention.save_failed",
+                                   {"reason": str(error)}, str(error))
             return
 
-        self.retention_effective_label.configure(text="目前生效：{} 天".format(days))
+        self.retention_effective_label.configure(
+            text=self._t("app.settings.retention.effective", days=days))
+        self._record_app_event("app.settings.event.retention.saved", {"days": days})
+        self._retention_cleanup_request_status = (
+            cleanup_request if cleanup_request.status == "skipped" else None)
+        self._refresh_retention_cleanup_status()
         if days < previous:
-            self.retention_status.set(
-                "保存天數已更新；既有符合條件的紀錄可能於下一次背景清理到期。")
+            self._set_retention_status("app.settings.retention.status.shortened")
         else:
-            self.retention_status.set("保存天數已更新並持久保存。")
+            self._set_retention_status("app.settings.retention.status.updated")
 
     def _refresh_retention_cleanup_status(self) -> None:
         """Display coordinator cleanup state and durable summaries on the Tk thread."""
@@ -1730,26 +1809,96 @@ class B518LogSolutionApp:
         if variable is None:
             return
         status = self.rounds.retention_cleanup_status()
+        close_state = self.rounds.close_status().status
+        request_status = self._retention_cleanup_request_status
+        if (request_status is not None and request_status.status == "skipped" and
+                close_state in {"saving", "waiting", "failed"}):
+            status = request_status
+        elif request_status is not None:
+            self._retention_cleanup_request_status = None
         summaries = self.rounds.retention_cleanup_summaries()
         latest = summaries[-1] if summaries else None
-        detail = status.message
+        status_message = {
+            "idle": "app.settings.retention.cleanup.idle",
+            "running": "app.settings.retention.cleanup.running",
+            "complete": "app.settings.retention.cleanup.complete",
+            "failed": "app.settings.retention.cleanup.failed",
+            "skipped": "app.settings.retention.cleanup.skipped",
+        }.get(status.status, "app.settings.retention.cleanup.failed")
+        detail = self._t(
+            status_message,
+            reason=self._retention_reason_text(status.message) if status.status == "skipped" else "")
+        if status.status == "failed" and latest is None and status.message:
+            detail += "\n" + status.message
         if latest is not None:
             outcomes = latest.results
-            detail += "\n最近執行 {} · 保存 {} 天 · 刪除 {} 輪、保留 {} 輪、失敗 {} 輪".format(
-                latest.completed_at or latest.started_at, latest.retention_days,
-                sum(item.outcome == "deleted" for item in outcomes),
-                sum(item.outcome == "skipped" for item in outcomes),
-                sum(item.outcome == "failed" for item in outcomes))
+            detail += "\n" + self._t(
+                "app.settings.retention.cleanup.summary",
+                time=latest.completed_at or latest.started_at,
+                days=latest.retention_days,
+                deleted=sum(item.outcome == "deleted" for item in outcomes),
+                skipped=sum(item.outcome == "skipped" for item in outcomes),
+                failed=sum(item.outcome == "failed" for item in outcomes))
             failures = [item for item in outcomes if item.outcome == "failed"]
             if failures:
-                detail += "\n" + "；".join("{}：{}".format(item.round_id or "清理", item.reason)
-                                             for item in failures[:3])
+                items = "；".join(self._t(
+                    "app.settings.retention.cleanup.item",
+                    round_id=item.round_id or self._t("app.settings.retention.cleanup.heading"),
+                    reason=item.reason) for item in failures[:3])
+                detail += "\n" + self._t("app.settings.retention.cleanup.failures", items=items)
             skipped = [item for item in outcomes if item.outcome == "skipped"]
             if skipped:
-                detail += "\n保留原因：" + "；".join(
-                    "{}：{}".format(item.round_id or "輪次", item.reason)
-                    for item in skipped[:3])
+                items = "；".join(self._t(
+                    "app.settings.retention.cleanup.item",
+                    round_id=item.round_id or self._t("term.test_round"),
+                    reason=self._retention_reason_text(item.reason)) for item in skipped[:3])
+                detail += "\n" + self._t("app.settings.retention.cleanup.protected", items=items)
         variable.set(detail)
+
+    def _retention_reason_text(self, reason: str) -> str:
+        """Translate known cleanup status copy while leaving diagnostic details intact."""
+        diagnostic_prefixes = {
+            "封存資訊無法讀取：": "archive_read_failed",
+            "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",
+            "必要輪次紀錄無法重建：": "archive_component_rebuild_failed",
+        }
+        for prefix, message_id in diagnostic_prefixes.items():
+            if reason.startswith(prefix):
+                return self._t("app.settings.retention.reason." + message_id,
+                               diagnostic=reason[len(prefix):])
+        message_ids = {
+            "關閉保存期間不啟動新清理": "close",
+            "封存資訊版本未知": "archive_unknown_version",
+            "封存時間無效或缺少時區": "archive_invalid_time",
+            "封存資訊格式不正確": "archive_format_invalid",
+            "封存資訊完整性驗證失敗": "archive_integrity_failed",
+            "封存輪次身分不一致": "archive_round_identity_mismatch",
+            "封存完整性資訊缺失": "archive_integrity_missing",
+            "封存組成資料不完整": "archive_components_incomplete",
+            "封存組成資料格式不正確": "archive_component_format_invalid",
+            "封存組成資料路徑不正確": "archive_component_path_invalid",
+            "必要輪次紀錄內容已變更": "archive_component_changed",
+            "磁碟紀錄未完整保存或輪次身分不一致": "archive_disk_incomplete",
+            "關閉保存期間暫停清理": "close",
+            "本次 App 執行仍受保護": "protected",
+            "可信封存時間缺少時區": "timezone",
+            "尚未到保存期限": "not_expired",
+            "已完整刪除可信輪次資料": "deleted",
+            "封存檔路徑含符號連結或越界": "unsafe_manifest",
+            "封存證據無效": "invalid_archive",
+            "必要資料路徑含符號連結或不在 App 管理範圍": "unsafe_component",
+            "封存路徑與驗證後路徑不一致": "archive_path_mismatch",
+            "輪次目錄含未知檔案，整輪保留": "unknown_file",
+            "中斷清理輪次目前仍受保護": "recovery_protected",
+            "持久刪除計畫格式或輪次組件不可信": "invalid_plan",
+            "刪除已完成，補寫先前中斷的摘要": "recovery_summary",
+            "目前保存期限尚未到期；已還原中斷時的暫置資料並保留其餘進度":
+                "recovered_not_expired",
+            "保存期限在清理期間變更，保留剩餘資料等待重新判定": "period_changed",
+            "依持久刪除計畫完成中斷復原": "recovered_deleted",
+        }
+        suffix = message_ids.get(reason)
+        return self._t("app.settings.retention.reason." + suffix) if suffix else reason
 
     def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""
@@ -1771,73 +1920,89 @@ class B518LogSolutionApp:
             field: tk.StringVar(value=str(profile.timeouts[field]))
             for field in ("start", "test", "round")
         }
-        self.profile_editor_status = tk.StringVar(
-            value="編輯草稿；路徑只做結構檢查，實際可讀性在開始監控前檢查。")
+        self.profile_editor_status = tk.StringVar()
+        self._set_profile_editor_status("app.settings.profile.status.draft")
 
-        ttk.Label(parent, text="專案代號").grid(row=0, column=0, sticky="w", pady=4)
+        self._settings_label(parent, "app.settings.profile.project").grid(
+            row=0, column=0, sticky="w", pady=4)
         ttk.Entry(parent, textvariable=self.profile_editor_project, width=18).grid(
             row=0, column=1, sticky="w", padx=6, pady=4)
-        ttk.Label(parent, text="機型").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=4)
+        self._settings_label(parent, "app.settings.profile.station_type").grid(
+            row=0, column=2, sticky="w", padx=(12, 0), pady=4)
         self.profile_editor_machine_choice = ttk.Combobox(
             parent, textvariable=self.profile_editor_machine,
             values=("DFU", "FCT", "BT"), state="readonly", width=9)
         self.profile_editor_machine_choice.grid(
             row=0, column=3, sticky="w", padx=6, pady=4)
-        ttk.Label(parent, text="平台").grid(row=0, column=4, sticky="w", padx=(12, 0), pady=4)
+        self._settings_label(parent, "app.settings.profile.platform").grid(
+            row=1, column=0, sticky="w", pady=4)
         ttk.Combobox(parent, textvariable=self.profile_editor_platform,
                      values=DEFAULT_PLATFORM_REGISTRY.names, state="readonly", width=16).grid(
-            row=0, column=5, sticky="w", padx=6, pady=4)
-
-        ttk.Label(parent, text="測試容量").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=self.profile_editor_capacity, width=10).grid(
             row=1, column=1, sticky="w", padx=6, pady=4)
-        ttk.Label(parent, text="來源:顯示位置映射").grid(row=1, column=2, sticky="w", padx=(12, 0), pady=4)
+
+        self._settings_label(parent, "app.settings.profile.capacity").grid(
+            row=1, column=2, sticky="w", padx=(12, 0), pady=4)
+        ttk.Entry(parent, textvariable=self.profile_editor_capacity, width=10).grid(
+            row=1, column=3, sticky="w", padx=6, pady=4)
+        self._settings_label(parent, "app.settings.profile.mapping").grid(
+            row=2, column=0, sticky="w", pady=4)
         ttk.Entry(parent, textvariable=self.profile_editor_mapping, width=34).grid(
-            row=1, column=3, columnspan=3, sticky="ew", padx=6, pady=4)
+            row=2, column=1, columnspan=3, sticky="ew", padx=6, pady=4)
 
-        path_labels = (("active", "即時 Log 路徑"), ("final", "最終結果路徑"),
-                       ("caseinfo", "CaseInfo／進度路徑（選填）"))
-        for row, (field, label) in enumerate(path_labels, 2):
-            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        path_labels = (("active", "app.settings.profile.path_active"),
+                       ("final", "app.settings.profile.path_final"),
+                       ("caseinfo", "app.settings.profile.path_caseinfo"))
+        for index, (field, message_id) in enumerate(path_labels):
+            row = 3 + index * 2
+            self._settings_label(parent, message_id).grid(
+                row=row, column=0, columnspan=4, sticky="w", pady=(6, 0))
             ttk.Entry(parent, textvariable=self.profile_editor_paths[field]).grid(
-                row=row, column=1, columnspan=4, sticky="ew", padx=6, pady=4)
-            ttk.Button(parent, text="選擇本機資料夾",
-                       command=lambda current=field: self._choose_profile_editor_path(current)).grid(
-                row=row, column=5, sticky="e", padx=6, pady=4)
+                row=row + 1, column=0, columnspan=3, sticky="ew", padx=6, pady=4)
+            self._settings_button(
+                parent, "app.settings.profile.choose_directory",
+                lambda current=field: self._choose_profile_editor_path(current)).grid(
+                row=row + 1, column=3, sticky="e", padx=6, pady=4)
 
-        timeout_labels = (("start", "開始期限（秒）"), ("test", "測試期限（秒）"),
-                          ("round", "整輪期限（秒）"))
-        for row, (field, label) in enumerate(timeout_labels, 5):
-            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        timeout_labels = (("start", "app.settings.profile.timeout_start"),
+                          ("test", "app.settings.profile.timeout_test"),
+                          ("round", "app.settings.profile.timeout_round"))
+        for row, (field, message_id) in ((9, timeout_labels[0]), (9, timeout_labels[1]),
+                                         (10, timeout_labels[2])):
+            column = 0 if field in {"start", "round"} else 2
+            self._settings_label(parent, message_id).grid(
+                row=row, column=column, sticky="w", padx=(12, 0) if column else 0, pady=4)
             ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
-                row=row, column=1, sticky="w", padx=6, pady=4)
+                row=row, column=column + 1, sticky="ew", padx=6, pady=4)
         ttk.Label(parent, textvariable=self.profile_editor_status, wraplength=620,
-                  foreground=TEXT_COLOUR).grid(row=8, column=0, columnspan=6, sticky="w", pady=(10, 6))
+                  foreground=TEXT_COLOUR).grid(row=11, column=0, columnspan=4,
+                                               sticky="w", pady=(10, 6))
         edit_actions = ttk.Frame(parent)
-        edit_actions.grid(row=9, column=0, columnspan=6, sticky="ew", pady=(8, 0))
-        for label, action in (("載入已保存配置", self._load_profile_editor_selection),
-                              ("驗證草稿", self._validate_profile_editor),
-                              ("套用並保存", self._apply_profile_editor),
-                              ("取消草稿", self._cancel_profile_editor)):
-            ttk.Button(edit_actions, text=label, command=action).pack(side="left", padx=(0, 6))
+        edit_actions.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        for message_id, action in (("app.settings.profile.load", self._load_profile_editor_selection),
+                                   ("app.settings.profile.validate", self._validate_profile_editor),
+                                   ("app.settings.profile.apply", self._apply_profile_editor),
+                                   ("app.settings.profile.cancel", self._cancel_profile_editor)):
+            self._settings_button(edit_actions, message_id, action).pack(side="left", padx=(0, 6))
         file_actions = ttk.Frame(parent)
-        file_actions.grid(row=10, column=0, columnspan=6, sticky="ew", pady=(6, 0))
-        for label, action in (("匯入配置", self._import_profiles),
-                              ("匯出配置", self._export_profiles),
-                              ("重新載入部署配置", self._reload_profiles)):
-            ttk.Button(file_actions, text=label, command=action).pack(side="left", padx=(0, 6))
-        parent.columnconfigure(3, weight=1)
-        parent.rowconfigure(7, weight=1)
+        file_actions.grid(row=13, column=0, columnspan=4, sticky="ew", pady=(6, 0))
+        for message_id, action in (("app.settings.profile.import", self._import_profiles),
+                                   ("app.settings.profile.export", self._export_profiles),
+                                   ("app.settings.profile.reload", self._reload_profiles)):
+            self._settings_button(file_actions, message_id, action).pack(side="left", padx=(0, 6))
+        parent.columnconfigure(1, weight=1)
+        parent.rowconfigure(11, weight=1)
 
     @staticmethod
     def _mapping_text(mapping) -> str:
         return ", ".join("{}:{}".format(source, display) for source, display in mapping)
 
     def _choose_profile_editor_path(self, field: str) -> None:
-        path = filedialog.askdirectory(parent=self.settings_window, mustexist=True,
-                                       title="選擇配置路徑")
+        path = filedialog.askdirectory(
+            parent=self.settings_window, mustexist=True,
+            title=self._t("app.settings.profile.path.title"))
         if path:
             self.profile_editor_paths[field].set(path)
+            self._record_app_event("app.settings.event.profile.path_selected", {"path": path})
 
     def _profile_editor_draft(self) -> Optional[MachineProfile]:
         try:
@@ -1849,13 +2014,21 @@ class B518LogSolutionApp:
                 {field: variable.get() for field, variable in self.profile_editor_timeouts.items()},
             )
         except (ProfileError, TypeError, ValueError) as error:
-            self.profile_editor_status.set("配置欄位錯誤：{}".format(error))
+            self._set_profile_editor_status(
+                "app.settings.profile.status.invalid", reason=str(error))
+            self._record_app_event("app.settings.event.profile.validation_failed",
+                                   {"reason": str(error)}, str(error))
             return None
-        self.profile_editor_status.set("結構驗證通過；部署電腦仍會在開始前檢查路徑。")
+        self._set_profile_editor_status("app.settings.profile.status.valid")
         return profile
 
     def _validate_profile_editor(self) -> None:
-        self._profile_editor_draft()
+        profile = self._profile_editor_draft()
+        if profile is not None:
+            self._record_app_event("app.settings.event.profile.validated", {
+                "project": profile.project, "machine": profile.machine,
+                "platform": profile.platform,
+            })
 
     def _apply_profile_editor(self) -> None:
         profile = self._profile_editor_draft()
@@ -1868,7 +2041,7 @@ class B518LogSolutionApp:
                 preserve_legacy=self.profile_store.migration_required,
             )
         except (OSError, ProfileError, TypeError, ValueError) as error:
-            self.profile_editor_status.set(self._t("app.profile.save_failed", reason=str(error)))
+            self._set_profile_editor_status("app.profile.save_failed", reason=str(error))
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
             return
         self.profiles = catalog
@@ -1881,22 +2054,34 @@ class B518LogSolutionApp:
         if not self._round_is_active():
             self._render_rows()
         self._render_profile_editor(profile)
-        self.profile_editor_status.set("配置已套用並保存；更新供後續輪次使用。")
+        self._set_profile_editor_status("app.settings.profile.status.saved")
+        self._record_app_event("app.settings.event.profile.saved", {
+            "project": profile.project, "machine": profile.machine,
+            "platform": profile.platform,
+        })
 
     def _cancel_profile_editor(self) -> None:
         self._render_profile_editor(self.profile_editor_original)
-        self.profile_editor_status.set("草稿已取消，已保存配置未變更。")
+        self._set_profile_editor_status("app.settings.profile.status.cancelled")
+        self._record_app_event("app.settings.event.profile.cancelled")
 
     def _load_profile_editor_selection(self) -> None:
         try:
             profile = self.profiles.get(
                 self.profile_editor_project.get().strip(), self.profile_editor_machine.get())
         except ProfileError as error:
-            self.profile_editor_status.set("找不到可載入配置：{}".format(error))
+            self._set_profile_editor_status(
+                "app.settings.profile.status.not_found", reason=str(error))
+            self._record_app_event("app.profile.validation_failed",
+                                   {"reason": str(error)}, str(error))
             return
         self.profile_editor_original = profile
         self._render_profile_editor(profile)
-        self.profile_editor_status.set("已載入已保存配置作為草稿。")
+        self._set_profile_editor_status("app.settings.profile.status.loaded")
+        self._record_app_event("app.settings.event.profile.loaded", {
+            "project": profile.project, "machine": profile.machine,
+            "platform": profile.platform,
+        })
 
     def _render_profile_editor(self, profile: MachineProfile) -> None:
         self.profile_editor_project.set(profile.project)
@@ -1911,8 +2096,10 @@ class B518LogSolutionApp:
 
     def _import_profiles(self) -> None:
         path = filedialog.askopenfilename(
-            parent=self.settings_window, title="匯入工程師配置",
-            filetypes=(("JSON 配置", "*.json"), ("所有檔案", "*")),
+            parent=self.settings_window,
+            title=self._t("app.settings.profile.import.title"),
+            filetypes=((self._t("app.settings.profile.import.type_json"), "*.json"),
+                       (self._t("app.settings.profile.import.type_all"), "*")),
         )
         if not path:
             return
@@ -1921,41 +2108,50 @@ class B518LogSolutionApp:
             catalog, project, machine = self.profile_store.import_document(
                 document, self.project.get(), self.station.get())
         except (OSError, ProfileError, TypeError, ValueError) as error:
-            self.profile_editor_status.set(self._t("app.profile.import_failed", reason=str(error)))
+            self._set_profile_editor_status("app.profile.import_failed", reason=str(error))
             self._record_app_event("app.profile.import_failed", {"reason": str(error)}, str(error))
             return
         self._activate_profile_catalog(
             catalog, project, machine,
-            "配置已驗證、完整匯入並保存。",
-            "匯入後原選擇不存在；已明確切換至文件中的有效配置：{project} / {machine}。",
+            "app.settings.profile.status.imported",
+            "app.settings.profile.status.import_selection",
         )
+        self._record_app_event("app.settings.event.profile.imported")
 
     def _export_profiles(self) -> None:
         path = filedialog.asksaveasfilename(
-            parent=self.settings_window, title="匯出工程師配置",
-            defaultextension=".json", filetypes=(("JSON 配置", "*.json"),),
+            parent=self.settings_window,
+            title=self._t("app.settings.profile.export.title"),
+            defaultextension=".json",
+            filetypes=((self._t("app.settings.profile.export.type_json"), "*.json"),),
         )
         if not path:
             return
         try:
             MachineProfileStore.export_document(Path(path), self.profiles)
         except OSError as error:
-            self.profile_editor_status.set(self._t("app.profile.export_failed", reason=str(error)))
+            self._set_profile_editor_status("app.profile.export_failed", reason=str(error))
             self._record_app_event("app.profile.export_failed", {"reason": str(error)}, str(error))
             return
-        self.profile_editor_status.set("已匯出 {} 組配置。".format(len(self.profiles.profiles)))
+        self._set_profile_editor_status("app.settings.profile.status.exported",
+                                        count=len(self.profiles.profiles))
+        self._record_app_event("app.settings.event.profile.exported", {
+            "count": len(self.profiles.profiles),
+        })
 
     def _reload_profiles(self) -> None:
         catalog, saved_project, saved_machine, error = self.profile_store.load()
         if error:
-            self.profile_editor_status.set("重新載入失敗，目前有效配置保留：{}".format(error))
+            self._set_profile_editor_status(
+                "app.settings.profile.status.reload_failed", reason=error)
             self._record_app_event("app.startup.preferences_read_failed", {"reason": error}, error)
             return
         self._activate_profile_catalog(
             catalog, saved_project, saved_machine,
-            "已重新載入部署配置；正在進行的輪次仍使用原快照。",
-            "重新載入後原選擇不存在；已明確切換至偏好檔中的有效配置：{project} / {machine}。",
+            "app.settings.profile.status.reloaded",
+            "app.settings.profile.status.reload_selection",
         )
+        self._record_app_event("app.settings.event.profile.loaded")
 
     def _activate_profile_catalog(self, catalog, suggested_project: str, suggested_machine: str,
                                   success_message: str, fallback_message: str) -> None:
@@ -1970,7 +2166,7 @@ class B518LogSolutionApp:
             editor_profile = catalog.get(suggested_project, suggested_machine)
             self.profile_editor_original = editor_profile
             self._render_profile_editor(editor_profile)
-            self.profile_editor_status.set(self.profile_error)
+            self._set_profile_editor_status("app.settings.profile.status.active_removed")
             return
         selection_changed = profile is None
         if selection_changed:
@@ -1978,7 +2174,7 @@ class B518LogSolutionApp:
         try:
             catalog.get(profile.project, profile.machine)
         except ProfileError:
-            raise ProfileError("匯入／重新載入配置缺少建議的有效選擇。")
+            raise ProfileError(self._t("app.settings.profile.status.import_selection_missing"))
         self.profiles = catalog
         self.project.set(profile.project)
         self.station.set(profile.machine)
@@ -1989,15 +2185,16 @@ class B518LogSolutionApp:
         self.profile_editor_original = profile
         self._render_profile_editor(profile)
         if selection_changed:
-            self.profile_editor_status.set(fallback_message.format(
-                project=profile.project, machine=profile.machine))
+            self._set_profile_editor_status(
+                fallback_message, project=profile.project, machine=profile.machine)
         else:
-            self.profile_editor_status.set(success_message)
+            self._set_profile_editor_status(success_message)
 
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         controls = ttk.Frame(parent)
         controls.pack(fill="x", pady=(0, 8))
-        ttk.Button(controls, text="開啟 Session 紀錄", command=self.open_session).pack(side="left")
+        self._settings_button(controls, "app.settings.session.open",
+                              self.open_session).pack(side="left")
         self.settings_log = tk.Text(parent, wrap="word", state="disabled", height=26,
                                     background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                                     insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
@@ -2012,6 +2209,10 @@ class B518LogSolutionApp:
             self.settings_window.destroy()
         self.settings_window = None
         self.settings_log = None
+        self._settings_text_widgets = []
+        self._settings_tab_ids = []
+        self._profile_editor_status_message = None
+        self._retention_status_message = None
 
     def open_session(self) -> None:
         path = self.rounds.session_path or self.session_root
@@ -2019,7 +2220,12 @@ class B518LogSolutionApp:
         try:
             subprocess.Popen(["open", str(path)])
         except OSError as error:
-            messagebox.showerror("無法開啟", str(error), parent=self.root)
+            reason = str(error)
+            self._record_app_event("app.settings.event.session.open_failed",
+                                   {"reason": reason}, reason)
+            messagebox.showerror(self._t("app.settings.session.open"),
+                                 self._t("app.settings.session.open_failed", reason=reason),
+                                 parent=self.root)
 
     def close(self) -> None:
         rounds = getattr(self, "rounds", None)
