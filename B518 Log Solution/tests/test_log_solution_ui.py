@@ -4335,10 +4335,9 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
-    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
-                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting(self):
         from audit_records import AuditEvent, RoundAuditStore
+        from language_catalog import make_bilingual_message
 
         with TemporaryDirectory() as temporary:
             root_path = Path(temporary)
@@ -4350,6 +4349,11 @@ class LogSolutionUiTests(unittest.TestCase):
             )
             audit.append_event(AuditEvent(1, "round_started", "FCT 本輪已接受開始", None),
                                "2026-10-08T10:00:01+08:00", 1.0)
+            audit.append_event(AuditEvent(
+                2, "final", "slot1 最終 PASS", 1, "SN-HISTORY", "PASS",
+                "/sources/history.csv", {}, make_bilingual_message(
+                    "platform.atlas.final", {"station": "FCT", "slot": 1, "status": "PASS"}),
+            ), "2026-10-08T10:00:02+08:00", 2.0)
             self.assertTrue(audit.flush())
             audit_path = audit.audit_path
             audit_before = audit_path.read_bytes()
@@ -4357,6 +4361,20 @@ class LogSolutionUiTests(unittest.TestCase):
             root = tk.Tk()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
                                      session_root=session_root, app_event_path=app_path)
+
+            def click_history_row(index):
+                app.historical_event_list.see(index)
+                root.update()
+                bounds = app.historical_event_list.bbox(index)
+                self.assertIsNotNone(bounds)
+                x, y, _width, height = bounds
+                point = (max(5, x + 5), y + max(1, height // 2))
+                app.historical_event_list.event_generate(
+                    "<ButtonPress-1>", x=point[0], y=point[1])
+                app.historical_event_list.event_generate(
+                    "<ButtonRelease-1>", x=point[0], y=point[1])
+                root.update()
+
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
                 app.open_historical_events()
@@ -4364,13 +4382,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.historical_event_window.winfo_exists())
                 keys = [record.key for record in app._historical_event_records]
                 round_index = keys.index("round:round-history-1:1")
-                app.historical_event_list.selection_clear(0, "end")
-                app.historical_event_list.selection_set(round_index)
-                app.historical_event_list.event_generate("<<ListboxSelect>>")
-                root.update_idletasks()
+                click_history_row(round_index)
                 self.assertIn("FCT round start accepted",
                               app.historical_event_detail.get("1.0", "end"))
                 self.assertIn("FCT 本輪已接受開始",
+                              app.historical_event_detail.get("1.0", "end"))
+                platform_key = "round:round-history-1:2"
+                platform_index = [record.key for record in app._historical_event_records].index(
+                    platform_key)
+                click_history_row(platform_index)
+                self.assertIn("Atlas Slot 1 final result: PASS",
                               app.historical_event_detail.get("1.0", "end"))
 
                 selected_key = app._historical_event_selected_key
@@ -4378,10 +4399,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update_idletasks()
                 self.assertTrue(app.historical_event_window.winfo_exists())
                 self.assertEqual(app._historical_event_selected_key, selected_key)
-                self.assertIn("FCT 已接受開始本輪",
+                self.assertIn("Atlas 通道 1 最終結果：PASS",
                               app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(app._historical_event_selected_key, platform_key)
                 self.assertEqual(audit_path.read_bytes(), audit_before)
                 self.assertEqual(app.historical_event_heading.cget("text"), "事件")
+                app_record = next(record for record in app._historical_event_records
+                                  if record.source == "app")
+                app_index = [record.key for record in app._historical_event_records].index(
+                    app_record.key)
+                click_history_row(app_index)
+                self.assertIn("App 已啟動", app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("Application started", app.historical_event_detail.get("1.0", "end"))
                 app._select_language(ENGLISH)
                 self.assertIn("FCT round start accepted",
                               app.historical_event_list.get(round_index))
