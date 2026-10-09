@@ -1740,23 +1740,36 @@ class RoundCoordinator:
                             "封存資訊保存失敗；視窗仍保持開啟。" + "; ".join(archive_failures))
                         return
                     with self._lock:
-                        app_store = self._app_event_store
-                        app_status = app_store.status() if app_store is not None else None
-                        if app_status is not None and not app_status.complete:
-                            if app_status.status == "failed":
-                                self._close_status = CloseSnapshot(
-                                    "failed", generation, round_ids,
-                                    "App 診斷紀錄尚未完整保存：{}".format(app_status.error),
-                                    app_status.pending_count)
-                                return
+                        if not self._closing or self._close_status.generation != generation:
+                            return
+                        archive_work_pending = (
+                            self._archive_worker_active or
+                            not self._archive_queue.empty() or bool(self._archive_queued))
+                        if archive_work_pending:
                             self._close_status = CloseSnapshot(
                                 "waiting", generation, round_ids,
-                                "等待 App 診斷紀錄完成保存", app_status.pending_count)
-                            should_wait_for_app = True
-                        else:
+                                "等待輪次封存驗證工作完成")
                             should_wait_for_app = False
-                            if self._closing and self._close_status.generation == generation:
+                        else:
+                            app_store = self._app_event_store
+                            app_status = app_store.status() if app_store is not None else None
+                            if app_status is not None and not app_status.complete:
+                                if app_status.status == "failed":
+                                    self._close_status = CloseSnapshot(
+                                        "failed", generation, round_ids,
+                                        "App 診斷紀錄尚未完整保存：{}".format(app_status.error),
+                                        app_status.pending_count)
+                                    return
+                                self._close_status = CloseSnapshot(
+                                    "waiting", generation, round_ids,
+                                    "等待 App 診斷紀錄完成保存", app_status.pending_count)
+                                should_wait_for_app = True
+                            else:
+                                should_wait_for_app = False
                                 self._close_status = CloseSnapshot("complete", generation, round_ids)
+                    if archive_work_pending:
+                        threading.Event().wait(0.05)
+                        continue
                     if should_wait_for_app:
                         if not app_store.flush(timeout=0.05):
                             continue

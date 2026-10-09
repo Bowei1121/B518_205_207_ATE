@@ -298,6 +298,68 @@ class RoundArchivalTests(unittest.TestCase):
             self.assertTrue(read_round_archive(
                 rounds.archive_status(started.round_id).path, started.round_id).cleanup_eligible)
 
+    def test_close_waits_for_inflight_archive_validation_before_reporting_complete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)
+            validation_started = threading.Event()
+            release_validation = threading.Event()
+            validation_lock = threading.Lock()
+            validation_blocked = [False]
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            started = rounds.start("FCT", lambda callback: CompletingMonitor(
+                callback, root / "sessions", lambda: now), run_async=False)
+            rounds.poll_once()
+            archived = self.wait_for_archive(rounds, started.round_id)
+            self.assertEqual(archived.status, "archived")
+
+            original_validation = RoundCoordinator._archive_tracked_round
+
+            def hold_completed_validation(round_id, round_):
+                status = original_validation(rounds, round_id, round_)
+                should_hold = False
+                with validation_lock:
+                    if (threading.current_thread() is not threading.main_thread() and
+                            not validation_blocked[0]):
+                        validation_blocked[0] = True
+                        should_hold = True
+                        validation_started.set()
+                if should_hold:
+                    release_validation.wait(3)
+                return status
+
+            with patch.object(rounds, "_archive_tracked_round",
+                              side_effect=hold_completed_validation):
+                rounds.retry_archival(started.round_id)
+                self.assertTrue(validation_started.wait(2))
+                rounds.request_close()
+                try:
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        status = rounds.close_status()
+                        if status.status == "waiting" and "封存驗證" in status.message:
+                            break
+                        threading.Event().wait(0.01)
+                    self.assertEqual(rounds.close_status().status, "waiting")
+                    self.assertIn("封存驗證", rounds.close_status().message)
+                    self.assertFalse(release_validation.is_set())
+                finally:
+                    release_validation.set()
+
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    status = rounds.close_status()
+                    if status.status == "complete":
+                        break
+                    if status.status == "failed":
+                        self.fail("close failed while archive validation drained: {}".format(status.message))
+                    threading.Event().wait(0.01)
+                self.assertEqual(rounds.close_status().status, "complete")
+
+            archive = rounds.archive_status(started.round_id)
+            self.assertEqual(archive.status, "archived")
+            self.assertTrue(read_round_archive(archive.path, started.round_id).cleanup_eligible)
+
     def create_complete_round(self, root, round_id="round-archive"):
         session = SessionStore(round_id, {"round_id": round_id}, root / "sessions")
         session.enqueue_event("round stopped", {"round_id": round_id})
