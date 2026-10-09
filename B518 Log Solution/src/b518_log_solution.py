@@ -13,6 +13,7 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
+from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
@@ -139,6 +140,14 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.historical_event_window = None
+        self.historical_event_list = None
+        self.historical_event_detail = None
+        self.historical_event_heading = None
+        self.historical_event_detail_heading = None
+        self.historical_event_refresh_button = None
+        self._historical_event_records: tuple[HistoricalEvent, ...] = ()
+        self._historical_event_selected_key: Optional[str] = None
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
@@ -452,6 +461,7 @@ class B518LogSolutionApp:
             self._render_close_status(self.rounds.close_status())
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records(force=True)
+        self._refresh_historical_event_window()
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
@@ -2322,6 +2332,8 @@ class B518LogSolutionApp:
         controls.pack(fill="x", pady=(0, 8))
         self._settings_button(controls, "app.settings.session.open",
                               self.open_session).pack(side="left")
+        self._settings_button(controls, "app.settings.history.open",
+                              self.open_historical_events).pack(side="left", padx=(8, 0))
         self.settings_log = tk.Text(parent, wrap="word", state="disabled", height=26,
                                     background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                                     insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
@@ -2330,6 +2342,130 @@ class B518LogSolutionApp:
         self.settings_log.configure(state="normal")
         self.settings_log.insert("1.0", "\n".join(self.event_lines))
         self.settings_log.configure(state="disabled")
+
+    def open_historical_events(self) -> None:
+        """Open a read-only view reconstructed from persisted Session and App records."""
+        if self.historical_event_window and self.historical_event_window.winfo_exists():
+            self._reload_historical_events()
+            self.historical_event_window.deiconify()
+            self.historical_event_window.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self.historical_event_window = window
+        self._historical_event_records = read_historical_events(
+            self.session_root, getattr(self.app_events, "path", None))
+        window.title(self._t("app.settings.history.title"))
+        window.geometry("820x560")
+        window.minsize(560, 360)
+        outer = ttk.Frame(window, padding=12)
+        outer.pack(fill="both", expand=True)
+        headings = ttk.Frame(outer)
+        headings.pack(fill="x")
+        self.historical_event_heading = ttk.Label(
+            headings, text=self._t("app.settings.history.events"))
+        self.historical_event_heading.pack(side="left", fill="x", expand=True)
+        self.historical_event_detail_heading = ttk.Label(
+            headings, text=self._t("app.settings.history.detail"))
+        self.historical_event_detail_heading.pack(side="right", fill="x", expand=True)
+        body = ttk.Frame(outer)
+        body.pack(fill="both", expand=True, pady=(6, 8))
+        self.historical_event_list = tk.Listbox(body, exportselection=False, width=38,
+                                                selectmode="browse")
+        self.historical_event_list.pack(side="left", fill="both", expand=True)
+        self.historical_event_list.bind("<<ListboxSelect>>", self._select_historical_event)
+        detail_frame = ttk.Frame(body)
+        detail_frame.pack(side="right", fill="both", expand=True, padx=(8, 0))
+        scrollbar = ttk.Scrollbar(detail_frame, orient="vertical")
+        scrollbar.pack(side="right", fill="y")
+        self.historical_event_detail = tk.Text(
+            detail_frame, wrap="word", state="disabled", yscrollcommand=scrollbar.set,
+            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR)
+        self.historical_event_detail.pack(side="left", fill="both", expand=True)
+        scrollbar.configure(command=self.historical_event_detail.yview)
+        controls = ttk.Frame(outer)
+        controls.pack(fill="x")
+        self.historical_event_refresh_button = ttk.Button(
+            controls, text=self._t("app.settings.history.refresh"),
+            command=self._reload_historical_events)
+        self.historical_event_refresh_button.pack(side="right")
+        self._refresh_historical_event_window()
+        window.protocol("WM_DELETE_WINDOW", self._close_historical_event_window)
+
+    def _reload_historical_events(self) -> None:
+        self._historical_event_records = read_historical_events(
+            self.session_root, getattr(self.app_events, "path", None))
+        self._refresh_historical_event_window()
+
+    def _refresh_historical_event_window(self) -> None:
+        window = self.historical_event_window
+        if window is None or not window.winfo_exists():
+            return
+        selected = self._historical_event_selected_key
+        self.historical_event_heading.configure(text=self._t("app.settings.history.events"))
+        self.historical_event_detail_heading.configure(
+            text=self._t("app.settings.history.detail"))
+        self.historical_event_refresh_button.configure(
+            text=self._t("app.settings.history.refresh"))
+        self.historical_event_list.delete(0, "end")
+        selected_index = None
+        for index, event in enumerate(self._historical_event_records):
+            presentation = render_historical_event(event, self.current_language)
+            category_id = ("app.settings.history.source.app" if event.source == "app" else
+                           "app.settings.history.source.error" if event.source in {
+                               "read_error", "read_warning"} else
+                           "app.settings.history.source.round" if event.round_id else
+                           "app.settings.history.source.legacy")
+            category = self._t(category_id)
+            self.historical_event_list.insert("end", "{} · {} · {}".format(
+                event.occurred_at or "—", category, presentation.message))
+            if event.key == selected:
+                selected_index = index
+        if selected_index is None and self._historical_event_records:
+            selected_index = 0
+        if selected_index is not None:
+            self.historical_event_list.selection_clear(0, "end")
+            self.historical_event_list.selection_set(selected_index)
+            self.historical_event_list.activate(selected_index)
+            self._historical_event_selected_key = self._historical_event_records[selected_index].key
+            self._render_historical_event_detail(self._historical_event_records[selected_index])
+        else:
+            self._historical_event_selected_key = None
+            self._set_historical_event_detail(self._t("app.settings.history.empty"))
+
+    def _select_historical_event(self, _event=None) -> None:
+        if self.historical_event_list is None:
+            return
+        selection = self.historical_event_list.curselection()
+        if not selection:
+            return
+        index = int(selection[0])
+        if 0 <= index < len(self._historical_event_records):
+            record = self._historical_event_records[index]
+            self._historical_event_selected_key = record.key
+            self._render_historical_event_detail(record)
+
+    def _render_historical_event_detail(self, event: HistoricalEvent) -> None:
+        presentation = render_historical_event(event, self.current_language)
+        self._set_historical_event_detail(presentation.message + "\n\n" + presentation.detail)
+
+    def _set_historical_event_detail(self, value: str) -> None:
+        widget = self.historical_event_detail
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", value)
+        widget.configure(state="disabled")
+
+    def _close_historical_event_window(self) -> None:
+        if self.historical_event_window and self.historical_event_window.winfo_exists():
+            self.historical_event_window.destroy()
+        self.historical_event_window = None
+        self.historical_event_list = None
+        self.historical_event_detail = None
+        self.historical_event_heading = None
+        self.historical_event_detail_heading = None
+        self.historical_event_refresh_button = None
+        self._historical_event_selected_key = None
 
     def _close_settings(self) -> None:
         if self.settings_window and self.settings_window.winfo_exists():

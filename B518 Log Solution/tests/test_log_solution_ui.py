@@ -4335,6 +4335,62 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting(self):
+        from audit_records import AuditEvent, RoundAuditStore
+
+        with TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            app_path = root_path / "app-events.json"
+            audit = RoundAuditStore(
+                session_root, "round-history-1", "FCT", "2026-10-08T10:00:00+08:00",
+                10.0, {"platform": "atlas"},
+            )
+            audit.append_event(AuditEvent(1, "round_started", "FCT 本輪已接受開始", None),
+                               "2026-10-08T10:00:01+08:00", 1.0)
+            self.assertTrue(audit.flush())
+            audit_path = audit.audit_path
+            audit_before = audit_path.read_bytes()
+
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=session_root, app_event_path=app_path)
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                root.update_idletasks()
+                self.assertTrue(app.historical_event_window.winfo_exists())
+                keys = [record.key for record in app._historical_event_records]
+                round_index = keys.index("round:round-history-1:1")
+                app.historical_event_list.selection_clear(0, "end")
+                app.historical_event_list.selection_set(round_index)
+                app.historical_event_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                self.assertIn("FCT round start accepted",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("FCT 本輪已接受開始",
+                              app.historical_event_detail.get("1.0", "end"))
+
+                selected_key = app._historical_event_selected_key
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update_idletasks()
+                self.assertTrue(app.historical_event_window.winfo_exists())
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+                self.assertIn("FCT 已接受開始本輪",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(audit_path.read_bytes(), audit_before)
+                self.assertEqual(app.historical_event_heading.cget("text"), "事件")
+                app._select_language(ENGLISH)
+                self.assertIn("FCT round start accepted",
+                              app.historical_event_list.get(round_index))
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+                self.assertTrue(audit.flush())
+
     def test_file_dialog_buttons_use_current_language_and_cancel_without_changes(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
