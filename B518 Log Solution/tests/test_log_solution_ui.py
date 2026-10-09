@@ -4347,7 +4347,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         root.update()
                         time.sleep(0.01)
 
-                self.assertTrue(show_error.called, "The source preparation failure must be visible")
+                    self.assertTrue(show_error.called,
+                                    "The source preparation failure must be requested")
                 title, message = show_error.call_args.args[:2]
                 self.assertEqual(title, "啟動失敗")
                 self.assertIn("FCT 監控來源準備失敗", message)
@@ -4407,19 +4408,39 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app.open_app_diagnostics()
                 diagnostics_window = app.app_diagnostics_window
-                self.assertGreater(app.app_diagnostics_list.size(), 0)
-                app.app_diagnostics_list.selection_set(0)
+                diagnostic_records = app.rounds.app_event_records()
+                diagnostic_index = next(
+                    index for index, record in enumerate(diagnostic_records)
+                    if record.get("localized_message", {}).get("message_id")
+                    == "app.startup.started"
+                )
+                self.assertGreater(app.app_diagnostics_list.size(), diagnostic_index)
+                app.app_diagnostics_list.selection_set(diagnostic_index)
                 app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 diagnostic_selection = tuple(app.app_diagnostics_list.curselection())
+                diagnostic_row_english = app.app_diagnostics_list.get(diagnostic_index)
+                diagnostic_detail_english = app.app_diagnostics_detail.get(
+                    "1.0", "end-1c")
+                self.assertIn("Application started", diagnostic_row_english)
+                self.assertIn("Application started", diagnostic_detail_english)
 
                 app.open_historical_events()
                 history_window = app.historical_event_window
-                self.assertGreater(app.historical_event_list.size(), 0)
-                app.historical_event_list.selection_set(0)
+                history_index = next(
+                    index for index, event in enumerate(app._historical_event_records)
+                    if (event.localized_message or {}).get("message_id")
+                    == "app.startup.started"
+                )
+                self.assertGreater(app.historical_event_list.size(), history_index)
+                app.historical_event_list.selection_set(history_index)
                 app.historical_event_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 history_selection = tuple(app.historical_event_list.curselection())
+                history_row_english = app.historical_event_list.get(history_index)
+                history_detail_english = app.historical_event_detail.get("1.0", "end-1c")
+                self.assertIn("Application started", history_row_english)
+                self.assertIn("Application started", history_detail_english)
 
                 event_bytes = app.app_events.path.read_bytes()
                 event_revision = app.rounds.app_event_revision()
@@ -4438,6 +4459,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                 self.assertEqual(diagnostics_window.title(), app._t("app.diagnostic.heading"))
                 self.assertEqual(history_window.title(), app._t("app.settings.history.title"))
+                self.assertIn("App 已啟動", app.app_diagnostics_list.get(diagnostic_index))
+                self.assertIn("App 已啟動", app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertNotEqual(app.app_diagnostics_list.get(diagnostic_index),
+                                    diagnostic_row_english)
+                self.assertNotEqual(app.app_diagnostics_detail.get("1.0", "end-1c"),
+                                    diagnostic_detail_english)
+                self.assertIn("App 已啟動", app.historical_event_list.get(history_index))
+                self.assertIn("App 已啟動", app.historical_event_detail.get("1.0", "end-1c"))
+                self.assertNotEqual(app.historical_event_list.get(history_index),
+                                    history_row_english)
+                self.assertNotEqual(app.historical_event_detail.get("1.0", "end-1c"),
+                                    history_detail_english)
                 self.assertEqual(event_bytes, app.app_events.path.read_bytes())
                 self.assertEqual(app.rounds.app_event_revision(), event_revision)
 
@@ -4449,6 +4482,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
                                  diagnostic_selection)
                 self.assertEqual(tuple(app.historical_event_list.curselection()), history_selection)
+                self.assertIn("Application started",
+                              app.app_diagnostics_list.get(diagnostic_index))
+                self.assertIn("Application started",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertIn("Application started",
+                              app.historical_event_list.get(history_index))
+                self.assertIn("Application started",
+                              app.historical_event_detail.get("1.0", "end-1c"))
                 self.assertEqual(event_bytes, app.app_events.path.read_bytes())
                 self.assertEqual(app.rounds.app_event_revision(), event_revision)
             finally:
