@@ -69,6 +69,53 @@ class LanguageCatalogTests(unittest.TestCase):
         self.assertNotIn("Slot 0", result.english)
         self.assertNotIn("通道 0", result.traditional_chinese)
 
+    def test_conflict_and_alarm_copy_has_complete_shared_bilingual_resources(self):
+        required = {
+            "conflict.title", "conflict.instructions", "conflict.position",
+            "conflict.empty", "conflict.path.root", "conflict.path.relative",
+            "conflict.list_item", "conflict.comparison.item",
+            "conflict.detail.round", "conflict.detail.conflict",
+            "conflict.detail.same_round_evidence", "conflict.detail.candidate_snapshot",
+            "conflict.detail.source_identity", "conflict.button.keep_original",
+            "conflict.button.accept_candidate", "conflict.button.close",
+            "alarm.title", "alarm.body", "alarm.round", "alarm.identity",
+            "alarm.created_at", "alarm.status.pending", "alarm.status.acknowledged",
+            "alarm.status.preparation_pending", "alarm.status.conflict_note",
+            "alarm.button.acknowledge", "alarm.button.close",
+            "alarm.button.acknowledged",
+        }
+        sample_parameters = {
+            "position": 2, "original_sn": "SN-OLD", "original_status": "PASS",
+            "candidate_sn": "SN-NEW", "candidate_status": "FAIL",
+            "round_label": "Round", "round_id": "round-1", "alarm_label": "Alarm",
+            "alarm_id": "alarm-1", "created_label": "Created at",
+            "created_at": "2026-10-09T01:02:03", "status": "Awaiting review",
+        }
+        for language in (language_catalog.ENGLISH, language_catalog.TRADITIONAL_CHINESE):
+            for message_id in required:
+                with self.subTest(language=language, message_id=message_id):
+                    rendered = language_catalog.translate(message_id, language,
+                                                           **sample_parameters)
+                    self.assertTrue(rendered.strip())
+                    self.assertNotEqual(rendered, message_id)
+            self.assertEqual(
+                language_catalog.translate("conflict.detail.round", language),
+                language_catalog.translate("term.test_round", language),
+            )
+            self.assertEqual(
+                language_catalog.translate("alarm.round", language),
+                language_catalog.translate("term.test_round", language),
+            )
+
+        self.assertEqual(
+            language_catalog.translate("conflict.comparison.original", language_catalog.ENGLISH),
+            language_catalog.translate("term.original_result", language_catalog.ENGLISH),
+        )
+        self.assertEqual(
+            language_catalog.translate("conflict.comparison.candidate", language_catalog.TRADITIONAL_CHINESE),
+            language_catalog.translate("term.new_candidate", language_catalog.TRADITIONAL_CHINESE),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

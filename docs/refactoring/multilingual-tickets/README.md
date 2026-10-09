@@ -10,6 +10,8 @@ M4 六項本機驗收及完整含 Tk 套件已通過：最終程式／測試提�
 
 M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選資料夾、匯入、匯出、取消及拒絕覆寫；兩份匯出與原始配置相符，原檔雜湊不變，新的 App journal 讀取器驗證七筆同筆雙語及連續序號。完整含 Tk 套件與固定基準複審已通過；GitHub 合併 SHA `cfb35480d890abeb8a03bc74360260dcd8d739e1`，合併後完整含 Tk 套件通過 334 項（95.026 秒），固定基準至 `240d801` 的 Standards／Spec 複審沒有未解阻擋。主線推送後直接確認合併 SHA，最後文件提交另行查證；Gitea 週一直接確認前保留票分支。見 [M5 本機驗收](../evidence/multilingual-ticket-05/local-validation.md)。
 
+M6 五項驗收於 2026-10-09 完成。衝突及整輪警報視窗沿用共用中英資源；語言刷新保留 conflict_id 選取、候選快照、閱讀位置及未確認警報。真正 Tk 驗證受控 Atlas 衝突、其他位置持續收集、KVM 標記、逐項裁決／警報確認及全新 audit 讀取器重建；空選取在正常排程刷新時清除舊比較與詳細內容並停用裁決。最終程式／測試提交 `da94db305547307b8a0370c9da9569f07f671986` 的完整含 Tk 套件通過 335 tests（83.317 秒），固定基準 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4` 的 Standards／Spec 最終複審為零項可執行發現。完整證據見 [M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md)。GitHub 合併及合併後驗證完成前不更新合併狀態；Gitea 週一同步直接確認前保留 M6 本地與 GitHub 票分支。
+
 | 本機票 | GitHub | 可驗證交付 | 直接阻擋 |
 | --- | --- | --- | --- |
 | [M1](01-main-language-menu.md) | [#14](https://github.com/Bowei1121/B518_205_207_ATE/issues/14) | 主頁直覺語言選單、英文／繁中即時切換、上次語言持久保存；[本機驗收](../evidence/multilingual-ticket-01/local-validation.md) | 無 |
@@ -17,7 +19,7 @@ M5 六項驗收於 2026-10-09 補齊：使用者完成英文／繁中原生選�
 | [M3](03-platform-event-migration.md) | [#16](https://github.com/Bowei1121/B518_205_207_ATE/issues/16) | 各已支援平台的來源／解析／錯誤事件都可雙語閱讀與保存 | #15（已由 M2 主線交付解除） |
 | [M4](04-app-diagnostic-events.md) | [#17](https://github.com/Bowei1121/B518_205_207_ATE/issues/17) | 無輪次 App 事件雙語保存、可理解錯誤、原始診斷與故障補存；[M4 本機驗收](../evidence/multilingual-ticket-04/local-validation.md) | #15（M2 已納入 GitHub 主線，依賴解除） |
 | [M5](05-settings-and-file-dialogs.md) | [#18](https://github.com/Bowei1121/B518_205_207_ATE/issues/18) | 工程師設定、配置與選檔流程換語言且不丟輸入 | #17（M4 已合併解除；M5 六項驗收已通過） |
-| [M6](06-conflicts-and-alarms.md) | [#19](https://github.com/Bowei1121/B518_205_207_ATE/issues/19) | 衝突與警報同步翻譯，保留選取、快照與人工決定 | #15 |
+| [M6](06-conflicts-and-alarms.md) | [#19](https://github.com/Bowei1121/B518_205_207_ATE/issues/19) | 衝突與警報同步翻譯，保留選取、快照與人工決定；[M6 本機驗收](../evidence/multilingual-ticket-06/local-validation.md) | #15（M2 已納入 GitHub 主線，依賴解除） |
 | [M7](07-save-and-close-language.md) | [#20](https://github.com/Bowei1121/B518_205_207_ATE/issues/20) | 保存／重試／關閉提示一致，關閉保存停用切換、取消後恢復 | #17 |
 | [M8](08-historical-event-display.md) | [#21](https://github.com/Bowei1121/B518_205_207_ATE/issues/21) | 新舊紀錄依語言閱讀，舊檔不改寫、無法辨識原文詳細保留 | #16、#17 |
 | [M9](09-app-event-retention.md) | [#22](https://github.com/Bowei1121/B518_205_207_ATE/issues/22) | App 事件按原事件時間清理，待補存保護與清理摘要 | #17、既有 [#8](https://github.com/Bowei1121/B518_205_207_ATE/issues/8) |

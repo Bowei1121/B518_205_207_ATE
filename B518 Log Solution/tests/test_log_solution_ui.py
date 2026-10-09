@@ -2112,6 +2112,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
             sources = []
 
             def source_factory(callback):
@@ -2144,8 +2146,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "normal")
 
                 app.conflict_list.selection_clear(0, "end")
-                app.conflict_list.event_generate("<<ListboxSelect>>")
-                root.update_idletasks()
+                pump_until(lambda: app.conflict_details.get("1.0", "end-1c") ==
+                           app._t("conflict.empty") and
+                           str(app.resolve_conflict_original_button["state"]) == "disabled")
 
                 self.assertFalse(app.conflict_list.curselection())
                 self.assertEqual(app.conflict_position_label.cget("text"), "顯示位置：未知")
@@ -2153,6 +2156,21 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_original_button["state"]), "disabled")
                 self.assertEqual(str(app.resolve_conflict_candidate_button["state"]), "disabled")
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update_idletasks()
+                self.assertEqual(app.conflict_details.get("1.0", "end-1c"),
+                                 app._t("conflict.empty"))
+                self.assertEqual(app.conflict_position_label.cget("text"), app._t(
+                    "conflict.position", position=app._t("conflict.unknown"),
+                ))
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update_idletasks()
             finally:
                 if app.rounds.snapshot() and app.rounds.snapshot().state in {
                         RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
@@ -2170,6 +2188,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
             sources = []
 
             def source_factory(callback):
@@ -2323,6 +2343,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
 
             def wait_ui(predicate, timeout=8):
                 deadline = time.monotonic() + timeout
@@ -2452,6 +2474,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.snapshot().pending_conflicts,
                                  state_before_refresh.pending_conflicts)
                 self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文"
+                )
+                app.language_menu.invoke(chinese_index)
+                root.update()
 
                 app.conflict_close_button.invoke()
                 root.update_idletasks()
@@ -2543,6 +2571,8 @@ class LogSolutionUiTests(unittest.TestCase):
             final.mkdir()
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
             def wait_ui(predicate, timeout=5):
                 deadline = time.monotonic() + timeout
                 while time.monotonic() < deadline:
@@ -2637,6 +2667,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(conflict.conflict_id, detail_text)
                 self.assertIn(conflict.original.source, detail_text)
                 self.assertIn(conflict.candidate.source, detail_text)
+                selected_conflict_id = app._conflict_ids[app.conflict_list.curselection()[0]]
+                marker_position = (app.kvm_state_marker.winfo_rootx(),
+                                   app.kvm_state_marker.winfo_rooty(),
+                                   app.kvm_state_marker.winfo_width(),
+                                   app.kvm_state_marker.winfo_height())
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[0], (
+                    "Item", "Original Result", "New Candidate",
+                ))
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(app.kvm_state_marker.winfo_viewable(), 1)
+                self.assertEqual((app.kvm_state_marker.winfo_rootx(),
+                                  app.kvm_state_marker.winfo_rooty(),
+                                  app.kvm_state_marker.winfo_width(),
+                                  app.kvm_state_marker.winfo_height()), marker_position)
                 root.update_idletasks()
                 pane_height = app.conflict_panes.winfo_height()
                 initial_sash = app.conflict_panes.sashpos(0)
@@ -2678,6 +2728,19 @@ class LogSolutionUiTests(unittest.TestCase):
                                  if result.slot == 1).status == "PASS", timeout=5)
                 self.assertFalse(app.rounds.snapshot().result_available)
                 self.assertEqual(len(app.rounds.snapshot().pending_conflicts), 1)
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(app.rounds.snapshot().results[0].status, "PASS")
+                self.assertEqual(app.rounds.snapshot().pending_conflicts[0].conflict_id,
+                                 selected_conflict_id)
+
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update_idletasks()
+                self.assertEqual(conflict_summary_rows(app)[0], ("項目", "原結果", "新候選"))
 
                 app.conflict_close_button.invoke()
                 root.update_idletasks()
@@ -2730,6 +2793,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
             coordinator = app.rounds
 
             def side(sn, status, source, source_id, source_time, evidence):
@@ -2862,6 +2927,29 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertNotIn("conflict-first", second_detail)
                 app.conflict_comparison.xview_moveto(1)
                 self.assertGreater(app.conflict_comparison.xview()[0], 0.0)
+                selected_conflict_id = app._conflict_ids[app.conflict_list.curselection()[0]]
+                saved_xview = app.conflict_comparison.xview()[0]
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update_idletasks()
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(conflict_summary_rows(app)[0], (
+                    "Item", "Original Result", "New Candidate",
+                ))
+                self.assertIn("conflict-second", app.conflict_details.get("1.0", "end"))
+                self.assertAlmostEqual(app.conflict_comparison.xview()[0], saved_xview, places=2)
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update_idletasks()
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(conflict_summary_rows(app)[0], ("項目", "原結果", "新候選"))
+                self.assertAlmostEqual(app.conflict_comparison.xview()[0], saved_xview, places=2)
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.selection_set(2)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
@@ -2956,6 +3044,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
+            app.current_language = TRADITIONAL_CHINESE
+            app._apply_main_language()
 
             def wait_ui(predicate, timeout=6):
                 deadline = time.monotonic() + timeout
@@ -5033,6 +5123,32 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
 
+                selected_conflict_id = app._conflict_ids[app.conflict_list.curselection()[0]]
+                alarm_identity = app._shown_round_alarm_identity
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update_idletasks()
+                self.assertEqual(app.conflict_window.title(), "Same-Round Result Conflict")
+                self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 selected_conflict_id)
+                self.assertEqual(app._shown_round_alarm_identity, alarm_identity)
+                self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
+                self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
+                self.assertIn("Round", app.round_alarm_message.cget("text"))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                self.assertNotIn("顯示位置", app.conflict_position_label.cget("text"))
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update_idletasks()
+                self.assertIn("輪次", app.round_alarm_message.cget("text"))
+                self.assertIn("請確認此警報", app.round_alarm_message.cget("text"))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+
                 app.conflict_list.selection_set(0)
                 app.resolve_conflict_original_button.invoke()
                 self.assertEqual(len(rounds.round_snapshot(started.round_id).pending_conflicts), 0)
@@ -5048,6 +5164,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(kinds.count("round_alarm_acknowledged"), 1)
                 self.assertTrue(all(event["detail"].get("round_id", started.round_id) ==
                                     started.round_id for event in rebuilt["events"]))
+                decisions = [event for event in rebuilt["events"]
+                             if event["kind"] in {"conflict_resolved", "round_alarm_acknowledged"}]
+                self.assertEqual(len(decisions), 2)
+                self.assertEqual({event["kind"] for event in decisions}, {
+                    "conflict_resolved", "round_alarm_acknowledged",
+                })
+                for event in decisions:
+                    localized = event["localized_message"]
+                    self.assertTrue(localized["en"])
+                    self.assertTrue(localized["zh-TW"])
             finally:
                 if root_is_alive():
                     app.hotkey.close()

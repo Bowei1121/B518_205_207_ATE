@@ -39,3 +39,11 @@
 - 合併前主線與 GitHub 最新 `740b26c` 一致、工作樹乾淨；合併提交 `cfb35480d890abeb8a03bc74360260dcd8d739e1`。合併後主線完整含 Tk 套件通過 334 tests（95.026 秒），compileall 與 diff check 通過。最終程式／測試內容仍與 `a90be28` 相同，沒有審查後產品修改。
 - GitHub 合併推送後直接查詢確認主線 `cfb35480d890abeb8a03bc74360260dcd8d739e1`、票分支 `240d8015fe4d7c22e87e8f0c7b54f1c2f155e848`。這是該次查詢結果；最後文件提交另行推送與直接確認，不把合併 SHA 當成新增文件後的最終 HEAD。正式工作樹已切回 B518-Log-Solution。
 - 六項產品驗收已通過；公司 Gitea 依使用者例外待週一同步並直接確認。在此之前保留本地與 GitHub Multilingual/ticket-05，未強推、未刪分支、未改遠端 Issue。
+
+## M6：衝突與警報即時翻譯（GitHub #19）
+
+- M6 固定 review baseline 為 `31a9bccd5cb1534f2d17b99ad6ed3b4f461ffdd4`。依 ancestry 確認 M2、M4、M5 與 C1～C3 已納入該基準；M5 原生選檔人工驗收已完成，不構成本票阻擋。M6 只翻譯既有衝突／警報自有 UI，保留證據、候選與裁決政策。
+- 程式批次 `e641dd0` 新增共用中英資源及即時刷新；`8be176e` 整理重複刷新程式並修正共用術語／KVM 與持續收集驗收；`da94db3` 修正定期刷新遇到空選取時殘留舊比較與詳細內容、裁決按鈕仍可用的問題，並重用來源時間／檔名共用術語。每批均驗證、commit 並推送 GitHub 同名票分支。
+- 最終程式／測試 SHA `da94db305547307b8a0370c9da9569f07f671986`。聚焦測試 13 項通過（11.538 秒）；完整含 Tk 命令 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 335 tests（83.317 秒）；`python3 -m compileall -q src tests` 與 `git diff --check` 通過。真 Tk 覆蓋實際語言切換、候選選取及空狀態、受控 Atlas 衝突、警報不自動確認、逐項人工操作、其他位置繼續收集、KVM 可視性及全新 audit 讀取器重建。型別檢查設定未找到，未宣稱通過。
+- 固定基準的最終 Standards／Spec 平行複審皆零項可執行發現。證據及五項驗收對照見 [M6 本機驗收](evidence/multilingual-ticket-06/local-validation.md)；ticket 五項驗收已據此勾選，母規格只更新案例 3、4、7、14、15 的 M6 適用部分，未宣稱全 App／bundle 完成。
+- M6 程式／測試已推送並由 GitHub 直接查詢確認同名分支 SHA `da94db305547307b8a0370c9da9569f07f671986`。文件提交 `9d45ae4a333d3ca49d2fc122bfd9f613bc90d78e` 推送後，GitHub 直接查詢確認票分支為同一 SHA；本次查詢時間為 2026-10-09。公司 Gitea 依使用者指示延至週一；在 Gitea 直接確認前保留 M6 本地與 GitHub 票分支。遠端 Issue #19／#13 均未修改；M7～M10 仍待各票交付。
