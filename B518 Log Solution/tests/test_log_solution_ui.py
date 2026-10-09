@@ -4732,6 +4732,10 @@ class LogSolutionUiTests(unittest.TestCase):
         app.open_settings()
         root.update_idletasks()
         try:
+            self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                "complete", "failed"
+            })
+            self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
             style = ttk.Style(root)
             self.assertEqual(style.theme_use(), "clam")
             self.assertEqual(style.lookup("TLabel", "foreground"), "#111827")
@@ -4752,6 +4756,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(label.cget("foreground"))
         finally:
             app._close_settings()
+            app.rounds.request_close()
+            self.wait_for(lambda: app.rounds.close_status().status == "complete")
             app.hotkey.close()
             root.destroy()
 
