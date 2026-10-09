@@ -77,6 +77,6 @@ PYTHONPATH=src python3 -c 'import language_catalog as c; print(len(c.LANGUAGE_RE
 
 ## 審查、發布與遠端狀態
 
-固定基準 Standards／Spec 雙軸複審已確認先前問題已修正；程式／測試提交：`68379866d09dc8709cd9249665bcd2c0f837f269`、`f58c0a6252e438da8fa67a74ba1feb916516732d`、`3cebd090d4ec8a6c70c7cc09f69b07b43061f480`、`e8a309fd1fac186832c5825c803e4299932f206b`。各批均先驗證、commit 並 push 至 GitHub 同名票分支。文件提交及推送後將直接查詢 GitHub refs；公司 Gitea 內網在週一同步並直接確認前維持待辦，不清除本地或遠端票分支。
+固定基準 Standards／Spec 雙軸複審已確認先前問題已修正；程式／測試提交：`68379866d09dc8709cd9249665bcd2c0f837f269`、`f58c0a6252e438da8fa67a74ba1feb916516732d`、`3cebd090d4ec8a6c70c7cc09f69b07b43061f480`、`e8a309fd1fac186832c5825c803e4299932f206b`；第一批文件提交 `3a658399927de1fe5bffbfb614e1c47c6fe30b89`。各驗證批次已推 GitHub 同名票分支。2026-10-09 17:39（Asia/Taipei）在 `3a65839` 文件推送後執行 `git ls-remote github refs/heads/Multilingual/ticket-10 refs/heads/B518-Log-Solution`，直接回傳票分支 `3a658399927de1fe5bffbfb614e1c47c6fe30b89`、主線 `95b791c2cf1a54b10db4f07cbc606ddd06db8280`。本次最後文件提交／推送後仍須再次直接查詢。`origin` 另有內網 Gitea fetch/push URL `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`，且 push URL 另列 GitHub；M10 前置查核時 Gitea 不可達，依使用者指定週一內網同步並直接確認前保留本地與遠端票分支。未合併、未清理分支。
 
 M10 source 測試與必要整合修正已交付，但正式 bundle／目標環境仍是必要阻擋；固定基準審查及文件審查完成後仍不進行 merge，直到發布驗收補齊。Gitea 週一直接確認前保留分支。M10 不代表未授權部署或現場設備驗收。
