@@ -149,6 +149,7 @@ class B518LogSolutionApp:
         self.retention_cleanup_status: Optional[tk.StringVar] = None
         self._retention_cleanup_request_status = None
         self.conflict_window: Optional[tk.Toplevel] = None
+        self.conflict_instructions: Optional[ttk.Label] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
         self.conflict_position_label: Optional[ttk.Label] = None
@@ -159,6 +160,7 @@ class B518LogSolutionApp:
         self.round_alarm_window: Optional[tk.Toplevel] = None
         self.round_alarm_message: Optional[ttk.Label] = None
         self.round_alarm_ack_button: Optional[ttk.Button] = None
+        self.round_alarm_close_button: Optional[ttk.Button] = None
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._configure_appearance()
         self._record_startup_diagnostics()
@@ -441,6 +443,8 @@ class B518LogSolutionApp:
         self._refresh_event_log()
         self._refresh_app_event_status()
         self._apply_settings_language()
+        self._refresh_conflict_review(preserve_reading=True)
+        self._refresh_round_alarm()
         if self._close_window and self._close_window.winfo_exists():
             self._render_close_status(self.rounds.close_status())
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
@@ -1321,7 +1325,7 @@ class B518LogSolutionApp:
         if not self.conflict_window or not self.conflict_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.conflict_window = window
-            window.title("同輪結果衝突確認")
+            window.title(self._t("conflict.title"))
             self.root.update_idletasks()
             window_x = max(self.root.winfo_rootx() - 820 - 12, 0)
             window_y = max(self.root.winfo_rooty(), 0)
@@ -1329,8 +1333,10 @@ class B518LogSolutionApp:
             window.minsize(720, 360)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)
-            ttk.Label(window, text="逐項選擇保留原結果或採用已捕捉的新結果；關閉此視窗不會自動選擇。",
-                      wraplength=780).pack(fill="x", padx=12, pady=(12, 8))
+            self.conflict_instructions = ttk.Label(
+                window, text=self._t("conflict.instructions"), wraplength=780,
+            )
+            self.conflict_instructions.pack(fill="x", padx=12, pady=(12, 8))
             body = ttk.Frame(window)
             body.pack(fill="both", expand=True, padx=12, pady=4)
             self.conflict_list = tk.Listbox(body, width=38, exportselection=False,
@@ -1344,7 +1350,9 @@ class B518LogSolutionApp:
             summary = ttk.Frame(self.conflict_panes)
             summary.columnconfigure(0, weight=1)
             summary.rowconfigure(1, weight=1)
-            self.conflict_position_label = ttk.Label(summary, text="顯示位置：未知")
+            self.conflict_position_label = ttk.Label(summary, text=self._t(
+                "conflict.position", position=self._t("conflict.unknown"),
+            ))
             self.conflict_position_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
             comparison_font = tkfont.nametofont("TkDefaultFont")
             self.conflict_comparison = tk.Text(
@@ -1399,25 +1407,38 @@ class B518LogSolutionApp:
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=12, pady=(8, 12))
             self.resolve_conflict_original_button = ttk.Button(
-                actions, text="保留原結果",
+                actions, text=self._t("conflict.button.keep_original"),
                 command=lambda: self._resolve_selected_conflict("keep_original"),
             )
             self.resolve_conflict_original_button.pack(side="left", padx=(0, 8))
             self.resolve_conflict_candidate_button = ttk.Button(
-                actions, text="採用新結果",
+                actions, text=self._t("conflict.button.accept_candidate"),
                 command=lambda: self._resolve_selected_conflict("accept_candidate"),
             )
             self.resolve_conflict_candidate_button.pack(side="left")
-            self.conflict_close_button = ttk.Button(actions, text="關閉", command=window.withdraw)
+            self.conflict_close_button = ttk.Button(
+                actions, text=self._t("conflict.button.close"), command=window.withdraw,
+            )
             self.conflict_close_button.pack(side="right")
         self._refresh_conflict_review()
         if self.conflict_window and self.conflict_window.winfo_exists():
             self.conflict_window.deiconify()
             self.conflict_window.lift()
 
-    def _refresh_conflict_review(self) -> None:
+    def _refresh_conflict_review(self, preserve_reading: bool = False) -> None:
         if not hasattr(self, "review_button"):
             return
+        if self.conflict_window and self.conflict_window.winfo_exists():
+            self.conflict_window.title(self._t("conflict.title"))
+            if self.conflict_instructions and self.conflict_instructions.winfo_exists():
+                self.conflict_instructions.configure(text=self._t("conflict.instructions"))
+            for button, message_id in (
+                (self.resolve_conflict_original_button, "conflict.button.keep_original"),
+                (self.resolve_conflict_candidate_button, "conflict.button.accept_candidate"),
+                (self.conflict_close_button, "conflict.button.close"),
+            ):
+                if button and button.winfo_exists():
+                    button.configure(text=self._t(message_id))
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_button.configure(
@@ -1443,23 +1464,47 @@ class B518LogSolutionApp:
                 return
             selected = self.conflict_list.curselection()
             selected_id = self._conflict_ids[selected[0]] if selected and selected[0] < len(self._conflict_ids) else None
-            self._conflict_ids = [item.conflict_id for item in conflicts]
-            self.conflict_list.delete(0, "end")
-            for item in conflicts:
-                self.conflict_list.insert("end", "位置 {}：{} {} → {} {}".format(
-                    item.slot, item.original.sn or "SN 未知", item.original.status,
-                    item.candidate.sn or "SN 未知", item.candidate.status,
-                ))
+            previous_ids = self._conflict_ids
+            current_ids = [item.conflict_id for item in conflicts]
+            display_items = [self._t(
+                    "conflict.list_item",
+                    position=(item.slot if item.slot is not None else self._t("conflict.unknown")),
+                    original_sn=item.original.sn or "SN {}".format(self._t("conflict.unknown")),
+                    original_status=item.original.status or self._t("conflict.unknown"),
+                    candidate_sn=item.candidate.sn or "SN {}".format(self._t("conflict.unknown")),
+                    candidate_status=item.candidate.status or self._t("conflict.unknown"),
+                ) for item in conflicts]
+            list_changed = current_ids != previous_ids or [
+                self.conflict_list.get(index) for index in range(self.conflict_list.size())
+            ] != display_items
+            if list_changed:
+                self._conflict_ids = current_ids
+                self.conflict_list.delete(0, "end")
+                for display_item in display_items:
+                    self.conflict_list.insert("end", display_item)
             if selected_id in self._conflict_ids:
                 index = self._conflict_ids.index(selected_id)
-            else:
+            elif selected_id is not None:
                 index = 0 if self._conflict_ids else -1
-            if index >= 0:
+            elif not previous_ids:
+                index = 0 if self._conflict_ids else -1
+            else:
+                index = -1
+            if index >= 0 and (list_changed or selected_id != self._conflict_ids[index]):
                 self.conflict_list.selection_set(index)
                 self.conflict_list.activate(index)
-                self._show_selected_conflict()
+            elif index < 0 and selected:
+                self.conflict_list.selection_clear(0, "end")
+            should_render = (preserve_reading or list_changed or
+                             (index >= 0 and selected_id is None and not previous_ids))
+            if should_render:
+                if index < 0:
+                    self._clear_conflict_comparison()
+                else:
+                    self._show_selected_conflict(preserve_reading=preserve_reading)
             elif self.conflict_details:
-                self._clear_conflict_comparison()
+                if index < 0 and (list_changed or selected):
+                    self._clear_conflict_comparison()
 
     def _set_initial_conflict_sash(self) -> None:
         if not self.conflict_panes or not self.conflict_panes.winfo_exists():
@@ -1477,18 +1522,19 @@ class B518LogSolutionApp:
             self._conflict_value_ranges = {}
             self.conflict_comparison.xview_moveto(0)
         if self.conflict_position_label:
-            self.conflict_position_label.configure(text="顯示位置：未知")
+            self.conflict_position_label.configure(
+                text=self._t("conflict.position", position=self._t("conflict.unknown")))
         if self.conflict_details:
             self.conflict_details.configure(state="normal")
             self.conflict_details.delete("1.0", "end")
-            self.conflict_details.insert("1.0", "目前沒有待確認項目。")
+            self.conflict_details.insert("1.0", self._t("conflict.empty"))
             self.conflict_details.configure(state="disabled")
         for button in (self.resolve_conflict_original_button,
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
                 button.configure(state="disabled")
 
-    def _show_selected_conflict(self, _event=None) -> None:
+    def _show_selected_conflict(self, _event=None, preserve_reading: bool = False) -> None:
         if (not self.conflict_list or not self.conflict_details or
                 not self.conflict_comparison or not self.conflict_position_label):
             return
@@ -1506,6 +1552,10 @@ class B518LogSolutionApp:
         if not conflict:
             self._clear_conflict_comparison()
             return
+        comparison_xview = (self.conflict_comparison.xview()[0]
+                            if preserve_reading else 0.0)
+        details_yview = (self.conflict_details.yview()[0]
+                         if preserve_reading else 0.0)
         for button in (self.resolve_conflict_original_button,
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
@@ -1513,10 +1563,10 @@ class B518LogSolutionApp:
 
         def source_parts(side):
             if not side.source:
-                return "", "未知", (), (False, ())
+                return "", self._t("conflict.unknown"), (), (False, ())
             normalized = side.source.replace("\\", "/").rstrip("/")
             parts = tuple(part for part in normalized.split("/") if part)
-            return (side.source, parts[-1] if parts else "未知", parts[:-1],
+            return (side.source, parts[-1] if parts else self._t("conflict.unknown"), parts[:-1],
                     (normalized.startswith("/"), parts))
 
         original_path, original_filename, original_directories, original_path_key = source_parts(
@@ -1539,28 +1589,39 @@ class B518LogSolutionApp:
                     candidate_source = "{} · {}".format(candidate_filename, candidate_hint)
                     break
             else:
-                original_hint = "根目錄" if original_path_key[0] else "相對路徑"
-                candidate_hint = "根目錄" if candidate_path_key[0] else "相對路徑"
+                original_hint = self._t(
+                    "conflict.path.root" if original_path_key[0] else "conflict.path.relative")
+                candidate_hint = self._t(
+                    "conflict.path.root" if candidate_path_key[0] else "conflict.path.relative")
                 original_source = "{} · {}".format(original_filename, original_hint)
                 candidate_source = "{} · {}".format(candidate_filename, candidate_hint)
 
         rows = (
-            ("結果", conflict.original.status or "", conflict.candidate.status or "",
+            (self._t("conflict.field.result"), conflict.original.status or "",
+             conflict.candidate.status or "",
              (conflict.original.status or "") != (conflict.candidate.status or "")),
-            ("SN", conflict.original.sn or "", conflict.candidate.sn or "",
+            (self._t("conflict.field.sn"), conflict.original.sn or "", conflict.candidate.sn or "",
              (conflict.original.sn or "") != (conflict.candidate.sn or "")),
-            ("來源時間", conflict.original.source_time or "",
+            (self._t("conflict.field.source_time"), conflict.original.source_time or "",
              conflict.candidate.source_time or "",
              (conflict.original.source_time or "") != (conflict.candidate.source_time or "")),
-            ("來源檔名", original_source if original_path else "",
+            (self._t("conflict.field.source_filename"), original_source if original_path else "",
              candidate_source if candidate_path else "", paths_differ),
         )
-        display_rows = tuple((label, original or "未知", candidate or "未知", differs)
+        unknown = self._t("conflict.unknown")
+        display_rows = tuple((label, original or unknown, candidate or unknown, differs)
                              for label, original, candidate, differs in rows)
-        self.conflict_position_label.configure(text="顯示位置：{}".format(conflict.slot))
+        self.conflict_position_label.configure(text=self._t(
+            "conflict.position",
+            position=(conflict.slot if conflict.slot is not None else unknown),
+        ))
         self.conflict_comparison.configure(state="normal")
         self.conflict_comparison.delete("1.0", "end")
-        self.conflict_comparison.insert("end", "項目\t原結果\t新候選\n", "comparison_header")
+        self.conflict_comparison.insert("end", "{}\t{}\t{}\n".format(
+            self._t("conflict.comparison.item"),
+            self._t("conflict.comparison.original"),
+            self._t("conflict.comparison.candidate"),
+        ), "comparison_header")
         self._conflict_value_ranges = {}
         for label, original, candidate, differs in display_rows:
             self.conflict_comparison.insert("end", label + "\t")
@@ -1577,9 +1638,9 @@ class B518LogSolutionApp:
                 for start, end in row_ranges:
                     self.conflict_comparison.tag_add("comparison_difference", start, end)
         display_font = tkfont.nametofont("TkDefaultFont")
-        label_width = max(display_font.measure("項目"),
+        label_width = max(display_font.measure(self._t("conflict.comparison.item")),
                           max(display_font.measure(row[0]) for row in display_rows)) + 24
-        original_width = max(display_font.measure("原結果"),
+        original_width = max(display_font.measure(self._t("conflict.comparison.original")),
                              max(display_font.measure(row[1]) for row in display_rows)) + 24
         original_width = max(140, original_width)
         self.conflict_comparison.configure(
@@ -1587,22 +1648,41 @@ class B518LogSolutionApp:
                   "{}p".format(label_width + original_width)),
             state="disabled",
         )
-        self.conflict_comparison.xview_moveto(0)
+        self.conflict_comparison.xview_moveto(comparison_xview)
 
         def render(side):
-            return ("SN：{}\n結果：{}\n來源：{}\n來源識別：{}\n來源時間：{}\n證據：{}".format(
-                side.sn or "未知", side.status or "未知", side.source or "未知",
-                side.source_id or "未知", side.source_time or "未知",
-                dict(side.evidence),
-            ))
-        text = ("輪次：{}\n衝突：{}\n顯示位置：{}\n同輪證據：{}\n\n原結果\n{}\n\n候選快照\n{}"
-                .format(conflict.round_id, conflict.conflict_id, conflict.slot,
-                        dict(conflict.same_round_evidence), render(conflict.original),
-                        render(conflict.candidate)))
+            fields = (
+                ("conflict.detail.sn", side.sn),
+                ("conflict.detail.result", side.status),
+                ("conflict.detail.source", side.source),
+                ("conflict.detail.source_identity", side.source_id),
+                ("conflict.detail.source_time", side.source_time),
+                ("conflict.detail.evidence", dict(side.evidence)),
+            )
+            return "\n".join("{}: {}".format(self._t(label), value or unknown)
+                             for label, value in fields)
+        text = "\n".join((
+            "{}: {}".format(self._t("conflict.detail.round"), conflict.round_id),
+            "{}: {}".format(self._t("conflict.detail.conflict"), conflict.conflict_id),
+            "{}: {}".format(
+                self._t("conflict.detail.position"),
+                conflict.slot if conflict.slot is not None else unknown,
+            ),
+            "{}: {}".format(self._t("conflict.detail.same_round_evidence"),
+                             dict(conflict.same_round_evidence)),
+            "",
+            self._t("conflict.detail.original"),
+            render(conflict.original),
+            "",
+            self._t("conflict.detail.candidate_snapshot"),
+            render(conflict.candidate),
+        ))
         self.conflict_details.configure(state="normal")
         self.conflict_details.delete("1.0", "end")
         self.conflict_details.insert("1.0", text)
         self.conflict_details.configure(state="disabled")
+        if preserve_reading:
+            self.conflict_details.yview_moveto(details_yview)
 
     def _resolve_selected_conflict(self, choice: str) -> None:
         if not self.conflict_list:
@@ -1644,7 +1724,7 @@ class B518LogSolutionApp:
         if not self.round_alarm_window or not self.round_alarm_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.round_alarm_window = window
-            window.title("整輪監控逾時")
+            window.title(self._t("alarm.title"))
             window.geometry("460x220")
             window.minsize(420, 190)
             window.transient(self.root)
@@ -1654,10 +1734,13 @@ class B518LogSolutionApp:
             actions = ttk.Frame(window)
             actions.pack(fill="x", padx=16, pady=(0, 14))
             self.round_alarm_ack_button = ttk.Button(
-                actions, text="確認整輪警報",
+                actions, text=self._t("alarm.button.acknowledge"),
             )
             self.round_alarm_ack_button.pack(side="left")
-            ttk.Button(actions, text="關閉", command=window.withdraw).pack(side="right")
+            self.round_alarm_close_button = ttk.Button(
+                actions, text=self._t("alarm.button.close"), command=window.withdraw,
+            )
+            self.round_alarm_close_button.pack(side="right")
         self._render_round_alarm(alarm)
         self._round_alarm_window_identity = (alarm.round_id, alarm.alarm_id)
         self.round_alarm_ack_button.configure(
@@ -1669,20 +1752,32 @@ class B518LogSolutionApp:
         self.round_alarm_window.lift()
 
     def _render_round_alarm(self, alarm) -> None:
+        if self.round_alarm_window and self.round_alarm_window.winfo_exists():
+            self.round_alarm_window.title(self._t("alarm.title"))
+        snapshot = self.rounds.snapshot()
+        if alarm.acknowledged_at:
+            status_id = "alarm.status.acknowledged"
+        elif snapshot is not None and not snapshot.round_alarm_ready:
+            status_id = "alarm.status.preparation_pending"
+        else:
+            status_id = "alarm.status.pending"
+        status = "{}\n{}".format(self._t(status_id), self._t("alarm.status.conflict_note"))
         if self.round_alarm_message and self.round_alarm_message.winfo_exists():
-            self.round_alarm_message.configure(text=(
-                "整輪監控已到達設定上限。新的來源讀取已停止，既有終態已保留，未完成位置已依活動證據裁決。\n\n"
-                "輪次：{}\n警報：{}\n建立時間：{}\n{}"
-            ).format(alarm.round_id, alarm.alarm_id, alarm.created_at,
-                     "此警報已確認；其他待確認事項仍須逐項處理。"
-                     if alarm.acknowledged_at else (
-                         "來源準備尚未結束；位置裁決完成前不能確認。" if not self.rounds.snapshot().round_alarm_ready
-                         else "確認此警報不會接受或清除結果衝突。")))
+            self.round_alarm_message.configure(text=self._t(
+                "alarm.body", round_label=self._t("alarm.round"), round_id=alarm.round_id,
+                alarm_label=self._t("alarm.identity"), alarm_id=alarm.alarm_id,
+                created_label=self._t("alarm.created_at"), created_at=alarm.created_at,
+                status=status,
+            ))
         if self.round_alarm_ack_button and self.round_alarm_ack_button.winfo_exists():
             self.round_alarm_ack_button.configure(
-                state="disabled" if alarm.acknowledged_at or not self.rounds.snapshot().round_alarm_ready else "normal",
-                text="警報已確認" if alarm.acknowledged_at else "確認整輪警報",
+                state="disabled" if alarm.acknowledged_at or (
+                    snapshot is not None and not snapshot.round_alarm_ready) else "normal",
+                text=(self._t("alarm.button.acknowledged") if alarm.acknowledged_at
+                      else self._t("alarm.button.acknowledge")),
             )
+        if self.round_alarm_close_button and self.round_alarm_close_button.winfo_exists():
+            self.round_alarm_close_button.configure(text=self._t("alarm.button.close"))
 
     def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
         snapshot = self.rounds.snapshot()
