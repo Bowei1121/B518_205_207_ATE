@@ -14,7 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
-from language_catalog import capture_round_event_message
+from language_catalog import capture_round_event_message, make_bilingual_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
 from round_retention import RetentionStatus, RetentionSummary, RoundRetentionStore
@@ -659,7 +659,12 @@ class MonitoringRound:
                         "collection_stopped_at": self._collection_stopped_at},
             ))
             self._receive_monitor_event(
-                MonitorEvent("start_failed", "無法準備監控來源：{}".format(error))
+                MonitorEvent(
+                    "start_failed", "無法準備監控來源：{}".format(error),
+                    message_id="round.start_failed",
+                    message_parameters={"station": self.station},
+                    diagnostic=str(error),
+                )
             )
             return
         finally:
@@ -1017,6 +1022,11 @@ class MonitoringRound:
 
     def _capture_bilingual_message(self, event: MonitorEvent) -> None:
         if event.localized_message is not None:
+            return
+        if event.message_id:
+            event.localized_message = make_bilingual_message(
+                event.message_id, event.message_parameters, event.diagnostic,
+            )
             return
         event.localized_message = capture_round_event_message(
             event.kind, self.station, event.slot, event.status, event.detail, event.message,

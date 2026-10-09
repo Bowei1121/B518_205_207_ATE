@@ -4316,6 +4316,64 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_source_preparation_failure_prompt_uses_selected_language_and_keeps_diagnostic(self):
+        with TemporaryDirectory() as temporary:
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.current_language = TRADITIONAL_CHINESE
+                app._apply_main_language()
+
+                with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
+                           side_effect=PermissionError("source access denied")), \
+                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                    app.start_monitor()
+                    deadline = time.monotonic() + 3
+                    while not show_error.called and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+
+                self.assertTrue(show_error.called, "The source preparation failure must be visible")
+                title, message = show_error.call_args.args[:2]
+                self.assertEqual(title, "啟動失敗")
+                self.assertIn("FCT 監控來源準備失敗", message)
+                self.assertIn("原始診斷: source access denied", message)
+                failed = next(item.event for item in app.rounds.snapshot().events
+                              if item.event.kind == "start_failed")
+                self.assertEqual(failed.localized_message.message_id, "round.start_failed")
+                self.assertEqual(failed.localized_message.diagnostic, "source access denied")
+                self.assertEqual(failed.localized_message.traditional_chinese,
+                                 "FCT 監控來源準備失敗")
+                round_id = app.rounds.snapshot().round_id
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = Path(temporary) / "sessions" / round_id / "audit.jsonl"
+                rebuilt = read_round_audit(audit_path)
+                saved_failure = next(item for item in rebuilt["events"]
+                                     if item["kind"] == "start_failed")
+                self.assertEqual(saved_failure["localized_message"]["message_id"],
+                                 "round.start_failed")
+                self.assertEqual(saved_failure["localized_message"]["diagnostic"],
+                                 "source access denied")
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_open_settings_refreshes_language_in_place_and_keeps_invalid_draft(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

@@ -1349,7 +1349,14 @@ class B518LogSolutionApp:
         if event.kind == "start_failed":
             self.active_profile_snapshot = None
             self._set_monitor_controls(False, "啟動失敗")
-            messagebox.showerror("監控啟動失敗", event.message, parent=self.root)
+            message = render_bilingual_message(
+                event.localized_message, self.current_language, event.message,
+            )
+            if event.diagnostic:
+                message = "{}\n\n{}: {}".format(
+                    message, self._t("app.diagnostic.raw"), event.diagnostic,
+                )
+            messagebox.showerror(self._t("monitor.start_failed"), message, parent=self.root)
         if event.kind in {"finished", "stopped"}:
             self._set_monitor_controls(False)
 
