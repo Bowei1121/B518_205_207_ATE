@@ -36,13 +36,13 @@ The added M7 tests use actual Tk widgets and the desktop graphical session. The 
   `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` — **335 tests passed** in 86.356 seconds, including the real Tk suite. One earlier run encountered a transient `TemporaryDirectory` cleanup race in an existing detached-round archival test; that test passed five consecutive isolated runs, and this complete rerun passed.
 - `python3 -m compileall -q src tests` and `git diff --check` — passed.
 - No project type-check configuration was found; no type-check pass is claimed.
-- Program/test commits: `fb0598736bc83c9faa8ef1c3695554f2aefb1257` and `098d8cbebdf266d11fc5255eafd47c9971336487`; the queued-request evidence test is included in the final evidence commit listed below.
+- Program/test commits: `fb0598736bc83c9faa8ef1c3695554f2aefb1257` and `098d8cbebdf266d11fc5255eafd47c9971336487`. The queued-request test and its passing full-suite result are in test-bearing commit `db1535259f64d68206b0a0badedf6d862dcedabf`.
 - Review baseline: `45df1e36895cdb8bbb313de0a4c038cdeef13ac4`. Final Standards and Spec follow-up reviews found no actionable findings. The original Spec evidence gap was closed by the queued Tk event test above.
 
 ## Remote delivery
 
-- GitHub `Multilingual/ticket-07` was directly queried at `098d8cbebdf266d11fc5255eafd47c9971336487` before the final test/evidence commits; the final direct SHA confirmation is recorded after those pushes below. GitHub `B518-Log-Solution` was directly queried at `45df1e36895cdb8bbb313de0a4c038cdeef13ac4` at the start of M7.
-- The configured `origin` push URLs include internal Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` and the same GitHub repository. Direct Gitea query failed to connect; a push through `origin` did not respond and was interrupted after no progress. Gitea synchronization is unconfirmed and is not claimed. No push destination was removed.
+- After pushing the test-bearing commit, direct `git ls-remote github refs/heads/B518-Log-Solution refs/heads/Multilingual/ticket-07` returned mainline `45df1e36895cdb8bbb313de0a4c038cdeef13ac4` and ticket branch `db1535259f64d68206b0a0badedf6d862dcedabf`. The final documentation commit is pushed and directly queried after this snapshot; see final delivery report for that latest SHA.
+- The configured `origin` push URLs include internal Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git` and the same GitHub repository. Direct Gitea queries failed/refused to connect or did not return; a push through `origin` did not respond and was interrupted after no progress. Gitea synchronization is unconfirmed and is not claimed. No push destination was removed.
 - Since a configured push destination is unavailable, M7 is not merged and neither the local nor GitHub ticket branch is deleted. No remote Issue status was changed.
 
 ## Scope boundary
