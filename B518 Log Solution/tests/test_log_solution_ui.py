@@ -6469,7 +6469,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 monitor = holder["monitor"]
                 evidence = {"round_evidence_id": "fct:1:language-refresh",
                             "source_time": "2026-10-12T10:00:00",
-                            "source_id": "active.csv"}
+                            "source_id": " ".join("PROVENANCE-{:04d}".format(i)
+                                                  for i in range(160))}
                 monitor.apply_round_result(1, "PASS", "SN-ORIGINAL",
                                            "/temporary/active.csv", evidence)
                 candidate = MonitorEvent(
@@ -6488,7 +6489,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 conflict_id = rounds.snapshot().pending_conflicts[0].conflict_id
                 app.conflict_list.selection_set(0)
                 app.conflict_list.activate(0)
-                app.conflict_details.yview_moveto(1.0)
+                conflict_window.geometry("{}x{}".format(*conflict_window.minsize()))
+                root.update()
+                app.conflict_details.yview_moveto(0.4)
+                root.update_idletasks()
+                visible_detail = app.conflict_details.get("@0,0", "@0,0 + 100 chars")
+                self.assertIn("PROVENANCE-", visible_detail)
+                anchor_start = visible_detail.index("PROVENANCE-")
+                reading_anchor = visible_detail[anchor_start:anchor_start + 15]
                 app.conflict_comparison.xview_moveto(1.0)
                 detail_reading = int(app.conflict_details.index("@0,0").split(".")[0])
                 selected_details = app.conflict_details.get("1.0", "end-1c")
@@ -6541,6 +6549,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("SN-ORIGINAL", app.conflict_comparison.get("1.0", "end-1c"))
                 self.assertEqual(int(app.conflict_details.index("@0,0").split(".")[0]),
                                  detail_reading)
+                self.assertIn(reading_anchor, app.conflict_details.get(
+                    "@0,0", "@0,0 + 100 chars"))
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
                 self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")

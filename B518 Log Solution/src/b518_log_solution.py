@@ -1828,8 +1828,12 @@ class B518LogSolutionApp:
             return
         comparison_xview = self.conflict_comparison.xview()[0] if preserve_reading else 0.0
         comparison_yview = self.conflict_comparison.yview()[0] if preserve_reading else 0.0
-        details_top_line = (int(self.conflict_details.index("@0,0").split(".")[0])
-                            if preserve_reading else 1)
+        details_top_line, details_top_column = (
+            map(int, self.conflict_details.index("@0,0").split("."))
+            if preserve_reading else (1, 0))
+        details_tail_columns = (
+            int(self.conflict_details.index("{}.end".format(details_top_line)).split(".")[1])
+            - details_top_column)
         for button in (self.resolve_conflict_original_button,
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
@@ -1959,8 +1963,13 @@ class B518LogSolutionApp:
         self._rendered_conflict_id = conflict_id
         if preserve_reading:
             rendered_line_count = int(self.conflict_details.index("end-1c").split(".")[0])
-            self.conflict_details.yview_moveto(
-                (details_top_line - 1) / max(rendered_line_count, 1))
+            details_top_line = min(details_top_line, rendered_line_count)
+            line_end_column = int(self.conflict_details.index(
+                "{}.end".format(details_top_line)).split(".")[1])
+            # Labels change length; the captured raw value at the end of its line does not.
+            column = (max(0, line_end_column - details_tail_columns)
+                      if details_top_column else 0)
+            self.conflict_details.yview("{}.{}".format(details_top_line, column))
 
     def _on_conflict_list_select(self, event=None) -> None:
         if self._updating_conflict_list:
