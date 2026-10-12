@@ -258,7 +258,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     index for index in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(index, "label") == "繁體中文")
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("preference disk full")), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     app.language_menu.invoke(chinese_index)
                 root.update()
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
@@ -339,7 +339,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         if app.language_menu.entrycget(index, "label") == "繁體中文")
                     with patch("machine_profiles._atomic_write_text",
                                side_effect=OSError("preference disk full")), \
-                            patch("b518_log_solution.messagebox.showerror"):
+                            patch("b518_log_solution.show_notice"):
                         app.language_menu.invoke(chinese_index)
                     event_record = next(item for item in app.rounds.app_event_records()
                                         if item["localized_message"]["message_id"] ==
@@ -414,7 +414,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     return True
 
             try:
-                with patch("b518_log_solution.messagebox.showwarning") as warning:
+                with patch("b518_log_solution.show_notice") as warning:
                     pump_until(lambda: warning.called)
                 self.assertEqual(app.current_language, ENGLISH)
                 self.assertTrue(any(
@@ -442,7 +442,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.rounds.app_event_status().complete)
                 with patch("b518_log_solution.filedialog.askopenfilename",
                            return_value=str(invalid_import)), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     click(import_button)
                 self.assertEqual(app.profiles.to_dict(), original_catalog)
                 self.assertEqual((app.project.get(), app.station.get()), original_selection)
@@ -450,7 +450,7 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.profile_editor_status.get())
                 with patch("b518_log_solution.filedialog.asksaveasfilename",
                            return_value=str(Path(temporary) / "missing" / "export.json")), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     click(export_button)
                 self.assertIn("could not be exported", app.profile_editor_status.get())
                 app.language_button.event_generate("<Button-1>")
@@ -524,7 +524,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 export_button = find_button(app.settings_window, "Export Configuration")
                 with patch("b518_log_solution.filedialog.asksaveasfilename",
                            return_value=str(Path(temporary) / "missing-again" / "export.json")), \
-                        patch("b518_log_solution.messagebox.showerror"), \
+                        patch("b518_log_solution.show_notice"), \
                         patch("app_event_store._atomic_replace",
                               side_effect=OSError("diagnostic journal disk full")):
                     click(export_button)
@@ -833,7 +833,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.language_menu.invoke(0)
                 self.assertEqual(preferences.read_bytes(), saved_bytes)
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.language_menu.invoke(chinese_index)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                 self.assertIn("繁體中文", app.language_button.cget("text"))
@@ -915,7 +915,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_real_tk_unknown_saved_language_uses_english_and_shows_diagnostic(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
-                patch("b518_log_solution.messagebox.showwarning") as show_warning:
+                patch("b518_log_solution.show_notice") as show_warning:
             preferences = Path(temporary) / "preferences.json"
             store = MachineProfileStore(preferences)
             catalog, project, machine, _error = store.load()
@@ -1275,7 +1275,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.fail("Timed out while pumping malformed-time cleanup UI")
 
             try:
-                with patch("b518_log_solution.messagebox.showerror", return_value="ok"):
+                with patch("b518_log_solution.show_notice", return_value="ok"):
                     app.open_settings()
                     app.settings_notebook.select(2)
                     app.rounds.request_retention_cleanup(30, "malformed-time")
@@ -4111,13 +4111,14 @@ class LogSolutionUiTests(unittest.TestCase):
         app.profiles = app.profiles.with_profile(replace(profile, paths={"active": "", "final": ""}))
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
-                    patch("b518_log_solution.messagebox.showerror") as show_error:
+                    patch("b518_log_solution.show_notice") as show_error:
                 app.start_monitor()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
             self.assertEqual(show_error.call_args.args[:2], (
                 "Configuration Error",
-                "The selected configuration is invalid: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
+                "The selected configuration is invalid: See the original diagnostic below.\n\n"
+                "Original diagnostic: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
             ))
             self.assertIsNone(app.rounds.snapshot())
         finally:
@@ -4152,7 +4153,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 preferences_before = app.profile_store.path.read_bytes()
 
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.start_button.invoke()
 
                 self.assertIsNone(app.rounds.snapshot())
@@ -4161,7 +4162,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
                 self.assertEqual(show_error.call_args.args[:2], (
                     "Configuration Save Failed",
-                    "Configuration preferences could not be saved; the active configuration remains unchanged: disk full",
+                    "Configuration preferences could not be saved; the active configuration remains unchanged: "
+                    "See the original diagnostic below.\n\nOriginal diagnostic: disk full",
                 ))
                 self.assertFalse((Path(temporary) / "sessions").exists())
             finally:
@@ -4286,7 +4288,7 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("denied")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.start_monitor()
                     deadline = time.monotonic() + 3
                     while not show_error.called and time.monotonic() < deadline:
@@ -4313,6 +4315,193 @@ class LogSolutionUiTests(unittest.TestCase):
             app._close_settings()
             app.hotkey.close()
             root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_source_preparation_failure_prompt_uses_selected_language_and_keeps_diagnostic(self):
+        with TemporaryDirectory() as temporary:
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.current_language = TRADITIONAL_CHINESE
+                app._apply_main_language()
+
+                with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
+                           side_effect=PermissionError("source access denied")), \
+                        patch("b518_log_solution.show_notice") as show_error:
+                    app.start_monitor()
+                    deadline = time.monotonic() + 3
+                    while not show_error.called and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+
+                    self.assertTrue(show_error.called,
+                                    "The source preparation failure must be requested")
+                title, message = show_error.call_args.args[:2]
+                self.assertEqual(title, "啟動失敗")
+                self.assertIn("FCT 監控來源準備失敗", message)
+                self.assertIn("原始診斷: source access denied", message)
+                failed = next(item.event for item in app.rounds.snapshot().events
+                              if item.event.kind == "start_failed")
+                self.assertEqual(failed.localized_message.message_id, "round.start_failed")
+                self.assertEqual(failed.localized_message.diagnostic, "source access denied")
+                self.assertEqual(failed.localized_message.traditional_chinese,
+                                 "FCT 監控來源準備失敗")
+                round_id = app.rounds.snapshot().round_id
+                self.assertTrue(app.rounds.flush_audit(timeout=3))
+                audit_path = Path(temporary) / "sessions" / round_id / "audit.jsonl"
+                rebuilt = read_round_audit(audit_path)
+                saved_failure = next(item for item in rebuilt["events"]
+                                     if item["kind"] == "start_failed")
+                self.assertEqual(saved_failure["localized_message"]["message_id"],
+                                 "round.start_failed")
+                self.assertEqual(saved_failure["localized_message"]["diagnostic"],
+                                 "source access denied")
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_integrated_language_refresh_keeps_open_settings_diagnostics_and_history(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def select_language(language):
+                app.language_button.event_generate("<ButtonPress-1>")
+                app.language_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                native_name = "English" if language == ENGLISH else "繁體中文"
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == native_name
+                )
+                app.language_menu.invoke(index)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.open_settings()
+                settings_window = app.settings_window
+                app.profile_editor_project.set("Unsaved Integrated Draft")
+                selected_tab = app.settings_notebook.tabs()[2]
+                app.settings_notebook.select(selected_tab)
+
+                app.open_app_diagnostics()
+                diagnostics_window = app.app_diagnostics_window
+                diagnostic_records = app.rounds.app_event_records()
+                diagnostic_index = next(
+                    index for index, record in enumerate(diagnostic_records)
+                    if record.get("localized_message", {}).get("message_id")
+                    == "app.startup.started"
+                )
+                self.assertGreater(app.app_diagnostics_list.size(), diagnostic_index)
+                app.app_diagnostics_list.selection_set(diagnostic_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                diagnostic_selection = tuple(app.app_diagnostics_list.curselection())
+                diagnostic_row_english = app.app_diagnostics_list.get(diagnostic_index)
+                diagnostic_detail_english = app.app_diagnostics_detail.get(
+                    "1.0", "end-1c")
+                self.assertIn("Application started", diagnostic_row_english)
+                self.assertIn("Application started", diagnostic_detail_english)
+
+                app.open_historical_events()
+                history_window = app.historical_event_window
+                history_index = next(
+                    index for index, event in enumerate(app._historical_event_records)
+                    if (event.localized_message or {}).get("message_id")
+                    == "app.startup.started"
+                )
+                self.assertGreater(app.historical_event_list.size(), history_index)
+                app.historical_event_list.selection_set(history_index)
+                app.historical_event_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                history_selection = tuple(app.historical_event_list.curselection())
+                history_row_english = app.historical_event_list.get(history_index)
+                history_detail_english = app.historical_event_detail.get("1.0", "end-1c")
+                self.assertIn("Application started", history_row_english)
+                self.assertIn("Application started", history_detail_english)
+
+                event_bytes = app.app_events.path.read_bytes()
+                event_revision = app.rounds.app_event_revision()
+                select_language(TRADITIONAL_CHINESE)
+                self.assertIs(app.settings_window, settings_window)
+                self.assertIs(app.app_diagnostics_window, diagnostics_window)
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertTrue(all(window.winfo_exists() for window in (
+                    settings_window, diagnostics_window, history_window,
+                )))
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Integrated Draft")
+                self.assertEqual(app.settings_notebook.select(), selected_tab)
+                self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
+                                 diagnostic_selection)
+                self.assertEqual(tuple(app.historical_event_list.curselection()), history_selection)
+                self.assertEqual(settings_window.title(), app._t("app.settings.title"))
+                self.assertEqual(diagnostics_window.title(), app._t("app.diagnostic.heading"))
+                self.assertEqual(history_window.title(), app._t("app.settings.history.title"))
+                self.assertIn("App 已啟動", app.app_diagnostics_list.get(diagnostic_index))
+                self.assertIn("App 已啟動", app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertNotEqual(app.app_diagnostics_list.get(diagnostic_index),
+                                    diagnostic_row_english)
+                self.assertNotEqual(app.app_diagnostics_detail.get("1.0", "end-1c"),
+                                    diagnostic_detail_english)
+                self.assertIn("App 已啟動", app.historical_event_list.get(history_index))
+                self.assertIn("App 已啟動", app.historical_event_detail.get("1.0", "end-1c"))
+                self.assertNotEqual(app.historical_event_list.get(history_index),
+                                    history_row_english)
+                self.assertNotEqual(app.historical_event_detail.get("1.0", "end-1c"),
+                                    history_detail_english)
+                self.assertEqual(event_bytes, app.app_events.path.read_bytes())
+                self.assertEqual(app.rounds.app_event_revision(), event_revision)
+
+                select_language(ENGLISH)
+                self.assertIs(app.settings_window, settings_window)
+                self.assertIs(app.app_diagnostics_window, diagnostics_window)
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved Integrated Draft")
+                self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
+                                 diagnostic_selection)
+                self.assertEqual(tuple(app.historical_event_list.curselection()), history_selection)
+                self.assertIn("Application started",
+                              app.app_diagnostics_list.get(diagnostic_index))
+                self.assertIn("Application started",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertIn("Application started",
+                              app.historical_event_list.get(history_index))
+                self.assertIn("Application started",
+                              app.historical_event_detail.get("1.0", "end-1c"))
+                self.assertEqual(event_bytes, app.app_events.path.read_bytes())
+                self.assertEqual(app.rounds.app_event_revision(), event_revision)
+            finally:
+                if app.historical_event_window and app.historical_event_window.winfo_exists():
+                    app._close_historical_event_window()
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app.app_diagnostics_window.destroy()
+                app._close_settings()
+                app.hotkey.close()
+                root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -4985,7 +5174,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                        detail={"kind": "start"}))
 
         app._set_row.assert_not_called()
-        app._set_monitor_controls.assert_called_once_with(False, "逾時停止")
+        app._set_monitor_controls.assert_called_once_with(False, "monitor.timeout_stopped")
 
     def test_test_timeout_keeps_monitoring_other_slots(self):
         app = object.__new__(B518LogSolutionApp)

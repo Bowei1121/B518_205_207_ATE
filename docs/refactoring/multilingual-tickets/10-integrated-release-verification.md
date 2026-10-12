@@ -10,12 +10,16 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 ## Acceptance criteria
 
-- [ ] 全部資源鍵、參數與術語完整，英文基準及裁決／警報／保存失敗等關鍵文案不能靠回退；未來語言不擴張固定雙語紀錄。
-- [ ] 全部自有視窗、事件與錯誤說明在兩語下完整，已開視窗保留輸入／選取；原生系統文字與原始證據例外明確。
-- [ ] 同時開多視窗、連續切換、監控、待確認及關閉取消的完整路徑驗證，無舊語言殘留或重複回呼。
-- [ ] 長英文、選單與全部主要畫面可讀，KVM 定位、色帶及黑白標記不遮擋、幾何與上位機判定維持。
-- [ ] 全部 16 組規格案例有對應證據，兩語在相同來源與人工決定下結果、候選、audit 身分與放行一致，既有全套回歸通過。
-- [ ] 發布資源完整收錄，source App 與正式 bundle／目標環境證據分開；環境不足項明記待驗，不虛報通過或完整可發布。
+2026-10-12 使用者改授權：尚未驗項先以source App完成，必要source驗收、全套及審查通過即可合併；正式bundle、目標OS／HMI及實機KVM另待驗，不宣稱完整可發布。以下勾選僅表示本次source範圍，完整發布未完成。
+
+- [x] source資源键／參數／術語完整：English／繁中各322鍵，零catalog錯誤，關鍵裁決／警報／保存文案完整，不擴張固定雙語磁碟契約。
+- [x] source全部可達自有視窗／事件／錯誤以共用兩語呈現，已開視窗保留狀態；原生文字與原證據例外明確。完整入口與逐鍵清單見 [source-coverage.md](../evidence/multilingual-ticket-10/source-coverage.md)。
+- [x] source跨五窗、連續切換、RUNNING／待確認、其他位置收集、關閉停用／取消／再次關閉通過；真正可見notice、選取／閱讀保留及單次操作磁碟重建。
+- [x] source長英文／窄主頁／主要視窗可讀可操作，KVM固定幾何／色帶／標記回歸通過；實際HMI／上位機KVM另待驗。
+- [x] 母規格16組適用source部分已於最後整合版本實際重跑並記錄；平台來源／人工決定業務等價、完整保存及清理回歸。案例16正式產物及現場部分未勾選。
+- [ ] 正式發布資源收錄、bundle操作及適用目標環境仍待驗；不以source／合成verifier測試代替發布。
+
+最後程式／測試SHA：`079b5191598b39182ef6e7acd3269c3cc3d703a9`；實際全套與審查、source合併及查詢結果見 [local-validation.md](../evidence/multilingual-ticket-10/local-validation.md) 與每日M10摘要。正式發布接續見 [release-validation.md](../evidence/multilingual-ticket-10/release-validation.md)。歷史365tests／317keys不是本次結果。
 
 ## Blocked by
 

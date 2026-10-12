@@ -9,10 +9,11 @@ import subprocess
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import filedialog, font as tkfont, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
+from localized_notice import show_notice
 from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -24,7 +25,7 @@ from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from round_start_preparation import RoundStartPathError, RoundStartPreparation
 from language_catalog import (
     DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, TRADITIONAL_CHINESE, language_name,
-    render_bilingual_message, save_state_message_id, translate,
+    make_bilingual_message, render_bilingual_message, save_state_message_id, translate,
 )
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
@@ -462,6 +463,25 @@ class B518LogSolutionApp:
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records(force=True)
         self._refresh_historical_event_window()
+        self.root.event_generate("<<AppLanguageChanged>>")
+
+    def _show_notice(self, title_id, message_id, parameters=None, diagnostic="", captured=None):
+        parameters = dict(parameters or {})
+        original_reason = parameters.get("reason", "")
+        diagnostic = diagnostic or original_reason
+
+        def text_provider():
+            display_parameters = dict(parameters)
+            if original_reason:
+                display_parameters["reason"] = self._t("app.notice.diagnostic_below")
+            message = (render_bilingual_message(captured, self.current_language)
+                       if captured is not None else self._t(message_id, **display_parameters))
+            if diagnostic:
+                message += "\n\n{}: {}".format(self._t("app.diagnostic.raw"), diagnostic)
+            return self._t(title_id), message, self._t("app.notice.ok")
+
+        title, message, _button = text_provider()
+        show_notice(title, message, parent=self.root, text_provider=text_provider)
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
@@ -627,6 +647,7 @@ class B518LogSolutionApp:
     def _refresh_app_event_records(self, force: bool = False) -> None:
         if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
             return
+        self.app_diagnostics_window.title(self._t("app.diagnostic.heading"))
         revision = self.rounds.app_event_revision()
         if not force and revision == self._last_app_event_revision:
             return
@@ -641,10 +662,13 @@ class B518LogSolutionApp:
             localized = record.get("localized_message")
             fallback = record.get("message", "")
             self._event_records.append((fallback, localized, None))
+            self.event_lines.append(self._render_event_record((fallback, localized, None)))
             added_to_main_log = True
         if added_to_main_log:
             self._refresh_event_log()
         if self.app_diagnostics_list and self.app_diagnostics_list.winfo_exists():
+            list_top = self.app_diagnostics_list.yview()[0]
+            detail_top = self.app_diagnostics_detail.yview()[0]
             selected = self.app_diagnostics_list.curselection()
             prior_id = getattr(self, "_selected_app_event_id", None)
             self.app_diagnostics_list.delete(0, "end")
@@ -664,6 +688,9 @@ class B518LogSolutionApp:
             elif records and not selected:
                 self.app_diagnostics_list.selection_set(len(records) - 1)
                 self._show_app_event_detail(len(records) - 1)
+            self.app_diagnostics_list.yview_moveto(list_top)
+            if prior_id:
+                self.app_diagnostics_detail.yview_moveto(detail_top)
 
     def _show_app_event_detail(self, index: Optional[int] = None) -> None:
         if not self.app_diagnostics_detail or not self.app_diagnostics_detail.winfo_exists():
@@ -748,12 +775,11 @@ class B518LogSolutionApp:
             self.profile_store.save_language(language)
         except (OSError, ProfileError) as error:
             self._language_save_error = str(error)
-            message = self._t("language.save_failed", reason=str(error))
-            title = self._t("language.save_failed_title")
             self._record_app_event("app.language.preference_save_failed", {"reason": str(error)},
                                    str(error))
             self.language_button.configure(relief="sunken")
-            messagebox.showerror(title, message, parent=self.root)
+            self._show_notice("language.save_failed_title", "language.save_failed",
+                              {"reason": str(error)})
         else:
             self._language_save_error = None
             self.language_button.configure(relief="raised")
@@ -791,23 +817,19 @@ class B518LogSolutionApp:
 
     def _show_invalid_language_warning(self) -> None:
         if self.root.winfo_exists() and self.profile_store.language_error:
-            messagebox.showwarning(
-                self._t("language.invalid_saved_title"),
-                self._t("language.invalid_saved"), parent=self.root,
-            )
+            self._show_notice("language.invalid_saved_title", "language.invalid_saved",
+                              diagnostic=self.profile_store.language_error)
 
     def _show_startup_warning(self) -> None:
         if self.root.winfo_exists() and self.profile_error:
-            messagebox.showwarning(self._t("app.startup.title"),
-                                   self._t("app.startup.preferences_read_failed",
-                                           reason=self.profile_error), parent=self.root)
+            self._show_notice("app.startup.title", "app.startup.preferences_read_failed",
+                              {"reason": self.profile_error})
 
     def _show_app_event_store_warning(self) -> None:
         status = self.rounds.app_event_status()
         if self.root.winfo_exists() and status and status.error:
-            messagebox.showerror(self._t("app.event_store.title"),
-                                 self._t("app.event_store.initialize_failed", reason=status.error),
-                                 parent=self.root)
+            self._show_notice("app.event_store.title", "app.event_store.initialize_failed",
+                              {"reason": status.error})
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
         """Show the supplied company asset when deployed, with a readable fallback."""
@@ -877,7 +899,8 @@ class B518LogSolutionApp:
             reported = getattr(self, "_reported_audit_errors", set())
             for error in snapshot.audit_errors:
                 if error not in reported:
-                    self._log("稽核紀錄不完整：{}".format(error))
+                    message = make_bilingual_message("app.round.audit_incomplete", {}, error)
+                    self._log(message.english, message)
                     reported.add(error)
             self._reported_audit_errors = reported
         save_state = getattr(snapshot, "save_state", "saving")
@@ -885,7 +908,8 @@ class B518LogSolutionApp:
         reported_save_errors = getattr(self, "_reported_save_errors", set())
         for error in save_errors:
             if error not in reported_save_errors:
-                self._log("本輪保存失敗：{}".format(error))
+                message = make_bilingual_message("app.round.save_failed", {}, error)
+                self._log(message.english, message)
                 reported_save_errors.add(error)
         self._reported_save_errors = reported_save_errors
         self._current_save_state = save_state
@@ -1131,10 +1155,10 @@ class B518LogSolutionApp:
 
     def _show_hotkey_warning(self) -> None:
         self._record_app_event("app.hotkey.unavailable", {}, self.hotkey.message)
-        messagebox.showwarning(self._t("app.hotkey.title"),
-                               self._t("app.hotkey.unavailable"), parent=self.root)
+        self._show_notice("app.hotkey.title", "app.hotkey.unavailable",
+                          diagnostic=self.hotkey.message)
 
-    def _set_monitor_controls(self, monitoring: bool, state_text: Optional[str] = None) -> None:
+    def _set_monitor_controls(self, monitoring: bool, state_message_id: Optional[str] = None) -> None:
         if getattr(self, "_closing_ui", False):
             self.start_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
@@ -1142,12 +1166,9 @@ class B518LogSolutionApp:
         else:
             self.start_button.configure(state="disabled" if monitoring else "normal")
             self.stop_button.configure(state="normal" if monitoring else "disabled")
-            message_by_text = {
-                "啟動中": "monitor.starting", "逾時停止": "monitor.timeout_stopped",
-                "啟動失敗": "monitor.start_failed", "監控中": "monitor.active", "待命": "monitor.idle",
-            }
-            self._set_main_monitor_state(message_by_text.get(
-                state_text, "monitor.active" if monitoring else "monitor.idle"))
+            self._set_main_monitor_state(
+                state_message_id or ("monitor.active" if monitoring else "monitor.idle")
+            )
         for name in ("project_choice", "machine_choice"):
             choice = getattr(self, name, None)
             if choice:
@@ -1177,9 +1198,8 @@ class B518LogSolutionApp:
             profile = self._selected_profile()
         except (AttributeError, ProfileError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
         try:
             prepared = self.round_start_preparation.prepare(
@@ -1187,15 +1207,13 @@ class B518LogSolutionApp:
             )
         except RoundStartPathError as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
         except (AttributeError, ProfileError, ValueError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
 
         self.active_profile_snapshot = prepared.profile
@@ -1212,13 +1230,11 @@ class B518LogSolutionApp:
             self.active_profile_snapshot = None
             self._render_state_marker(None)
             self._set_monitor_controls(False)
-            message = "無法開始監控：{}".format(error)
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.save_title"),
-                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
+            self._show_notice("app.profile.save_title", "app.profile.save_failed",
+                              {"reason": str(error)})
             return
         self._set_monitor_controls(True)
-        self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
 
     def stop_monitor(self) -> None:
         snapshot = self.rounds.snapshot()
@@ -1248,10 +1264,14 @@ class B518LogSolutionApp:
         self._event_records = self._event_records[-500:]
         self.event_lines = [self._render_event_record(record) for record in self._event_records]
         if self.settings_log and self.settings_log.winfo_exists():
+            reading_position = self.settings_log.yview()[0]
+            selection = tuple(map(str, self.settings_log.tag_ranges("sel")))
             self.settings_log.configure(state="normal")
             self.settings_log.delete("1.0", "end")
             self.settings_log.insert("1.0", "\n".join(self.event_lines))
-            self.settings_log.see("end")
+            for start, end in zip(selection[::2], selection[1::2]):
+                self.settings_log.tag_add("sel", start, end)
+            self.settings_log.yview_moveto(reading_position)
             self.settings_log.configure(state="disabled")
 
     def _log(self, text: str, localized_message=None, round_id: Optional[str] = None) -> None:
@@ -1303,7 +1323,8 @@ class B518LogSolutionApp:
             self.root.lift()
             self.root.focus_force()
         except tk.TclError as error:
-            self._log("無法將結果看板帶到前景：{}".format(error))
+            message = make_bilingual_message("app.dashboard.focus_failed", {}, str(error))
+            self._log(message.english, message)
 
     def _handle_event(self, event: MonitorEvent) -> None:
         round_id = None
@@ -1342,14 +1363,16 @@ class B518LogSolutionApp:
         if event.kind == "conflict_detected":
             self._open_conflict_review()
         if event.kind == "timeout" and event.detail.get("kind") == "start":
-            self._set_monitor_controls(False, "逾時停止")
+            self._set_monitor_controls(False, "monitor.timeout_stopped")
         if event.kind == "timeout" and event.detail.get("kind") == "round":
-            self._set_monitor_controls(False, "逾時停止")
+            self._set_monitor_controls(False, "monitor.timeout_stopped")
             self._open_round_alarm()
         if event.kind == "start_failed":
             self.active_profile_snapshot = None
-            self._set_monitor_controls(False, "啟動失敗")
-            messagebox.showerror("監控啟動失敗", event.message, parent=self.root)
+            self._set_monitor_controls(False, "monitor.start_failed")
+            self._show_notice("monitor.start_failed", "round.start_failed",
+                              {"station": self.station.get().upper()},
+                              diagnostic=event.diagnostic, captured=event.localized_message)
         if event.kind in {"finished", "stopped"}:
             self._set_monitor_controls(False)
 
@@ -2440,6 +2463,7 @@ class B518LogSolutionApp:
         window = self.historical_event_window
         if window is None or not window.winfo_exists():
             return
+        window.title(self._t("app.settings.history.title"))
         selected = self._historical_event_selected_key
         event_list = self.historical_event_list
         detail_view = self.historical_event_detail
@@ -2532,16 +2556,15 @@ class B518LogSolutionApp:
 
     def open_session(self) -> None:
         path = self.rounds.session_path or self.session_root
-        path.mkdir(parents=True, exist_ok=True)
         try:
+            path.mkdir(parents=True, exist_ok=True)
             subprocess.Popen(["open", str(path)])
         except OSError as error:
             reason = str(error)
             self._record_app_event("app.settings.event.session.open_failed",
                                    {"reason": reason}, reason)
-            messagebox.showerror(self._t("app.settings.session.open"),
-                                 self._t("app.settings.session.open_failed", reason=reason),
-                                 parent=self.root)
+            self._show_notice("app.settings.session.open", "app.settings.session.open_failed",
+                              {"reason": reason})
 
     def close(self) -> None:
         rounds = getattr(self, "rounds", None)
@@ -2554,8 +2577,8 @@ class B518LogSolutionApp:
             self._save_preferences()
         except (OSError, ProfileError) as error:
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.save_title"),
-                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
+            self._show_notice("app.profile.save_title", "app.profile.save_failed",
+                              {"reason": str(error)})
         self._closing_ui = True
         self._refresh_language_entry()
         self._set_monitor_controls(self._round_is_active())
