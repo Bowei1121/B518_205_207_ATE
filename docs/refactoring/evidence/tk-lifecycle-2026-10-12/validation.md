@@ -43,3 +43,10 @@
 
 - [Python 3.12 Tkinter threading model](https://docs.python.org/3.12/library/tkinter.html#threading-model)：Tk interpreter／事件佇列與執行緒生命週期。
 - [Python 3.12 ctypes variadic functions](https://docs.python.org/3.12/library/ctypes.html#calling-variadic-functions)：Apple ARM64 的可變參數呼叫慣例與固定 argtypes 宣告。
+
+## 提交與推送狀態
+
+- 程式／測試／build／證據提交：`b1b4c3630051943a94a9279f4f7abd5c19a8b7d7`。提交沒有包含原有 VERSION 修改或 spec。
+- 推送前直接查詢發現遠端已前進至 `82c4a133181bc66f8f43bea4a4b098647a558fb0`，新增兩個純文件提交（088caae、82c4a13），與本次程式無重疊。已 fetch 並以 merge `f4bade6cd8371064667e639d8c74ea3abfa14e79` 安全保留它們；程式／tests／build 已驗證內容未變。
+- **推送尚未完成**：本機 HTTPS Git 回傳 `could not read Username for https://github.com`；SSH agent 沒有 identity。GitHub 連線可讀取 repository，但建立 blob 的寫入 API 回傳 `403 Resource not accessible by integration`。沒有成功寫入遠端 blob／commit／ref，沒有 force push 或改動遠端設定。
+- 等待使用者設定這台 Mac 的 GitHub Git 推送認證，之後執行 `git push origin B518-Log-Solution` 並再次直接確認遠端 SHA。

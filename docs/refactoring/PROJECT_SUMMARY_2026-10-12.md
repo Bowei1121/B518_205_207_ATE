@@ -33,3 +33,8 @@
 - 完整套件另外找出 Apple arm64 openat 可變參數宣告錯誤（清理後事件檔權限 000），一併修正；保留安全路徑查核。修正衝突視窗小尺寸操作列及非同步 Tk 畫面驗證。
 - 完整含 Tk 374 tests（71.342 秒）通過，零跳過；最終 macOS15 arm64 build 腳本在隔離副本再跑 374 tests（72.838 秒）通過並 exit 0，bundle／簽章／ZIP 檢查完成。候選 V0.1.4 留在忽略的 dist-validation 目錄，原 VERSION 0.1.3 不納入提交。
 - 原因、回歸前失敗、完整測試及 build 記錄見 [本次驗證證據](evidence/tk-lifecycle-2026-10-12/validation.md)。本機此次依實際既有 origin（GitHub）與目前分支提交推送；沒有依摘要的歷史遠端配置推測內網目的地。
+
+### 推送認證阻擋（本次實際狀態）
+
+- 本次修正已提交為 b1b4c36；查核遠端新文件提交後，以 f4bade6 安全合併 origin/B518-Log-Solution 的 088caae、82c4a13，程式沒有額外變更。
+- 推送尚未完成：HTTPS Git 未設定認證、SSH agent 無金鑰；已連線 GitHub 寫入 API 回傳 403 Resource not accessible by integration。已請使用者在這台 Mac 設定 Git 推送認證，完成後續推並確認遠端 SHA。
