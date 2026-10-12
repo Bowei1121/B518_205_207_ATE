@@ -93,6 +93,10 @@ class B518LogSolutionApp:
                  session_root: Optional[Path] = None, app_event_path: Optional[Path] = None,
                  app_event_clock=None):
         self.root = root
+        self._ui_destroyed = False
+        self._after_ids: set[str] = set()
+        self._close_after_id = None
+        self.root.bind("<Destroy>", self._on_root_destroy, add="+")
         self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
         self.root.title("B518 Log Solution-V0.1.0")
         self.root.resizable(False, False)
@@ -124,8 +128,8 @@ class B518LogSolutionApp:
         self._monitor_state_message = "monitor.idle"
         self._monitor_state_parameters: dict[str, object] = {}
         self._current_save_state = "waiting"
-        self.project = tk.StringVar(value=selected_project)
-        self.station = tk.StringVar(value=selected_machine)
+        self.project = tk.StringVar(master=self.root, value=selected_project)
+        self.station = tk.StringVar(master=self.root, value=selected_machine)
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
         self.template_labels: Dict[str, tk.Label] = {}
         self.kvm_result_blocks: Dict[int, tk.Label] = {}
@@ -177,20 +181,68 @@ class B518LogSolutionApp:
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
-        self.hotkey: HotkeyRegistration = hotkey_factory(self._on_global_hotkey)
-        self.root.bind_all("<Command-Shift-M>", self._on_local_hotkey)
+        self.hotkey: HotkeyRegistration = hotkey_factory(
+            lambda events=self.hotkey_events: events.put(True))
+        self.root.bind("<Command-Shift-M>", self._on_local_hotkey)
         self._position_window()
-        self.root.after(150, self._drain_events)
+        self._schedule_ui(150, self._drain_events)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.rounds.start_retention_schedule(self.profile_store.retention_days)
         if self.profile_error:
-            self.root.after(300, self._show_startup_warning)
+            self._schedule_ui(300, self._show_startup_warning)
         if self.profile_store.language_error:
-            self.root.after(300, self._show_invalid_language_warning)
+            self._schedule_ui(300, self._show_invalid_language_warning)
         if self.app_events.status().error:
-            self.root.after(300, self._show_app_event_store_warning)
+            self._schedule_ui(300, self._show_app_event_store_warning)
         if not self.hotkey.available:
-            self.root.after(300, self._show_hotkey_warning)
+            self._schedule_ui(300, self._show_hotkey_warning)
+
+    def _schedule_ui(self, delay: int | str, callback, *args):
+        """Own every App timer so its Tcl command cannot outlive the root."""
+        if self._ui_destroyed:
+            return None
+
+        def invoke():
+            self._after_ids.remove(after_id)
+            if not self._ui_destroyed:
+                callback(*args)
+
+        after_id = self.root.after(delay, invoke)
+        self._after_ids.add(after_id)
+        return after_id
+
+    def _cancel_ui_timer(self, after_id) -> None:
+        if after_id in self._after_ids:
+            self.root.after_cancel(after_id)
+            self._after_ids.remove(after_id)
+
+    def _on_root_destroy(self, event) -> None:
+        if event.widget is not self.root or self._ui_destroyed:
+            return
+        self._ui_destroyed = True
+        for after_id in tuple(self._after_ids):
+            self._cancel_ui_timer(after_id)
+        self._close_after_id = None
+        # A hotkey registration must never keep the UI alive from a worker.
+        if hasattr(self, "hotkey"):
+            self.hotkey.close()
+        # Tk variables, images, fonts, widgets and Style retain the interpreter.
+        # Release our entire UI resource graph here, on its creating thread,
+        # even when an embedding caller destroys root directly. Domain state
+        # and pending durable writes remain available to their own workers.
+        def release(value):
+            if isinstance(value, (tk.Misc, tk.Variable, tk.Image, tkfont.Font, ttk.Style)):
+                return None
+            if isinstance(value, dict):
+                return {key: release(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [release(item) for item in value]
+            if isinstance(value, tuple):
+                return tuple(release(item) for item in value)
+            return value
+
+        for name, value in tuple(vars(self).items()):
+            setattr(self, name, release(value))
 
     def _configure_appearance(self) -> None:
         """Force a readable light palette even when macOS uses Dark Mode."""
@@ -272,7 +324,7 @@ class B518LogSolutionApp:
         self.machine_choice.grid(row=1, column=1, sticky="ew", padx=(5, 12))
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
-        self.language_choice = tk.StringVar(value=self.current_language)
+        self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
         self.language_button = tk.Menubutton(
             selection, text="English ▾",
             background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
@@ -379,7 +431,7 @@ class B518LogSolutionApp:
         round_save_controls.pack(fill="x", pady=(5, 0))
         self.unsaved_round_count = ttk.Label(round_save_controls, text="未保存輪次 0")
         self.unsaved_round_count.pack(side="left")
-        self.unsaved_round_choice = tk.StringVar(value="")
+        self.unsaved_round_choice = tk.StringVar(master=self.root, value="")
         self.unsaved_round_picker = ttk.Combobox(
             round_save_controls, textvariable=self.unsaved_round_choice,
             state="readonly", width=26,
@@ -1290,6 +1342,8 @@ class B518LogSolutionApp:
             self.settings_log.configure(state="disabled")
 
     def _drain_events(self) -> None:
+        if self._ui_destroyed:
+            return
         round_snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         if round_snapshot and round_snapshot.source_preparation_pending:
             self.rounds.poll_once()
@@ -1314,7 +1368,7 @@ class B518LogSolutionApp:
         self._refresh_retention_cleanup_status()
         self._refresh_conflict_review()
         self._refresh_round_alarm()
-        self.root.after(150, self._drain_events)
+        self._schedule_ui(150, self._drain_events)
 
     def _bring_dashboard_to_front(self) -> None:
         """Show the completed-result board without keeping it permanently on top."""
@@ -1458,9 +1512,9 @@ class B518LogSolutionApp:
             self.conflict_details.configure(yscrollcommand=details_scrollbar.set)
             self.conflict_panes.add(summary, weight=4)
             self.conflict_panes.add(details, weight=6)
-            window.after_idle(self._set_initial_conflict_sash)
+            self._schedule_ui("idle", self._set_initial_conflict_sash)
             actions = ttk.Frame(window)
-            actions.pack(fill="x", padx=12, pady=(8, 12))
+            actions.pack(side="bottom", fill="x", padx=12, pady=(8, 12), before=body)
             self.resolve_conflict_original_button = ttk.Button(
                 actions, text="",
                 command=lambda: self._resolve_selected_conflict("keep_original"),
@@ -1886,8 +1940,8 @@ class B518LogSolutionApp:
 
     def _build_retention_tab(self, parent: ttk.Frame) -> None:
         """Build the global round-record retention settings tab."""
-        self.retention_days_var = tk.StringVar(value=str(self.profile_store.retention_days))
-        self.retention_status = tk.StringVar()
+        self.retention_days_var = tk.StringVar(master=self.root, value=str(self.profile_store.retention_days))
+        self.retention_status = tk.StringVar(master=self.root)
         self._set_retention_status("app.settings.retention.status.saved")
         self.retention_effective_label = ttk.Label(
             parent, text=self._t("app.settings.retention.effective",
@@ -1908,7 +1962,7 @@ class B518LogSolutionApp:
             wraplength=650, justify="left", foreground=TEXT_COLOUR,
         )
         self.retention_help_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
-        self.retention_cleanup_status = tk.StringVar(value="背景清理尚未執行")
+        self.retention_cleanup_status = tk.StringVar(master=self.root, value="背景清理尚未執行")
         self.retention_cleanup_heading = self._settings_label(
             parent, "app.settings.retention.cleanup.heading")
         self.retention_cleanup_heading.configure(font=("Helvetica", 10, "bold"))
@@ -2106,20 +2160,20 @@ class B518LogSolutionApp:
         except ProfileError:
             profile = self.profiles.profiles[0]
         self.profile_editor_original = profile
-        self.profile_editor_project = tk.StringVar(value=profile.project)
-        self.profile_editor_machine = tk.StringVar(value=profile.machine)
-        self.profile_editor_platform = tk.StringVar(value=profile.platform)
-        self.profile_editor_capacity = tk.StringVar(value=str(profile.capacity))
+        self.profile_editor_project = tk.StringVar(master=self.root, value=profile.project)
+        self.profile_editor_machine = tk.StringVar(master=self.root, value=profile.machine)
+        self.profile_editor_platform = tk.StringVar(master=self.root, value=profile.platform)
+        self.profile_editor_capacity = tk.StringVar(master=self.root, value=str(profile.capacity))
         self.profile_editor_paths = {
-            field: tk.StringVar(value=profile.paths.get(field, ""))
+            field: tk.StringVar(master=self.root, value=profile.paths.get(field, ""))
             for field in ("active", "final", "caseinfo")
         }
-        self.profile_editor_mapping = tk.StringVar(value=self._mapping_text(profile.mapping))
+        self.profile_editor_mapping = tk.StringVar(master=self.root, value=self._mapping_text(profile.mapping))
         self.profile_editor_timeouts = {
-            field: tk.StringVar(value=str(profile.timeouts[field]))
+            field: tk.StringVar(master=self.root, value=str(profile.timeouts[field]))
             for field in ("start", "test", "round")
         }
-        self.profile_editor_status = tk.StringVar()
+        self.profile_editor_status = tk.StringVar(master=self.root)
         self._set_profile_editor_status("app.settings.profile.status.draft")
 
         self._settings_label(parent, "app.settings.profile.project").grid(
@@ -2499,7 +2553,7 @@ class B518LogSolutionApp:
         else:
             self._historical_event_selected_key = None
             self._set_historical_event_detail(self._t("app.settings.history.empty"))
-        window.after_idle(self._restore_historical_event_view,
+        self._schedule_ui("idle", self._restore_historical_event_view,
                           window, event_list, detail_view, list_top, detail_top)
 
     @staticmethod
@@ -2642,7 +2696,9 @@ class B518LogSolutionApp:
 
     def _schedule_close_poll(self, generation: int) -> None:
         self._close_poll_generation = generation
-        self.root.after(100, lambda: self._poll_close_status(generation))
+        self._cancel_ui_timer(self._close_after_id)
+        self._close_after_id = self._schedule_ui(
+            100, lambda: self._poll_close_status(generation))
 
     def _poll_close_status(self, generation: int) -> None:
         if not self._closing_ui or generation != self._close_poll_generation:
@@ -2669,6 +2725,8 @@ class B518LogSolutionApp:
         status = self.rounds.cancel_close()
         self._closing_ui = False
         self._close_poll_generation = None
+        self._cancel_ui_timer(self._close_after_id)
+        self._close_after_id = None
         self._refresh_language_entry()
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.destroy()

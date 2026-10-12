@@ -22,7 +22,7 @@ VENV=.venv-macos15_0-arm64-log-solution
 "$VENV/bin/python" scripts/check_macos_build_python.py
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
-"$VENV/bin/python" scripts/run_tests.py
+B518_TK_TESTS=1 "$VENV/bin/python" scripts/run_tests.py
 
 VERSION="$($VENV/bin/python - <<'PY'
 from pathlib import Path
@@ -39,7 +39,7 @@ BUILD=build-macos15_0-arm64
 rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
-  --distpath "$DIST" --workpath "$BUILD" --paths src --add-data "assets:assets" src/b518_log_solution.py
+  --distpath "$DIST" --workpath "$BUILD" --specpath "$BUILD" --paths "$ROOT/src" --add-data "$ROOT/assets:assets" "$ROOT/src/b518_log_solution.py"
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"

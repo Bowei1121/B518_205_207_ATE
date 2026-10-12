@@ -28,7 +28,9 @@ _LIBC = ctypes.CDLL(None, use_errno=True)
 _HAS_RELATIVE_FILE_OPERATIONS = all(
     hasattr(_LIBC, name) for name in ("openat", "renameat", "unlinkat"))
 if _HAS_RELATIVE_FILE_OPERATIONS:
-    _LIBC.openat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint)
+    # openat has three fixed arguments; mode is variadic. Apple arm64
+    # passes variadic arguments differently from fixed arguments.
+    _LIBC.openat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
     _LIBC.openat.restype = ctypes.c_int
     _LIBC.renameat.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
     _LIBC.renameat.restype = ctypes.c_int
@@ -47,7 +49,7 @@ def _at_call(result: int, operation: str, path: str) -> int:
 def _openat(directory_fd: int, name: str, flags: int, mode: int = 0) -> int:
     if not _HAS_RELATIVE_FILE_OPERATIONS:
         raise OSError("Secure directory-relative cleanup is unavailable on this platform")
-    return _at_call(_LIBC.openat(directory_fd, os.fsencode(name), flags, mode), "openat", name)
+    return _at_call(_LIBC.openat(directory_fd, os.fsencode(name), flags, ctypes.c_uint(mode)), "openat", name)
 
 
 def _renameat(source_fd: int, source: str, target_fd: int, target: str) -> None:

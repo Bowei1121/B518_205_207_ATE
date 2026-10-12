@@ -24,3 +24,12 @@
 
 - Gitea 同步不再是 M10 的阻擋。後續仍需依 [M10 驗收](evidence/multilingual-ticket-10/local-validation.md) 及 [發布驗收](evidence/multilingual-ticket-10/release-validation.md) 補齊產品與正式產物證據，通過全部合併條件後才整合 M10。
 - 所有分支不存在／遠端 SHA／worktree 清理結果，在摘要提交與最終推送後再次直接查核，最終文件提交 SHA 與查詢結果回報於本對話，避免文件自引用 SHA。
+
+## 本機 macOS Tk 建置異常修正
+
+- 在桌面 checkout 的 `B518-Log-Solution` 查核 Git，保留既有 VERSION 0.1.3 與未追蹤 spec，兩檔先備份並於驗證後 cmp 確認原樣。
+- 使用指定 Python 3.12.10 重現殘留 after script 的 invalid `_drain_events` command，以及 worker GC 的 Variable.__del__ 主執行緒錯誤／Tcl_AsyncDelete 中止；保存 Python 與原生執行緒堆疊。
+- 修正 App timer 管理、Destroy 主執行緒 Tk 資源釋放、hotkey callback 生命週期、測試桌面視窗及所有背景工作收尾；新增 subprocess GC、timer 與 native openat mode 回歸測試。
+- 完整套件另外找出 Apple arm64 openat 可變參數宣告錯誤（清理後事件檔權限 000），一併修正；保留安全路徑查核。修正衝突視窗小尺寸操作列及非同步 Tk 畫面驗證。
+- 完整含 Tk 374 tests（71.342 秒）通過，零跳過；最終 macOS15 arm64 build 腳本在隔離副本再跑 374 tests（72.838 秒）通過並 exit 0，bundle／簽章／ZIP 檢查完成。候選 V0.1.4 留在忽略的 dist-validation 目錄，原 VERSION 0.1.3 不納入提交。
+- 原因、回歸前失敗、完整測試及 build 記錄見 [本次驗證證據](evidence/tk-lifecycle-2026-10-12/validation.md)。本機此次依實際既有 origin（GitHub）與目前分支提交推送；沒有依摘要的歷史遠端配置推測內網目的地。

@@ -1,0 +1,5 @@
+('after#0',)
+Traceback (most recent call last):
+  File "/tmp/b518-tk-diagnosis/timer-before.py", line 18, in <module>
+    root.tk.call("eval", root.tk.call("after", "info", pending)[0])
+_tkinter.TclError: invalid command name "4331041664_drain_events"

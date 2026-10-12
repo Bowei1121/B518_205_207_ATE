@@ -1,8 +1,13 @@
 import csv
+import gc
 import io
 import json
 import os
 import shutil
+import subprocess
+import sys
+import textwrap
+import traceback
 import tkinter as tk
 import time
 import threading
@@ -145,7 +150,52 @@ def conflict_summary_rows(app):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Tk on macOS uses a process-wide event queue. Keep one interpreter
+        # alive; each App still gets a real, independently destroyed window.
+        cls._desktop_root = tk.Tk()
+        cls._desktop_root.geometry("1x1+0+0")
+        cls._desktop_root.update()
+        cls._desktop_root.tk.eval(
+            "set ::b518_test_bgerrors {}; "
+            "proc bgerror {message} {lappend ::b518_test_bgerrors $message}")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._desktop_root.destroy()
+        cls._desktop_root = None
+        gc.collect()
+
     def setUp(self):
+        self._async_errors = []
+        errors = self._async_errors
+        previous_hook = sys.unraisablehook
+
+        def record_unraisable(event):
+            errors.append("Unraisable: {}".format(event.exc_value))
+            previous_hook(event)
+
+        def record_callback(kind, value, trace):
+            errors.append("".join(traceback.format_exception(kind, value, trace)))
+
+        sys.unraisablehook = record_unraisable
+        self._desktop_root.report_callback_exception = record_callback
+        self.addCleanup(setattr, sys, "unraisablehook", previous_hook)
+        self.addCleanup(self._assert_no_async_errors)
+        self.addCleanup(gc.collect)
+        self._test_windows = []
+        self._after_before_test = set(self._desktop_root.tk.call("after", "info"))
+
+        def create_window():
+            window = tk.Toplevel(self._desktop_root)
+            self._test_windows.append(window)
+            return window
+
+        root_patcher = patch("tkinter.Tk", side_effect=create_window)
+        root_patcher.start()
+        self.addCleanup(root_patcher.stop)
+        self.addCleanup(self._destroy_test_windows)
         self._isolated_app_root = TemporaryDirectory()
         self._app_event_stores = []
         self._app_round_coordinators = []
@@ -161,14 +211,15 @@ class LogSolutionUiTests(unittest.TestCase):
 
         real_coordinator = RoundCoordinator
 
-        def create_coordinator(*args, **kwargs):
-            coordinator = real_coordinator(*args, **kwargs)
+        real_coordinator_init = real_coordinator.__init__
+
+        def initialize_coordinator(coordinator, *args, **kwargs):
+            real_coordinator_init(coordinator, *args, **kwargs)
             self._app_round_coordinators.append(coordinator)
-            return coordinator
 
         store_patcher = patch("b518_log_solution.AppEventStore", side_effect=create_store)
-        coordinator_patcher = patch(
-            "b518_log_solution.RoundCoordinator", side_effect=create_coordinator)
+        coordinator_patcher = patch.object(
+            real_coordinator, "__init__", initialize_coordinator)
         app_root_patcher.start()
         preferences_patcher.start()
         store_patcher.start()
@@ -180,14 +231,51 @@ class LogSolutionUiTests(unittest.TestCase):
         self.addCleanup(self._isolated_app_root.cleanup)
         self.addCleanup(self._settle_app_event_writes)
 
+    def _assert_no_async_errors(self):
+        self.assertEqual(self._async_errors, [], "Background/Tk callback errors must fail the test")
+        tcl_errors = self._desktop_root.tk.call("set", "::b518_test_bgerrors")
+        self._desktop_root.tk.call("set", "::b518_test_bgerrors", "")
+        self.assertEqual(tcl_errors, "", "Tcl after errors must fail the test")
+
+    def _destroy_test_windows(self):
+        # Timers scheduled by a test itself are also its responsibility. App
+        # timers are checked independently by the destruction regressions.
+        pending = set(self._desktop_root.tk.call("after", "info")) - self._after_before_test
+        for after_id in pending:
+            self._desktop_root.after_cancel(after_id)
+        for window in self._test_windows:
+            if window.winfo_exists():
+                window.destroy()
+        self._test_windows.clear()
+        self._desktop_root.update_idletasks()
+
     def _settle_app_event_writes(self):
         for coordinator in self._app_round_coordinators:
+            # Cancel test-only close attempts waiting on intentional unresolved
+            # operator work, and stop all monitor loops before deleting data.
+            coordinator.cancel_close()
+            coordinator.stop()
+            pending_states = {"running"}
+            if coordinator._retention_next_due is not None:
+                pending_states.add("idle")
             deadline = time.monotonic() + 5
-            while (coordinator.retention_cleanup_status().status in {"idle", "running"} and
+            while (coordinator.retention_cleanup_status().status in pending_states and
                    time.monotonic() < deadline):
                 time.sleep(.01)
-            self.assertNotIn(coordinator.retention_cleanup_status().status, {"idle", "running"},
+            self.assertNotIn(coordinator.retention_cleanup_status().status, pending_states,
                              "Background cleanup must finish before temporary data cleanup")
+            self.wait_for(lambda: not (
+                coordinator._close_worker_active or coordinator._archive_worker_active or
+                coordinator._retention_worker_active), timeout=5)
+            with coordinator._lock:
+                rounds = set(coordinator._tracked_rounds.values())
+                if coordinator._current is not None:
+                    rounds.add(coordinator._current)
+            for round_ in rounds:
+                if round_._run_thread is not None:
+                    round_._run_thread.join(5)
+                    self.assertFalse(round_._run_thread.is_alive(),
+                                     "Monitor worker must exit before temporary data cleanup")
         for store in self._app_event_stores:
             deadline = time.monotonic() + 5
             while store.status().status == "saving" and time.monotonic() < deadline:
@@ -196,6 +284,79 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "App event write must finish before temporary data cleanup")
             store.stop()
 
+    def test_destroy_cancels_owned_timers_without_cancelling_embedding_timer(self):
+        root = tk.Tk()
+        root.withdraw()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        external = root.after(60000, lambda: None)
+        try:
+            app._schedule_ui(300, app._show_startup_warning)
+            app._schedule_ui("idle", app._set_initial_conflict_sash)
+            app._schedule_close_poll(1)
+            first_poll = app._close_after_id
+            app._schedule_close_poll(2)
+            self.assertNotIn(first_poll, root.tk.call("after", "info"))
+            self.assertGreaterEqual(len(app._after_ids), 3)
+            root.destroy()
+            self.assertEqual(root.tk.call("after", "info"), (external,))
+            self.assertEqual(app._after_ids, set())
+            self.assertIsNone(app.root)
+            self.assertIsNone(app.project)
+            self.assertTrue(app.hotkey.closed)
+            app._drain_events()  # A late dispatch cannot touch the dead interpreter.
+        finally:
+            root.after_cancel(external)
+            if not app._ui_destroyed:
+                root.destroy()
+
+    def test_destroyed_ui_is_safe_when_next_worker_collects_cycles(self):
+        # A wrong-thread Tcl interpreter deletion aborts the process; keep this
+        # regression in a subprocess so a failure is reported by unittest.
+        script = textwrap.dedent("""\
+            import gc, sys, threading, tkinter as tk, weakref
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+            from unittest.mock import patch
+            from b518_log_solution import B518LogSolutionApp
+            from test_log_solution_ui import FakeHotkey
+            gc.disable()
+            errors = []
+            sys.unraisablehook = lambda event: errors.append(str(event.exc_value))
+            with TemporaryDirectory() as tmp, patch(
+                    'b518_log_solution.PREFS_PATH', Path(tmp) / 'preferences.json'):
+                root = tk.Tk()
+                root.withdraw()
+                app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                    session_root=Path(tmp) / 'sessions',
+                    app_event_path=Path(tmp) / 'events.json')
+                app.open_settings()
+                app._schedule_close_poll(1)
+                assert app.app_events.flush(timeout=5)
+                app.app_events.stop()
+                # Keep a Python App cycle to collect on the worker deliberately.
+                app.cycle = app
+                app_ref, root_ref = weakref.ref(app), weakref.ref(root)
+                root.destroy()
+                assert not root.tk.call('after', 'info')
+                del app, root
+                assert root_ref() is None, 'Destroyed interpreter is still retained'
+                worker = threading.Thread(target=gc.collect)
+                worker.start()
+                worker.join(10)
+                assert not worker.is_alive(), 'Worker collection hung'
+                assert app_ref() is None, 'App cycle was not collected'
+                assert not errors, errors
+        """)
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = os.pathsep.join(
+            str(Path(__file__).resolve().parents[1] / directory)
+            for directory in ("src", "tests"))
+        completed = subprocess.run(
+            [sys.executable, "-X", "faulthandler", "-c", script],
+            env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(completed.stderr, "")
+
     def wait_for(self, predicate, timeout=3):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -203,6 +364,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail("Timed out waiting for asynchronous monitor preparation")
+
+    def wait_for_ui(self, root, predicate, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            root.update()
+            if predicate():
+                return
+            time.sleep(.01)
+        self.fail("Timed out waiting for the Tk presentation")
 
     def wait_for_archive_checks(self, coordinator, timeout=5):
         terminal_states = {"archived", "protected", "failed"}
@@ -871,7 +1041,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(session_decision["localized_message"],
                                  decision["localized_message"])
                 second_root = tk.Tk()
-                second_root.withdraw()
+                second_root.deiconify()
                 second_app = B518LogSolutionApp(
                     second_root, hotkey_factory=FakeHotkey,
                     session_root=Path(temporary) / "sessions-2",
@@ -952,7 +1122,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             round_path = session_root / "existing-round" / "session.json"
             round_path.parent.mkdir(parents=True)
@@ -1015,7 +1185,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             session_root = Path(temporary) / "sessions"
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             archived_at = datetime.now(timezone.utc) - timedelta(days=200)
             writer = RoundCoordinator(audit_root=session_root, wall_clock=lambda: archived_at)
 
@@ -1164,7 +1334,7 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertTrue(seeded_store.flush())
             seeded_store.stop()
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             with patch("b518_log_solution.PREFS_PATH", preferences), \
                     patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
                 app = B518LogSolutionApp(
@@ -1254,7 +1424,7 @@ class LogSolutionUiTests(unittest.TestCase):
             store.stop()
 
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             with patch("b518_log_solution.PREFS_PATH", preferences), \
                     patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
                 app = B518LogSolutionApp(
@@ -1307,7 +1477,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             now = datetime(2026, 10, 7, 10, 0, tzinfo=timezone(timedelta(hours=8)))
@@ -1355,8 +1525,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
 
                 app.archive_retry_button.invoke()
-                self.wait_for(lambda: rounds.archive_status(started.round_id).status == "archived")
-                root.update()
+                self.wait_for_ui(root, lambda:
+                    rounds.archive_status(started.round_id).status == "archived" and
+                    app.status_rows[1]["status"].cget("text") == "PASS")
 
                 app._refresh_archive_statuses()
                 self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
@@ -1370,7 +1541,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
                                      session_root=Path(temporary) / "sessions")
             coordinator = RoundCoordinator(app.events.put, audit_root=Path(temporary) / "sessions")
@@ -1499,7 +1670,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             coordinator = RoundCoordinator(app.events.put, audit_root=session_root)
@@ -1639,7 +1810,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             active = Path(temporary) / "active"
             final = Path(temporary) / "final"
             active.mkdir()
@@ -3004,6 +3175,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.rounds.flush_audit(timeout=3)
                 app._close_settings()
                 app.hotkey.close()
+                root.update()
                 root.destroy()
 
     def test_real_tk_conflict_selection_keeps_both_sections_on_same_snapshot(self):
@@ -3578,7 +3750,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
             try:
                 app.open_settings()
@@ -3665,7 +3837,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
             try:
                 app.open_settings()
@@ -3706,7 +3878,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_engineer_can_load_an_existing_profile_before_editing_it(self):
         root = tk.Tk()
-        root.withdraw()
+        root.deiconify()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         try:
             app.open_settings()
@@ -3730,7 +3902,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
             try:
                 app.open_settings()
@@ -3758,7 +3930,7 @@ class LogSolutionUiTests(unittest.TestCase):
             single_profile_export = Path(temporary) / "single-profile.json"
             with patch("b518_log_solution.PREFS_PATH", source_preferences):
                 root = tk.Tk()
-                root.withdraw()
+                root.deiconify()
                 source = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
                 try:
                     source.open_settings()
@@ -3799,7 +3971,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
             with patch("b518_log_solution.PREFS_PATH", deployment_preferences):
                 deploy_root = tk.Tk()
-                deploy_root.withdraw()
+                deploy_root.deiconify()
                 deployed = B518LogSolutionApp(deploy_root, hotkey_factory=FakeHotkey)
                 try:
                     deployed.open_settings()
@@ -4077,7 +4249,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_dashboard_row_cells_fill_the_full_row_geometry(self):
         root = tk.Tk()
-        root.withdraw()
+        root.deiconify()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         root.update_idletasks()
         try:
@@ -4104,7 +4276,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_empty_paths_are_rejected_before_monitor_creation(self):
         root = tk.Tk()
-        root.withdraw()
+        root.deiconify()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         app.station.set("DFU")
         profile = app.profiles.get("B518", "DFU")
@@ -4185,7 +4357,7 @@ class LogSolutionUiTests(unittest.TestCase):
             with patch("b518_log_solution.APP_ROOT", app_root), \
                     patch("b518_log_solution.PREFS_PATH", prefs):
                 root = tk.Tk()
-                root.withdraw()
+                root.deiconify()
                 app = B518LogSolutionApp(
                     root, hotkey_factory=FakeHotkey, session_root=session_root,
                 )
@@ -4276,7 +4448,7 @@ class LogSolutionUiTests(unittest.TestCase):
             active.mkdir()
             final.mkdir()
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
             app.station.set("FCT")
             app.open_settings()
@@ -4304,7 +4476,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_settings_expose_profile_editor_and_session_log_without_legacy_monitor_tab(self):
         root = tk.Tk()
-        root.withdraw()
+        root.deiconify()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         try:
             app.open_settings()
@@ -4953,7 +5125,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
                 app_event_path=Path(temporary) / "app-events.json",
@@ -5014,7 +5186,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     def test_explicit_light_theme_keeps_dark_mode_controls_readable(self):
         root = tk.Tk()
-        root.withdraw()
+        root.deiconify()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         app.open_settings()
         root.update_idletasks()
@@ -5207,7 +5379,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             rounds = RoundCoordinator(app.events.put, audit_root=session_root)
@@ -5340,7 +5512,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             rounds = RoundCoordinator(app.events.put, audit_root=session_root)
@@ -5493,7 +5665,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             rounds = RoundCoordinator(app.events.put, audit_root=session_root)
@@ -5599,7 +5771,7 @@ class LogSolutionUiTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
-            root.withdraw()
+            root.deiconify()
             session_root = Path(temporary) / "sessions"
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
             elapsed = [0.0]

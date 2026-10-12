@@ -1,0 +1,14 @@
+test_directory_relative_create_preserves_private_read_write_mode (test_app_event_store.AppEventStoreTests.test_directory_relative_create_preserves_private_read_write_mode) ... FAIL
+
+======================================================================
+FAIL: test_directory_relative_create_preserves_private_read_write_mode (test_app_event_store.AppEventStoreTests.test_directory_relative_create_preserves_private_read_write_mode)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_app_event_store.py", line 39, in test_directory_relative_create_preserves_private_read_write_mode
+    self.assertEqual(stat.S_IMODE(os.fstat(descriptor).st_mode), 0o600)
+AssertionError: 0 != 384
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

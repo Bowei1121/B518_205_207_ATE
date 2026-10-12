@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import tempfile
 import threading
 import time
@@ -26,6 +28,21 @@ class AppEventStoreTests(unittest.TestCase):
                 return
             time.sleep(.01)
         self.assertTrue(predicate())
+
+    def test_directory_relative_create_preserves_private_read_write_mode(self):
+        from app_event_store import _openat
+        directory = os.open(self.temp.name, os.O_RDONLY)
+        try:
+            descriptor = _openat(directory, "private-journal", os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                                 0o600)
+            try:
+                self.assertEqual(stat.S_IMODE(os.fstat(descriptor).st_mode), 0o600)
+                os.write(descriptor, b"private journal")
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(directory)
+        self.assertEqual((Path(self.temp.name) / "private-journal").read_bytes(), b"private journal")
 
     def test_app_event_is_one_versioned_bilingual_record_without_round_identity(self):
         parameters = {"profile": "ATE", "nested": {"path": "/tmp/a"}}
