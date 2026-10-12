@@ -88,13 +88,21 @@ class RoundRetentionTests(unittest.TestCase):
             restored = reader.retention_cleanup_summaries()[0]
 
             self.assertEqual(restored.run_id, "run-1")
+            self.assertEqual(restored.started_at, "2026-10-12T08:00:00+08:00")
+            self.assertEqual(restored.completed_at, "2026-10-12T08:00:01+08:00")
+            self.assertEqual(restored.retention_days, 30)
+            self.assertEqual(restored.status, "failed")
             self.assertEqual(restored.results[0].round_id, "round-1")
+            self.assertEqual(restored.results[0].outcome, "failed")
             self.assertEqual(restored.results[0].reason,
                              "封存資訊無法讀取：legacy disk fault")
             self.assertEqual(restored.results[0].reason_message, structured)
             self.assertEqual(restored.results[1].reason, "封存資訊版本未知")
             self.assertIsNone(restored.results[1].reason_message)
             self.assertEqual(restored.app_events.reason_message, structured)
+            self.assertEqual((restored.app_events.outcome, restored.app_events.deleted_count,
+                              restored.app_events.skipped_count, restored.app_events.failed_count),
+                             ("failed", 0, 1, 1))
             self.assertEqual(restored.message_reason, structured)
             self.assertEqual(reader.retention_cleanup_status().status, "failed")
             self.assertEqual(ledger_path.read_bytes(), original_bytes)
