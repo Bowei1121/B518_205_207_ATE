@@ -35,9 +35,15 @@ class LanguageRefreshNotifications:
     def close(self):
         self.receivers.clear()
         self.failures.clear()
+        root = self.root
+        binding = self.binding
+        self.root = None
+        self.binding = None
+        self.on_result = None
         try:
-            self.root.unbind("<<AppLanguageChanged>>", self.binding)
-        except tk.TclError:
+            if root is not None and binding is not None:
+                root.unbind("<<AppLanguageChanged>>", binding)
+        except (AttributeError, tk.TclError):
             pass
 
     def _changed(self, _event=None):
