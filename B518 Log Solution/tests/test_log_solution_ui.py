@@ -150,6 +150,20 @@ def conflict_summary_rows(app):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def select_language_from_menu(self, app, root, language):
+        if app.current_language == language:
+            return
+        app.language_button.event_generate("<ButtonPress-1>")
+        app.language_button.event_generate("<ButtonRelease-1>")
+        root.update()
+        native_name = "English" if language == ENGLISH else "繁體中文"
+        index = next(
+            item for item in range(app.language_menu.index("end") + 1)
+            if app.language_menu.entrycget(item, "label") == native_name
+        )
+        app.language_menu.invoke(index)
+        root.update()
+
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_language_refresh_failure_keeps_other_receiver_and_offers_retry(self):
@@ -2823,8 +2837,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
             sources = []
 
             def source_factory(callback):
@@ -2899,8 +2912,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
             sources = []
 
             def source_factory(callback):
@@ -3054,8 +3066,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
 
             def wait_ui(predicate, timeout=8):
                 deadline = time.monotonic() + timeout
@@ -3282,8 +3293,7 @@ class LogSolutionUiTests(unittest.TestCase):
             final.mkdir()
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions")
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
             def wait_ui(predicate, timeout=5):
                 deadline = time.monotonic() + timeout
                 while time.monotonic() < deadline:
@@ -3505,8 +3515,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
             coordinator = app.rounds
 
             def side(sn, status, source, source_id, source_time, evidence):
@@ -3756,8 +3765,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
             )
-            app.current_language = TRADITIONAL_CHINESE
-            app._apply_main_language()
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
 
             def wait_ui(predicate, timeout=6):
                 deadline = time.monotonic() + timeout
@@ -4828,8 +4836,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_paths["final"].set(str(final))
                 app._apply_profile_editor()
                 app._close_settings()
-                app.current_language = TRADITIONAL_CHINESE
-                app._apply_main_language()
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
 
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("source access denied")), \

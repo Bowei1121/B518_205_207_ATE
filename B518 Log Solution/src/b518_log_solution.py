@@ -947,8 +947,6 @@ class B518LogSolutionApp:
         self._language_save_error = None
         if self._language_refresh_notifications is not None:
             self._language_refresh_notifications.notify()
-        else:
-            self._apply_main_language()
         try:
             self.profile_store.save_language(language)
         except (OSError, ProfileError) as error:

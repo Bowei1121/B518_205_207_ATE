@@ -75,7 +75,7 @@ class LanguageRefreshNotifications:
             return
 
 
-def show_notice(title, message, *, parent, text_provider, register_refresh=None,
+def show_notice(title, message, *, parent, text_provider, register_refresh,
                 receiver_name=None):
     """Keep the modal acknowledgement effect while Tk continues processing events."""
     previous_focus = parent.focus_get()
@@ -110,11 +110,7 @@ def show_notice(title, message, *, parent, text_provider, register_refresh=None,
         body.yview_moveto(top)
         acknowledge.configure(text=button_text)
 
-    if register_refresh is None:
-        binding = parent.bind("<<AppLanguageChanged>>", refresh, add="+")
-        unregister = lambda: parent.unbind("<<AppLanguageChanged>>", binding)
-    else:
-        unregister = register_refresh(receiver_name or title, refresh, window.winfo_exists)
+    unregister = register_refresh(receiver_name or title, refresh, window.winfo_exists)
     window.protocol("WM_DELETE_WINDOW", window.destroy)
     window.bind("<Return>", lambda _event: acknowledge.invoke())
     window.bind("<Escape>", lambda _event: window.destroy())
