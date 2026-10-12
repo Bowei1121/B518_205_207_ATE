@@ -10,14 +10,16 @@ Part of [規格 Issue #13](https://github.com/Bowei1121/B518_205_207_ATE/issues/
 
 ## Acceptance criteria
 
-- [x] 全部資源鍵、參數與術語完整，英文基準及裁決／警報／保存失敗等關鍵文案不能靠回退；未來語言不擴張固定雙語紀錄。Catalog 兩語各 317 keys、參數格式一致、`validate_translations()` 零錯誤；見 [M10 驗收證據](../evidence/multilingual-ticket-10/local-validation.md)。
-- [ ] **部分：**自有視窗、事件及錯誤說明須全部在兩語下完整，並明確標示原生系統文字與原始證據例外。M10 真 Tk 案例涵蓋設定／App 診斷／歷史三窗的標題、事件列與詳細文字刷新及狀態保留；衝突、警報、保存／關閉另有前票證據。仍缺全部可達入口的完整盤點與跨視窗整合驗收；正式 bundle 尚待驗。
-- [ ] **部分：**設定、App 診斷與歷史視窗同時開啟的連續切換已由真 Tk／磁碟案例驗證；衝突、警報、監控與關閉取消各有真 Tk 全套回歸。仍缺跨全部可共存視窗與發布產物的整合驗收，不勾選完成。
-- [ ] **部分：**source Tk 長英文及主要畫面測試、KVM 固定幾何／標記契約測試通過；目標 HMI／實機 KVM 操作及目標解析度驗收仍待完成，故不勾選整項完成。
-- [ ] **部分：**全部 16 組案例須有本次整合版本證據。矩陣已建立，source 可執行案例及相同來源／人工操作回歸已重跑；第 16 組 bundle／目標環境未驗，部分現場設備情境亦待安排，故不勾選完整。見 [驗收矩陣](../evidence/multilingual-ticket-10/local-validation.md)。
-- [ ] 發布資源完整收錄，source App 與正式 bundle／目標環境證據分開；環境不足項明記待驗，不虛報通過或完整可發布。
+2026-10-12 使用者改授權：尚未驗項先以source App完成，必要source驗收、全套及審查通過即可合併；正式bundle、目標OS／HMI及實機KVM另待驗，不宣稱完整可發布。以下勾選僅表示本次source範圍，完整發布未完成。
 
-目前 source 程式／測試 SHA：`e8a309fd1fac186832c5825c803e4299932f206b`；完整含 Tk 套件 365 tests 通過。正式 bundle 尚未建置：本次 Intel macOS 15.7.9／x86_64 主機及 Python/Tk 不符合 README 的任何建置矩陣；細節與後續步驟見 [release-validation.md](../evidence/multilingual-ticket-10/release-validation.md)。固定基準 Standards／Spec 複審已確認文件勾選、事件文字斷言與 SHA 問題修正；bundle 與必要目標環境驗收未完成前，M10 不得合併或宣告完成。
+- [x] source資源键／參數／術語完整：English／繁中各322鍵，零catalog錯誤，關鍵裁決／警報／保存文案完整，不擴張固定雙語磁碟契約。
+- [x] source全部可達自有視窗／事件／錯誤以共用兩語呈現，已開視窗保留狀態；原生文字與原證據例外明確。完整入口與逐鍵清單見 [source-coverage.md](../evidence/multilingual-ticket-10/source-coverage.md)。
+- [x] source跨五窗、連續切換、RUNNING／待確認、其他位置收集、關閉停用／取消／再次關閉通過；真正可見notice、選取／閱讀保留及單次操作磁碟重建。
+- [x] source長英文／窄主頁／主要視窗可讀可操作，KVM固定幾何／色帶／標記回歸通過；實際HMI／上位機KVM另待驗。
+- [x] 母規格16組適用source部分已於最後整合版本實際重跑並記錄；平台來源／人工決定業務等價、完整保存及清理回歸。案例16正式產物及現場部分未勾選。
+- [ ] 正式發布資源收錄、bundle操作及適用目標環境仍待驗；不以source／合成verifier測試代替發布。
+
+最後程式／測試SHA：`079b5191598b39182ef6e7acd3269c3cc3d703a9`；實際全套與審查、source合併及查詢結果見 [local-validation.md](../evidence/multilingual-ticket-10/local-validation.md) 與每日M10摘要。正式發布接續見 [release-validation.md](../evidence/multilingual-ticket-10/release-validation.md)。歷史365tests／317keys不是本次結果。
 
 ## Blocked by
 
