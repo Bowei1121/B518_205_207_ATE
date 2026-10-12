@@ -39,9 +39,11 @@ class CleanupReasonPresentationTests(unittest.TestCase):
             "app.settings.retention.reason.archive_read_failed",
             {"diagnostic": "disk full"},
         )
-        with patch.dict(LANGUAGE_RESOURCES[TRADITIONAL_CHINESE],
-                        {"app.settings.retention.reason.archive_read_failed": None}):
-            rendered = present_cleanup_reason(captured, TRADITIONAL_CHINESE)
+        message_id = "app.settings.retention.reason.archive_read_failed"
+        with patch.dict(LANGUAGE_RESOURCES[ENGLISH],
+                        {message_id: "Updated catalog text: {diagnostic}"}):
+            with patch.dict(LANGUAGE_RESOURCES[TRADITIONAL_CHINESE], {message_id: None}):
+                rendered = present_cleanup_reason(captured, TRADITIONAL_CHINESE)
 
         self.assertEqual(rendered.text, captured["en"])
 

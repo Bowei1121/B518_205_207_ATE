@@ -126,6 +126,11 @@ def _present_structured_reason(reason: Mapping[str, object], language: str) -> R
     resources = LANGUAGE_RESOURCES.get(ENGLISH, {})
     if message_id not in resources:
         return ReasonPresentation(_unrecognized_text(language), dict(reason), diagnostic_text)
+    selected_resources = LANGUAGE_RESOURCES.get(language, {})
+    selected_template = (selected_resources.get(message_id)
+                         if isinstance(selected_resources, Mapping) else None)
+    if not isinstance(selected_template, str) or not selected_template:
+        return ReasonPresentation(english, dict(reason), diagnostic_text, recognized=True)
     try:
         rendered = translate(message_id, language, **dict(parameters))
     except (KeyError, TypeError, ValueError):
