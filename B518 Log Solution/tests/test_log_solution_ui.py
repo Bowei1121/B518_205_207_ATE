@@ -199,6 +199,25 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(disk_failure["localized_message"],
                                  failed["localized_message"])
                 self.assertEqual(disk_failure["diagnostic"], "主畫面: refresh failed")
+                # Use the real App diagnostic entry and select the persisted event.
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonPress-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonRelease-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                root.update()
+                records = app.rounds.app_event_records()
+                failed_index = next(index for index, record in enumerate(records)
+                                    if record["event_id"] == failed["event_id"])
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(failed_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertIn("主畫面: refresh failed",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertIn("app.language.refresh_failed",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
             fail_refresh[0] = True
             app.language_refresh_retry_button.invoke()
             root.update()
@@ -267,6 +286,63 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIsNone(root.grab_current())
         finally:
             root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_notice_escape_restores_modal_state_and_reopened_notice_uses_current_language(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            root.focus_force()
+            app.settings_button.focus_force()
+            root.update()
+            original_focus = root.focus_get()
+            observations = []
+
+            def find_notice():
+                for child in root.winfo_children():
+                    if isinstance(child, tk.Toplevel) and child is not root:
+                        return child
+                return None
+
+            def close_first_notice():
+                notice = find_notice()
+                observations.append((notice is not None, root.grab_current() is notice))
+                notice.event_generate("<Escape>")
+
+            try:
+                root.after(100, close_first_notice)
+                app._show_notice("language.save_failed_title", "language.save_failed",
+                                 {"reason": "first notice"})
+                root.update()
+                self.assertIsNone(find_notice())
+                self.assertIsNone(root.grab_current())
+                if original_focus is not None:
+                    self.assertTrue(original_focus.winfo_exists())
+
+                app.current_language = TRADITIONAL_CHINESE
+                def close_reopened_notice():
+                    notice = find_notice()
+                    observations.append(notice.title())
+                    notice.event_generate("<Escape>")
+
+                root.after(100, close_reopened_notice)
+                app._show_notice("language.save_failed_title", "language.save_failed",
+                                 {"reason": "reopened notice"})
+                root.update()
+                self.assertIsNone(find_notice())
+                self.assertIsNone(root.grab_current())
+                self.assertEqual(len(app._language_refresh_failures), 0)
+                self.assertEqual(observations, [(True, True), "語言設定未保存"])
+            finally:
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
