@@ -9,10 +9,11 @@ import subprocess
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import filedialog, font as tkfont, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
+from localized_notice import show_notice
 from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -462,6 +463,20 @@ class B518LogSolutionApp:
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records(force=True)
         self._refresh_historical_event_window()
+        self.root.event_generate("<<AppLanguageChanged>>")
+
+    def _show_notice(self, title_id, message_id, parameters=None, diagnostic="", captured=None):
+        parameters = dict(parameters or {})
+
+        def text_provider():
+            message = (render_bilingual_message(captured, self.current_language)
+                       if captured is not None else self._t(message_id, **parameters))
+            if diagnostic:
+                message += "\n\n{}: {}".format(self._t("app.diagnostic.raw"), diagnostic)
+            return self._t(title_id), message, self._t("app.notice.ok")
+
+        title, message, _button = text_provider()
+        show_notice(title, message, parent=self.root, text_provider=text_provider)
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
@@ -749,12 +764,11 @@ class B518LogSolutionApp:
             self.profile_store.save_language(language)
         except (OSError, ProfileError) as error:
             self._language_save_error = str(error)
-            message = self._t("language.save_failed", reason=str(error))
-            title = self._t("language.save_failed_title")
             self._record_app_event("app.language.preference_save_failed", {"reason": str(error)},
                                    str(error))
             self.language_button.configure(relief="sunken")
-            messagebox.showerror(title, message, parent=self.root)
+            self._show_notice("language.save_failed_title", "language.save_failed",
+                              {"reason": str(error)})
         else:
             self._language_save_error = None
             self.language_button.configure(relief="raised")
@@ -792,23 +806,19 @@ class B518LogSolutionApp:
 
     def _show_invalid_language_warning(self) -> None:
         if self.root.winfo_exists() and self.profile_store.language_error:
-            messagebox.showwarning(
-                self._t("language.invalid_saved_title"),
-                self._t("language.invalid_saved"), parent=self.root,
-            )
+            self._show_notice("language.invalid_saved_title", "language.invalid_saved",
+                              diagnostic=self.profile_store.language_error)
 
     def _show_startup_warning(self) -> None:
         if self.root.winfo_exists() and self.profile_error:
-            messagebox.showwarning(self._t("app.startup.title"),
-                                   self._t("app.startup.preferences_read_failed",
-                                           reason=self.profile_error), parent=self.root)
+            self._show_notice("app.startup.title", "app.startup.preferences_read_failed",
+                              {"reason": self.profile_error})
 
     def _show_app_event_store_warning(self) -> None:
         status = self.rounds.app_event_status()
         if self.root.winfo_exists() and status and status.error:
-            messagebox.showerror(self._t("app.event_store.title"),
-                                 self._t("app.event_store.initialize_failed", reason=status.error),
-                                 parent=self.root)
+            self._show_notice("app.event_store.title", "app.event_store.initialize_failed",
+                              {"reason": status.error})
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
         """Show the supplied company asset when deployed, with a readable fallback."""
@@ -1132,8 +1142,8 @@ class B518LogSolutionApp:
 
     def _show_hotkey_warning(self) -> None:
         self._record_app_event("app.hotkey.unavailable", {}, self.hotkey.message)
-        messagebox.showwarning(self._t("app.hotkey.title"),
-                               self._t("app.hotkey.unavailable"), parent=self.root)
+        self._show_notice("app.hotkey.title", "app.hotkey.unavailable",
+                          diagnostic=self.hotkey.message)
 
     def _set_monitor_controls(self, monitoring: bool, state_message_id: Optional[str] = None) -> None:
         if getattr(self, "_closing_ui", False):
@@ -1175,9 +1185,8 @@ class B518LogSolutionApp:
             profile = self._selected_profile()
         except (AttributeError, ProfileError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
         try:
             prepared = self.round_start_preparation.prepare(
@@ -1185,15 +1194,13 @@ class B518LogSolutionApp:
             )
         except RoundStartPathError as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
         except (AttributeError, ProfileError, ValueError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.validation_title"),
-                                 self._t("app.profile.validation_failed", reason=str(error)),
-                                 parent=self.root)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": str(error)})
             return
 
         self.active_profile_snapshot = prepared.profile
@@ -1210,10 +1217,9 @@ class B518LogSolutionApp:
             self.active_profile_snapshot = None
             self._render_state_marker(None)
             self._set_monitor_controls(False)
-            message = "無法開始監控：{}".format(error)
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.save_title"),
-                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
+            self._show_notice("app.profile.save_title", "app.profile.save_failed",
+                              {"reason": str(error)})
             return
         self._set_monitor_controls(True)
         self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
@@ -1347,14 +1353,9 @@ class B518LogSolutionApp:
         if event.kind == "start_failed":
             self.active_profile_snapshot = None
             self._set_monitor_controls(False, "monitor.start_failed")
-            message = render_bilingual_message(
-                event.localized_message, self.current_language, event.message,
-            )
-            if event.diagnostic:
-                message = "{}\n\n{}: {}".format(
-                    message, self._t("app.diagnostic.raw"), event.diagnostic,
-                )
-            messagebox.showerror(self._t("monitor.start_failed"), message, parent=self.root)
+            self._show_notice("monitor.start_failed", "round.start_failed",
+                              {"station": self.station.get().upper()},
+                              diagnostic=event.diagnostic, captured=event.localized_message)
         if event.kind in {"finished", "stopped"}:
             self._set_monitor_controls(False)
 
@@ -2545,9 +2546,8 @@ class B518LogSolutionApp:
             reason = str(error)
             self._record_app_event("app.settings.event.session.open_failed",
                                    {"reason": reason}, reason)
-            messagebox.showerror(self._t("app.settings.session.open"),
-                                 self._t("app.settings.session.open_failed", reason=reason),
-                                 parent=self.root)
+            self._show_notice("app.settings.session.open", "app.settings.session.open_failed",
+                              {"reason": reason})
 
     def close(self) -> None:
         rounds = getattr(self, "rounds", None)
@@ -2560,8 +2560,8 @@ class B518LogSolutionApp:
             self._save_preferences()
         except (OSError, ProfileError) as error:
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
-            messagebox.showerror(self._t("app.profile.save_title"),
-                                 self._t("app.profile.save_failed", reason=str(error)), parent=self.root)
+            self._show_notice("app.profile.save_title", "app.profile.save_failed",
+                              {"reason": str(error)})
         self._closing_ui = True
         self._refresh_language_entry()
         self._set_monitor_controls(self._round_is_active())

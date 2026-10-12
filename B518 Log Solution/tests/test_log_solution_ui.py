@@ -258,7 +258,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     index for index in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(index, "label") == "繁體中文")
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("preference disk full")), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     app.language_menu.invoke(chinese_index)
                 root.update()
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
@@ -339,7 +339,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         if app.language_menu.entrycget(index, "label") == "繁體中文")
                     with patch("machine_profiles._atomic_write_text",
                                side_effect=OSError("preference disk full")), \
-                            patch("b518_log_solution.messagebox.showerror"):
+                            patch("b518_log_solution.show_notice"):
                         app.language_menu.invoke(chinese_index)
                     event_record = next(item for item in app.rounds.app_event_records()
                                         if item["localized_message"]["message_id"] ==
@@ -414,7 +414,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     return True
 
             try:
-                with patch("b518_log_solution.messagebox.showwarning") as warning:
+                with patch("b518_log_solution.show_notice") as warning:
                     pump_until(lambda: warning.called)
                 self.assertEqual(app.current_language, ENGLISH)
                 self.assertTrue(any(
@@ -442,7 +442,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.rounds.app_event_status().complete)
                 with patch("b518_log_solution.filedialog.askopenfilename",
                            return_value=str(invalid_import)), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     click(import_button)
                 self.assertEqual(app.profiles.to_dict(), original_catalog)
                 self.assertEqual((app.project.get(), app.station.get()), original_selection)
@@ -450,7 +450,7 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.profile_editor_status.get())
                 with patch("b518_log_solution.filedialog.asksaveasfilename",
                            return_value=str(Path(temporary) / "missing" / "export.json")), \
-                        patch("b518_log_solution.messagebox.showerror"):
+                        patch("b518_log_solution.show_notice"):
                     click(export_button)
                 self.assertIn("could not be exported", app.profile_editor_status.get())
                 app.language_button.event_generate("<Button-1>")
@@ -524,7 +524,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 export_button = find_button(app.settings_window, "Export Configuration")
                 with patch("b518_log_solution.filedialog.asksaveasfilename",
                            return_value=str(Path(temporary) / "missing-again" / "export.json")), \
-                        patch("b518_log_solution.messagebox.showerror"), \
+                        patch("b518_log_solution.show_notice"), \
                         patch("app_event_store._atomic_replace",
                               side_effect=OSError("diagnostic journal disk full")):
                     click(export_button)
@@ -833,7 +833,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.language_menu.invoke(0)
                 self.assertEqual(preferences.read_bytes(), saved_bytes)
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.language_menu.invoke(chinese_index)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                 self.assertIn("繁體中文", app.language_button.cget("text"))
@@ -915,7 +915,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_real_tk_unknown_saved_language_uses_english_and_shows_diagnostic(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
-                patch("b518_log_solution.messagebox.showwarning") as show_warning:
+                patch("b518_log_solution.show_notice") as show_warning:
             preferences = Path(temporary) / "preferences.json"
             store = MachineProfileStore(preferences)
             catalog, project, machine, _error = store.load()
@@ -1275,7 +1275,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.fail("Timed out while pumping malformed-time cleanup UI")
 
             try:
-                with patch("b518_log_solution.messagebox.showerror", return_value="ok"):
+                with patch("b518_log_solution.show_notice", return_value="ok"):
                     app.open_settings()
                     app.settings_notebook.select(2)
                     app.rounds.request_retention_cleanup(30, "malformed-time")
@@ -4111,7 +4111,7 @@ class LogSolutionUiTests(unittest.TestCase):
         app.profiles = app.profiles.with_profile(replace(profile, paths={"active": "", "final": ""}))
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
-                    patch("b518_log_solution.messagebox.showerror") as show_error:
+                    patch("b518_log_solution.show_notice") as show_error:
                 app.start_monitor()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
@@ -4152,7 +4152,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 preferences_before = app.profile_store.path.read_bytes()
 
                 with patch("machine_profiles._atomic_write_text", side_effect=OSError("disk full")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.start_button.invoke()
 
                 self.assertIsNone(app.rounds.snapshot())
@@ -4286,7 +4286,7 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("denied")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.start_monitor()
                     deadline = time.monotonic() + 3
                     while not show_error.called and time.monotonic() < deadline:
@@ -4340,7 +4340,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("source access denied")), \
-                        patch("b518_log_solution.messagebox.showerror") as show_error:
+                        patch("b518_log_solution.show_notice") as show_error:
                     app.start_monitor()
                     deadline = time.monotonic() + 3
                     while not show_error.called and time.monotonic() < deadline:
