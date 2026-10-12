@@ -340,9 +340,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(len(app._language_refresh_failures), 0)
                 self.assertEqual(observations, [(True, True), "語言設定未保存"])
             finally:
-                app.hotkey.close()
-                app.app_events.stop()
-                root.destroy()
+                try:
+                    app.close()
+                    deadline = time.monotonic() + 5
+                    while (time.monotonic() < deadline and root.winfo_exists() and
+                           app.rounds.close_status().status not in {"complete", "failed"}):
+                        root.update()
+                        time.sleep(.01)
+                finally:
+                    if root.winfo_exists():
+                        root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
