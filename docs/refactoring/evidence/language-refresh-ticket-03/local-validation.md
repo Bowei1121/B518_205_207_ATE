@@ -2,7 +2,7 @@
 
 ## Result and version
 
-**L3 implementation and all eight acceptance items pass on the final code/test version.** The required desktop suite completed: **383 tests in 160.014 seconds, OK, exit 0**, including L1 notice lifecycle, real-source conflict/alarm, App/cross-round close, archival, retention and KVM regression. Final delivery documentation review and mainline merge verification are tracked separately below; L4/parent-wide acceptance and cleanup-reason C1–C4 are not claimed complete.
+**L3 implementation and all eight acceptance items pass on the final code/test version.** The required desktop suite completed: **383 tests in 160.014 seconds, OK, exit 0**, including L1 notice lifecycle, real-source conflict/alarm, App/cross-round close, archival, retention and KVM regression. Final delivery documentation review and mainline merge verification passed as recorded below; L4/parent-wide acceptance and cleanup-reason C1–C4 are not claimed complete.
 
 - Fixed Standards/Spec base: `93ac9e47903649c4098c1423c2496f86ac685a03` (captured before L3 edits; never advanced).
 - Final code/test SHA: `04c2b0d04f1d6e634b57628b58306abdcd43bcdb`.
@@ -96,3 +96,12 @@ No L1 dependency repair, general bus, per-window worker, cleanup-reason feature,
 Initial code/test commits: `c12f20526111dc2fabfe5a65c1ae4764eb729a97`, `6682c621751973d9ff16505699bf39822db62b58`, `48f14dca68894147cd1ba0afa43a8e9edc331145`. Initial evidence commits through `1e7660984268073aa01324e5e3a117e9889fec9d` recorded Partial truthfully at that checkpoint; current results supersede their completion status, not their failure observations.
 
 Direct queries after 1e76609 confirmed both ticket refs there and both main refs at 93ac9e4. New verified code batches d3814f8, 4f672dc, 3f0031f and 04c2b0d were each committed and pushed to both destinations. Merge is pending final delivery-document review and latest main checks; no merge SHA is asserted yet. Later query/merge/mainline-validation results will be added without presenting historical queries as final HEAD.
+
+## Final review, merge and mainline verification
+
+- Final parallel Standards and Spec reviews at documentation SHA `df57bdb31fb1eb57d6a85de08aaef3653cb355c5`, always against fixed `93ac9e4…`: **both pass, zero unresolved findings**. Both checked actual final 383-test log, retained failed attempts, eight acceptance mappings and L3 scope. No code/test changed after `04c2b0d…`.
+- Before merge, direct GitHub and Gitea queries showed ticket `df57bdb…` and both main refs `93ac9e4…`; fetch of both destinations confirmed no new mainline commits. Formal target was made clean by preserving only the two pre-existing summary edits in stash `41d7f107bdc31b5db51ebe7217fa6c83f6c865a3` plus exact file/diff backup; their hashes were verified.
+- Actual non-fast-forward merge commit: `6ecef64235626ee9fc289462ebdf5323b467ceb3`, on `B518-Log-Solution`. Source/test trees are identical to final verified `04c2b0d…`.
+- Complete desktop suite rerun in the formal nested Python project on that merge: **383 tests / 148.658 s / OK / exit 0**. [Merged mainline Tk log](logs/merged-mainline-tk-suite.log) contains no Tk exception, Traceback, invalid-command warning or skipped L3 case. Same Python 3.11.7/Tk 8.6 command and PATH as above; diff checks clean.
+- Mainline pushed to both existing destinations. Direct post-push queries at **2026-10-12T12:55:11Z** confirmed both GitHub and Gitea `B518-Log-Solution` at `6ecef64235626ee9fc289462ebdf5323b467ceb3`. This is the merge-query snapshot, not the SHA of a later documentation commit.
+- This final delivery-only commit records merge results/log; no product/test/resource change. Its final SHA and subsequent direct destination queries are reported in the delivery response, avoiding self-referential SHA text. Ticket cleanup is permitted only after those queries confirm equality. Original user summary edits are restored afterward and remain uncommitted; no other branch/worktree is authorized for deletion.
