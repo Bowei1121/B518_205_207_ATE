@@ -43,7 +43,13 @@ def show_notice(title, message, *, parent, text_provider):
     window.bind("<Escape>", lambda _event: window.destroy())
     try:
         refresh()
-        window.wait_visibility()
+        try:
+            window.wait_visibility()
+        except tk.TclError:
+            # Acknowledgement or WM close may arrive while macOS maps the notice.
+            if window.winfo_exists():
+                raise
+            return
         window.grab_set()
         acknowledge.focus_set()
         parent.wait_window(window)

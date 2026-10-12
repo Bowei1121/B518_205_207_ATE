@@ -223,11 +223,13 @@ class M10SourceIntegrationTests(unittest.TestCase):
             def acknowledge():
                 notices = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)
                            and w.title() == "Open Session Records"]
-                if notices:
+                if notices and notices[0].winfo_viewable():
                     notice = notices[0]
                     body = next(w for w in widgets(notice) if isinstance(w, tk.Text))
                     observations.append(body.get("1.0", "end"))
                     next(w for w in widgets(notice) if isinstance(w, ttk.Button)).invoke()
+                elif notices:
+                    root.after(10, acknowledge)
 
             try:
                 app.settings_button.invoke()

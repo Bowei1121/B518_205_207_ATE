@@ -4117,7 +4117,8 @@ class LogSolutionUiTests(unittest.TestCase):
             show_error.assert_called_once()
             self.assertEqual(show_error.call_args.args[:2], (
                 "Configuration Error",
-                "The selected configuration is invalid: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
+                "The selected configuration is invalid: See the original diagnostic below.\n\n"
+                "Original diagnostic: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
             ))
             self.assertIsNone(app.rounds.snapshot())
         finally:
@@ -4161,7 +4162,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
                 self.assertEqual(show_error.call_args.args[:2], (
                     "Configuration Save Failed",
-                    "Configuration preferences could not be saved; the active configuration remains unchanged: disk full",
+                    "Configuration preferences could not be saved; the active configuration remains unchanged: "
+                    "See the original diagnostic below.\n\nOriginal diagnostic: disk full",
                 ))
                 self.assertFalse((Path(temporary) / "sessions").exists())
             finally:
