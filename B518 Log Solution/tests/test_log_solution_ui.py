@@ -5099,6 +5099,165 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_each_reader_refresh_failure_isolated_and_retryable(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def select_language(language):
+                app.language_button.event_generate("<ButtonPress-1>")
+                app.language_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                native_name = "English" if language == ENGLISH else "繁體中文"
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == native_name
+                )
+                app.language_menu.invoke(index)
+                root.update()
+
+            def click(widget):
+                x, y = widget.winfo_width() // 2, widget.winfo_height() // 2
+                widget.event_generate("<ButtonPress-1>", x=x, y=y)
+                widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.open_settings()
+                app.profile_editor_project.set("Preserve this draft")
+                settings_window = app.settings_window
+                app.open_app_diagnostics()
+                diagnostics_window = app.app_diagnostics_window
+                app.open_historical_events()
+                history_window = app.historical_event_window
+                windows = {
+                    "settings": settings_window,
+                    "diagnostics": diagnostics_window,
+                    "history": history_window,
+                }
+                failure_cases = (("settings",), ("diagnostics",), ("history",),
+                                 ("settings", "diagnostics"))
+                language = ENGLISH
+                for failed_views in failure_cases:
+                    language = (TRADITIONAL_CHINESE if language == ENGLISH else ENGLISH)
+                    patchers = [patch.object(
+                        windows[name], "title",
+                        side_effect=RuntimeError("{} refresh unavailable".format(name)),
+                    ) for name in failed_views]
+                    for patcher in patchers:
+                        patcher.start()
+                    try:
+                        select_language(language)
+                    finally:
+                        for patcher in reversed(patchers):
+                            patcher.stop()
+
+                    self.assertTrue(all(window.winfo_exists() for window in windows.values()))
+                    self.assertEqual(app.profile_editor_project.get(), "Preserve this draft")
+                    self.assertEqual(settings_window.title() == app._t("app.settings.title"),
+                                     "settings" not in failed_views)
+                    self.assertEqual(diagnostics_window.title() ==
+                                     app._t("app.diagnostic.heading"),
+                                     "diagnostics" not in failed_views)
+                    self.assertEqual(history_window.title() ==
+                                     app._t("app.settings.history.title"),
+                                     "history" not in failed_views)
+                    self.assertNotEqual(app.language_refresh_banner.cget("text"), "")
+                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                                     "normal")
+
+                    click(app.language_refresh_retry_button)
+                    self.assertEqual(settings_window.title(), app._t("app.settings.title"))
+                    self.assertEqual(diagnostics_window.title(),
+                                     app._t("app.diagnostic.heading"))
+                    self.assertEqual(history_window.title(),
+                                     app._t("app.settings.history.title"))
+                    self.assertEqual(app.profile_editor_project.get(), "Preserve this draft")
+                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                                     "disabled")
+                    self.assertEqual(app.language_refresh_banner.cget("text"),
+                                     app.app_event_status_label.cget("text"))
+            finally:
+                if app.historical_event_window and app.historical_event_window.winfo_exists():
+                    app._close_historical_event_window()
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app._close_app_diagnostics_window()
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_app_diagnostics_scroll_position_survives_language_refresh(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def select_language(language):
+                app.language_button.event_generate("<ButtonPress-1>")
+                app.language_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                native_name = "English" if language == ENGLISH else "繁體中文"
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == native_name
+                )
+                app.language_menu.invoke(index)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                diagnostic = "raw diagnostic line\n" * 100
+                app.rounds.record_app_event("app.startup.started", {}, diagnostic)
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.open_app_diagnostics()
+                records = app.rounds.app_event_records()
+                selected_index = next(
+                    index for index, record in enumerate(records)
+                    if record.get("diagnostic") == diagnostic
+                )
+                app.app_diagnostics_list.selection_set(selected_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update_idletasks()
+                app.app_diagnostics_detail.yview_moveto(0.55)
+                root.update_idletasks()
+                selected_id = app._selected_app_event_id
+                detail_top = app.app_diagnostics_detail.index("@0,0")
+                detail_yview = app.app_diagnostics_detail.yview()[0]
+                self.assertGreater(detail_yview, 0.4)
+
+                select_language(TRADITIONAL_CHINESE)
+                root.update_idletasks()
+                self.assertEqual(app._selected_app_event_id, selected_id)
+                self.assertEqual(app.app_diagnostics_detail.index("@0,0"), detail_top)
+                self.assertAlmostEqual(app.app_diagnostics_detail.yview()[0],
+                                       detail_yview, places=2)
+                self.assertIn(diagnostic,
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertIn("App 已啟動", app.app_diagnostics_detail.get("1.0", "end-1c"))
+            finally:
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app._close_app_diagnostics_window()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_open_settings_refreshes_language_in_place_and_keeps_invalid_draft(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
