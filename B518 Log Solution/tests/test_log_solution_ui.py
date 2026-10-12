@@ -4931,7 +4931,13 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 event_bytes = app.app_events.path.read_bytes()
                 event_revision = app.rounds.app_event_revision()
-                select_language(TRADITIONAL_CHINESE)
+                with patch.object(
+                        app.rounds, "app_event_records",
+                        side_effect=AssertionError("language refresh re-read App events")), \
+                        patch("b518_log_solution.read_historical_events",
+                              side_effect=AssertionError(
+                                  "language refresh re-read historical sources")):
+                    select_language(TRADITIONAL_CHINESE)
                 self.assertIs(app.settings_window, settings_window)
                 self.assertIs(app.app_diagnostics_window, diagnostics_window)
                 self.assertIs(app.historical_event_window, history_window)
@@ -4979,13 +4985,116 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.historical_event_detail.get("1.0", "end-1c"))
                 self.assertEqual(event_bytes, app.app_events.path.read_bytes())
                 self.assertEqual(app.rounds.app_event_revision(), event_revision)
+
+                # Close through the configured WM protocol, destroy another
+                # view directly, and keep the history view merely hidden.
+                root.tk.call(settings_window.protocol("WM_DELETE_WINDOW"))
+                diagnostics_window.destroy()
+                history_window.withdraw()
+                root.update()
+                select_language(TRADITIONAL_CHINESE)
+                self.assertTrue(history_window.winfo_exists())
+                self.assertFalse(history_window.winfo_viewable())
+                self.assertEqual(history_window.title(), app._t("app.settings.history.title"))
+                app.open_settings()
+                app.open_app_diagnostics()
+                self.assertNotEqual(app.settings_window, settings_window)
+                self.assertNotEqual(app.app_diagnostics_window, diagnostics_window)
+                self.assertEqual(app.settings_window.title(), app._t("app.settings.title"))
+                self.assertEqual(app.app_diagnostics_window.title(),
+                                 app._t("app.diagnostic.heading"))
+                app.open_historical_events()
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertTrue(history_window.winfo_viewable())
             finally:
                 if app.historical_event_window and app.historical_event_window.winfo_exists():
                     app._close_historical_event_window()
                 if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
-                    app.app_diagnostics_window.destroy()
+                    app._close_app_diagnostics_window()
                 app._close_settings()
                 app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_settings_refresh_failure_isolated_and_retried_from_main_window(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+
+            def select_language(language):
+                app.language_button.event_generate("<ButtonPress-1>")
+                app.language_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                native_name = "English" if language == ENGLISH else "繁體中文"
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == native_name
+                )
+                app.language_menu.invoke(index)
+                root.update()
+
+            try:
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.open_settings()
+                settings_window = app.settings_window
+                app.profile_editor_project.set("Keep this draft")
+                app.open_app_diagnostics()
+                diagnostics_window = app.app_diagnostics_window
+                app.open_historical_events()
+                history_window = app.historical_event_window
+
+                with patch.object(settings_window, "title",
+                                  side_effect=RuntimeError("settings refresh unavailable")):
+                    select_language(TRADITIONAL_CHINESE)
+
+                self.assertIs(app.settings_window, settings_window)
+                self.assertIs(app.app_diagnostics_window, diagnostics_window)
+                self.assertIs(app.historical_event_window, history_window)
+                self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
+                self.assertIn("設定", app.language_refresh_banner.cget("text"))
+                self.assertIn("App 診斷", app.app_diagnostics_window.title())
+                self.assertIn("事件", app.historical_event_heading.cget("text"))
+                self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
+
+                path = app.app_events.path
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                memory_records = app.rounds.app_event_records()
+                failure = next(record for record in memory_records
+                               if record["localized_message"]["message_id"] ==
+                               "app.language.refresh_failed")
+                self.assertIsNone(failure.get("round_id"))
+                self.assertEqual(failure["diagnostic"],
+                                 "B518 Log Solution 設定: settings refresh unavailable")
+                disk_records = read_app_event_store(path)["events"]
+                self.assertIn(failure["event_id"],
+                              [record["event_id"] for record in disk_records])
+
+                app.language_refresh_retry_button.event_generate("<ButtonPress-1>")
+                app.language_refresh_retry_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.assertEqual(settings_window.title(), app._t("app.settings.title"))
+                self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
+                self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                                 "disabled")
+                self.assertEqual(app.language_refresh_banner.cget("text"),
+                                 app.app_event_status_label.cget("text"))
+            finally:
+                if app.historical_event_window and app.historical_event_window.winfo_exists():
+                    app._close_historical_event_window()
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app._close_app_diagnostics_window()
+                app._close_settings()
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
                 root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",

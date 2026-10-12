@@ -147,6 +147,10 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self._app_diagnostics_records = ()
+        self._unregister_settings_language_receiver = None
+        self._unregister_app_diagnostics_language_receiver = None
+        self._unregister_historical_event_language_receiver = None
         self.historical_event_window = None
         self.historical_event_list = None
         self.historical_event_detail = None
@@ -155,6 +159,7 @@ class B518LogSolutionApp:
         self.historical_event_refresh_button = None
         self._historical_event_records: tuple[HistoricalEvent, ...] = ()
         self._historical_event_selected_key: Optional[str] = None
+        self._historical_restore_after_id = None
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
@@ -523,15 +528,11 @@ class B518LogSolutionApp:
         self._refresh_main_round_labels()
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
-        self._refresh_app_event_status()
-        self._apply_settings_language()
+        self._refresh_app_event_status(update_diagnostics=False)
         self._refresh_conflict_review(preserve_reading=True)
         self._refresh_round_alarm()
         if self._close_window and self._close_window.winfo_exists():
             self._render_close_status(self.rounds.close_status())
-        if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
-            self._refresh_app_event_records(force=True)
-        self._refresh_historical_event_window()
 
     def register_language_receiver(self, name, refresh, alive):
         """Register an App-owned window for the existing language notification."""
@@ -556,7 +557,7 @@ class B518LogSolutionApp:
             self.language_refresh_retry_button.configure(state="normal")
         else:
             self.language_refresh_retry_button.configure(state="disabled")
-            self._refresh_app_event_status()
+            self._refresh_app_event_status(update_diagnostics=False)
         for _token, (name, reason) in newly_failed.items():
             try:
                 label = name() if callable(name) else name
@@ -723,7 +724,8 @@ class B518LogSolutionApp:
             self._log(event.message.english, event.message)
         return event
 
-    def _refresh_app_event_status(self) -> None:
+    def _refresh_app_event_status(self, update_main: bool = True,
+                                  update_diagnostics: bool = True) -> None:
         status = self.rounds.app_event_status()
         if status is None:
             return
@@ -733,29 +735,32 @@ class B518LogSolutionApp:
             text = self._t("app.save.pending", count=status.pending_count)
         else:
             text = self._t("app.save.complete")
-        if self.app_event_status_label and self.app_event_status_label.winfo_exists():
+        if update_main and self.app_event_status_label and self.app_event_status_label.winfo_exists():
             if not self._language_refresh_failures:
                 self.app_event_status_label.configure(text=text)
-        if self.app_diagnostics_status and self.app_diagnostics_status.winfo_exists():
+        if (update_diagnostics and self.app_diagnostics_status
+                and self.app_diagnostics_status.winfo_exists()):
             self.app_diagnostics_status.configure(text=text)
-        if self.app_diagnostics_history and self.app_diagnostics_history.winfo_exists():
+        if (update_diagnostics and self.app_diagnostics_history
+                and self.app_diagnostics_history.winfo_exists()):
             history = "；".join(status.error_history) if status.error_history else "—"
             self.app_diagnostics_history.configure(text=self._t(
                 "app.diagnostic.save_history",
                 status=self._t("app.diagnostic.save_state." + status.status),
                 history=history))
-        if self.app_diagnostics_retry_button and self.app_diagnostics_retry_button.winfo_exists():
+        if (update_diagnostics and self.app_diagnostics_retry_button
+                and self.app_diagnostics_retry_button.winfo_exists()):
             self.app_diagnostics_retry_button.configure(
                 state="normal" if status.status == "failed" else "disabled")
 
     def _refresh_app_event_records(self, force: bool = False) -> None:
         if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
             return
-        self.app_diagnostics_window.title(self._t("app.diagnostic.heading"))
         revision = self.rounds.app_event_revision()
         if not force and revision == self._last_app_event_revision:
             return
         records = self.rounds.app_event_records()
+        self._app_diagnostics_records = tuple(records)
         self._last_app_event_revision = revision
         added_to_main_log = False
         for record in records:
@@ -770,39 +775,56 @@ class B518LogSolutionApp:
             added_to_main_log = True
         if added_to_main_log:
             self._refresh_event_log()
-        if self.app_diagnostics_list and self.app_diagnostics_list.winfo_exists():
-            list_top = self.app_diagnostics_list.yview()[0]
-            detail_top = self.app_diagnostics_detail.yview()[0]
-            selected = self.app_diagnostics_list.curselection()
-            prior_id = getattr(self, "_selected_app_event_id", None)
-            self.app_diagnostics_list.delete(0, "end")
-            for record in records:
-                self.app_diagnostics_list.insert(
-                    "end", "{} · {}".format(record.get("occurred_at", ""),
-                                               render_bilingual_message(
-                                                   record.get("localized_message"),
-                                                   self.current_language,
-                                                   record.get("message", ""))))
-            if prior_id:
-                for index, record in enumerate(records):
-                    if record.get("event_id") == prior_id:
-                        self.app_diagnostics_list.selection_set(index)
-                        self._show_app_event_detail(index)
-                        break
-            elif records and not selected:
-                self.app_diagnostics_list.selection_set(len(records) - 1)
-                self._show_app_event_detail(len(records) - 1)
-            self.app_diagnostics_list.yview_moveto(list_top)
-            if prior_id:
-                self.app_diagnostics_detail.yview_moveto(detail_top)
+        self._render_app_diagnostics_records(records)
 
-    def _show_app_event_detail(self, index: Optional[int] = None) -> None:
+    def _apply_app_diagnostics_language(self) -> None:
+        """Re-render the displayed App-event snapshot without reading it again."""
+        window = self.app_diagnostics_window
+        if window is None or not window.winfo_exists():
+            return
+        window.title(self._t("app.diagnostic.heading"))
+        self._refresh_app_event_status(update_main=False)
+        self._render_app_diagnostics_records(self._app_diagnostics_records)
+
+    def _render_app_diagnostics_records(self, records) -> None:
+        if not self.app_diagnostics_list or not self.app_diagnostics_list.winfo_exists():
+            return
+        list_top = self.app_diagnostics_list.yview()[0]
+        detail_top = self.app_diagnostics_detail.yview()[0]
+        selected = self.app_diagnostics_list.curselection()
+        prior_id = getattr(self, "_selected_app_event_id", None)
+        self.app_diagnostics_list.delete(0, "end")
+        for record in records:
+            self.app_diagnostics_list.insert(
+                "end", "{} · {}".format(record.get("occurred_at", ""),
+                                           render_bilingual_message(
+                                               record.get("localized_message"),
+                                               self.current_language,
+                                               record.get("message", ""))))
+        selected_index = None
+        if prior_id:
+            selected_index = next((index for index, record in enumerate(records)
+                                   if record.get("event_id") == prior_id), None)
+        elif selected:
+            selected_index = selected[0] if selected[0] < len(records) else None
+        elif records:
+            selected_index = len(records) - 1
+        if selected_index is not None:
+            self.app_diagnostics_list.selection_set(selected_index)
+            self._show_app_event_detail(selected_index, records)
+        elif prior_id is not None:
+            self._selected_app_event_id = None
+        self.app_diagnostics_list.yview_moveto(list_top)
+        self.app_diagnostics_detail.yview_moveto(detail_top)
+
+    def _show_app_event_detail(self, index: Optional[int] = None, records=None) -> None:
         if not self.app_diagnostics_detail or not self.app_diagnostics_detail.winfo_exists():
             return
         if index is None:
             selected = self.app_diagnostics_list.curselection() if self.app_diagnostics_list else ()
             index = selected[0] if selected else None
-        records = self.rounds.app_event_records()
+        if records is None:
+            records = self.rounds.app_event_records()
         if index is None or index < 0 or index >= len(records):
             return
         record = records[index]
@@ -828,6 +850,7 @@ class B518LogSolutionApp:
     def open_app_diagnostics(self) -> None:
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self.app_diagnostics_window.lift()
+            self.app_diagnostics_window.title(self._t("app.diagnostic.heading"))
             self._refresh_app_event_records(force=True)
             return
         window = tk.Toplevel(self.root)
@@ -853,12 +876,39 @@ class B518LogSolutionApp:
             footer_row, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
             state="disabled")
         self.app_diagnostics_retry_button.pack(side="left", padx=6)
-        ttk.Button(footer_row, text=self._t("app.diagnostic.close"), command=window.destroy).pack(side="right")
+        ttk.Button(footer_row, text=self._t("app.diagnostic.close"),
+                   command=self._close_app_diagnostics_window).pack(side="right")
         self.app_diagnostics_history = ttk.Label(footer, text="", wraplength=720, justify="left")
         self.app_diagnostics_history.pack(fill="x", pady=(5, 0))
-        window.protocol("WM_DELETE_WINDOW", window.destroy)
+        window.protocol("WM_DELETE_WINDOW", self._close_app_diagnostics_window)
+        window.bind("<Destroy>", self._on_app_diagnostics_destroy, add="+")
+        self._unregister_app_diagnostics_language_receiver = self.register_language_receiver(
+            lambda: self._t("app.diagnostic.heading"),
+            self._apply_app_diagnostics_language,
+            lambda: self.app_diagnostics_window is window and window.winfo_exists(),
+        )
         self._refresh_app_event_records()
         self._refresh_app_event_status()
+
+    def _on_app_diagnostics_destroy(self, event) -> None:
+        if event.widget is not self.app_diagnostics_window:
+            return
+        unregister = self._unregister_app_diagnostics_language_receiver
+        self._unregister_app_diagnostics_language_receiver = None
+        if unregister is not None:
+            unregister()
+        self.app_diagnostics_window = None
+        self.app_diagnostics_list = None
+        self.app_diagnostics_detail = None
+        self.app_diagnostics_status = None
+        self.app_diagnostics_history = None
+        self.app_diagnostics_retry_button = None
+        self._selected_app_event_id = None
+
+    def _close_app_diagnostics_window(self) -> None:
+        window = self.app_diagnostics_window
+        if window is not None and window.winfo_exists():
+            window.destroy()
 
     def retry_app_event_saves(self) -> None:
         self.rounds.retry_app_event_saves()
@@ -1991,6 +2041,12 @@ class B518LogSolutionApp:
         self._build_profile_editor_tab(profile_tab)
         self._build_log_tab(log_tab)
         self._build_retention_tab(retention_tab)
+        dialog.bind("<Destroy>", self._on_settings_destroy, add="+")
+        self._unregister_settings_language_receiver = self.register_language_receiver(
+            lambda: self._t("app.settings.title"),
+            self._apply_settings_language,
+            lambda: self.settings_window is dialog and dialog.winfo_exists(),
+        )
         self._apply_settings_language()
 
     def _build_retention_tab(self, parent: ttk.Frame) -> None:
@@ -2562,6 +2618,12 @@ class B518LogSolutionApp:
         self.historical_event_refresh_button.pack(side="right")
         self._refresh_historical_event_window()
         window.protocol("WM_DELETE_WINDOW", self._close_historical_event_window)
+        window.bind("<Destroy>", self._on_historical_event_destroy, add="+")
+        self._unregister_historical_event_language_receiver = self.register_language_receiver(
+            lambda: self._t("app.settings.history.title"),
+            self._refresh_historical_event_window,
+            lambda: self.historical_event_window is window and window.winfo_exists(),
+        )
 
     def _reload_historical_events(self) -> None:
         self._historical_event_records = read_historical_events(
@@ -2608,8 +2670,15 @@ class B518LogSolutionApp:
         else:
             self._historical_event_selected_key = None
             self._set_historical_event_detail(self._t("app.settings.history.empty"))
-        self._schedule_ui("idle", self._restore_historical_event_view,
-                          window, event_list, detail_view, list_top, detail_top)
+        if self._historical_restore_after_id is not None:
+            self._cancel_ui_timer(self._historical_restore_after_id)
+
+        def restore_view():
+            self._historical_restore_after_id = None
+            self._restore_historical_event_view(
+                window, event_list, detail_view, list_top, detail_top)
+
+        self._historical_restore_after_id = self._schedule_ui("idle", restore_view)
 
     @staticmethod
     def _restore_historical_event_view(window, event_list, detail_view,
@@ -2643,8 +2712,25 @@ class B518LogSolutionApp:
         widget.configure(state="disabled")
 
     def _close_historical_event_window(self) -> None:
-        if self.historical_event_window and self.historical_event_window.winfo_exists():
-            self.historical_event_window.destroy()
+        window = self.historical_event_window
+        if window and window.winfo_exists():
+            window.destroy()
+        self._clear_historical_event_window(window)
+
+    def _on_historical_event_destroy(self, event) -> None:
+        if event.widget is self.historical_event_window:
+            self._clear_historical_event_window(event.widget)
+
+    def _clear_historical_event_window(self, window) -> None:
+        if self.historical_event_window is not window:
+            return
+        unregister = self._unregister_historical_event_language_receiver
+        self._unregister_historical_event_language_receiver = None
+        if unregister is not None:
+            unregister()
+        if self._historical_restore_after_id is not None:
+            self._cancel_ui_timer(self._historical_restore_after_id)
+            self._historical_restore_after_id = None
         self.historical_event_window = None
         self.historical_event_list = None
         self.historical_event_detail = None
@@ -2654,8 +2740,22 @@ class B518LogSolutionApp:
         self._historical_event_selected_key = None
 
     def _close_settings(self) -> None:
-        if self.settings_window and self.settings_window.winfo_exists():
-            self.settings_window.destroy()
+        window = self.settings_window
+        if window and window.winfo_exists():
+            window.destroy()
+        self._clear_settings_window(window)
+
+    def _on_settings_destroy(self, event) -> None:
+        if event.widget is self.settings_window:
+            self._clear_settings_window(event.widget)
+
+    def _clear_settings_window(self, window) -> None:
+        if self.settings_window is not window:
+            return
+        unregister = self._unregister_settings_language_receiver
+        self._unregister_settings_language_receiver = None
+        if unregister is not None:
+            unregister()
         self.settings_window = None
         self.settings_log = None
         self._settings_text_widgets = []
