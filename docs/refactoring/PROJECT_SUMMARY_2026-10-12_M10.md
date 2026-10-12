@@ -11,3 +11,12 @@
 正式bundle及目標OS/HMI/KVM接續見release-validation。所有產品故障與刪除回歸使用隔離暫存資料；沒有新增產品裁決、schema、平台、排程或發布方式。公司Gitea本次可達，兩目的地完整同步後才安全清理票分支。最終merge／main重跑／遠端直接query與保護檔案結果後補。
 
 最後source全套371tests／114.119秒OK，catalog322/322、compileall/diff-check通過；無既有型別檢查設定。固定基準95b至079b519的Standards／Spec無未解source問題，文件核對另確認正式发布待驗與source合併門檻分開。
+
+
+## 本機source合併與主線複驗（2026-10-12）
+
+合併前兩目的地直接查得main95b791c2、票分支74019aec3b1e3df9ab83b92fb4c8cdd4e26bc438。確認目標工作樹沒有未提交變更後，以no-ff合併；實際merge SHA為`6c55fd24c8a8c4afc5da8b32edfb8a96a095e376`。合併未改最後079b519程式／測試內容，`git diff 079b519 HEAD -- 'B518 Log Solution/src' 'B518 Log Solution/tests'`為空。
+
+主線由同一Python目錄執行完整命令，**371tests／111.476秒，OK**；compileall、diff-check及catalog322/322／零errors通過。完整source及main命令輸出分別提交於 M10 evidence/source-suite.txt與main-suite.txt。兩軸code-review與證據複審無未解必要source問題。
+
+既存兩份摘要修改及未追蹤架構討論先限定路徑stash／備份，再原樣還原並逐檔SHA256確認一致；沒有加入本票提交。這些既存修改使最終工作樹不是完全乾淨，但本票沒有未提交程式／測試或交付文件。實際遠端最後query及票分支清理結果由下一交付紀錄追加。

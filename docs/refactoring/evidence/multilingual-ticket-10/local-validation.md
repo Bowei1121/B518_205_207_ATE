@@ -79,3 +79,12 @@ GitHub及公司Gitea本次可達；每批已push同名票分支。合併前／�
 第一次完整套件於a1ece06為371tests／120.172秒，3項失敗（兩項舊inline診斷文字預期、一項提示等待map時提早關閉）；079b519修正後全套重新執行才通過。未忽略失敗或以縮小套件取得成功。最終log /private/tmp/m10-source-final-tests.log。
 
 合併前直接查詢兩目的地均得到main `95b791c2cf1a54b10db4f07cbc606ddd06db8280`、ticket `079b5191598b39182ef6e7acd3269c3cc3d703a9`；這是文件commit前的查詢，後續文檔與合併最後query另記，不宣稱為最後HEAD。
+
+
+## 本機source合併與主線複驗（2026-10-12）
+
+合併前兩目的地直接查得main95b791c2、票分支74019aec3b1e3df9ab83b92fb4c8cdd4e26bc438。確認目標工作樹沒有未提交變更後，以no-ff合併；實際merge SHA為`6c55fd24c8a8c4afc5da8b32edfb8a96a095e376`。合併未改最後079b519程式／測試內容，`git diff 079b519 HEAD -- 'B518 Log Solution/src' 'B518 Log Solution/tests'`為空。
+
+主線由同一Python目錄執行完整命令，**371tests／111.476秒，OK**；compileall、diff-check及catalog322/322／零errors通過。完整source及main命令輸出分別提交於 [source-suite.txt](source-suite.txt)、[main-suite.txt](main-suite.txt)。兩軸code-review與證據複審無未解必要source問題。
+
+既存兩份摘要修改及未追蹤架構討論先限定路徑stash／備份，再原樣還原並逐檔SHA256確認一致；沒有加入本票提交。這些既存修改使最終工作樹不是完全乾淨，但本票沒有未提交程式／測試或交付文件。實際遠端最後query及票分支清理結果由下一交付紀錄追加。
