@@ -624,7 +624,7 @@ class LogSolutionUiTests(unittest.TestCase):
         # A wrong-thread Tcl interpreter deletion aborts the process; keep this
         # regression in a subprocess so a failure is reported by unittest.
         script = textwrap.dedent("""\
-            import gc, sys, threading, tkinter as tk, weakref
+            import gc, sys, threading, time, tkinter as tk, weakref
             from pathlib import Path
             from tempfile import TemporaryDirectory
             from unittest.mock import patch
@@ -640,6 +640,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
                     session_root=Path(tmp) / 'sessions',
                     app_event_path=Path(tmp) / 'events.json')
+                coordinator = app.rounds
                 app.open_settings()
                 app._schedule_close_poll(1)
                 assert app.app_events.flush(timeout=5)
@@ -659,6 +660,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 assert not worker.is_alive(), 'Worker collection hung'
                 assert app_ref() is None, 'App cycle was not collected'
                 assert not errors, errors
+                coordinator.request_close()
+                deadline = time.monotonic() + 10
+                while coordinator.close_status().status != 'complete' and time.monotonic() < deadline:
+                    time.sleep(.01)
+                assert coordinator.close_status().status == 'complete', coordinator.close_status()
         """)
         environment = dict(os.environ)
         environment["PYTHONPATH"] = os.pathsep.join(
@@ -6663,11 +6669,11 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
                     self.assertIn("Same-Round Result Conflict", app.language_refresh_banner.cget("text"))
                     self.assertIn("Round Monitoring Timeout", app.language_refresh_banner.cget("text"))
-                    diagnostic_events = app.app_events.events
+                    diagnostic_events = app.app_events.records
                     ui_tick = []
                     root.after(350, lambda: ui_tick.append(True))
                     pump_until(lambda: bool(ui_tick))
-                    self.assertEqual(app.app_events.events, diagnostic_events)
+                    self.assertEqual(app.app_events.records, diagnostic_events)
                     inject_conflict_failure[0] = False
                     click(app.language_refresh_retry_button)
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
@@ -6747,9 +6753,32 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("injected conflict refresh failure", diagnostics)
                 self.assertIn("injected alarm refresh failure", diagnostics)
 
+                inject_conflict_failure[0] = True
+                with patch.object(app, "_refresh_conflict_review", side_effect=refresh_conflict):
+                    select_language("English")
+                    select_language("繁體中文")
+                inject_conflict_failure[0] = False
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
                 self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
+                failure_banner = app.language_refresh_banner.cget("text")
+                self.assertIn("同輪結果衝突", failure_banner)
+                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                closing_records = app.app_events.records
+                click(app.language_refresh_retry_button)
+                root.after(0, app.retry_language_refresh)
+                root.update()
+                self.assertEqual(app.language_refresh_banner.cget("text"), failure_banner)
+                self.assertEqual(app.app_events.records, closing_records)
+                app._close_cancel_button.invoke()
+                root.update()
+                self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                self.assertTrue(rounds.snapshot().collection_stopped)
+                self.assertEqual(rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
+                click(app.language_refresh_retry_button)
+                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                app.close()
+                pump_until(lambda: rounds.close_status().status == "waiting")
                 app._select_language(ENGLISH)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                 self.assertEqual(conflict_window.title(), "同輪結果衝突")
@@ -6774,8 +6803,18 @@ class LogSolutionUiTests(unittest.TestCase):
                                     for event in decisions))
             finally:
                 if root_is_alive():
+                    rounds.stop()
+                    for conflict in rounds.snapshot().pending_conflicts:
+                        rounds.resolve_review(conflict.conflict_id, "keep_original")
+                    alarm = rounds.snapshot().round_alarm
+                    if alarm and not alarm.acknowledged_at:
+                        rounds.acknowledge_round_alarm(alarm.round_id, alarm.alarm_id)
+                    app.close()
+                    pump_until(lambda: rounds.close_status().status == "complete")
                     app.hotkey.close()
-                    root.destroy()
+                    app.app_events.stop()
+                    if root_is_alive():
+                        root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")

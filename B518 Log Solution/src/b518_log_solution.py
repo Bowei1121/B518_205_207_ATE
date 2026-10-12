@@ -574,7 +574,8 @@ class B518LogSolutionApp:
             configure_if_alive(
                 self.app_event_status_label,
                 text=self._t("language.refresh.failed", windows=names))
-            configure_if_alive(self.language_refresh_retry_button, state="normal")
+            configure_if_alive(self.language_refresh_retry_button,
+                               state="disabled" if self._closing_ui else "normal")
         else:
             configure_if_alive(self.language_refresh_retry_button, state="disabled")
             self._refresh_app_event_status(update_diagnostics=False)
@@ -975,6 +976,10 @@ class B518LogSolutionApp:
             return
         state = "disabled" if self._closing_ui else "normal"
         self.language_button.configure(state=state)
+        if hasattr(self, "language_refresh_retry_button"):
+            self.language_refresh_retry_button.configure(
+                state="normal" if self._language_refresh_failures and not self._closing_ui
+                else "disabled")
         if hasattr(self, "language_menu"):
             for index in range(self.language_menu.index("end") + 1):
                 self.language_menu.entryconfigure(index, state=state)
