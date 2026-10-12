@@ -28,5 +28,5 @@
 
 ## Implementation status
 
-- L1 (#29) is implemented on `LanguageRefresh/ticket-01`; its evidence and remaining runtime limitations are in [local-validation.md](../evidence/language-refresh-ticket-01/local-validation.md). This does not claim all-window migration or complete the parent specification's first acceptance item; L2–L4 remain separate.
-- L2 and L3 remain dependent on L1 delivery and are not included here. C1–C4 are unaffected.
+- L1 (#29) is implemented on `LanguageRefresh/ticket-01`; its evidence and runtime notes are in [L1 local validation](../evidence/language-refresh-ticket-01/local-validation.md).
+- L2 (#30) implementation and seven acceptance items are complete on `LanguageRefresh/ticket-02`; only settings, App diagnostics and historical-event windows are in scope. The required full suite passed; final Standards/Spec review and integration checks are being completed. See [L2 local validation](../evidence/language-refresh-ticket-02/local-validation.md) for evidence. L3/L4 and C1–C4 remain separate.

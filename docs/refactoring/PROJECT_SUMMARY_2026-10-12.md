@@ -44,6 +44,14 @@
 - 使用者新增 SSH key，認證成功為 Bowei1121；GitHub 主機指紋經官方比對後，透過 SSH 完成 B518-Log-Solution 的 fast-forward 推送。
 - 直接查核遠端為 edee8253008e22c0d36cd702af5741d7c6d98928（本段紀錄提交前），包含本機 Tk／openat 修正 b1b4c36；推送阻擋已解除。VERSION／spec 原有內容仍保留，程式與已驗證產物沒有追加變更。
 
+## Language refresh L2 implementation (2026-10-12)
+
+- L2 is implemented on `LanguageRefresh/ticket-02` from fixed review baseline `7071ea1065c21fa93612a30ccca64d85840e185b`. Settings, App diagnostics and historical-event windows now register independently with L1's existing notification contract; language rendering uses the displayed event snapshot, retains view state, and does not reread sources. The three windows no longer receive the duplicate main-page language fanout; L3 windows and L4 cleanup remain outside this ticket.
+- Real-Tk coverage includes simultaneous windows, settings draft/tab retention, diagnostic/history event selection/detail/scroll retention, close/destroy/hide/reopen, failure injection for each of the three views and two simultaneous failures, aggregate diagnostics and latest-language retry. Bilingual failure diagnostics were rebuilt from disk with no `round_id`; ordinary language switches preserved event/audit bytes. Native file-dialog cancellation and settings/history regression evidence is recorded in the L2 validation file.
+- Two earlier full-suite attempts had intermittent `TemporaryDirectory.cleanup(): Directory not empty` failures in existing teardown tests. The same `test_destroyed_ui_is_safe_when_next_worker_collects_cycles` failure signature reproduced on the fixed pre-L2 baseline (1 failure in 3 isolated attempts), confirming a pre-existing intermittent test issue. After the final L2 test additions, the required complete Tk suite passed 381 tests in 108.360 seconds on Python 3.8.10 / Tk 8.6 with desktop access. Final review and delivery SHA will be recorded in the L2 evidence file.
+- Focused implementation commit `fbd59244329dd22fd99944600969ca8353651769` and test-evidence commit `3b80c0c` were pushed to both configured destinations. Direct `ls-remote` confirmed GitHub and Gitea ticket refs matched at `3b80c0c` after the test push. Standards review found no documented violation; its small repeated cleanup observation is non-blocking. L2 remains isolated from the two pre-existing dirty summary files in the formal worktree.
+- Evidence: [L2 local validation](evidence/language-refresh-ticket-02/local-validation.md). L1 is the direct dependency; L3/L4 and cleanup-reason C1–C4 remain separate.
+
 ## Language refresh L1 implementation
 
 - Implemented L1 on `LanguageRefresh/ticket-01` from fixed review baseline `0eebc3200e854a27c979ab003e3e6eda0a36461f`. Main page and App-owned notices now use the existing language notification contract with independent receiver failure isolation, a nonblocking aggregate banner, manual retry, and bilingual App-event diagnostics.

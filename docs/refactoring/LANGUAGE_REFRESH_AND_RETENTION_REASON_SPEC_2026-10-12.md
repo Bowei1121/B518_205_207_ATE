@@ -155,3 +155,7 @@
 ## L1 implementation coverage recorded on 2026-10-12
 
 L1 provides partial evidence for the first acceptance item and applicable first-item scenarios: current-language refresh for the main page and App-owned notices, receiver failure isolation, a nonblocking main-page aggregate/retry path, and durable bilingual failure diagnostics. This is not evidence that every App window has migrated; settings/diagnostics/history remain L2, conflict/alarm/close remain L3, and removal of legacy refresh wiring remains L4. The L1 case mapping and real-Tk commands/results are recorded in [the L1 validation evidence](evidence/language-refresh-ticket-01/local-validation.md). Parent scenarios not reached by L1 remain unchecked and unclaimed.
+
+## L2 implementation coverage recorded on 2026-10-12
+
+L2 adds real-Tk evidence for the settings, App-diagnostics and historical-event windows receiving the existing language notification directly. It covers in-place rendering from each view's captured state, draft/tab and event selection/detail/scroll preservation, per-view close/destroy/hide/reopen behavior, failure isolation, the nonblocking main-page summary and manual latest-language retry, and unchanged event/audit bytes during language refresh. This is limited to L2's three views; conflict/alarm/close notification migration remains L3, and removing every legacy language fanout plus parent-wide first-item acceptance remains L4. See [L2 local validation](evidence/language-refresh-ticket-02/local-validation.md). Parent-wide coverage is not claimed complete.
