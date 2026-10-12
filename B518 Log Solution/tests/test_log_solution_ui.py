@@ -199,12 +199,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(disk_failure["localized_message"],
                                  failed["localized_message"])
                 self.assertEqual(disk_failure["diagnostic"], "主畫面: refresh failed")
-            fail_refresh[0] = False
+            fail_refresh[0] = True
             app.language_refresh_retry_button.invoke()
             root.update()
-            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
+            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
+            self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
             self.assertEqual(app.project_label.cget("text"), "專案")
-            self.assertEqual(failed_window.cget("text"), "已更新")
+            self.assertEqual(failed_window.cget("text"), "Not translated")
+            failed_window.destroy()
+            app._language_refresh_notifications.notify()
+            root.update()
+            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
+            self.assertNotIn("Diagnostics window", app.language_refresh_banner.cget("text"))
             unregister()
             unregister_failed()
         finally:
