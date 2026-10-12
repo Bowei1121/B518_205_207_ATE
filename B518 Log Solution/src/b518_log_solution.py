@@ -2340,6 +2340,18 @@ class B518LogSolutionApp:
                 detail += "\n{}: {}".format(
                     self._t("app.settings.retention.reason.summary"),
                     self._retention_reason_detail(latest.message_reason))
+            completed = [item for item in outcomes
+                         if item.outcome == "deleted" and
+                         (item.reason_message is not None or item.reason)]
+            if completed:
+                items = "；".join(self._t(
+                    "app.settings.retention.cleanup.item",
+                    round_id=item.round_id or self._t("term.test_round"),
+                    reason=self._retention_reason_detail(
+                        item.reason_message if item.reason_message is not None else item.reason))
+                    for item in completed[:3])
+                detail += "\n" + self._t(
+                    "app.settings.retention.cleanup.completed", items=items)
             failures = [item for item in outcomes if item.outcome == "failed"]
             if failures:
                 items = "；".join(self._t(
@@ -2366,10 +2378,6 @@ class B518LogSolutionApp:
                         if latest.app_events.reason_message is not None
                         else latest.app_events.reason))
         variable.set(detail)
-
-    def _retention_reason_text(self, reason: object) -> str:
-        """Render the cleanup-reason contract for the App's current language."""
-        return present_cleanup_reason(reason, self.current_language).text
 
     def _retention_reason_detail(self, reason: object) -> str:
         """Render a localized outer reason and retain its complete source evidence."""

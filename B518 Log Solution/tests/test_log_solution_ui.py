@@ -656,10 +656,19 @@ class LogSolutionUiTests(unittest.TestCase):
             "zh-TW": "App 事件仍有待補存，或完整保存狀態尚未確認。",
             "diagnostic": "pending App event raw diagnostic",
         }
+        deleted_reason = {
+            "version": 1,
+            "message_id": "app.settings.retention.reason.deleted",
+            "parameters": {},
+            "en": "Trusted round records were completely deleted.",
+            "zh-TW": "已完整刪除可信輪次資料。",
+        }
         old_summary = round_retention.RetentionSummary(
             "run-c1", "2026-10-12T08:00:00+08:00", "2026-10-12T08:00:01+08:00",
             30, "controlled-fixture", "failed",
             results=(round_retention.RetentionRoundResult(
+                "round-success", "deleted", "已完整刪除可信輪次資料", deleted_reason),
+                round_retention.RetentionRoundResult(
                 "round-c1", "failed", "封存資訊無法讀取：legacy disk fault", reason),
                 round_retention.RetentionRoundResult(
                     "round-legacy", "skipped", "封存資訊版本未知")),
@@ -692,6 +701,8 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("Archive metadata could not be read: archive disk fault", english_detail)
             self.assertIn("Original cleanup reason", english_detail)
             self.assertIn("raw archive stack remains unchanged", english_detail)
+            self.assertIn("round-success", english_detail)
+            self.assertIn("Trusted round records were completely deleted", english_detail)
             self.assertIn("round-c1", english_detail)
             self.assertIn("App event saves are pending", english_detail)
             self.assertIn("The archive metadata version is not supported", english_detail)
@@ -702,6 +713,8 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("無法讀取封存資訊：archive disk fault", chinese_detail)
             self.assertIn("原始清理原因", chinese_detail)
             self.assertIn("原始診斷：raw archive stack remains unchanged", chinese_detail)
+            self.assertIn("round-success", chinese_detail)
+            self.assertIn("已完整刪除可信輪次資料。", chinese_detail)
             self.assertIn("App 事件仍有待補存", chinese_detail)
             self.assertIn("封存資訊版本不受支援", chinese_detail)
             self.assertNotIn("app.settings.retention.reason.archive_read_failed", chinese_detail)
@@ -1800,9 +1813,6 @@ class LogSolutionUiTests(unittest.TestCase):
                               [item["event_id"] for item in
                                read_app_event_store(app_event_path)["events"]])
                 self.assertIn("not yet expired", app.retention_cleanup_status.get())
-                self.assertEqual(
-                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
-                    "App event saves are pending or completeness is not confirmed.")
                 self.assertIn("retention media unavailable",
                               app.rounds.retention_cleanup_summaries()[0].app_events.reason)
 
@@ -1816,9 +1826,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.retention_retry_button.cget("text"), "重試背景清理")
                 self.assertIn("App 事件：刪除 1", app.retention_cleanup_status.get())
                 self.assertIn("尚未到保存期限", app.retention_cleanup_status.get())
-                self.assertEqual(
-                    app._retention_reason_text("App 事件保存待補存或狀態尚未確認完整"),
-                    "App 事件仍有待補存，或完整保存狀態尚未確認。")
                 app.rounds.request_close()
                 pump_until(lambda: app.rounds.close_status().status == "complete")
             finally:
@@ -1870,9 +1877,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._refresh_retention_cleanup_status()
                     self.assertIn("An App event original time has no time zone",
                                   app.retention_cleanup_status.get())
-                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
-                                     "An App event original time has no time zone.")
-
                     app.language_button.event_generate("<Button-1>")
                     root.update()
                     chinese_index = next(
@@ -1881,8 +1885,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.language_menu.invoke(chinese_index)
                     root.update()
                     self.assertIn("App 事件原始時間缺少時區", app.retention_cleanup_status.get())
-                    self.assertEqual(app._retention_reason_text("App 事件時間缺少時區"),
-                                     "App 事件原始時間缺少時區。")
                     self.assertEqual(app_event_path.read_bytes(), malformed_bytes)
                 app.rounds.request_close()
                 pump_until(lambda: app.rounds.close_status().status == "complete")
@@ -5552,15 +5554,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn(
                         "Cleanup paused while records are being saved for app close.",
                         app.retention_cleanup_status.get())
-                    self.assertEqual(
-                        app._retention_reason_text("封存資訊版本未知"),
-                        "The archive metadata version is not supported.")
-                    self.assertEqual(
-                        app._retention_reason_text("封存時間無效或缺少時區"),
-                        "The archive time is invalid or has no time zone.")
-                    self.assertEqual(
-                        app._retention_reason_text("封存資訊無法讀取：disk full"),
-                        "Archive metadata could not be read: disk full")
                     app.language_button.event_generate("<Button-1>")
                     root.update()
                     chinese_index = next(
@@ -5571,12 +5564,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     self.assertIn("關閉保存期間暫停清理", app.retention_cleanup_status.get())
                     self.assertNotIn("Cleanup paused", app.retention_cleanup_status.get())
-                    self.assertEqual(
-                        app._retention_reason_text("封存資訊版本未知"),
-                        "封存資訊版本不受支援。")
-                    self.assertEqual(
-                        app._retention_reason_text("封存時間無效或缺少時區"),
-                        "封存時間無效或缺少時區。")
                     release_write.set()
                     self.wait_for(lambda: app.rounds.app_event_status().complete)
                     self.wait_for(lambda: app.rounds.close_status().status == "complete")
