@@ -8,7 +8,7 @@
 - The worktree was created from the formal B518-Log-Solution branch. The main, B518-Log-Solution and BT-Codex worktrees are separate; pre-existing summary edits in the formal checkout were not included in this ticket branch.
 - At the fixed baseline, the actual source contains the centralized English/zh-TW catalogue and persisted language preference (`src/language_catalog.py`, `src/machine_profiles.py`), the main language menu, bilingual App event storage, and the existing `<<AppLanguageChanged>>` notice path. M1 and later work are in the baseline ancestry. This L1 migrates only the main page and App-owned acknowledgement notices onto the existing notification contract; it does not claim all windows have migrated.
 - Existing destinations were retained: `github` fetch/push is `git@github.com:Bowei1121/B518_205_207_ATE.git`; `origin` fetch is Gitea `http://10.64.76.34:3000/8362/B518-205_207_ATE.git`, and its two push URLs are that Gitea URL and the GitHub SSH URL. No destination was removed.
-- The code/test batch was directly confirmed on GitHub and Gitea at `69b890bd8f113d0280d1da4c0e82933a4a65ada6`. The later `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb` test-only batch was pushed after that query; direct destination checks for the latest batch are recorded after the documentation commit below. Main-branch integration has not yet occurred.
+- The final ticket branch commit `7b853830fd19990b87ae6be93beebdee909ab0bf` was directly confirmed on GitHub and Gitea at `refs/heads/LanguageRefresh/ticket-01` after push. It contains tested code/test SHA `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb` plus the reviewed delivery documentation. Main integration and post-merge checks are recorded below.
 
 ## Producer and refresh inventory
 
@@ -76,4 +76,11 @@ Implementation/test commits on this branch:
 - `69b890b` — coordinate notice fixture shutdown.
 - `1a2fb13` — cover hidden notice language refresh.
 
-Full commit IDs are available in branch history. Latest tested program/test SHA: `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb`. The evidence, ticket, README and summary updates are being committed separately after review. L1 does not include L2–L4, C1–C4, generalized event infrastructure, source-identity work, journal optimization, or bundle/factory acceptance.
+Full commit IDs are available in branch history. Latest tested program/test SHA: `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb`. The evidence, ticket, README and summary updates were committed as `7b853830fd19990b87ae6be93beebdee909ab0bf`. L1 does not include L2–L4, C1–C4, generalized event infrastructure, source-identity work, journal optimization, or bundle/factory acceptance.
+
+## Main-branch integration and post-merge verification
+
+- The formal `B518-Log-Solution` worktree was clean for integration after the two pre-existing user-edited project summaries were stashed by path. They were restored after the merge validation; they are not part of the L1 commits.
+- Merge commit: `106da01a6fadf1a0b539f882726762c25c66e839` (`merge: deliver language refresh L1`). The target and both direct destination refs were `0eebc3200e854a27c979ab003e3e6eda0a36461f` immediately before merge.
+- On the merged main branch, `PATH=/opt/anaconda3/bin:$PATH B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` passed: 378 tests in 152.355 seconds, Python 3.11.7 / Tk 8.6.
+- After pushing the merge commit, direct `git ls-remote` queries returned `106da01a6fadf1a0b539f882726762c25c66e839` for `refs/heads/B518-Log-Solution` on both GitHub and Gitea. At the same query, the ticket branch still existed at `7b853830fd19990b87ae6be93beebdee909ab0bf` on both. The later final documentation-only commit and its direct destination checks are reported in the delivery response; no force push or destination removal was used.
