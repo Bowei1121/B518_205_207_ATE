@@ -25,7 +25,7 @@ from platform_registry import DEFAULT_PLATFORM_REGISTRY
 from round_start_preparation import RoundStartPathError, RoundStartPreparation
 from language_catalog import (
     DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, TRADITIONAL_CHINESE, language_name,
-    render_bilingual_message, save_state_message_id, translate,
+    make_bilingual_message, render_bilingual_message, save_state_message_id, translate,
 )
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
@@ -467,10 +467,15 @@ class B518LogSolutionApp:
 
     def _show_notice(self, title_id, message_id, parameters=None, diagnostic="", captured=None):
         parameters = dict(parameters or {})
+        original_reason = parameters.get("reason", "")
+        diagnostic = diagnostic or original_reason
 
         def text_provider():
+            display_parameters = dict(parameters)
+            if original_reason:
+                display_parameters["reason"] = self._t("app.notice.diagnostic_below")
             message = (render_bilingual_message(captured, self.current_language)
-                       if captured is not None else self._t(message_id, **parameters))
+                       if captured is not None else self._t(message_id, **display_parameters))
             if diagnostic:
                 message += "\n\n{}: {}".format(self._t("app.diagnostic.raw"), diagnostic)
             return self._t(title_id), message, self._t("app.notice.ok")
@@ -657,10 +662,13 @@ class B518LogSolutionApp:
             localized = record.get("localized_message")
             fallback = record.get("message", "")
             self._event_records.append((fallback, localized, None))
+            self.event_lines.append(self._render_event_record((fallback, localized, None)))
             added_to_main_log = True
         if added_to_main_log:
             self._refresh_event_log()
         if self.app_diagnostics_list and self.app_diagnostics_list.winfo_exists():
+            list_top = self.app_diagnostics_list.yview()[0]
+            detail_top = self.app_diagnostics_detail.yview()[0]
             selected = self.app_diagnostics_list.curselection()
             prior_id = getattr(self, "_selected_app_event_id", None)
             self.app_diagnostics_list.delete(0, "end")
@@ -680,6 +688,9 @@ class B518LogSolutionApp:
             elif records and not selected:
                 self.app_diagnostics_list.selection_set(len(records) - 1)
                 self._show_app_event_detail(len(records) - 1)
+            self.app_diagnostics_list.yview_moveto(list_top)
+            if prior_id:
+                self.app_diagnostics_detail.yview_moveto(detail_top)
 
     def _show_app_event_detail(self, index: Optional[int] = None) -> None:
         if not self.app_diagnostics_detail or not self.app_diagnostics_detail.winfo_exists():
@@ -888,7 +899,8 @@ class B518LogSolutionApp:
             reported = getattr(self, "_reported_audit_errors", set())
             for error in snapshot.audit_errors:
                 if error not in reported:
-                    self._log("稽核紀錄不完整：{}".format(error))
+                    message = make_bilingual_message("app.round.audit_incomplete", {}, error)
+                    self._log(message.english, message)
                     reported.add(error)
             self._reported_audit_errors = reported
         save_state = getattr(snapshot, "save_state", "saving")
@@ -896,7 +908,8 @@ class B518LogSolutionApp:
         reported_save_errors = getattr(self, "_reported_save_errors", set())
         for error in save_errors:
             if error not in reported_save_errors:
-                self._log("本輪保存失敗：{}".format(error))
+                message = make_bilingual_message("app.round.save_failed", {}, error)
+                self._log(message.english, message)
                 reported_save_errors.add(error)
         self._reported_save_errors = reported_save_errors
         self._current_save_state = save_state
@@ -1222,7 +1235,6 @@ class B518LogSolutionApp:
                               {"reason": str(error)})
             return
         self._set_monitor_controls(True)
-        self._log("{} 監控已開始；本輪時間與啟動前快照已建立。".format(station))
 
     def stop_monitor(self) -> None:
         snapshot = self.rounds.snapshot()
@@ -1252,10 +1264,14 @@ class B518LogSolutionApp:
         self._event_records = self._event_records[-500:]
         self.event_lines = [self._render_event_record(record) for record in self._event_records]
         if self.settings_log and self.settings_log.winfo_exists():
+            reading_position = self.settings_log.yview()[0]
+            selection = tuple(map(str, self.settings_log.tag_ranges("sel")))
             self.settings_log.configure(state="normal")
             self.settings_log.delete("1.0", "end")
             self.settings_log.insert("1.0", "\n".join(self.event_lines))
-            self.settings_log.see("end")
+            for start, end in zip(selection[::2], selection[1::2]):
+                self.settings_log.tag_add("sel", start, end)
+            self.settings_log.yview_moveto(reading_position)
             self.settings_log.configure(state="disabled")
 
     def _log(self, text: str, localized_message=None, round_id: Optional[str] = None) -> None:
@@ -1307,7 +1323,8 @@ class B518LogSolutionApp:
             self.root.lift()
             self.root.focus_force()
         except tk.TclError as error:
-            self._log("無法將結果看板帶到前景：{}".format(error))
+            message = make_bilingual_message("app.dashboard.focus_failed", {}, str(error))
+            self._log(message.english, message)
 
     def _handle_event(self, event: MonitorEvent) -> None:
         round_id = None
@@ -2539,8 +2556,8 @@ class B518LogSolutionApp:
 
     def open_session(self) -> None:
         path = self.rounds.session_path or self.session_root
-        path.mkdir(parents=True, exist_ok=True)
         try:
+            path.mkdir(parents=True, exist_ok=True)
             subprocess.Popen(["open", str(path)])
         except OSError as error:
             reason = str(error)
