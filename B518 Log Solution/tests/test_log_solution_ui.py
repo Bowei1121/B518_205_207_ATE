@@ -33,6 +33,7 @@ from monitoring_round import (
 )
 import audit_records
 import app_event_store
+import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
@@ -632,6 +633,89 @@ class LogSolutionUiTests(unittest.TestCase):
         finally:
             root.after_cancel(external)
             if not app._ui_destroyed:
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_reads_mixed_cleanup_reason_ledger_and_keeps_raw_evidence_read_only(self):
+        app_root = Path(self._isolated_app_root.name)
+        ledger_path = app_root / "round-retention-ledger.json"
+        reason = {
+            "version": 1,
+            "message_id": "app.settings.retention.reason.archive_read_failed",
+            "parameters": {"diagnostic": "archive disk fault"},
+            "en": "Archive metadata could not be read: archive disk fault",
+            "zh-TW": "無法讀取封存資訊：archive disk fault",
+            "diagnostic": "raw archive stack remains unchanged",
+        }
+        app_reason = {
+            "version": 1,
+            "message_id": "app.settings.retention.reason.app_events_pending",
+            "parameters": {},
+            "en": "App event saves are pending or completeness is not confirmed.",
+            "zh-TW": "App 事件仍有待補存，或完整保存狀態尚未確認。",
+            "diagnostic": "pending App event raw diagnostic",
+        }
+        old_summary = round_retention.RetentionSummary(
+            "run-c1", "2026-10-12T08:00:00+08:00", "2026-10-12T08:00:01+08:00",
+            30, "controlled-fixture", "failed",
+            results=(round_retention.RetentionRoundResult(
+                "round-c1", "failed", "封存資訊無法讀取：legacy disk fault", reason),
+                round_retention.RetentionRoundResult(
+                    "round-legacy", "skipped", "封存資訊版本未知")),
+            message="legacy summary text",
+            app_events=round_retention.RetentionAppEventResult(
+                "failed", 0, 1, 1, "custom App event reason", app_reason),
+            message_reason=reason,
+        )
+        ledger_path.write_text(json.dumps({
+            "schema_version": round_retention.LEDGER_SCHEMA_VERSION,
+            "runs": [old_summary.to_record()],
+            "active_plans": {"round-pending": {
+                "round_id": "round-pending", "paths": ["sessions/pending"],
+                "path_order": ["sessions/pending"], "next_index": 0,
+                "archived_at": "2026-10-01T08:00:00+08:00",
+            }},
+        }, ensure_ascii=False), encoding="utf-8")
+        original_ledger = ledger_path.read_bytes()
+        root = tk.Tk()
+        root.deiconify()
+        with patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=app_root / "sessions",
+                                     app_event_path=app_root / "app-events.json")
+        try:
+            app.open_settings()
+            app.settings_notebook.select(2)
+            root.update()
+            english_detail = app.retention_cleanup_status.get()
+            self.assertIn("Archive metadata could not be read: archive disk fault", english_detail)
+            self.assertIn("Original cleanup reason", english_detail)
+            self.assertIn("raw archive stack remains unchanged", english_detail)
+            self.assertIn("round-c1", english_detail)
+            self.assertIn("App event saves are pending", english_detail)
+            self.assertIn("The archive metadata version is not supported", english_detail)
+            self.assertNotIn("app.settings.retention.reason.archive_read_failed", english_detail)
+
+            self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+            chinese_detail = app.retention_cleanup_status.get()
+            self.assertIn("無法讀取封存資訊：archive disk fault", chinese_detail)
+            self.assertIn("原始清理原因", chinese_detail)
+            self.assertIn("原始診斷：raw archive stack remains unchanged", chinese_detail)
+            self.assertIn("App 事件仍有待補存", chinese_detail)
+            self.assertIn("封存資訊版本不受支援", chinese_detail)
+            self.assertNotIn("app.settings.retention.reason.archive_read_failed", chinese_detail)
+            self.assertEqual(app.rounds.retention_cleanup_summaries()[0].results[0].round_id,
+                             "round-c1")
+            self.assertEqual(ledger_path.read_bytes(), original_ledger)
+        finally:
+            app.close()
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and app.rounds.close_status().status != "complete":
+                root.update()
+                time.sleep(0.01)
+            if root.winfo_exists():
+                app.hotkey.close()
                 root.destroy()
 
     def test_destroyed_ui_is_safe_when_next_worker_collects_cycles(self):

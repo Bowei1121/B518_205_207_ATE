@@ -13,6 +13,7 @@ from tkinter import filedialog, font as tkfont, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
+from cleanup_reasons import present_cleanup_reason
 from localized_notice import LanguageRefreshNotifications, show_notice
 from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
 from global_hotkey import HotkeyRegistration, create_global_hotkey
@@ -2318,9 +2319,11 @@ class B518LogSolutionApp:
         }.get(status.status, "app.settings.retention.cleanup.failed")
         detail = self._t(
             status_message,
-            reason=self._retention_reason_text(status.message) if status.status == "skipped" else "")
-        if status.status == "failed" and latest is None and status.message:
-            detail += "\n" + status.message
+            reason=self._retention_reason_detail(
+                latest.message_reason if latest and latest.message_reason is not None
+                else status.message) if status.status == "skipped" else "")
+        if status.status == "failed" and status.message:
+            detail += "\n" + self._retention_reason_detail(status.message)
         if latest is not None:
             outcomes = latest.results
             detail += "\n" + self._t(
@@ -2333,93 +2336,57 @@ class B518LogSolutionApp:
                 app_deleted=latest.app_events.deleted_count if latest.app_events else 0,
                 app_skipped=latest.app_events.skipped_count if latest.app_events else 0,
                 app_failed=latest.app_events.failed_count if latest.app_events else 0)
+            if latest.message_reason is not None:
+                detail += "\n{}: {}".format(
+                    self._t("app.settings.retention.reason.summary"),
+                    self._retention_reason_detail(latest.message_reason))
             failures = [item for item in outcomes if item.outcome == "failed"]
             if failures:
                 items = "；".join(self._t(
                     "app.settings.retention.cleanup.item",
                     round_id=item.round_id or self._t("app.settings.retention.cleanup.heading"),
-                    reason=item.reason) for item in failures[:3])
+                    reason=self._retention_reason_detail(
+                        item.reason_message if item.reason_message is not None else item.reason))
+                    for item in failures[:3])
                 detail += "\n" + self._t("app.settings.retention.cleanup.failures", items=items)
             skipped = [item for item in outcomes if item.outcome == "skipped"]
             if skipped:
                 items = "；".join(self._t(
                     "app.settings.retention.cleanup.item",
                     round_id=item.round_id or self._t("term.test_round"),
-                    reason=self._retention_reason_text(item.reason)) for item in skipped[:3])
+                    reason=self._retention_reason_detail(
+                        item.reason_message if item.reason_message is not None else item.reason))
+                    for item in skipped[:3])
                 detail += "\n" + self._t("app.settings.retention.cleanup.protected", items=items)
             if latest.app_events is not None and latest.app_events.reason:
                 detail += "\n" + self._t(
                     "app.settings.retention.cleanup.app_events_reason",
-                    reason=self._retention_reason_text(latest.app_events.reason))
+                    reason=self._retention_reason_detail(
+                        latest.app_events.reason_message
+                        if latest.app_events.reason_message is not None
+                        else latest.app_events.reason))
         variable.set(detail)
 
-    def _retention_reason_text(self, reason: str) -> str:
-        """Translate known cleanup status copy while leaving diagnostic details intact."""
-        if reason == "尚未到保存期限":
-            return self._t("app.settings.retention.reason.app_events_not_expired")
-        diagnostic_prefixes = {
-            "App 事件紀錄無法讀取：": "app_events_read_failed",
-            "封存資訊無法讀取：": "archive_read_failed",
-            "必要輪次紀錄缺失或無法讀取：": "archive_component_read_failed",
-            "必要輪次紀錄無法重建：": "archive_component_rebuild_failed",
-        }
-        for prefix, message_id in diagnostic_prefixes.items():
-            if reason.startswith(prefix):
-                return self._t("app.settings.retention.reason." + message_id,
-                               diagnostic=reason[len(prefix):])
-        message_ids = {
-            "期限時間缺少時區": "app_events_timezone",
-            "App 事件管理根目錄不是實體目錄": "app_events_root_invalid",
-            "App 事件清理拒絕符號連結": "app_events_symlink",
-            "App 事件檔不在管理根目錄": "app_events_outside",
-            "App 事件目標不是一般檔案": "app_events_not_regular",
-            "App 事件紀錄在清理期間已變更": "app_events_changed",
-            "App 事件管理路徑在清理期間已變更": "app_events_path_changed",
-            "App 事件保存待補存或狀態尚未確認完整": "app_events_pending",
-            "App 事件紀錄格式或版本不受支援": "app_events_unknown_format",
-            "App 事件紀錄內容不完整或序號不連續": "app_events_invalid",
-            "App 事件紀錄序號保留資訊需要新版格式": "app_events_sequence_invalid",
-            "App 事件紀錄序號保留資訊不完整": "app_events_sequence_missing",
-            "App 事件紀錄序號保留資訊無效": "app_events_sequence_invalid",
-            "App 事件紀錄序號保留範圍無效": "app_events_sequence_invalid",
-            "App 事件紀錄存在未解釋的序號缺口": "app_events_sequence_gap",
-            "App 事件紀錄已刪除序號仍有事件": "app_events_sequence_invalid",
-            "App 事件時間格式無效": "app_events_time_invalid",
-            "App 事件時間缺少時區": "app_events_time_missing",
-            "App 事件清理目標不是一般檔案或目錄": "app_events_path_invalid",
-            "App 事件清理提交閘門未完成原子替換": "app_events_invalid",
-            "關閉保存期間不啟動新清理": "close",
-            "封存資訊版本未知": "archive_unknown_version",
-            "封存時間無效或缺少時區": "archive_invalid_time",
-            "封存資訊格式不正確": "archive_format_invalid",
-            "封存資訊完整性驗證失敗": "archive_integrity_failed",
-            "封存輪次身分不一致": "archive_round_identity_mismatch",
-            "封存完整性資訊缺失": "archive_integrity_missing",
-            "封存組成資料不完整": "archive_components_incomplete",
-            "封存組成資料格式不正確": "archive_component_format_invalid",
-            "封存組成資料路徑不正確": "archive_component_path_invalid",
-            "必要輪次紀錄內容已變更": "archive_component_changed",
-            "磁碟紀錄未完整保存或輪次身分不一致": "archive_disk_incomplete",
-            "關閉保存期間暫停清理": "close",
-            "本次 App 執行仍受保護": "protected",
-            "可信封存時間缺少時區": "timezone",
-            "尚未到保存期限": "not_expired",
-            "已完整刪除可信輪次資料": "deleted",
-            "封存檔路徑含符號連結或越界": "unsafe_manifest",
-            "封存證據無效": "invalid_archive",
-            "必要資料路徑含符號連結或不在 App 管理範圍": "unsafe_component",
-            "封存路徑與驗證後路徑不一致": "archive_path_mismatch",
-            "輪次目錄含未知檔案，整輪保留": "unknown_file",
-            "中斷清理輪次目前仍受保護": "recovery_protected",
-            "持久刪除計畫格式或輪次組件不可信": "invalid_plan",
-            "刪除已完成，補寫先前中斷的摘要": "recovery_summary",
-            "目前保存期限尚未到期；已還原中斷時的暫置資料並保留其餘進度":
-                "recovered_not_expired",
-            "保存期限在清理期間變更，保留剩餘資料等待重新判定": "period_changed",
-            "依持久刪除計畫完成中斷復原": "recovered_deleted",
-        }
-        suffix = message_ids.get(reason)
-        return self._t("app.settings.retention.reason." + suffix) if suffix else reason
+    def _retention_reason_text(self, reason: object) -> str:
+        """Render the cleanup-reason contract for the App's current language."""
+        return present_cleanup_reason(reason, self.current_language).text
+
+    def _retention_reason_detail(self, reason: object) -> str:
+        """Render a localized outer reason and retain its complete source evidence."""
+        presentation = present_cleanup_reason(reason, self.current_language)
+        if isinstance(reason, str):
+            original = reason
+        elif isinstance(reason, dict):
+            evidence = {key: value for key, value in reason.items() if key != "message_id"}
+            original = json.dumps(evidence, ensure_ascii=False, sort_keys=True, default=str)
+        else:
+            original = json.dumps(reason, ensure_ascii=False, sort_keys=True, default=str)
+        details = self._t("app.settings.retention.reason.original_details", details=original)
+        if presentation.diagnostic:
+            diagnostic = self._t("app.settings.retention.reason.raw_diagnostic",
+                                 diagnostic=presentation.diagnostic)
+            return "{}\n{}\n{}".format(presentation.text, details, diagnostic)
+        return "{}\n{}".format(presentation.text, details)
 
     def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""

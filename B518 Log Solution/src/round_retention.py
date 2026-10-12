@@ -82,6 +82,7 @@ class RetentionRoundResult:
     round_id: str
     outcome: str
     reason: str = ""
+    reason_message: Optional[object] = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class RetentionAppEventResult:
     skipped_count: int = 0
     failed_count: int = 0
     reason: str = ""
+    reason_message: Optional[object] = None
 
 
 @dataclass(frozen=True)
@@ -104,10 +106,15 @@ class RetentionSummary:
     results: Tuple[RetentionRoundResult, ...] = ()
     message: str = ""
     app_events: Optional[RetentionAppEventResult] = None
+    message_reason: Optional[object] = None
 
     @property
     def deleted_round_ids(self) -> Tuple[str, ...]:
         return tuple(item.round_id for item in self.results if item.outcome == "deleted")
+
+    def to_record(self) -> dict:
+        """Return the durable ledger representation without changing cleanup state."""
+        return _summary_to_dict(self)
 
 
 @dataclass(frozen=True)
@@ -810,17 +817,25 @@ def _file_record(path: Path) -> dict:
 
 
 def _summary_to_dict(item: RetentionSummary) -> dict:
-    return {"run_id": item.run_id, "started_at": item.started_at,
+    record = {"run_id": item.run_id, "started_at": item.started_at,
             "completed_at": item.completed_at, "retention_days": item.retention_days,
             "trigger": item.trigger, "status": item.status, "message": item.message,
             "app_events": ({"outcome": item.app_events.outcome,
                             "deleted_count": item.app_events.deleted_count,
                             "skipped_count": item.app_events.skipped_count,
                             "failed_count": item.app_events.failed_count,
-                            "reason": item.app_events.reason}
+                            "reason": item.app_events.reason,
+                            **({"reason_message": item.app_events.reason_message}
+                               if item.app_events.reason_message is not None else {})}
                            if item.app_events is not None else None),
             "results": [{"round_id": result.round_id, "outcome": result.outcome,
-                         "reason": result.reason} for result in item.results]}
+                         "reason": result.reason,
+                         **({"reason_message": result.reason_message}
+                            if result.reason_message is not None else {})}
+                        for result in item.results]}
+    if item.message_reason is not None:
+        record["message_reason"] = item.message_reason
+    return record
 
 
 def _summary_from_dict(item: dict) -> RetentionSummary:
@@ -830,12 +845,15 @@ def _summary_from_dict(item: dict) -> RetentionSummary:
                             item.get("status", "failed"), tuple(
                                 RetentionRoundResult(row.get("round_id", ""),
                                                      row.get("outcome", "failed"),
-                                                     row.get("reason", ""))
+                                                     row.get("reason", ""),
+                                                     row.get("reason_message"))
                                 for row in item.get("results", [])), item.get("message", ""),
                             RetentionAppEventResult(
                                 app_events.get("outcome", "failed"),
                                 app_events.get("deleted_count", 0),
                                 app_events.get("skipped_count", 0),
                                 app_events.get("failed_count", 0),
-                                app_events.get("reason", ""))
-                            if isinstance(app_events, dict) else None)
+                                app_events.get("reason", ""),
+                                app_events.get("reason_message"))
+                            if isinstance(app_events, dict) else None,
+                            item.get("message_reason"))

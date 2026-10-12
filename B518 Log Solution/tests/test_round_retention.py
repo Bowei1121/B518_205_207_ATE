@@ -49,6 +49,56 @@ class RoundRetentionTests(unittest.TestCase):
                                  rounds.archive_status(started.round_id).status == "archived"))
         return rounds, started.round_id
 
+    def test_fresh_reader_preserves_structured_and_legacy_cleanup_reasons_without_rewriting_ledger(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger_path = root / "round-retention-ledger.json"
+            structured = {
+                "version": 1,
+                "message_id": "app.settings.retention.reason.archive_read_failed",
+                "parameters": {"diagnostic": "disk full"},
+                "en": "Archive metadata could not be read: disk full",
+                "zh-TW": "無法讀取封存資訊：disk full",
+                "diagnostic": "raw archive diagnostic",
+            }
+            summary = round_retention.RetentionSummary(
+                "run-1", "2026-10-12T08:00:00+08:00", "2026-10-12T08:00:01+08:00",
+                30, "app-startup", "failed",
+                results=(round_retention.RetentionRoundResult(
+                    "round-1", "failed", "封存資訊無法讀取：legacy disk fault",
+                    reason_message=structured),
+                    round_retention.RetentionRoundResult(
+                        "round-legacy", "skipped", "封存資訊版本未知")),
+                app_events=round_retention.RetentionAppEventResult(
+                    "failed", 0, 1, 1, "custom old App reason", reason_message=structured),
+                message_reason=structured,
+            )
+            active_plan = {"round_id": "round-pending", "paths": ["sessions/pending"],
+                           "path_order": ["sessions/pending"], "next_index": 0,
+                           "archived_at": "2026-10-01T08:00:00+08:00"}
+            ledger_path.write_text(json.dumps({
+                "schema_version": round_retention.LEDGER_SCHEMA_VERSION,
+                "runs": [summary.to_record()],
+                "active_plans": {"round-pending": active_plan},
+            }, ensure_ascii=False), encoding="utf-8")
+            original_bytes = ledger_path.read_bytes()
+
+            reader = RoundCoordinator(audit_root=root / "sessions",
+                                      retention_ledger_path=ledger_path)
+            restored = reader.retention_cleanup_summaries()[0]
+
+            self.assertEqual(restored.run_id, "run-1")
+            self.assertEqual(restored.results[0].round_id, "round-1")
+            self.assertEqual(restored.results[0].reason,
+                             "封存資訊無法讀取：legacy disk fault")
+            self.assertEqual(restored.results[0].reason_message, structured)
+            self.assertEqual(restored.results[1].reason, "封存資訊版本未知")
+            self.assertIsNone(restored.results[1].reason_message)
+            self.assertEqual(restored.app_events.reason_message, structured)
+            self.assertEqual(restored.message_reason, structured)
+            self.assertEqual(reader.retention_cleanup_status().status, "failed")
+            self.assertEqual(ledger_path.read_bytes(), original_bytes)
+
     def test_public_cleanup_removes_expired_round_and_persists_summary_for_fresh_reader(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
