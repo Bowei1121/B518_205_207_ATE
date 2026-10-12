@@ -6654,6 +6654,34 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
+                inject_conflict_failure[0] = True
+                inject_alarm_failure[0] = True
+                with patch.object(app, "_refresh_conflict_review", side_effect=refresh_conflict), \
+                        patch.object(app, "_refresh_round_alarm_language", side_effect=refresh_alarm):
+                    select_language("English")
+                    self.assertEqual(conflict_window.title(), "同輪結果衝突")
+                    self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertIn("Same-Round Result Conflict", app.language_refresh_banner.cget("text"))
+                    self.assertIn("Round Monitoring Timeout", app.language_refresh_banner.cget("text"))
+                    diagnostic_events = app.app_events.events
+                    ui_tick = []
+                    root.after(350, lambda: ui_tick.append(True))
+                    pump_until(lambda: bool(ui_tick))
+                    self.assertEqual(app.app_events.events, diagnostic_events)
+                    inject_conflict_failure[0] = False
+                    click(app.language_refresh_retry_button)
+                    self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                    self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                    inject_alarm_failure[0] = False
+                    click(app.language_refresh_retry_button)
+                    self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
+                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                    self.assertIs(app.conflict_window, conflict_window)
+                    self.assertIs(app.round_alarm_window, alarm_window)
+                    self.assertEqual(audit_path.read_bytes(), before_refresh)
+                select_language("繁體中文")
+
                 app.conflict_close_button.invoke()
                 app.round_alarm_close_button.invoke()
                 self.assertEqual(conflict_window.state(), "withdrawn")
@@ -6673,6 +6701,20 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
                                  conflict_id)
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+
+                conflict_window.tk.call(conflict_window.protocol("WM_DELETE_WINDOW"))
+                alarm_window.tk.call(alarm_window.protocol("WM_DELETE_WINDOW"))
+                root.update()
+                self.assertEqual(conflict_window.state(), "withdrawn")
+                self.assertEqual(alarm_window.state(), "withdrawn")
+                select_language("English")
+                click(app.review_button)
+                click(app.round_alarm_button)
+                self.assertIs(app.conflict_window, conflict_window)
+                self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
+                select_language("繁體中文")
 
                 old_conflict_window = conflict_window
                 old_alarm_window = alarm_window
