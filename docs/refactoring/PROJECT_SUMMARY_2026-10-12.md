@@ -38,3 +38,8 @@
 
 - 本次修正已提交為 b1b4c36；查核遠端新文件提交後，以 f4bade6 安全合併 origin/B518-Log-Solution 的 088caae、82c4a13，程式沒有額外變更。
 - 推送尚未完成：HTTPS Git 未設定認證、SSH agent 無金鑰；已連線 GitHub 寫入 API 回傳 403 Resource not accessible by integration。已請使用者在這台 Mac 設定 Git 推送認證，完成後續推並確認遠端 SHA。
+
+### SSH 認證完成後續推
+
+- 使用者新增 SSH key，認證成功為 Bowei1121；GitHub 主機指紋經官方比對後，透過 SSH 完成 B518-Log-Solution 的 fast-forward 推送。
+- 直接查核遠端為 edee8253008e22c0d36cd702af5741d7c6d98928（本段紀錄提交前），包含本機 Tk／openat 修正 b1b4c36；推送阻擋已解除。VERSION／spec 原有內容仍保留，程式與已驗證產物沒有追加變更。

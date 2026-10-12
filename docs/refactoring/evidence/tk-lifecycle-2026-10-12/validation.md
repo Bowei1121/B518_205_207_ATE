@@ -50,3 +50,9 @@
 - 推送前直接查詢發現遠端已前進至 `82c4a133181bc66f8f43bea4a4b098647a558fb0`，新增兩個純文件提交（088caae、82c4a13），與本次程式無重疊。已 fetch 並以 merge `f4bade6cd8371064667e639d8c74ea3abfa14e79` 安全保留它們；程式／tests／build 已驗證內容未變。
 - **推送尚未完成**：本機 HTTPS Git 回傳 `could not read Username for https://github.com`；SSH agent 沒有 identity。GitHub 連線可讀取 repository，但建立 blob 的寫入 API 回傳 `403 Resource not accessible by integration`。沒有成功寫入遠端 blob／commit／ref，沒有 force push 或改動遠端設定。
 - 等待使用者設定這台 Mac 的 GitHub Git 推送認證，之後執行 `git push origin B518-Log-Solution` 並再次直接確認遠端 SHA。
+
+### SSH 認證完成與續推
+
+- 使用者新增這台 Mac 的 GitHub SSH key 後，使用該 key 成功認證為 Bowei1121。GitHub ED25519 主機指紋 `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU` 已與官方文件比對一致；使用隔離 known_hosts 檔，未停用 host-key checking。
+- 已透過 SSH 成功 fast-forward 推送 `B518-Log-Solution`，直接 `git ls-remote origin refs/heads/B518-Log-Solution` 確認為 `edee8253008e22c0d36cd702af5741d7c6d98928`，包含程式修正 b1b4c36 與遠端文件合併。此 SHA 是本段紀錄提交前的驗證值。
+- 本次續推沒有更動程式、測試或 build 產物，沿用已完成的 374 tests 與本機 build 證據；VERSION／spec 仍與原始備份一致。
