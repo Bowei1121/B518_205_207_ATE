@@ -151,3 +151,7 @@
 - 訪談程式核對曾以 4b6efd7 為基準；規格製作時 checkout 為 B518-Log-Solution、59f28f2b31e72f947f52b31897068841bac1dbd9。已沿用現有自有提示通知、雙語資源與清理摘要結構作為背景；實作前再次核對最新版本，不把過往測試當本次通過證據。
 - 一份規格保留兩項分別交付與驗收，不代表必須綁成同一次發布。本次不拆票、不直接改程式。
 - 遠端規格議題：[GitHub #28](https://github.com/Bowei1121/B518_205_207_ATE/issues/28)，標記 ready-for-agent。開發票拆分另待核可；不修改父議題。
+
+## L1 implementation coverage recorded on 2026-10-12
+
+L1 provides partial evidence for the first acceptance item and applicable first-item scenarios: current-language refresh for the main page and App-owned notices, receiver failure isolation, a nonblocking main-page aggregate/retry path, and durable bilingual failure diagnostics. This is not evidence that every App window has migrated; settings/diagnostics/history remain L2, conflict/alarm/close remain L3, and removal of legacy refresh wiring remains L4. The L1 case mapping and real-Tk commands/results are recorded in [the L1 validation evidence](evidence/language-refresh-ticket-01/local-validation.md). Parent scenarios not reached by L1 remain unchecked and unclaimed.

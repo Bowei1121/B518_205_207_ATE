@@ -150,6 +150,317 @@ def conflict_summary_rows(app):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_language_refresh_failure_keeps_other_receiver_and_offers_retry(self):
+        root = tk.Tk()
+        root.deiconify()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        other = ttk.Label(root, text="English")
+        failed_window = ttk.Label(root, text="Not translated")
+        other.pack()
+        failed_window.pack()
+        fail_refresh = [True]
+        try:
+            unregister = app.register_language_receiver(
+                "Other window", lambda: other.configure(
+                    text="繁體中文" if app.current_language == TRADITIONAL_CHINESE else "English"),
+                other.winfo_exists)
+            def refresh_failed_window():
+                if fail_refresh[0]:
+                    raise RuntimeError("diagnostic refresh failed")
+                failed_window.configure(text="已更新")
+
+            unregister_failed = app.register_language_receiver(
+                "Diagnostics window", refresh_failed_window, failed_window.winfo_exists)
+            with patch.object(app.project_label, "configure", side_effect=RuntimeError("refresh failed")):
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese = next(i for i in range(app.language_menu.index("end") + 1)
+                               if app.language_menu.entrycget(i, "label") == "繁體中文")
+                app.language_menu.invoke(chinese)
+                root.update()
+                self.assertEqual(other.cget("text"), "繁體中文")
+                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+                failed = next(record for record in app.rounds.app_event_records()
+                              if record["localized_message"]["message_id"] ==
+                              "app.language.refresh_failed")
+                self.assertEqual(failed["localized_message"]["en"],
+                                 "A window could not refresh its text.")
+                self.assertEqual(failed["localized_message"]["zh-TW"],
+                                 "有視窗的文字更新失敗。")
+                self.assertEqual(failed["diagnostic"], "主畫面: refresh failed")
+                self.assertNotIn("round_id", failed)
+                self.assertTrue(app.app_events.flush(timeout=5))
+                rebuilt = read_app_event_store(app.app_events.path)
+                disk_failure = next(record for record in rebuilt["events"]
+                                    if record["event_id"] == failed["event_id"])
+                self.assertEqual(disk_failure["localized_message"],
+                                 failed["localized_message"])
+                self.assertEqual(disk_failure["diagnostic"], "主畫面: refresh failed")
+                # Use the real App diagnostic entry and select the persisted event.
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonPress-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonRelease-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                root.update()
+                records = app.rounds.app_event_records()
+                failed_index = next(index for index, record in enumerate(records)
+                                    if record["event_id"] == failed["event_id"])
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(failed_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertIn("主畫面: refresh failed",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+                self.assertIn("app.language.refresh_failed",
+                              app.app_diagnostics_detail.get("1.0", "end-1c"))
+            fail_refresh[0] = True
+            app.language_refresh_retry_button.invoke()
+            root.update()
+            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
+            self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            self.assertEqual(app.project_label.cget("text"), "專案")
+            self.assertEqual(failed_window.cget("text"), "Not translated")
+            failed_window.destroy()
+            app._language_refresh_notifications.notify()
+            root.update()
+            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
+            self.assertNotIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            unregister()
+            unregister_failed()
+        finally:
+            root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_open_notice_receives_language_refresh_and_keeps_modal_acknowledgement(self):
+        root = tk.Tk()
+        root.deiconify()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        observed = []
+
+        def find_notice():
+            pending = list(root.winfo_children())
+            while pending:
+                widget = pending.pop()
+                if isinstance(widget, tk.Toplevel) and widget is not root:
+                    if widget.title() in {"Language Preference Not Saved", "語言設定未保存"}:
+                        return widget
+                pending.extend(widget.winfo_children())
+            return None
+
+        def switch_notice_language():
+            notice = find_notice()
+            try:
+                self.assertIsNotNone(notice)
+                app.current_language = TRADITIONAL_CHINESE
+                app._language_refresh_notifications.notify()
+                root.update_idletasks()
+                body = next(widget for widget in notice.winfo_children()
+                            if isinstance(widget, ttk.Frame)).winfo_children()
+                text = next(widget for widget in body if isinstance(widget, tk.Text))
+                acknowledge = next(widget for widget in notice.winfo_children()
+                                   if isinstance(widget, ttk.Button))
+                observed.extend((notice.title(), text.get("1.0", "end-1c"),
+                                 acknowledge.cget("text")))
+                acknowledge.invoke()
+            except Exception as error:
+                observed.append(error)
+                if notice is not None and notice.winfo_exists():
+                    notice.destroy()
+
+        try:
+            root.after(100, switch_notice_language)
+            root.after(1500, lambda: (find_notice().destroy()
+                                      if find_notice() is not None and find_notice().winfo_exists()
+                                      else None))
+            app._show_notice("language.save_failed_title", "language.save_failed",
+                             {"reason": "disk full"})
+            self.assertEqual(observed[0], "語言設定未保存")
+            self.assertIn("disk full", observed[1])
+            self.assertEqual(observed[2], "確定")
+            self.assertIsNone(root.grab_current())
+        finally:
+            root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_notice_escape_hidden_reopen_and_current_language_lifecycle(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            root.focus_force()
+            app.settings_button.focus_force()
+            root.update()
+            original_focus = root.focus_get()
+            observations = []
+
+            def find_notice():
+                for child in root.winfo_children():
+                    if isinstance(child, tk.Toplevel) and child is not root:
+                        return child
+                return None
+
+            def close_first_notice():
+                notice = find_notice()
+                observations.append((notice is not None, root.grab_current() is notice))
+                notice.event_generate("<Escape>")
+
+            try:
+                root.after(100, close_first_notice)
+                app._show_notice("language.save_failed_title", "language.save_failed",
+                                 {"reason": "first notice"})
+                root.update()
+                self.assertIsNone(find_notice())
+                self.assertIsNone(root.grab_current())
+                if original_focus is not None:
+                    self.assertTrue(original_focus.winfo_exists())
+
+                app.current_language = TRADITIONAL_CHINESE
+                def hide_refresh_show_and_close():
+                    notice = find_notice()
+                    identity = str(notice)
+                    notice.withdraw()
+                    app.current_language = ENGLISH
+                    app._language_refresh_notifications.notify()
+                    root.update()
+                    notice.deiconify()
+                    root.update()
+                    observations.append((identity == str(notice), notice.title()))
+                    notice.event_generate("<Escape>")
+
+                root.after(100, hide_refresh_show_and_close)
+                app._show_notice("language.save_failed_title", "language.save_failed",
+                                 {"reason": "reopened notice"})
+                root.update()
+                self.assertIsNone(find_notice())
+                self.assertIsNone(root.grab_current())
+                self.assertEqual(len(app._language_refresh_failures), 0)
+                self.assertEqual(observations,
+                                 [(True, True), (True, "Language Preference Not Saved")])
+            finally:
+                try:
+                    app.close()
+                    deadline = time.monotonic() + 5
+                    while (time.monotonic() < deadline and root.winfo_exists() and
+                           app.rounds.close_status().status not in {"complete", "failed"}):
+                        root.update()
+                        time.sleep(.01)
+                finally:
+                    if root.winfo_exists():
+                        root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_language_refresh_diagnostic_store_failure_is_visible_and_retryable(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out waiting for language-refresh diagnostic persistence")
+
+            try:
+                root.update()
+                pump_until(lambda: app.rounds.app_event_status().complete)
+
+                def fail_app_store(_path, _content):
+                    raise OSError("diagnostic journal unavailable")
+
+                with patch("app_event_store._atomic_replace", side_effect=fail_app_store), \
+                        patch.object(app.project_label, "configure",
+                                     side_effect=RuntimeError("main text refresh failed")):
+                    x = app.language_button.winfo_width() // 2
+                    y = app.language_button.winfo_height() // 2
+                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                    root.update()
+                    chinese = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    app.language_menu.invoke(chinese)
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+
+                records = app.rounds.app_event_records()
+                diagnostic = next(item for item in records
+                                  if item["localized_message"]["message_id"] ==
+                                  "app.language.refresh_failed")
+                self.assertEqual(diagnostic["localized_message"]["en"],
+                                 "A window could not refresh its text.")
+                self.assertEqual(diagnostic["localized_message"]["zh-TW"],
+                                 "有視窗的文字更新失敗。")
+                self.assertEqual(diagnostic["diagnostic"],
+                                 "主畫面: main text refresh failed")
+                self.assertNotIn("round_id", diagnostic)
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertIn("diagnostic journal unavailable",
+                              app.rounds.app_event_status().error)
+
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonPress-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonRelease-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                root.update()
+                self.assertIsNotNone(app.app_diagnostics_window)
+                self.assertIn("diagnostic journal unavailable",
+                              app.app_diagnostics_history.cget("text"))
+
+                app.app_diagnostics_retry_button.event_generate(
+                    "<ButtonPress-1>",
+                    x=app.app_diagnostics_retry_button.winfo_width() // 2,
+                    y=app.app_diagnostics_retry_button.winfo_height() // 2)
+                app.app_diagnostics_retry_button.event_generate(
+                    "<ButtonRelease-1>",
+                    x=app.app_diagnostics_retry_button.winfo_width() // 2,
+                    y=app.app_diagnostics_retry_button.winfo_height() // 2)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                rebuilt = read_app_event_store(app_path)
+                persisted = next(item for item in rebuilt["events"]
+                                 if item["event_id"] == diagnostic["event_id"])
+                self.assertEqual(persisted["localized_message"],
+                                 diagnostic["localized_message"])
+                self.assertEqual(persisted["diagnostic"], diagnostic["diagnostic"])
+                self.assertEqual(persisted["sequence"], diagnostic["sequence"])
+            finally:
+                try:
+                    if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                        app.app_diagnostics_window.destroy()
+                    app.close()
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline and root.winfo_exists():
+                        root.update()
+                        if app.rounds.close_status().status in {"complete", "failed"}:
+                            break
+                        time.sleep(.01)
+                finally:
+                    if root.winfo_exists():
+                        app.hotkey.close()
+                        app.app_events.stop()
+                        root.destroy()
+
     @classmethod
     def setUpClass(cls):
         # Tk on macOS uses a process-wide event queue. Keep one interpreter
@@ -337,6 +648,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.cycle = app
                 app_ref, root_ref = weakref.ref(app), weakref.ref(root)
                 root.destroy()
+                assert app._language_refresh_notifications is None
+                assert app._main_language_receiver is None
                 assert not root.tk.call('after', 'info')
                 del app, root
                 assert root_ref() is None, 'Destroyed interpreter is still retained'

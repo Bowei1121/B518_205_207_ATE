@@ -13,7 +13,7 @@ from tkinter import filedialog, font as tkfont, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
-from localized_notice import show_notice
+from localized_notice import LanguageRefreshNotifications, show_notice
 from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -125,6 +125,8 @@ class B518LogSolutionApp:
         self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
         self.current_language = self.profile_store.language
         self._language_save_error: Optional[str] = None
+        self._language_refresh_failures = {}
+        self._language_refresh_notifications = None
         self._monitor_state_message = "monitor.idle"
         self._monitor_state_parameters: dict[str, object] = {}
         self._current_save_state = "waiting"
@@ -181,6 +183,11 @@ class B518LogSolutionApp:
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
+        self._language_refresh_notifications = LanguageRefreshNotifications(
+            self.root, self._language_refresh_result)
+        self._main_language_receiver = self.register_language_receiver(
+            lambda: self._t("language.refresh.main_window"),
+            self._apply_main_language, self.root.winfo_exists)
         self.hotkey: HotkeyRegistration = hotkey_factory(
             lambda events=self.hotkey_events: events.put(True))
         self.root.bind("<Command-Shift-M>", self._on_local_hotkey)
@@ -220,6 +227,10 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        if self._language_refresh_notifications is not None:
+            self._language_refresh_notifications.close()
+        self._language_refresh_notifications = None
+        self._main_language_receiver = None
         for after_id in tuple(self._after_ids):
             self._cancel_ui_timer(after_id)
         self._close_after_id = None
@@ -456,7 +467,12 @@ class B518LogSolutionApp:
         app_event_controls = ttk.Frame(controls)
         app_event_controls.pack(fill="x", pady=(4, 0))
         self.app_event_status_label = ttk.Label(app_event_controls, text="")
+        self.language_refresh_banner = self.app_event_status_label
         self.app_event_status_label.pack(side="left", fill="x", expand=True)
+        self.language_refresh_retry_button = ttk.Button(
+            app_event_controls, text=self._t("language.refresh.retry"),
+            command=self.retry_language_refresh, state="disabled")
+        self.language_refresh_retry_button.pack(side="right", padx=(4, 0))
         self.app_diagnostics_button = ttk.Button(
             app_event_controls, text=self._t("app.diagnostic.heading"), command=self.open_app_diagnostics)
         self.app_diagnostics_button.pack(side="right")
@@ -497,6 +513,7 @@ class B518LogSolutionApp:
         self.unsaved_round_retry_button.configure(text=self._t("main.retry_selected"))
         self.archive_retry_button.configure(text=self._t("main.retry_archive"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
+        self.language_refresh_retry_button.configure(text=self._t("language.refresh.retry"))
         self._set_main_monitor_state(self._monitor_state_message,
                                      **self._monitor_state_parameters)
         self._render_station_title()
@@ -515,7 +532,39 @@ class B518LogSolutionApp:
         if self.app_diagnostics_window and self.app_diagnostics_window.winfo_exists():
             self._refresh_app_event_records(force=True)
         self._refresh_historical_event_window()
-        self.root.event_generate("<<AppLanguageChanged>>")
+
+    def register_language_receiver(self, name, refresh, alive):
+        """Register an App-owned window for the existing language notification."""
+        if self._language_refresh_notifications is None:
+            return lambda: None
+        return self._language_refresh_notifications.register(name, refresh, alive)
+
+    def retry_language_refresh(self) -> None:
+        if self._closing_ui or self._language_refresh_notifications is None:
+            return
+        self._language_refresh_notifications.retry()
+
+    def _language_refresh_result(self, failures, newly_failed) -> None:
+        self._language_refresh_failures = dict(failures)
+        if not self.root.winfo_exists():
+            return
+        if failures:
+            names = ", ".join(sorted({name() if callable(name) else name
+                                      for name, _reason in failures.values()}))
+            self.app_event_status_label.configure(
+                text=self._t("language.refresh.failed", windows=names))
+            self.language_refresh_retry_button.configure(state="normal")
+        else:
+            self.language_refresh_retry_button.configure(state="disabled")
+            self._refresh_app_event_status()
+        for _token, (name, reason) in newly_failed.items():
+            try:
+                label = name() if callable(name) else name
+                self._record_app_event(
+                    "app.language.refresh_failed", {}, "{}: {}".format(label, reason))
+            except Exception:
+                # A failed diagnostic must not recursively fail notification.
+                continue
 
     def _show_notice(self, title_id, message_id, parameters=None, diagnostic="", captured=None):
         parameters = dict(parameters or {})
@@ -533,7 +582,9 @@ class B518LogSolutionApp:
             return self._t(title_id), message, self._t("app.notice.ok")
 
         title, message, _button = text_provider()
-        show_notice(title, message, parent=self.root, text_provider=text_provider)
+        show_notice(title, message, parent=self.root, text_provider=text_provider,
+                    register_refresh=self.register_language_receiver,
+                    receiver_name=lambda: self._t(title_id))
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
@@ -683,7 +734,8 @@ class B518LogSolutionApp:
         else:
             text = self._t("app.save.complete")
         if self.app_event_status_label and self.app_event_status_label.winfo_exists():
-            self.app_event_status_label.configure(text=text)
+            if not self._language_refresh_failures:
+                self.app_event_status_label.configure(text=text)
         if self.app_diagnostics_status and self.app_diagnostics_status.winfo_exists():
             self.app_diagnostics_status.configure(text=text)
         if self.app_diagnostics_history and self.app_diagnostics_history.winfo_exists():
@@ -822,7 +874,10 @@ class B518LogSolutionApp:
         self.current_language = language
         self.language_choice.set(language)
         self._language_save_error = None
-        self._apply_main_language()
+        if self._language_refresh_notifications is not None:
+            self._language_refresh_notifications.notify()
+        else:
+            self._apply_main_language()
         try:
             self.profile_store.save_language(language)
         except (OSError, ProfileError) as error:
