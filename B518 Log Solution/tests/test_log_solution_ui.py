@@ -289,7 +289,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
-    def test_notice_escape_restores_modal_state_and_reopened_notice_uses_current_language(self):
+    def test_notice_escape_hidden_reopen_and_current_language_lifecycle(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
@@ -326,19 +326,27 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(original_focus.winfo_exists())
 
                 app.current_language = TRADITIONAL_CHINESE
-                def close_reopened_notice():
+                def hide_refresh_show_and_close():
                     notice = find_notice()
-                    observations.append(notice.title())
+                    identity = str(notice)
+                    notice.withdraw()
+                    app.current_language = ENGLISH
+                    app._language_refresh_notifications.notify()
+                    root.update()
+                    notice.deiconify()
+                    root.update()
+                    observations.append((identity == str(notice), notice.title()))
                     notice.event_generate("<Escape>")
 
-                root.after(100, close_reopened_notice)
+                root.after(100, hide_refresh_show_and_close)
                 app._show_notice("language.save_failed_title", "language.save_failed",
                                  {"reason": "reopened notice"})
                 root.update()
                 self.assertIsNone(find_notice())
                 self.assertIsNone(root.grab_current())
                 self.assertEqual(len(app._language_refresh_failures), 0)
-                self.assertEqual(observations, [(True, True), "語言設定未保存"])
+                self.assertEqual(observations,
+                                 [(True, True), (True, "Language Preference Not Saved")])
             finally:
                 try:
                     app.close()
