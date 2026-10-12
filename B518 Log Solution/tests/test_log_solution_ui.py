@@ -268,6 +268,108 @@ class LogSolutionUiTests(unittest.TestCase):
         finally:
             root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_language_refresh_diagnostic_store_failure_is_visible_and_retryable(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=app_path,
+            )
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out waiting for language-refresh diagnostic persistence")
+
+            try:
+                root.update()
+                pump_until(lambda: app.rounds.app_event_status().complete)
+
+                def fail_app_store(_path, _content):
+                    raise OSError("diagnostic journal unavailable")
+
+                with patch("app_event_store._atomic_replace", side_effect=fail_app_store), \
+                        patch.object(app.project_label, "configure",
+                                     side_effect=RuntimeError("main text refresh failed")):
+                    x = app.language_button.winfo_width() // 2
+                    y = app.language_button.winfo_height() // 2
+                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                    root.update()
+                    chinese = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == "繁體中文")
+                    app.language_menu.invoke(chinese)
+                    pump_until(lambda: app.rounds.app_event_status().status == "failed")
+
+                records = app.rounds.app_event_records()
+                diagnostic = next(item for item in records
+                                  if item["localized_message"]["message_id"] ==
+                                  "app.language.refresh_failed")
+                self.assertEqual(diagnostic["localized_message"]["en"],
+                                 "A window could not refresh its text.")
+                self.assertEqual(diagnostic["localized_message"]["zh-TW"],
+                                 "有視窗的文字更新失敗。")
+                self.assertEqual(diagnostic["diagnostic"],
+                                 "主畫面: main text refresh failed")
+                self.assertNotIn("round_id", diagnostic)
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertIn("diagnostic journal unavailable",
+                              app.rounds.app_event_status().error)
+
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonPress-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                app.app_diagnostics_button.event_generate(
+                    "<ButtonRelease-1>", x=app.app_diagnostics_button.winfo_width() // 2,
+                    y=app.app_diagnostics_button.winfo_height() // 2)
+                root.update()
+                self.assertIsNotNone(app.app_diagnostics_window)
+                self.assertIn("diagnostic journal unavailable",
+                              app.app_diagnostics_history.cget("text"))
+
+                app.app_diagnostics_retry_button.event_generate(
+                    "<ButtonPress-1>",
+                    x=app.app_diagnostics_retry_button.winfo_width() // 2,
+                    y=app.app_diagnostics_retry_button.winfo_height() // 2)
+                app.app_diagnostics_retry_button.event_generate(
+                    "<ButtonRelease-1>",
+                    x=app.app_diagnostics_retry_button.winfo_width() // 2,
+                    y=app.app_diagnostics_retry_button.winfo_height() // 2)
+                pump_until(lambda: app.rounds.app_event_status().complete)
+                rebuilt = read_app_event_store(app_path)
+                persisted = next(item for item in rebuilt["events"]
+                                 if item["event_id"] == diagnostic["event_id"])
+                self.assertEqual(persisted["localized_message"],
+                                 diagnostic["localized_message"])
+                self.assertEqual(persisted["diagnostic"], diagnostic["diagnostic"])
+                self.assertEqual(persisted["sequence"], diagnostic["sequence"])
+            finally:
+                try:
+                    if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                        app.app_diagnostics_window.destroy()
+                    app.close()
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline and root.winfo_exists():
+                        root.update()
+                        if app.rounds.close_status().status in {"complete", "failed"}:
+                            break
+                        time.sleep(.01)
+                finally:
+                    if root.winfo_exists():
+                        app.hotkey.close()
+                        app.app_events.stop()
+                        root.destroy()
+
     @classmethod
     def setUpClass(cls):
         # Tk on macOS uses a process-wide event queue. Keep one interpreter
