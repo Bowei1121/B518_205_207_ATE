@@ -25,3 +25,8 @@
 - 不混入通用事件機制、來源事件身分重構、監控／裁決政策、新語言、journal 效能改造或正式工廠驗收。
 
 本次只拆票與發布，不實作程式、不重跑產品測試。各票完成時另記錄當時實際命令、版本、結果與驗收限制。
+
+## Implementation status
+
+- L1 (#29) is implemented on `LanguageRefresh/ticket-01`; its evidence and remaining runtime limitations are in [local-validation.md](../evidence/language-refresh-ticket-01/local-validation.md). This does not claim all-window migration or complete the parent specification's first acceptance item; L2–L4 remain separate.
+- L2 and L3 remain dependent on L1 delivery and are not included here. C1–C4 are unaffected.

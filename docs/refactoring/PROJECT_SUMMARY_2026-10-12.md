@@ -43,3 +43,10 @@
 
 - 使用者新增 SSH key，認證成功為 Bowei1121；GitHub 主機指紋經官方比對後，透過 SSH 完成 B518-Log-Solution 的 fast-forward 推送。
 - 直接查核遠端為 edee8253008e22c0d36cd702af5741d7c6d98928（本段紀錄提交前），包含本機 Tk／openat 修正 b1b4c36；推送阻擋已解除。VERSION／spec 原有內容仍保留，程式與已驗證產物沒有追加變更。
+
+## Language refresh L1 implementation
+
+- Implemented L1 on `LanguageRefresh/ticket-01` from fixed review baseline `0eebc3200e854a27c979ab003e3e6eda0a36461f`. Main page and App-owned notices now use the existing language notification contract with independent receiver failure isolation, a nonblocking aggregate banner, manual retry, and bilingual App-event diagnostics.
+- Real-Tk evidence now includes menu-driven failure isolation, actual diagnostics entry/event selection/raw diagnostic, disk reconstruction and retry, modal Escape cancellation, and notice reopening in the current language. L2–L4 and C1–C4 remain outside L1.
+- Full suite: 378 tests passed on installed Python 3.11.7 with Tk enabled (`B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py`, PATH selecting `/opt/anaconda3/bin/python3`, 133.706 s; tested code/test SHA `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb`). The default Python 3.8.10 run aborts in `test_close_recovers_a_failed_previous_round_and_current_round_without_crossing_events` with Tcl_AsyncDelete; the same abort reproduces from the fixed pre-L1 baseline checkout, so record it as an environment/runtime baseline limitation, not as a passing run. Type-check configuration is absent.
+- Standards and Spec review against the fixed baseline found no blocking issues. See [L1 validation evidence](evidence/language-refresh-ticket-01/local-validation.md) for commit and remote SHAs, all ten acceptance mappings, and exact limitations.
