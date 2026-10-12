@@ -557,6 +557,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.cycle = app
                 app_ref, root_ref = weakref.ref(app), weakref.ref(root)
                 root.destroy()
+                assert app._language_refresh_notifications is None
+                assert app._main_language_receiver is None
                 assert not root.tk.call('after', 'info')
                 del app, root
                 assert root_ref() is None, 'Destroyed interpreter is still retained'

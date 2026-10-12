@@ -229,6 +229,8 @@ class B518LogSolutionApp:
         self._ui_destroyed = True
         if self._language_refresh_notifications is not None:
             self._language_refresh_notifications.close()
+        self._language_refresh_notifications = None
+        self._main_language_receiver = None
         for after_id in tuple(self._after_ids):
             self._cancel_ui_timer(after_id)
         self._close_after_id = None
