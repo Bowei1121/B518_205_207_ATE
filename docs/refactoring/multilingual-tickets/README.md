@@ -2,7 +2,7 @@
 
 ## 最新 M10 source 驗收與合併門檻（2026-10-12）
 
-使用者明確授權剩餘M10項目先由source App驗收，source完整通過後合併至B518-Log-Solution。全可達入口／322鍵資源盤點、真實來源五窗長流程、實際可見兩語notice、閱讀／選取／草稿保留、關閉取消與單次操作磁碟重建已補齊。最後程式／測試SHA為`079b5191598b39182ef6e7acd3269c3cc3d703a9`；本次suite／固定基準Standards與Spec及合併遠端結果見 [M10最新驗收](../evidence/multilingual-ticket-10/local-validation.md)。正式bundle、目標OS／HMI／實機KVM仍待驗，不宣稱發布完成，亦不再作本次source合併門檻。
+使用者明確授權剩餘M10項目先由source App驗收，source完整通過後合併至B518-Log-Solution。全可達入口／322鍵資源盤點、真實來源五窗長流程、實際可見兩語notice、閱讀／選取／草稿保留、關閉取消與單次操作磁碟重建已補齊。最後程式／測試SHA為`079b5191598b39182ef6e7acd3269c3cc3d703a9`；本次suite／固定基準Standards與Spec及合併遠端結果見 [M10最新驗收](../evidence/multilingual-ticket-10/local-validation.md)。source已合併：`6c55fd24c8a8c4afc5da8b32edfb8a96a095e376`；主線371tests／111.476秒OK，GitHub與Gitea已直接確認同步，票分支安全清理。正式bundle、目標OS／HMI／實機KVM仍待驗，不宣稱發布完成，亦不再作本次source合併門檻。
 
 下面M1～M9的週一Gitea待同步文字保留原交付時序；10/12已於公司網路直接確認同步並安全清理已合併票分支，詳見當日同步摘要。不得把歷史待驗／query狀態当現在狀態。
 
