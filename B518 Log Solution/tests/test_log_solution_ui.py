@@ -6575,6 +6575,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
+                app.conflict_close_button.invoke()
+                app.round_alarm_close_button.invoke()
+                self.assertEqual(conflict_window.state(), "withdrawn")
+                self.assertEqual(alarm_window.state(), "withdrawn")
+                select_language("English")
+                self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
+                self.assertEqual(conflict_window.state(), "withdrawn")
+                self.assertEqual(alarm_window.state(), "withdrawn")
+                click(app.review_button)
+                click(app.round_alarm_button)
+                self.assertIs(app.conflict_window, conflict_window)
+                self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
+                select_language("繁體中文")
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 conflict_id)
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+
                 self.assertTrue(app.app_events.flush(timeout=5))
                 diagnostic_store = read_app_event_store(app_event_path)
                 refresh_failures = [event for event in diagnostic_store["events"]
