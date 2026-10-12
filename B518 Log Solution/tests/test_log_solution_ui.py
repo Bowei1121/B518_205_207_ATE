@@ -150,6 +150,118 @@ def conflict_summary_rows(app):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_language_refresh_failure_keeps_other_receiver_and_offers_retry(self):
+        root = tk.Tk()
+        root.deiconify()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        other = ttk.Label(root, text="English")
+        failed_window = ttk.Label(root, text="Not translated")
+        other.pack()
+        failed_window.pack()
+        fail_refresh = [True]
+        try:
+            unregister = app.register_language_receiver(
+                "Other window", lambda: other.configure(
+                    text="繁體中文" if app.current_language == TRADITIONAL_CHINESE else "English"),
+                other.winfo_exists)
+            def refresh_failed_window():
+                if fail_refresh[0]:
+                    raise RuntimeError("diagnostic refresh failed")
+                failed_window.configure(text="已更新")
+
+            unregister_failed = app.register_language_receiver(
+                "Diagnostics window", refresh_failed_window, failed_window.winfo_exists)
+            with patch.object(app.project_label, "configure", side_effect=RuntimeError("refresh failed")):
+                app.language_button.event_generate("<Button-1>")
+                root.update()
+                chinese = next(i for i in range(app.language_menu.index("end") + 1)
+                               if app.language_menu.entrycget(i, "label") == "繁體中文")
+                app.language_menu.invoke(chinese)
+                root.update()
+                self.assertEqual(other.cget("text"), "繁體中文")
+                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+                failed = next(record for record in app.rounds.app_event_records()
+                              if record["localized_message"]["message_id"] ==
+                              "app.language.refresh_failed")
+                self.assertEqual(failed["localized_message"]["en"],
+                                 "A window could not refresh its text.")
+                self.assertEqual(failed["localized_message"]["zh-TW"],
+                                 "有視窗的文字更新失敗。")
+                self.assertEqual(failed["diagnostic"], "主畫面: refresh failed")
+                self.assertNotIn("round_id", failed)
+                self.assertTrue(app.app_events.flush(timeout=5))
+                rebuilt = read_app_event_store(app.app_events.path)
+                disk_failure = next(record for record in rebuilt["events"]
+                                    if record["event_id"] == failed["event_id"])
+                self.assertEqual(disk_failure["localized_message"],
+                                 failed["localized_message"])
+                self.assertEqual(disk_failure["diagnostic"], "主畫面: refresh failed")
+            fail_refresh[0] = False
+            app.language_refresh_retry_button.invoke()
+            root.update()
+            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
+            self.assertEqual(app.project_label.cget("text"), "專案")
+            self.assertEqual(failed_window.cget("text"), "已更新")
+            unregister()
+            unregister_failed()
+        finally:
+            root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_open_notice_receives_language_refresh_and_keeps_modal_acknowledgement(self):
+        root = tk.Tk()
+        root.deiconify()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        observed = []
+
+        def find_notice():
+            pending = list(root.winfo_children())
+            while pending:
+                widget = pending.pop()
+                if isinstance(widget, tk.Toplevel) and widget is not root:
+                    if widget.title() in {"Language Preference Not Saved", "語言設定未保存"}:
+                        return widget
+                pending.extend(widget.winfo_children())
+            return None
+
+        def switch_notice_language():
+            notice = find_notice()
+            try:
+                self.assertIsNotNone(notice)
+                app.current_language = TRADITIONAL_CHINESE
+                app._language_refresh_notifications.notify()
+                root.update_idletasks()
+                body = next(widget for widget in notice.winfo_children()
+                            if isinstance(widget, ttk.Frame)).winfo_children()
+                text = next(widget for widget in body if isinstance(widget, tk.Text))
+                acknowledge = next(widget for widget in notice.winfo_children()
+                                   if isinstance(widget, ttk.Button))
+                observed.extend((notice.title(), text.get("1.0", "end-1c"),
+                                 acknowledge.cget("text")))
+                acknowledge.invoke()
+            except Exception as error:
+                observed.append(error)
+                if notice is not None and notice.winfo_exists():
+                    notice.destroy()
+
+        try:
+            root.after(100, switch_notice_language)
+            root.after(1500, lambda: (find_notice().destroy()
+                                      if find_notice() is not None and find_notice().winfo_exists()
+                                      else None))
+            app._show_notice("language.save_failed_title", "language.save_failed",
+                             {"reason": "disk full"})
+            self.assertEqual(observed[0], "語言設定未保存")
+            self.assertIn("disk full", observed[1])
+            self.assertEqual(observed[2], "確定")
+            self.assertIsNone(root.grab_current())
+        finally:
+            root.destroy()
+
     @classmethod
     def setUpClass(cls):
         # Tk on macOS uses a process-wide event queue. Keep one interpreter
