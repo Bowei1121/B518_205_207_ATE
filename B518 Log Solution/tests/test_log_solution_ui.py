@@ -6350,6 +6350,75 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_scrolled_conflict_candidates_keep_reading_position_on_language_change(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            sources = []
+
+            def create(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            try:
+                started = app.rounds.start("FCT", create, run_async=False, capacity=2)
+                app.active_round_id = started.round_id
+                for index in range(28):
+                    self.assertEqual(sources[0].offer_candidate(
+                        1, "CANDIDATE-{:02d}".format(index), "FAIL",
+                        "/controlled/{}/candidate.csv".format(index), str(index),
+                        "2026-10-12T10:01:00"), "defer")
+                self.wait_for_ui(root, lambda: app.conflict_list is not None
+                                 and app.conflict_list.size() == 28)
+                window = app.conflict_window
+                window.geometry("{}x{}".format(*window.minsize()))
+                root.update()
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(17)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                app.conflict_list.yview_moveto(0.4)
+                root.update()
+                snapshot = app.rounds.snapshot()
+                top_candidate = snapshot.pending_conflicts[app.conflict_list.nearest(1)].conflict_id
+                self.assertGreater(app.conflict_list.nearest(1), 0)
+                app.conflict_panes.sashpos(0, 200)
+                root.update()
+                sash = app.conflict_panes.sashpos(0)
+
+                for language in ("繁體中文", "English", "繁體中文"):
+                    app.language_button.event_generate("<Button-1>")
+                    root.update()
+                    menu_index = next(index for index in range(app.language_menu.index("end") + 1)
+                                      if app.language_menu.entrycget(index, "label") == language)
+                    app.language_menu.invoke(menu_index)
+                    root.update()
+                    self.assertIs(app.conflict_window, window)
+                    self.assertEqual(app.conflict_list.curselection(), (17,))
+                    self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                     snapshot.pending_conflicts)
+                    self.assertEqual(snapshot.pending_conflicts[
+                        app.conflict_list.nearest(1)].conflict_id, top_candidate)
+                    self.assertEqual(app.conflict_panes.sashpos(0), sash)
+                    self.assertIn("CANDIDATE-17", app.conflict_details.get("1.0", "end"))
+            finally:
+                for conflict in app.rounds.snapshot().pending_conflicts:
+                    app.rounds.resolve_review(conflict.conflict_id, "keep_original")
+                app.rounds.stop()
+                app.close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete", timeout=5)
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_conflict_and_alarm_refresh_fail_independently_and_retry_latest_language(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

@@ -1683,7 +1683,13 @@ class B518LogSolutionApp:
         if not hasattr(self, "review_button"):
             return
         if language_refresh:
+            panes = self.conflict_panes
+            sash = (panes.sashpos(0) if panes is not None and panes.winfo_exists()
+                    and panes.winfo_height() > 1 else None)
             self._apply_conflict_window_language()
+            if sash is not None:
+                panes.update_idletasks()
+                panes.sashpos(0, sash)
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
         conflict_signature = tuple(
@@ -1713,6 +1719,8 @@ class B518LogSolutionApp:
             selected = self.conflict_list.curselection()
             selected_id = self._conflict_ids[selected[0]] if selected and selected[0] < len(self._conflict_ids) else None
             previous_ids = self._conflict_ids
+            top_index = self.conflict_list.nearest(1) if previous_ids else 0
+            top_id = previous_ids[top_index] if previous_ids else None
             current_ids = [item.conflict_id for item in conflicts]
             display_items = [self._t(
                     "conflict.list_item",
@@ -1744,6 +1752,10 @@ class B518LogSolutionApp:
                     self.conflict_list.activate(index)
                 elif index < 0 and selected:
                     self.conflict_list.selection_clear(0, "end")
+                if list_changed and current_ids:
+                    self.conflict_list.yview(
+                        current_ids.index(top_id) if top_id in current_ids
+                        else min(top_index, len(current_ids) - 1))
             finally:
                 self._updating_conflict_list = False
             should_render = (preserve_reading or list_changed or
