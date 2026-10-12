@@ -3589,11 +3589,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(len(resolved), 1)
                 self.assertEqual(resolved[0]["detail"]["choice"], "keep_original")
                 self.assertEqual(resolved[0]["detail"]["conflict_id"], conflict.conflict_id)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                self.assertEqual(app.rounds.close_status().status, "complete")
             finally:
                 if app._round_is_active():
                     app.rounds.stop()
                 app.rounds.flush_session(timeout=3)
                 app.rounds.flush_audit(timeout=3)
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
                 app._close_settings()
                 app.hotkey.close()
                 root.update()

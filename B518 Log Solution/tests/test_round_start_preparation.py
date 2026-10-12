@@ -16,6 +16,15 @@ from round_start_preparation import RoundStartPreparation
 
 
 class RoundStartPreparationTests(unittest.TestCase):
+    def close_and_wait(self, coordinator, timeout=3):
+        coordinator.request_close()
+        deadline = time.monotonic() + timeout
+        while coordinator.close_status().status not in {"complete", "failed"}:
+            if time.monotonic() >= deadline:
+                self.fail("Round close did not finish before its temporary data was removed.")
+            threading.Event().wait(0.01)
+        self.assertEqual(coordinator.close_status().status, "complete")
+
     def test_profile_validation_uses_the_same_platform_registry_as_adapter_preparation(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -440,6 +449,7 @@ class RoundStartPreparationTests(unittest.TestCase):
             self.assertEqual(session_result["timestamp"], audit_result["observed_at"])
             self.assertEqual(session_result["localized_message"],
                              audit_result["localized_message"])
+            self.close_and_wait(coordinator)
 
     def test_sample_json_parse_error_is_bilingual_in_session_and_audit(self):
         with TemporaryDirectory() as temporary:
