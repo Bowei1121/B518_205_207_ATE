@@ -125,6 +125,11 @@ class M10SourceIntegrationTests(unittest.TestCase):
                           and app.rounds.snapshot().save_state == "complete")
                 audit_path = app.rounds.session_path / "audit.jsonl"
                 journal = base / "app-events.json"
+                app.rounds.request_retention_cleanup(365, "L4-byte-preservation-check")
+                self.pump(root, lambda: app.rounds.retention_cleanup_status().status == "complete")
+                cleanup_ledger = base / "round-retention-ledger.json"
+                protected_source_and_summary = (source_file.read_bytes(),
+                                                cleanup_ledger.read_bytes())
                 original_bytes = (audit_path.read_bytes(), journal.read_bytes())
                 for index in (1, 0, 1):
                     app.language_menu.invoke(index)
@@ -149,7 +154,31 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     self.assertEqual(app.rounds.snapshot().round_alarm, before.round_alarm)
                     self.assertEqual(app.profile_editor_project.get(), "Unsaved / 未保存")
                     self.assertIn("SN-NEW", app.conflict_details.get("1.0", "end"))
+                    self.assertEqual((source_file.read_bytes(), cleanup_ledger.read_bytes()),
+                                     protected_source_and_summary)
                 self.assertEqual(original_bytes, (audit_path.read_bytes(), journal.read_bytes()))
+                conflict_window = app.conflict_window
+                selected_conflicts = tuple(app.conflict_list.curselection())
+                with patch.object(conflict_window, "title",
+                                  side_effect=RuntimeError("conflict refresh unavailable")):
+                    for index in (0, 1):
+                        app.language_menu.invoke(index)
+                        root.update()
+                self.assertIn("衝突", app.language_refresh_banner.cget("text"))
+                self.pump(root, lambda: app.rounds.app_event_status().complete)
+                app.language_refresh_retry_button.event_generate("<ButtonPress-1>")
+                app.language_refresh_retry_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.assertIs(app.conflict_window, conflict_window)
+                self.assertEqual(tuple(app.conflict_list.curselection()), selected_conflicts)
+                self.assertEqual(app.conflict_window.title(), app._t("conflict.title"))
+                self.assertIn("SN-NEW", app.conflict_details.get("1.0", "end"))
+                self.assertEqual((source_file.read_bytes(), cleanup_ledger.read_bytes()),
+                                 protected_source_and_summary)
+                app._close_historical_event_window()
+                app.open_historical_events()
+                self.assertEqual((source_file.read_bytes(), cleanup_ledger.read_bytes()),
+                                 protected_source_and_summary)
                 self.assertIn("衝突", app.conflict_window.title())
                 app.close()
                 self.pump(root, lambda: app.rounds.close_status().status == "waiting")
