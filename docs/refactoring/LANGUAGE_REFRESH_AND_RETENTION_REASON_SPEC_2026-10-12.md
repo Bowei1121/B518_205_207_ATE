@@ -150,4 +150,4 @@
 - 日期：2026-10-12。來源為 LANGUAGE_REFRESH_AND_RETENTION_REASON_DISCUSSION_2026-10-12.md 的 A1–A11；使用者已確認完整結論並要求 to-spec。
 - 訪談程式核對曾以 4b6efd7 為基準；規格製作時 checkout 為 B518-Log-Solution、59f28f2b31e72f947f52b31897068841bac1dbd9。已沿用現有自有提示通知、雙語資源與清理摘要結構作為背景；實作前再次核對最新版本，不把過往測試當本次通過證據。
 - 一份規格保留兩項分別交付與驗收，不代表必須綁成同一次發布。本次不拆票、不直接改程式。
-- 遠端議題對照於發布後記錄；使用 ready-for-agent 標籤。
+- 遠端規格議題：[GitHub #28](https://github.com/Bowei1121/B518_205_207_ATE/issues/28)，標記 ready-for-agent。開發票拆分另待核可；不修改父議題。
