@@ -6595,6 +6595,24 @@ class LogSolutionUiTests(unittest.TestCase):
                                  conflict_id)
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
 
+                old_conflict_window = conflict_window
+                old_alarm_window = alarm_window
+                old_conflict_window.destroy()
+                old_alarm_window.destroy()
+                root.update()
+                click(app.review_button)
+                pump_until(lambda: app.round_alarm_window and
+                           app.round_alarm_window.winfo_exists())
+                conflict_window = app.conflict_window
+                alarm_window = app.round_alarm_window
+                self.assertIsNot(conflict_window, old_conflict_window)
+                self.assertIsNot(alarm_window, old_alarm_window)
+                self.assertEqual(conflict_window.title(), "同輪結果衝突")
+                self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 conflict_id)
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+
                 self.assertTrue(app.app_events.flush(timeout=5))
                 diagnostic_store = read_app_event_store(app_event_path)
                 refresh_failures = [event for event in diagnostic_store["events"]

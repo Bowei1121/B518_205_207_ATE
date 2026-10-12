@@ -175,6 +175,7 @@ class B518LogSolutionApp:
         self._retention_cleanup_request_status = None
         self.conflict_window: Optional[tk.Toplevel] = None
         self._rendered_conflict_id: Optional[str] = None
+        self._rendered_conflict_signature = None
         self._updating_conflict_list = False
         self.conflict_instructions: Optional[ttk.Label] = None
         self.conflict_list: Optional[tk.Listbox] = None
@@ -189,6 +190,7 @@ class B518LogSolutionApp:
         self.round_alarm_ack_button: Optional[ttk.Button] = None
         self.round_alarm_close_button: Optional[ttk.Button] = None
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
+        self._rendered_alarm_view_state = None
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
@@ -1656,10 +1658,11 @@ class B518LogSolutionApp:
             self._unregister_conflict_language_receiver = self.register_language_receiver(
                 lambda: self._t("conflict.title"),
                 lambda: self._refresh_conflict_review(preserve_reading=True,
-                                                       update_main=False),
+                                                       update_main=False,
+                                                       language_refresh=True),
                 window.winfo_exists,
             )
-        self._refresh_conflict_review()
+        self._refresh_conflict_review(language_refresh=True)
         if self.conflict_window and self.conflict_window.winfo_exists():
             self.conflict_window.deiconify()
             self.conflict_window.lift()
@@ -1675,12 +1678,20 @@ class B518LogSolutionApp:
         )
 
     def _refresh_conflict_review(self, preserve_reading: bool = False,
-                                 update_main: bool = True) -> None:
+                                 update_main: bool = True,
+                                 language_refresh: bool = False) -> None:
         if not hasattr(self, "review_button"):
             return
-        self._apply_conflict_window_language()
+        if language_refresh:
+            self._apply_conflict_window_language()
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
+        conflict_signature = tuple(
+            (item.conflict_id, item.round_id, item.slot, item.original, item.candidate,
+             item.same_round_evidence)
+            for item in conflicts
+        )
+        conflict_data_changed = conflict_signature != self._rendered_conflict_signature
         if update_main:
             self._render_conflict_review_button(snapshot)
             alarm = snapshot.round_alarm if snapshot else None
@@ -1711,9 +1722,8 @@ class B518LogSolutionApp:
                     candidate_sn=item.candidate.sn or "SN {}".format(self._t("conflict.unknown")),
                     candidate_status=item.candidate.status or self._t("conflict.unknown"),
                 ) for item in conflicts]
-            list_changed = current_ids != previous_ids or [
-                self.conflict_list.get(index) for index in range(self.conflict_list.size())
-            ] != display_items
+            list_changed = (current_ids != previous_ids or conflict_data_changed or
+                            language_refresh)
             self._updating_conflict_list = True
             try:
                 if list_changed:
@@ -1752,6 +1762,7 @@ class B518LogSolutionApp:
                 if index < 0 and (list_changed or selected or self._conflict_value_ranges or
                                   has_enabled_decision):
                     self._clear_conflict_comparison()
+        self._rendered_conflict_signature = conflict_signature
 
     def _apply_conflict_window_language(self) -> None:
         if not self.conflict_window or not self.conflict_window.winfo_exists():
@@ -1974,6 +1985,7 @@ class B518LogSolutionApp:
         self.conflict_details = None
         self._conflict_ids = []
         self._rendered_conflict_id = None
+        self._rendered_conflict_signature = None
         self._updating_conflict_list = False
         self.resolve_conflict_original_button = None
         self.resolve_conflict_candidate_button = None
@@ -1995,6 +2007,7 @@ class B518LogSolutionApp:
         alarm = snapshot.round_alarm if snapshot else None
         self._render_round_alarm_button(snapshot)
         if alarm is None:
+            self._rendered_alarm_view_state = None
             if (snapshot and self._round_alarm_window_identity and
                     self._round_alarm_window_identity[0] != snapshot.round_id and
                     self.round_alarm_window and self.round_alarm_window.winfo_exists()):
@@ -2004,7 +2017,9 @@ class B518LogSolutionApp:
         if identity != getattr(self, "_shown_round_alarm_identity", None):
             self._open_round_alarm()
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
-            self._render_round_alarm(alarm)
+            view_state = (alarm, snapshot.round_alarm_ready)
+            if view_state != self._rendered_alarm_view_state:
+                self._render_round_alarm(alarm)
 
     def _render_round_alarm_button(self, snapshot=None) -> None:
         if not hasattr(self, "round_alarm_button"):
@@ -2088,6 +2103,7 @@ class B518LogSolutionApp:
         self.round_alarm_close_button = None
         self._round_alarm_window_identity = None
         self._shown_round_alarm_identity = None
+        self._rendered_alarm_view_state = None
 
     def _render_round_alarm(self, alarm) -> None:
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
@@ -2116,6 +2132,9 @@ class B518LogSolutionApp:
             )
         if self.round_alarm_close_button and self.round_alarm_close_button.winfo_exists():
             self.round_alarm_close_button.configure(text=self._t("alarm.button.close"))
+        self._rendered_alarm_view_state = (
+            alarm, bool(snapshot and snapshot.round_alarm_ready),
+        )
 
     def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
         snapshot = self.rounds.snapshot()
