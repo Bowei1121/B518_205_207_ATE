@@ -6348,6 +6348,278 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.hotkey.close()
                     root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_conflict_and_alarm_refresh_fail_independently_and_retry_latest_language(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            session_root = Path(temporary) / "sessions"
+            app_event_path = Path(temporary) / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=app_event_path,
+            )
+            elapsed = [0.0]
+            rounds = RoundCoordinator(
+                app.events.put, monotonic=lambda: elapsed[0], audit_root=session_root)
+            rounds.register_app_event_store(app.app_events, session_root.parent)
+            app.rounds = rounds
+            holder = {}
+
+            class Monitor:
+                def __init__(self, callback):
+                    self.callback = callback
+                    self.session = SessionStore("language-refresh-round", {}, session_root)
+                    self.results = (SlotResult(1), SlotResult(2))
+
+                def round_results(self):
+                    return self.results
+
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 1}[kind]
+
+                def update_round_settings(self, settings):
+                    self.session.update_settings(settings)
+
+                def publish_round_event(self, event):
+                    self.session.enqueue_event(event.message, event.detail)
+                    self.callback(event)
+
+                def start(self):
+                    evidence = {"round_evidence_id": "fct:1:language-refresh",
+                                "source_time": "2026-10-12T10:00:00",
+                                "source_id": "active.csv"}
+                    self.apply_round_result(1, "PASS", "SN-ORIGINAL",
+                                            "/temporary/active.csv", evidence)
+                    self.apply_round_result(2, "TESTING", "SN-OTHER",
+                                            "/temporary/other.csv", evidence)
+
+                def stop_collection(self):
+                    pass
+
+                def finish(self):
+                    self.session.enqueue_finish()
+
+                def stop(self):
+                    self.callback(MonitorEvent("stopped", "stopped"))
+
+                def poll_once(self):
+                    pass
+
+                def apply_round_result(self, slot, status, sn="", source="", detail=None,
+                                       lock_terminal=False):
+                    result = self.results[slot - 1]
+                    result.sn = sn or result.sn
+                    result.status = status
+                    result.source = source or result.source
+                    self.session.enqueue_results(self.results)
+                    self.publish_round_event(MonitorEvent(
+                        "result", "slot{} {}".format(slot, status), slot=slot,
+                        sn=result.sn, status=status, source=source, detail=detail or {},
+                    ))
+
+                def set_result(self, slot, status, detail=None, lock_terminal=False):
+                    self.apply_round_result(slot, status, detail=detail,
+                                            lock_terminal=lock_terminal)
+
+            def create(callback):
+                holder["monitor"] = Monitor(callback)
+                return holder["monitor"]
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail("Timed out while pumping the Tk language-refresh flow")
+
+            def select_language(label):
+                x = max(1, app.language_button.winfo_width() // 2)
+                y = max(1, app.language_button.winfo_height() // 2)
+                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
+                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+                index = next(
+                    item for item in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(item, "label") == label)
+                app.language_menu.invoke(index)
+                root.update()
+
+            def click(button):
+                x = max(1, button.winfo_width() // 2)
+                y = max(1, button.winfo_height() // 2)
+                button.event_generate("<ButtonPress-1>", x=x, y=y)
+                button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            def root_is_alive():
+                try:
+                    return bool(root.winfo_exists())
+                except tk.TclError:
+                    return False
+
+            try:
+                started = rounds.start("FCT", create, run_async=False,
+                                       round_timeout_seconds=1, capacity=2)
+                app.active_round_id = started.round_id
+                monitor = holder["monitor"]
+                evidence = {"round_evidence_id": "fct:1:language-refresh",
+                            "source_time": "2026-10-12T10:00:00",
+                            "source_id": "active.csv"}
+                monitor.apply_round_result(1, "PASS", "SN-ORIGINAL",
+                                           "/temporary/active.csv", evidence)
+                candidate = MonitorEvent(
+                    "result_candidate", "controlled candidate", slot=1,
+                    sn="SN-ORIGINAL", status="FAIL", source="/temporary/final.csv",
+                    detail=dict(evidence, source_id="candidate.csv"),
+                )
+                self.assertEqual(monitor.callback(candidate), "defer")
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                pump_until(lambda: app.conflict_window and app.conflict_window.winfo_exists()
+                           and app.round_alarm_window and app.round_alarm_window.winfo_exists())
+
+                conflict_window = app.conflict_window
+                alarm_window = app.round_alarm_window
+                conflict_id = rounds.snapshot().pending_conflicts[0].conflict_id
+                app.conflict_list.selection_set(0)
+                app.conflict_list.activate(0)
+                app.conflict_details.yview_moveto(1.0)
+                app.conflict_comparison.xview_moveto(1.0)
+                detail_reading = int(app.conflict_details.index("@0,0").split(".")[0])
+                selected_details = app.conflict_details.get("1.0", "end-1c")
+                self.assertGreater(detail_reading, 1)
+                self.assertIn("SN-ORIGINAL", selected_details)
+                self.assertIn("SN-ORIGINAL", app.conflict_comparison.get("1.0", "end-1c"))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                self.assertTrue(rounds.flush_audit(timeout=5))
+                self.assertTrue(rounds.flush_session(timeout=5))
+                audit_path = monitor.session.path / "audit.jsonl"
+                before_refresh = audit_path.read_bytes()
+
+                original_conflict_refresh = app._refresh_conflict_review
+                inject_conflict_failure = [True]
+
+                def refresh_conflict(*args, **kwargs):
+                    if kwargs.get("update_main") is False and inject_conflict_failure[0]:
+                        raise RuntimeError("injected conflict refresh failure")
+                    return original_conflict_refresh(*args, **kwargs)
+
+                with patch.object(app, "_refresh_conflict_review",
+                                  side_effect=refresh_conflict):
+                    select_language("繁體中文")
+                    self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                    self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                    self.assertIn("同輪結果衝突",
+                                  app.language_refresh_banner.cget("text"))
+                    self.assertIn("確認整輪警報", app.round_alarm_ack_button.cget("text"))
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    select_language("English")
+                    self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
+                    self.assertIn("Same-Round Result Conflict",
+                                  app.language_refresh_banner.cget("text"))
+
+                inject_conflict_failure[0] = False
+                select_language("繁體中文")
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                click(app.language_refresh_retry_button)
+                self.assertIs(app.conflict_window, conflict_window)
+                self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertEqual(conflict_window.title(), "同輪結果衝突")
+                self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
+                                 conflict_id)
+                refreshed_details = app.conflict_details.get("1.0", "end-1c")
+                self.assertNotEqual(refreshed_details, selected_details)
+                self.assertIn("SN-ORIGINAL", refreshed_details)
+                self.assertIn("/temporary/active.csv", refreshed_details)
+                self.assertIn("SN-ORIGINAL", app.conflict_comparison.get("1.0", "end-1c"))
+                self.assertEqual(int(app.conflict_details.index("@0,0").split(".")[0]),
+                                 detail_reading)
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
+                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(audit_path.read_bytes(), before_refresh)
+
+                original_alarm_refresh = app._refresh_round_alarm_language
+                inject_alarm_failure = [True]
+
+                def refresh_alarm():
+                    if inject_alarm_failure[0]:
+                        raise RuntimeError("injected alarm refresh failure")
+                    return original_alarm_refresh()
+
+                with patch.object(app, "_refresh_round_alarm_language",
+                                  side_effect=refresh_alarm):
+                    select_language("English")
+                    self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
+                    self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertIn("Round Monitoring Timeout",
+                                  app.language_refresh_banner.cget("text"))
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    select_language("繁體中文")
+                    self.assertEqual(conflict_window.title(), "同輪結果衝突")
+                    self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertIn("整輪監控逾時",
+                                  app.language_refresh_banner.cget("text"))
+
+                inject_alarm_failure[0] = False
+                click(app.language_refresh_retry_button)
+                self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(audit_path.read_bytes(), before_refresh)
+
+                self.assertTrue(app.app_events.flush(timeout=5))
+                diagnostic_store = read_app_event_store(app_event_path)
+                refresh_failures = [event for event in diagnostic_store["events"]
+                                    if event.get("localized_message", {}).get("message_id") ==
+                                    "app.language.refresh_failed"]
+                self.assertTrue(refresh_failures)
+                self.assertTrue(refresh_failures[-1]["localized_message"]["en"])
+                self.assertTrue(refresh_failures[-1]["localized_message"]["zh-TW"])
+                self.assertEqual(refresh_failures[-1].get("round_id"), None)
+                diagnostics = "\n".join(event["diagnostic"] for event in refresh_failures)
+                self.assertIn("injected conflict refresh failure", diagnostics)
+                self.assertIn("injected alarm refresh failure", diagnostics)
+
+                app.close()
+                pump_until(lambda: rounds.close_status().status == "waiting")
+                self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
+                app._select_language(ENGLISH)
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertEqual(conflict_window.title(), "同輪結果衝突")
+                self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                app.resolve_conflict_original_button.invoke()
+                self.assertEqual(rounds.snapshot().pending_conflicts, ())
+                app.round_alarm_ack_button.invoke()
+                pump_until(lambda: rounds.close_status().status == "complete")
+                pump_until(lambda: not root_is_alive())
+
+                rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                kinds = [event["kind"] for event in rebuilt["events"]]
+                self.assertEqual(kinds.count("conflict_resolved"), 1)
+                self.assertEqual(kinds.count("round_alarm_acknowledged"), 1)
+                decisions = [event for event in rebuilt["events"]
+                             if event["kind"] in {
+                                 "conflict_resolved", "round_alarm_acknowledged"}]
+                self.assertEqual(len(decisions), 2)
+                self.assertTrue(all(event["localized_message"]["en"] and
+                                    event["localized_message"]["zh-TW"]
+                                    for event in decisions))
+            finally:
+                if root_is_alive():
+                    app.hotkey.close()
+                    root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_close_keeps_conflict_and_alarm_actions_available(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):

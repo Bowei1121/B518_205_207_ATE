@@ -151,6 +151,8 @@ class B518LogSolutionApp:
         self._unregister_settings_language_receiver = None
         self._unregister_app_diagnostics_language_receiver = None
         self._unregister_historical_event_language_receiver = None
+        self._unregister_conflict_language_receiver = None
+        self._unregister_round_alarm_language_receiver = None
         self.historical_event_window = None
         self.historical_event_list = None
         self.historical_event_detail = None
@@ -172,6 +174,8 @@ class B518LogSolutionApp:
         self.retention_cleanup_status: Optional[tk.StringVar] = None
         self._retention_cleanup_request_status = None
         self.conflict_window: Optional[tk.Toplevel] = None
+        self._rendered_conflict_id: Optional[str] = None
+        self._updating_conflict_list = False
         self.conflict_instructions: Optional[ttk.Label] = None
         self.conflict_list: Optional[tk.Listbox] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
@@ -521,6 +525,8 @@ class B518LogSolutionApp:
         self.language_refresh_retry_button.configure(text=self._t("language.refresh.retry"))
         self._set_main_monitor_state(self._monitor_state_message,
                                      **self._monitor_state_parameters)
+        self._render_conflict_review_button()
+        self._render_round_alarm_button()
         self._render_station_title()
         self._render_save_status()
         self._refresh_unsaved_rounds()
@@ -529,10 +535,6 @@ class B518LogSolutionApp:
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
         self._refresh_app_event_status(update_diagnostics=False)
-        self._refresh_conflict_review(preserve_reading=True)
-        self._refresh_round_alarm()
-        if self._close_window and self._close_window.winfo_exists():
-            self._render_close_status(self.rounds.close_status())
 
     def register_language_receiver(self, name, refresh, alive):
         """Register an App-owned window for the existing language notification."""
@@ -547,16 +549,32 @@ class B518LogSolutionApp:
 
     def _language_refresh_result(self, failures, newly_failed) -> None:
         self._language_refresh_failures = dict(failures)
-        if not self.root.winfo_exists():
+        try:
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
             return
+
+        def configure_if_alive(widget, **options):
+            if widget is None:
+                return
+            try:
+                if widget.winfo_exists():
+                    widget.configure(**options)
+            except tk.TclError:
+                # A receiver can unregister while Tk is already destroying
+                # its parent subtree. Failure reporting must not revive it.
+                return
+
         if failures:
             names = ", ".join(sorted({name() if callable(name) else name
                                       for name, _reason in failures.values()}))
-            self.app_event_status_label.configure(
+            configure_if_alive(
+                self.app_event_status_label,
                 text=self._t("language.refresh.failed", windows=names))
-            self.language_refresh_retry_button.configure(state="normal")
+            configure_if_alive(self.language_refresh_retry_button, state="normal")
         else:
-            self.language_refresh_retry_button.configure(state="disabled")
+            configure_if_alive(self.language_refresh_retry_button, state="disabled")
             self._refresh_app_event_status(update_diagnostics=False)
         for _token, (name, reason) in newly_failed.items():
             try:
@@ -1557,7 +1575,7 @@ class B518LogSolutionApp:
                                             background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                                             selectbackground="#1d4ed8", selectforeground="#ffffff")
             self.conflict_list.pack(side="left", fill="y")
-            self.conflict_list.bind("<<ListboxSelect>>", self._show_selected_conflict)
+            self.conflict_list.bind("<<ListboxSelect>>", self._on_conflict_list_select)
             self.conflict_panes = ttk.Panedwindow(body, orient="vertical")
             self.conflict_panes.pack(side="left", fill="both", expand=True, padx=(10, 0))
 
@@ -1634,35 +1652,50 @@ class B518LogSolutionApp:
                 actions, text="", command=window.withdraw,
             )
             self.conflict_close_button.pack(side="right")
+            window.bind("<Destroy>", self._on_conflict_window_destroy, add="+")
+            self._unregister_conflict_language_receiver = self.register_language_receiver(
+                lambda: self._t("conflict.title"),
+                lambda: self._refresh_conflict_review(preserve_reading=True,
+                                                       update_main=False),
+                window.winfo_exists,
+            )
         self._refresh_conflict_review()
         if self.conflict_window and self.conflict_window.winfo_exists():
             self.conflict_window.deiconify()
             self.conflict_window.lift()
 
-    def _refresh_conflict_review(self, preserve_reading: bool = False) -> None:
+    def _render_conflict_review_button(self, snapshot=None) -> None:
         if not hasattr(self, "review_button"):
             return
-        self._apply_conflict_window_language()
-        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_button.configure(
             text=self._t("main.review_count", count=len(conflicts)),
             state="normal" if conflicts else "disabled",
         )
-        alarm = snapshot.round_alarm if snapshot else None
-        alarm_pending = alarm is not None and not alarm.acknowledged_at
-        if alarm_pending or conflicts:
-            reasons = []
+
+    def _refresh_conflict_review(self, preserve_reading: bool = False,
+                                 update_main: bool = True) -> None:
+        if not hasattr(self, "review_button"):
+            return
+        self._apply_conflict_window_language()
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        conflicts = snapshot.pending_conflicts if snapshot else ()
+        if update_main:
+            self._render_conflict_review_button(snapshot)
+            alarm = snapshot.round_alarm if snapshot else None
+            alarm_pending = alarm is not None and not alarm.acknowledged_at
             if alarm_pending and conflicts:
                 self._set_main_monitor_state("monitor.awaiting_both", count=len(conflicts))
             elif alarm_pending:
                 self._set_main_monitor_state("monitor.awaiting_alarm")
-            else:
+            elif conflicts:
                 self._set_main_monitor_state("monitor.awaiting_conflicts", count=len(conflicts))
-        elif snapshot and snapshot.state.value == "COMPLETED":
-            self._set_main_monitor_state("monitor.completed")
-        elif snapshot and snapshot.state.value == "STOPPED" and snapshot.completion_reason == "manual_stop":
-            self._set_main_monitor_state("monitor.stopped")
+            elif snapshot and snapshot.state.value == "COMPLETED":
+                self._set_main_monitor_state("monitor.completed")
+            elif (snapshot and snapshot.state.value == "STOPPED" and
+                  snapshot.completion_reason == "manual_stop"):
+                self._set_main_monitor_state("monitor.stopped")
         if self.conflict_window and self.conflict_window.winfo_exists():
             if self.conflict_list is None:
                 return
@@ -1681,24 +1714,28 @@ class B518LogSolutionApp:
             list_changed = current_ids != previous_ids or [
                 self.conflict_list.get(index) for index in range(self.conflict_list.size())
             ] != display_items
-            if list_changed:
-                self._conflict_ids = current_ids
-                self.conflict_list.delete(0, "end")
-                for display_item in display_items:
-                    self.conflict_list.insert("end", display_item)
-            if selected_id in self._conflict_ids:
-                index = self._conflict_ids.index(selected_id)
-            elif selected_id is not None:
-                index = 0 if self._conflict_ids else -1
-            elif not previous_ids:
-                index = 0 if self._conflict_ids else -1
-            else:
-                index = -1
-            if index >= 0 and (list_changed or selected_id != self._conflict_ids[index]):
-                self.conflict_list.selection_set(index)
-                self.conflict_list.activate(index)
-            elif index < 0 and selected:
-                self.conflict_list.selection_clear(0, "end")
+            self._updating_conflict_list = True
+            try:
+                if list_changed:
+                    self._conflict_ids = current_ids
+                    self.conflict_list.delete(0, "end")
+                    for display_item in display_items:
+                        self.conflict_list.insert("end", display_item)
+                if selected_id in self._conflict_ids:
+                    index = self._conflict_ids.index(selected_id)
+                elif selected_id is not None:
+                    index = 0 if self._conflict_ids else -1
+                elif not previous_ids:
+                    index = 0 if self._conflict_ids else -1
+                else:
+                    index = -1
+                if index >= 0 and (list_changed or selected_id != self._conflict_ids[index]):
+                    self.conflict_list.selection_set(index)
+                    self.conflict_list.activate(index)
+                elif index < 0 and selected:
+                    self.conflict_list.selection_clear(0, "end")
+            finally:
+                self._updating_conflict_list = False
             should_render = (preserve_reading or list_changed or
                              (index >= 0 and selected_id is None and not previous_ids))
             if should_render:
@@ -1738,6 +1775,7 @@ class B518LogSolutionApp:
             self.conflict_panes.sashpos(0, int(height * 0.4))
 
     def _clear_conflict_comparison(self) -> None:
+        self._rendered_conflict_id = None
         if self.conflict_comparison:
             self.conflict_comparison.configure(state="normal")
             self.conflict_comparison.delete("1.0", "end")
@@ -1771,15 +1809,16 @@ class B518LogSolutionApp:
             self._clear_conflict_comparison()
             return
         conflict_id = self._conflict_ids[selected[0]]
+        preserve_reading = preserve_reading or conflict_id == self._rendered_conflict_id
         conflict = next((item for item in snapshot.pending_conflicts
                          if item.conflict_id == conflict_id), None)
         if not conflict:
             self._clear_conflict_comparison()
             return
-        comparison_xview = (self.conflict_comparison.xview()[0]
-                            if preserve_reading else 0.0)
-        details_yview = (self.conflict_details.yview()[0]
-                         if preserve_reading else 0.0)
+        comparison_xview = self.conflict_comparison.xview()[0] if preserve_reading else 0.0
+        comparison_yview = self.conflict_comparison.yview()[0] if preserve_reading else 0.0
+        details_top_line = (int(self.conflict_details.index("@0,0").split(".")[0])
+                            if preserve_reading else 1)
         for button in (self.resolve_conflict_original_button,
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
@@ -1873,6 +1912,7 @@ class B518LogSolutionApp:
             state="disabled",
         )
         self.conflict_comparison.xview_moveto(comparison_xview)
+        self.conflict_comparison.yview_moveto(comparison_yview)
 
         def render(side):
             fields = (
@@ -1905,8 +1945,39 @@ class B518LogSolutionApp:
         self.conflict_details.delete("1.0", "end")
         self.conflict_details.insert("1.0", text)
         self.conflict_details.configure(state="disabled")
+        self._rendered_conflict_id = conflict_id
         if preserve_reading:
-            self.conflict_details.yview_moveto(details_yview)
+            rendered_line_count = int(self.conflict_details.index("end-1c").split(".")[0])
+            self.conflict_details.yview_moveto(
+                (details_top_line - 1) / max(rendered_line_count, 1))
+
+    def _on_conflict_list_select(self, event=None) -> None:
+        if self._updating_conflict_list:
+            return
+        self._show_selected_conflict(event)
+
+    def _on_conflict_window_destroy(self, event) -> None:
+        window = self.conflict_window
+        if event.widget is not window:
+            return
+        unregister = self._unregister_conflict_language_receiver
+        self._unregister_conflict_language_receiver = None
+        if unregister is not None:
+            unregister()
+        self.conflict_window = None
+        self.conflict_instructions = None
+        self.conflict_list = None
+        self.conflict_panes = None
+        self.conflict_position_label = None
+        self.conflict_comparison = None
+        self.conflict_comparison_scrollbar = None
+        self.conflict_details = None
+        self._conflict_ids = []
+        self._rendered_conflict_id = None
+        self._updating_conflict_list = False
+        self.resolve_conflict_original_button = None
+        self.resolve_conflict_candidate_button = None
+        self.conflict_close_button = None
 
     def _resolve_selected_conflict(self, choice: str) -> None:
         if not self.conflict_list:
@@ -1922,23 +1993,45 @@ class B518LogSolutionApp:
             return
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         alarm = snapshot.round_alarm if snapshot else None
+        self._render_round_alarm_button(snapshot)
         if alarm is None:
-            self.round_alarm_button.configure(text=self._t("main.round_alarm"), state="disabled")
             if (snapshot and self._round_alarm_window_identity and
                     self._round_alarm_window_identity[0] != snapshot.round_id and
                     self.round_alarm_window and self.round_alarm_window.winfo_exists()):
                 self.round_alarm_window.withdraw()
             return
-        pending = not alarm.acknowledged_at
-        self.round_alarm_button.configure(
-            text=self._t("main.round_alarm_pending" if pending else "main.round_alarm_acknowledged"),
-            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
-        )
         identity = (alarm.round_id, alarm.alarm_id)
         if identity != getattr(self, "_shown_round_alarm_identity", None):
             self._open_round_alarm()
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
             self._render_round_alarm(alarm)
+
+    def _render_round_alarm_button(self, snapshot=None) -> None:
+        if not hasattr(self, "round_alarm_button"):
+            return
+        snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
+        alarm = snapshot.round_alarm if snapshot else None
+        if alarm is None:
+            self.round_alarm_button.configure(text=self._t("main.round_alarm"),
+                                              state="disabled")
+            return
+        pending = not alarm.acknowledged_at
+        self.round_alarm_button.configure(
+            text=self._t("main.round_alarm_pending" if pending
+                         else "main.round_alarm_acknowledged"),
+            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
+        )
+
+    def _refresh_round_alarm_language(self) -> None:
+        window = self.round_alarm_window
+        if window is None or not window.winfo_exists():
+            return
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        alarm = snapshot.round_alarm if snapshot else None
+        if (alarm is None or
+                (alarm.round_id, alarm.alarm_id) != self._round_alarm_window_identity):
+            return
+        self._render_round_alarm(alarm)
 
     def _open_round_alarm(self) -> None:
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
@@ -1965,6 +2058,12 @@ class B518LogSolutionApp:
                 actions, text=self._t("alarm.button.close"), command=window.withdraw,
             )
             self.round_alarm_close_button.pack(side="right")
+            window.bind("<Destroy>", self._on_round_alarm_destroy, add="+")
+            self._unregister_round_alarm_language_receiver = self.register_language_receiver(
+                lambda: self._t("alarm.title"),
+                lambda: self._refresh_round_alarm_language(),
+                window.winfo_exists,
+            )
         self._render_round_alarm(alarm)
         self._round_alarm_window_identity = (alarm.round_id, alarm.alarm_id)
         self.round_alarm_ack_button.configure(
@@ -1974,6 +2073,21 @@ class B518LogSolutionApp:
         self._shown_round_alarm_identity = (alarm.round_id, alarm.alarm_id)
         self.round_alarm_window.deiconify()
         self.round_alarm_window.lift()
+
+    def _on_round_alarm_destroy(self, event) -> None:
+        window = self.round_alarm_window
+        if event.widget is not window:
+            return
+        unregister = self._unregister_round_alarm_language_receiver
+        self._unregister_round_alarm_language_receiver = None
+        if unregister is not None:
+            unregister()
+        self.round_alarm_window = None
+        self.round_alarm_message = None
+        self.round_alarm_ack_button = None
+        self.round_alarm_close_button = None
+        self._round_alarm_window_identity = None
+        self._shown_round_alarm_identity = None
 
     def _render_round_alarm(self, alarm) -> None:
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
