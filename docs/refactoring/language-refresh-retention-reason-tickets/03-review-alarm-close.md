@@ -20,3 +20,9 @@ Part of #28 — https://github.com/Bowei1121/B518_205_207_ATE/issues/28
 ## Blocked by
 
 - #29 — 語言通知、失敗提示與重試
+
+## Current implementation status — 2026-10-12
+
+The L3 implementation is on `LanguageRefresh/ticket-03` from fixed review baseline `93ac9e47903649c4098c1423c2496f86ac685a03`. Focused real-Tk conflict/alarm tests pass, but this ticket is **not complete**: the required full suite did not finish, the L1 modal-notice lifecycle test also timed out when run from L1's recorded tested SHA `1a2fb138dcf7ede875d8a3dcb033e5c6da8468fb`, and the Standards/Spec evidence and full acceptance matrix are recorded in [L3 local validation](../evidence/language-refresh-ticket-03/local-validation.md). The test's stack is blocked in the pre-existing notice's `wait_window`; no L1 dependency fix is included in L3.
+
+Do not merge or delete this branch until the L1 dependency/full-suite validation blocker is resolved and all remaining L3 evidence is complete. Parent first-item acceptance remains partial; L4 is still required.
