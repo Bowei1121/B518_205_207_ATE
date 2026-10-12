@@ -718,8 +718,14 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("App 事件仍有待補存", chinese_detail)
             self.assertIn("封存資訊版本不受支援", chinese_detail)
             self.assertNotIn("app.settings.retention.reason.archive_read_failed", chinese_detail)
-            self.assertEqual(app.rounds.retention_cleanup_summaries()[0].results[0].round_id,
-                             "round-c1")
+            summary = app.rounds.retention_cleanup_summaries()[0]
+            self.assertEqual(
+                next(item for item in summary.results if item.round_id == "round-c1").round_id,
+                "round-c1")
+            self.assertEqual(
+                next(item for item in summary.results if item.round_id == "round-success")
+                .reason_message,
+                deleted_reason)
             self.assertEqual(ledger_path.read_bytes(), original_ledger)
         finally:
             app.close()
