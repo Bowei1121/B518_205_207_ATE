@@ -34,16 +34,37 @@ class CleanupReasonPresentationTests(unittest.TestCase):
 
         self.assertEqual(rendered.text, captured["en"])
 
-    def test_missing_current_resource_falls_back_to_captured_english(self):
+    def test_missing_selected_language_resource_falls_back_to_captured_english(self):
         captured = capture_cleanup_reason(
             "app.settings.retention.reason.archive_read_failed",
             {"diagnostic": "disk full"},
         )
-        with patch.dict(LANGUAGE_RESOURCES[ENGLISH],
+        with patch.dict(LANGUAGE_RESOURCES[TRADITIONAL_CHINESE],
                         {"app.settings.retention.reason.archive_read_failed": None}):
             rendered = present_cleanup_reason(captured, TRADITIONAL_CHINESE)
 
         self.assertEqual(rendered.text, captured["en"])
+
+    def test_valid_record_with_unknown_identifier_uses_localized_unknown_fallback(self):
+        unknown = {
+            "version": 1,
+            "message_id": "internal.cleanup.future_reason",
+            "parameters": {"detail": "captured parameter"},
+            "en": "Captured English from an unknown producer",
+            "zh-TW": "未知產生端保存的繁中",
+            "diagnostic": "raw cleanup diagnostic",
+        }
+
+        english = present_cleanup_reason(unknown, ENGLISH)
+        chinese = present_cleanup_reason(unknown, TRADITIONAL_CHINESE)
+
+        self.assertEqual(english.text, "Cleanup reason is not recognized.")
+        self.assertEqual(chinese.text, "無法辨識此清理原因。")
+        self.assertFalse(english.recognized)
+        self.assertFalse(chinese.recognized)
+        self.assertEqual(english.original, unknown)
+        self.assertEqual(chinese.original, unknown)
+        self.assertEqual(chinese.diagnostic, "raw cleanup diagnostic")
 
     def test_unknown_legacy_reason_has_localized_outer_message_and_verbatim_detail(self):
         english = present_cleanup_reason("custom operator reason", ENGLISH)

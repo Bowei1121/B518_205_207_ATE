@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 import time
 import unittest
@@ -396,60 +397,71 @@ class RoundStartPreparationTests(unittest.TestCase):
             timeouts["round"] = 1
 
             coordinator = RoundCoordinator(audit_root=sessions)
-            started = prepared.start(coordinator, run_async=False)
-            self.assertEqual(started.station, "FCT")
-            self.assertEqual([(result.slot, result.status) for result in started.results], [
-                (1, "WAITING"), (2, "WAITING"),
-            ])
+            try:
+                started = prepared.start(coordinator, run_async=False)
+                self.assertEqual(started.station, "FCT")
+                self.assertEqual([(result.slot, result.status) for result in started.results], [
+                    (1, "WAITING"), (2, "WAITING"),
+                ])
 
-            event_file.write_text(
-                '{"kind":"final","position":20,"sn":"ASSEMBLY000020",'
-                '"status":"PASS","source_time":"2026-10-08T09:00:00",'
-                '"batch_id":"round-start-r1"}\n'
-                '{"kind":"final","position":4,"sn":"ASSEMBLY000004",'
-                '"status":"FAIL","source_time":"2026-10-08T09:00:01",'
-                '"batch_id":"round-start-r1"}\n',
-                encoding="utf-8",
-            )
-            completed = coordinator.poll_once()
-            self.assertEqual([(result.slot, result.sn, result.status)
-                              for result in completed.results], [
-                (1, "ASSEMBLY000020", "PASS"), (2, "ASSEMBLY000004", "FAIL"),
-            ])
-            self.assertTrue(coordinator.flush_session(timeout=2))
-            self.assertTrue(coordinator.flush_audit(timeout=2))
+                event_file.write_text(
+                    '{"kind":"final","position":20,"sn":"ASSEMBLY000020",'
+                    '"status":"PASS","source_time":"2026-10-08T09:00:00",'
+                    '"batch_id":"round-start-r1"}\n'
+                    '{"kind":"final","position":4,"sn":"ASSEMBLY000004",'
+                    '"status":"FAIL","source_time":"2026-10-08T09:00:01",'
+                    '"batch_id":"round-start-r1"}\n',
+                    encoding="utf-8",
+                )
+                completed = coordinator.poll_once()
+                self.assertEqual([(result.slot, result.sn, result.status)
+                                  for result in completed.results], [
+                    (1, "ASSEMBLY000020", "PASS"), (2, "ASSEMBLY000004", "FAIL"),
+                ])
+                self.assertTrue(coordinator.flush_session(timeout=2))
+                self.assertTrue(coordinator.flush_audit(timeout=2))
 
-            session_path = coordinator.session_path
-            session = json.loads((session_path / "session.json").read_text(encoding="utf-8"))
-            session_profile = session["settings"]["profile_snapshot"]["profile"]
-            self.assertEqual(session_profile["paths"]["active"], str(source))
-            self.assertEqual(session_profile["mapping"], [
-                {"source": 20, "display": 1}, {"source": 4, "display": 2},
-            ])
-            rebuilt = read_round_audit(session_path / "audit.jsonl")
-            audit_config = rebuilt["round"]["config"]
-            self.assertEqual(audit_config["config_snapshot"]["paths"]["active"], str(source))
-            self.assertEqual(audit_config["mapping"], [
-                {"source": 20, "display": 1}, {"source": 4, "display": 2},
-            ])
-            self.assertEqual([(slot, value["status"])
-                              for slot, value in sorted(rebuilt["results"].items())], [
-                (1, "PASS"), (2, "FAIL"),
-            ])
-            session_events = [json.loads(line) for line in
-                              (session_path / "events.log").read_text(
-                                  encoding="utf-8").splitlines()]
-            audit_result = next(event for event in rebuilt["events"]
-                                if event["kind"] == "result")
-            session_result = next(event for event in session_events
-                                  if event.get("localized_message", {}).get("message_id") ==
-                                  "round.result")
-            self.assertEqual(session_result["round_id"], started.round_id)
-            self.assertEqual(session_result["sequence"], audit_result["sequence"])
-            self.assertEqual(session_result["timestamp"], audit_result["observed_at"])
-            self.assertEqual(session_result["localized_message"],
-                             audit_result["localized_message"])
-            self.close_and_wait(coordinator)
+                session_path = coordinator.session_path
+                session = json.loads((session_path / "session.json").read_text(encoding="utf-8"))
+                session_profile = session["settings"]["profile_snapshot"]["profile"]
+                self.assertEqual(session_profile["paths"]["active"], str(source))
+                self.assertEqual(session_profile["mapping"], [
+                    {"source": 20, "display": 1}, {"source": 4, "display": 2},
+                ])
+                rebuilt = read_round_audit(session_path / "audit.jsonl")
+                audit_config = rebuilt["round"]["config"]
+                self.assertEqual(audit_config["config_snapshot"]["paths"]["active"], str(source))
+                self.assertEqual(audit_config["mapping"], [
+                    {"source": 20, "display": 1}, {"source": 4, "display": 2},
+                ])
+                self.assertEqual([(slot, value["status"])
+                                  for slot, value in sorted(rebuilt["results"].items())], [
+                    (1, "PASS"), (2, "FAIL"),
+                ])
+                session_events = [json.loads(line) for line in
+                                  (session_path / "events.log").read_text(
+                                      encoding="utf-8").splitlines()]
+                audit_result = next(event for event in rebuilt["events"]
+                                    if event["kind"] == "result")
+                session_result = next(event for event in session_events
+                                      if event.get("localized_message", {}).get("message_id") ==
+                                      "round.result")
+                self.assertEqual(session_result["round_id"], started.round_id)
+                self.assertEqual(session_result["sequence"], audit_result["sequence"])
+                self.assertEqual(session_result["timestamp"], audit_result["observed_at"])
+                self.assertEqual(session_result["localized_message"],
+                                 audit_result["localized_message"])
+                self.close_and_wait(coordinator)
+            finally:
+                active_failure = sys.exc_info()[0] is not None
+                coordinator.request_close()
+                deadline = time.monotonic() + 10
+                while (coordinator.close_status().status not in {"complete", "failed"} and
+                       time.monotonic() < deadline):
+                    threading.Event().wait(0.01)
+                if (coordinator.close_status().status != "complete" and
+                        not active_failure):
+                    self.fail("Round must complete close before temporary data cleanup.")
 
     def test_sample_json_parse_error_is_bilingual_in_session_and_audit(self):
         with TemporaryDirectory() as temporary:

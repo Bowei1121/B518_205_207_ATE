@@ -663,6 +663,14 @@ class LogSolutionUiTests(unittest.TestCase):
             "en": "Trusted round records were completely deleted.",
             "zh-TW": "已完整刪除可信輪次資料。",
         }
+        unknown_reason = {
+            "version": 1,
+            "message_id": "internal.cleanup.future_reason",
+            "parameters": {"detail": "captured future parameter"},
+            "en": "Captured future cleanup reason",
+            "zh-TW": "未來原因的原始繁中",
+            "diagnostic": "future cleanup raw diagnostic",
+        }
         old_summary = round_retention.RetentionSummary(
             "run-c1", "2026-10-12T08:00:00+08:00", "2026-10-12T08:00:01+08:00",
             30, "controlled-fixture", "failed",
@@ -671,7 +679,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 round_retention.RetentionRoundResult(
                 "round-c1", "failed", "封存資訊無法讀取：legacy disk fault", reason),
                 round_retention.RetentionRoundResult(
-                    "round-legacy", "skipped", "封存資訊版本未知")),
+                    "round-legacy", "skipped", "封存資訊版本未知"),
+                round_retention.RetentionRoundResult(
+                    "round-future-id", "skipped", "Captured future cleanup reason",
+                    unknown_reason)),
             message="legacy summary text",
             app_events=round_retention.RetentionAppEventResult(
                 "failed", 0, 1, 1, "custom App event reason", app_reason),
@@ -706,6 +717,8 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("round-c1", english_detail)
             self.assertIn("App event saves are pending", english_detail)
             self.assertIn("The archive metadata version is not supported", english_detail)
+            self.assertIn("Cleanup reason is not recognized.", english_detail)
+            self.assertIn("future cleanup raw diagnostic", english_detail)
             self.assertNotIn("app.settings.retention.reason.archive_read_failed", english_detail)
 
             self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
@@ -717,7 +730,10 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIn("已完整刪除可信輪次資料。", chinese_detail)
             self.assertIn("App 事件仍有待補存", chinese_detail)
             self.assertIn("封存資訊版本不受支援", chinese_detail)
+            self.assertIn("無法辨識此清理原因。", chinese_detail)
+            self.assertIn("future cleanup raw diagnostic", chinese_detail)
             self.assertNotIn("app.settings.retention.reason.archive_read_failed", chinese_detail)
+            self.assertNotIn("internal.cleanup.future_reason", chinese_detail)
             summary = app.rounds.retention_cleanup_summaries()[0]
             self.assertEqual(
                 next(item for item in summary.results if item.round_id == "round-c1").round_id,
@@ -728,14 +744,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 deleted_reason)
             self.assertEqual(ledger_path.read_bytes(), original_ledger)
         finally:
+            active_failure = sys.exc_info()[0] is not None
             app.close()
             deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and app.rounds.close_status().status != "complete":
+            while (time.monotonic() < deadline and root.winfo_exists() and
+                   app.rounds.close_status().status not in {"complete", "failed"}):
                 root.update()
                 time.sleep(0.01)
-            if root.winfo_exists():
-                app.hotkey.close()
-                root.destroy()
+            close_state = app.rounds.close_status().status
+            try:
+                if close_state != "complete" and not active_failure:
+                    self.fail("App close must complete before the cleanup ledger is removed; got {}"
+                              .format(close_state))
+            finally:
+                if root.winfo_exists():
+                    app.hotkey.close()
+                    root.destroy()
 
     def test_destroyed_ui_is_safe_when_next_worker_collects_cycles(self):
         # A wrong-thread Tcl interpreter deletion aborts the process; keep this

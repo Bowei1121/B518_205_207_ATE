@@ -92,7 +92,7 @@ class ReasonPresentation:
 
 def capture_cleanup_reason(message_id: str, parameters: Mapping[str, object],
                            diagnostic: str = "") -> dict:
-    """Capture a new cleanup reason as one immutable English/Traditional Chinese record."""
+    """Capture a cleanup reason as one English/Traditional Chinese record."""
     return make_bilingual_message(message_id, parameters, diagnostic).as_record()
 
 
@@ -125,7 +125,7 @@ def _present_structured_reason(reason: Mapping[str, object], language: str) -> R
 
     resources = LANGUAGE_RESOURCES.get(ENGLISH, {})
     if message_id not in resources:
-        return ReasonPresentation(english, dict(reason), diagnostic_text, recognized=True)
+        return ReasonPresentation(_unrecognized_text(language), dict(reason), diagnostic_text)
     try:
         rendered = translate(message_id, language, **dict(parameters))
     except (KeyError, TypeError, ValueError):
