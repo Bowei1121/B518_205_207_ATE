@@ -60,6 +60,8 @@ The 2026-10-13 implementation scan used `rg -n 'startswith\(| in .*message|messa
 ## Reviews and delivery state
 
 - Final source/test SHA before docs: `af6c21996da36eea1365e0634dacd4db978bdbca`; fixed review base remains `9d53ced227591f92cd20bad789ebdccdb05f8950`.
-- Final full suite was run on that SHA. Standards/Spec review, documentation commit, merge, post-merge full suite, final remote SHA queries and safe branch/worktree cleanup are pending and must be recorded here before declaring delivery complete.
-- At validation time, ticket branch pushes had been confirmed by push output; direct final `ls-remote` confirmation after the latest code commit is still required.
+- Standards review on `git diff 9d53ced227591f92cd20bad789ebdccdb05f8950...f9fa1888491d1a354ee3f47d7f94459b4303e796`: no documented-standard violations or actionable code smells. Reviewer checked the complete 12-smell baseline; no blocking or non-blocking finding.
+- Spec review on the same fixed-base diff: no blocking gap or scope creep. Non-blocking note: the new C4-specific Tk case directly exercises close-save skip status; other live/archive/mixed-data paths are supported by retained C1–C3 public-entry evidence, and reporting should keep that evidence split explicit.
+- Direct Gitea (`origin`) and GitHub (`github`) `git ls-remote` at 2026-10-13 13:38 Asia/Taipei confirmed both `B518-Log-Solution` refs at `9d53ced227591f92cd20bad789ebdccdb05f8950` and both `LanguageRefresh/ticket-08` refs at `f9fa1888491d1a354ee3f47d7f94459b4303e796`. A prior sandboxed Gitea read was denied by network isolation; authorized outside-sandbox direct queries to both destinations succeeded, so this was not a remote outage.
+- Final full suite was run on source/test SHA `af6c21996da36eea1365e0634dacd4db978bdbca`. Documentation SHA is `f9fa1888491d1a354ee3f47d7f94459b4303e796`. Mainline merge, post-merge full suite, final post-document push/query and safe branch/worktree cleanup are pending before declaring delivery complete.
 - Bundle, factory, target-device and field acceptance are out of scope and not claimed.
