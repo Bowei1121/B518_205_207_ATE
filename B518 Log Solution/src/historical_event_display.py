@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
-from app_event_store import read_app_event_store
-from audit_records import read_round_audit
+from app_event_store import iter_app_event_store_events
+from audit_records import iter_round_audit_events
 from language_catalog import (capture_round_event_message, make_bilingual_message, translate)
 
 
@@ -59,22 +59,26 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
             legacy_path = directory / "events.log"
             if audit_path.is_file():
                 try:
-                    audit = read_round_audit(audit_path)
+                    header, audit_events = iter_round_audit_events(audit_path)
                 except Exception as error:
                     yield _read_error("round", audit_path, str(error))
                     continue
-                header = audit["round"]
                 round_id = header["round_id"]
                 station = header.get("station", "")
                 platform = header.get("config", {}).get("platform", "")
-                for event in audit["events"]:
-                    yield HistoricalEvent(
-                        "round:{}:{}".format(round_id, event["sequence"]), "round",
-                        event["observed_at"], event["message"], event["kind"], round_id,
-                        event["sequence"], event.get("localized_message"),
-                        _diagnostic(event), event.get("detail", {}), event, station, platform,
-                    )
-                if not audit.get("audit_complete", False):
+                try:
+                    for event in audit_events:
+                        yield HistoricalEvent(
+                            "round:{}:{}".format(round_id, event["sequence"]), "round",
+                            event["observed_at"], event["message"], event["kind"], round_id,
+                            event["sequence"], event.get("localized_message"),
+                            _diagnostic(event), event.get("detail", {}), event,
+                            station, platform,
+                        )
+                except Exception as error:
+                    yield _read_error("round", audit_path, str(error))
+                    continue
+                if not header.get("audit_complete", False):
                     yield HistoricalEvent(
                         "warning:round:{}".format(round_id), "read_warning", "",
                         "Audit records report an incomplete save", round_id=round_id,
@@ -88,17 +92,20 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
     if app_event_path is not None and Path(app_event_path).exists():
         path = Path(app_event_path)
         try:
-            store = read_app_event_store(path)
+            app_events = iter_app_event_store_events(path)
         except Exception as error:
             yield _read_error("app", path, str(error))
         else:
-            for event in store["events"]:
-                yield HistoricalEvent(
-                    "app:{}".format(event["event_id"]), "app", event["occurred_at"],
-                    event["message"], event["kind"], None, event["sequence"],
-                    event.get("localized_message"), event.get("diagnostic", ""),
-                    event.get("localized_message", {}).get("parameters", {}), event,
-                )
+            try:
+                for event in app_events:
+                    yield HistoricalEvent(
+                        "app:{}".format(event["event_id"]), "app", event["occurred_at"],
+                        event["message"], event["kind"], None, event["sequence"],
+                        event.get("localized_message"), event.get("diagnostic", ""),
+                        event.get("localized_message", {}).get("parameters", {}), event,
+                    )
+            except Exception as error:
+                yield _read_error("app", path, str(error))
 
 
 def _event_sort_key(event: HistoricalEvent):
@@ -147,6 +154,16 @@ def render_historical_event_message(event: HistoricalEvent, language: str
     return HistoricalEventPresentation(translate("history.unrecognized", language), "", True)
 
 
+def legacy_historical_event_message_record(event: HistoricalEvent) -> Optional[dict]:
+    """Return the established bilingual display for a reliably recognized old event.
+
+    The projection is safe to retain in a paged summary; original evidence remains
+    available only through the selected event's detail lookup.
+    """
+    message = _recognize_legacy_audit_event(event)
+    return message.as_record() if message is not None else None
+
+
 def _render_captured_message(localized: dict, saved_message: str, language: str) -> str:
     """Use current catalog when applicable; otherwise show capture-time English."""
     saved_english = localized.get("en")
@@ -164,37 +181,37 @@ def _render_captured_message(localized: dict, saved_message: str, language: str)
 
 
 def _read_legacy_session_events(path: Path):
-    records = []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        handle = path.open("r", encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        return [_read_error("legacy_session", path, str(error))]
-    for index, line in enumerate(lines, 1):
-        try:
-            raw = json.loads(line)
-            if not isinstance(raw, dict) or not isinstance(raw.get("message"), str):
-                raise ValueError("事件欄位格式不正確")
-            timestamp = raw.get("timestamp", "")
-            if not isinstance(timestamp, str):
-                raise ValueError("事件時間格式不正確")
-        except (json.JSONDecodeError, ValueError) as error:
-            records.append(_read_error(
-                "legacy_session", path, "第 {} 行：{}".format(index, error),
-                view_key="line:{}".format(index), source_order=index,
-                raw_record={"path": str(path), "line_number": index,
-                            "raw_line": line, "reason": str(error)},
-            ))
-            continue
-        # Legacy Session events.log did not carry a stable kind. Do not infer an ID from prose.
-        localized = raw.get("localized_message")
-        records.append(HistoricalEvent(
-            "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
-            raw["message"], "", raw.get("round_id"),
-            raw.get("sequence") if type(raw.get("sequence")) is int else None,
-            localized if isinstance(localized, dict) else None,
-            _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
-        ))
-    return records
+        yield _read_error("legacy_session", path, str(error))
+        return
+    with handle:
+        for index, line in enumerate(handle, 1):
+            try:
+                raw = json.loads(line)
+                if not isinstance(raw, dict) or not isinstance(raw.get("message"), str):
+                    raise ValueError("事件欄位格式不正確")
+                timestamp = raw.get("timestamp", "")
+                if not isinstance(timestamp, str):
+                    raise ValueError("事件時間格式不正確")
+            except (json.JSONDecodeError, ValueError) as error:
+                yield _read_error(
+                    "legacy_session", path, "第 {} 行：{}".format(index, error),
+                    view_key="line:{}".format(index), source_order=index,
+                    raw_record={"path": str(path), "line_number": index,
+                                "raw_line": line, "reason": str(error)},
+                )
+                continue
+            # Legacy Session events.log did not carry a stable kind. Do not infer an ID from prose.
+            localized = raw.get("localized_message")
+            yield HistoricalEvent(
+                "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
+                raw["message"], "", raw.get("round_id"),
+                raw.get("sequence") if type(raw.get("sequence")) is int else None,
+                localized if isinstance(localized, dict) else None,
+                _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
+            )
 
 
 def _read_error(source: str, path: Path, reason: str, view_key: str = "",

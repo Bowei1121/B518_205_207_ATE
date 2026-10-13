@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from app_event_store import AppEventStore, read_app_event_store
+from app_event_store import (AppEventStore, iter_app_event_store_events,
+                             read_app_event_store)
 
 
 class AppEventStoreTests(unittest.TestCase):
@@ -64,6 +65,51 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(record["localized_message"]["en"], "Global hotkey is unavailable")
         self.assertEqual(record["localized_message"]["zh-TW"], "全域快捷鍵無法使用")
         self.assertEqual(record["diagnostic"], "OS permission denied")
+
+    def test_streaming_reader_validates_then_keeps_the_open_journal_snapshot(self):
+        first = self.store.record("app.hotkey.unavailable", {}, "first diagnostic")
+        second = self.store.record("app.profile.save_failed", {"reason": "read only"},
+                                   "second diagnostic")
+        self.assertTrue(self.store.flush())
+        original = read_app_event_store(self.path)["events"]
+
+        streamed = iter_app_event_store_events(self.path)
+        # The reader has pinned the validated file before this path is replaced.
+        replacement = AppEventStore(Path(self.temp.name) / "replacement.json")
+        replacement.record("app.event_store.recovered", {}, "replacement")
+        self.assertTrue(replacement.flush())
+        replacement.stop()
+        os.replace(Path(self.temp.name) / "replacement.json", self.path)
+
+        records = list(streamed)
+        self.assertEqual([record["event_id"] for record in records],
+                         [record["event_id"] for record in original])
+        self.assertEqual([record["event_id"] for record in records],
+                         [first.event_id, second.event_id])
+        self.assertEqual(records[1]["diagnostic"], "second diagnostic")
+
+    def test_streaming_reader_rejects_a_bad_tail_before_returning_any_events(self):
+        event = self.store.record("app.hotkey.unavailable", {}, "diagnostic")
+        self.assertTrue(self.store.flush())
+        payload = read_app_event_store(self.path)
+        payload["events"].append({"record_type": "not-app-event"})
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+        corrupted_bytes = self.path.read_bytes()
+
+        with self.assertRaises(ValueError):
+            iter_app_event_store_events(self.path)
+        self.assertEqual(self.path.read_bytes(), corrupted_bytes)
+        self.assertEqual(payload["events"][0]["event_id"], event.event_id)
+
+    def test_streaming_reader_handles_large_detail_values_across_chunk_boundaries(self):
+        diagnostic = ("x" * 65530) + "\x01" + ("tail " * 2000)
+        self.store.record("app.hotkey.unavailable", {}, diagnostic)
+        self.assertTrue(self.store.flush())
+
+        rebuilt = list(iter_app_event_store_events(self.path))
+
+        self.assertEqual(len(rebuilt), 1)
+        self.assertEqual(rebuilt[0]["diagnostic"], diagnostic)
 
     def test_public_revision_changes_when_events_are_captured_not_when_pending_drains(self):
         initial_revision = self.store.revision

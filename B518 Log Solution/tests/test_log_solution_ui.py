@@ -5111,6 +5111,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_event_list.selection_set(history_index)
                 app.historical_event_list.event_generate("<<ListboxSelect>>")
                 root.update()
+                self.wait_for_ui(
+                    root, lambda: app._historical_event_detail_request_id is None)
                 history_selection = tuple(app.historical_event_list.curselection())
                 history_row_english = app.historical_event_list.get(history_index)
                 history_detail_english = app.historical_event_detail.get("1.0", "end-1c")
@@ -5803,6 +5805,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_event_list.event_generate(
                     "<ButtonRelease-1>", x=point[0], y=point[1])
                 root.update()
+                self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
 
             def select_language_with_real_menu(language):
                 index = next(i for i in range(app.language_menu.index("end") + 1)
@@ -5813,6 +5816,7 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
                 app_events_before = app_path.read_bytes()
+                expected_total = 151 + len(app.app_events.records)
                 app.open_historical_events()
                 self.assertEqual(app.historical_event_list.size(), 0)
                 self.assertIn("Search", app.historical_query_status.cget("text"))
@@ -5842,11 +5846,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                 root.update_idletasks()
                 self.assertTrue(app.historical_event_window.winfo_exists())
+                self.assertEqual(app._historical_query_result.total_count, expected_total)
                 self.assertLessEqual(len(app._historical_event_records), 100)
                 self.assertEqual(len(app._historical_event_records), 100)
                 self.assertEqual(app.historical_event_list.size(), 101)
                 self.assertGreater(app._historical_query_result.total_count, 100)
-                self.assertIn("Showing the newest 100", app.historical_query_status.cget("text"))
+                self.assertGreater(app._historical_query_result.page_count, 1)
+                self.assertIn("Page 1 of", app.historical_page_label.cget("text"))
+                self.assertNotIn("More pages will be available",
+                                 app.historical_query_status.cget("text"))
                 warning_index = len(app._historical_event_records)
                 self.assertEqual(app.historical_event_list.size(), warning_index + 1)
                 click_history_row(warning_index)
@@ -5854,6 +5862,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("not-json legacy evidence", warning_detail)
                 self.assertEqual(app._historical_event_selected_key,
                                  "__query_diagnostics__")
+                first_page_records = app._historical_event_records
+                self.click_tk_widget(root, app.historical_next_button)
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                self.assertEqual(app._historical_query_page_number, 2)
+                self.assertEqual(len(app._historical_event_records), expected_total - 100)
+                self.assertIn("Page 2 of 2", app.historical_page_label.cget("text"))
+                self.assertEqual(str(app.historical_next_button.cget("state")), "disabled")
+                self.click_tk_widget(root, app.historical_previous_button)
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
+                self.assertEqual(app._historical_event_records[0].key,
+                                 first_page_records[0].key)
                 previous_records = app._historical_event_records
                 previous_result = app._historical_query_result
                 app.historical_start_var.set("2026-02-30")
@@ -6092,6 +6111,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_event_list.event_generate(
                     "<ButtonRelease-1>", x=point[0], y=point[1])
                 root.update()
+                self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
 
             def controlled_query(sessions, event_path, date_range, cancellation_event=None):
                 query_dates.append(date_range.start)
@@ -7647,6 +7667,156 @@ class LogSolutionUiTests(unittest.TestCase):
                 if root_is_alive():
                     app.hotkey.close()
                     root.destroy()
+
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_historical_pages_load_details_on_selection(self):
+        from audit_records import AuditEvent, RoundAuditStore
+        from historical_event_query import HistoricalEventQueryResult
+
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            sessions = root_path / "sessions"
+            audit = RoundAuditStore(
+                sessions, "paged-ui", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            event_time = datetime.now().astimezone().replace(microsecond=0).isoformat()
+            raw_detail = "original long diagnostic " * 500
+            for sequence in range(1, 206):
+                audit.append_event(AuditEvent(
+                    sequence, "round_ready", "FCT source ready", None,
+                    detail={"raw_diagnostic": raw_detail if sequence == 103 else ""}),
+                    event_time, float(sequence))
+            self.assertTrue(audit.flush())
+            source_bytes = audit.audit_path.read_bytes()
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=sessions,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app_event_bytes = app.app_events.path.read_bytes()
+                expected_app_events = len(app.app_events.records)
+                app.open_historical_events()
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+
+                expected_total = 205 + expected_app_events
+                self.assertEqual(app._historical_query_result.total_count, expected_total)
+                self.assertEqual(app._historical_query_result.page_count, 3)
+                self.assertEqual(len(app._historical_event_records), 100)
+                self.assertEqual(app.historical_page_label.cget("text"),
+                                 "Page 1 of 3 · {} events".format(expected_total))
+                self.assertEqual(str(app.historical_previous_button.cget("state")), "disabled")
+                self.assertEqual(str(app.historical_next_button.cget("state")), "normal")
+                self.assertNotIn("More pages will be available", app.historical_query_status.cget("text"))
+                displayed_keys = [item.key for item in app._historical_event_records]
+                displayed_round_sequences = [item.sequence for item in
+                                             app._historical_event_records
+                                             if item.source == "round"]
+
+                # Use real Tk mouse events, and confirm the source is not rescanned for another page.
+                with patch("historical_event_query.iter_historical_events",
+                           side_effect=AssertionError("page navigation rescanned the sources")):
+                    self.click_tk_widget(root, app.historical_next_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                    self.assertEqual(app._historical_query_page_number, 2)
+                    self.assertEqual(len(app._historical_event_records), 100)
+                    self.assertEqual(app.historical_page_label.cget("text"),
+                                     "Page 2 of 3 · {} events".format(expected_total))
+                    displayed_keys.extend(item.key for item in app._historical_event_records)
+                    displayed_round_sequences.extend(item.sequence for item in
+                                                     app._historical_event_records
+                                                     if item.source == "round")
+                    self.assertEqual(str(app.historical_previous_button.cget("state")), "normal")
+
+                    self.click_tk_widget(root, app.historical_next_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 3)
+                    self.assertEqual(app._historical_query_page_number, 3)
+                    self.assertEqual(len(app._historical_event_records), expected_total - 200)
+                    displayed_keys.extend(item.key for item in app._historical_event_records)
+                    displayed_round_sequences.extend(item.sequence for item in
+                                                     app._historical_event_records
+                                                     if item.source == "round")
+                    self.assertEqual(str(app.historical_next_button.cget("state")), "disabled")
+                    self.assertEqual(displayed_round_sequences, list(range(1, 206)))
+                    self.assertEqual(len(displayed_keys), expected_total)
+                    self.assertEqual(len(set(displayed_keys)), expected_total)
+                    self.click_tk_widget(root, app.historical_previous_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                    self.assertEqual(app._historical_query_page_number, 2)
+
+                self.wait_for_ui(
+                    root, lambda: app._historical_event_detail_request_id is None)
+                selected_index = next(index for index, item in enumerate(
+                    app._historical_event_records) if item.sequence == 103)
+                selected = app._historical_event_records[selected_index]
+                self.assertFalse(hasattr(selected, "diagnostic"))
+                self.assertNotIn(raw_detail[:40],
+                                 app.historical_event_detail.get("1.0", "end"))
+                detail_entered, release_detail = threading.Event(), threading.Event()
+                original_get_detail = HistoricalEventQueryResult.get_detail
+
+                def blocked_detail(query_result, event_key):
+                    detail_entered.set()
+                    if not release_detail.wait(5):
+                        raise RuntimeError("controlled UI detail gate timed out")
+                    return original_get_detail(query_result, event_key)
+
+                try:
+                    with patch.object(HistoricalEventQueryResult, "get_detail",
+                                      blocked_detail):
+                        self.click_tk_listbox_row(
+                            root, app.historical_event_list, selected_index)
+                        self.wait_for(detail_entered.is_set)
+                        # The UI remains responsive to a real date edit and page request.
+                        app.historical_start_var.set(date.today().isoformat())
+                        root.update()
+                        self.assertEqual(app.historical_start_var.get(),
+                                         date.today().isoformat())
+                        self.click_tk_widget(root, app.historical_next_button)
+                        self.assertEqual(app._historical_query_page_number, 2)
+                        release_detail.set()
+                        self.wait_for_ui(root, lambda: app._historical_query_page_number == 3)
+                finally:
+                    release_detail.set()
+                self.click_tk_widget(root, app.historical_previous_button)
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                selected_index = next(index for index, item in enumerate(
+                    app._historical_event_records) if item.sequence == 103)
+                self.click_tk_listbox_row(root, app.historical_event_list, selected_index)
+                self.wait_for_ui(root, lambda: raw_detail[:40] in
+                                 app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("round:paged-ui:103", app._historical_event_selected_key)
+                self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+                self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @staticmethod
+    def click_tk_widget(root, widget):
+        root.update_idletasks()
+        x, y = max(2, widget.winfo_width() // 2), max(2, widget.winfo_height() // 2)
+        widget.event_generate("<ButtonPress-1>", x=x, y=y)
+        widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+        root.update()
+
+    @staticmethod
+    def click_tk_listbox_row(root, widget, index):
+        widget.see(index)
+        root.update()
+        x, y, _width, height = widget.bbox(index)
+        widget.event_generate("<ButtonPress-1>", x=max(2, x + 4),
+                              y=y + max(1, height // 2))
+        widget.event_generate("<ButtonRelease-1>", x=max(2, x + 4),
+                              y=y + max(1, height // 2))
+        root.update()
 
 
 if __name__ == "__main__":

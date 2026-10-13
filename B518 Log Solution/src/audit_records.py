@@ -476,3 +476,96 @@ def read_round_audit(path: Path) -> dict:
                                   for index, event in enumerate(events, 1))
             and not any(event["kind"] in {"audit_write_failed", "session_write_failed"}
                         for event in events)}
+
+
+def iter_round_audit_events(path: Path):
+    """Validate an audit file in bounded memory and return its events as a stream."""
+    path = Path(path)
+    try:
+        handle = path.open("r", encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise AuditRecordError("無法讀取輪次紀錄：{}".format(error))
+    try:
+        before = os.fstat(handle.fileno())
+        header_line = handle.readline()
+        if not header_line:
+            raise AuditRecordError("輪次紀錄是空檔")
+        try:
+            header = json.loads(header_line)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise AuditRecordError("輪次紀錄截斷或格式損壞：{}".format(error))
+        if not isinstance(header, dict):
+            raise AuditRecordError("輪次紀錄標頭格式不正確")
+        if (header.get("record_type") != "round" or
+                header.get("schema_version") != AUDIT_SCHEMA_VERSION):
+            raise AuditRecordError("不支援的輪次紀錄格式")
+        if not isinstance(header.get("round_id"), str) or not header["round_id"]:
+            raise AuditRecordError("輪次紀錄缺少有效 round_id")
+        if not isinstance(header.get("config"), dict) or not isinstance(
+                header.get("time_contract"), dict):
+            raise AuditRecordError("輪次紀錄缺少有效配置或時間契約")
+
+        previous_sequence = 0
+        event_count = 0
+        audit_complete = True
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise AuditRecordError("輪次紀錄截斷或格式損壞：{}".format(error))
+            if not isinstance(event, dict):
+                raise AuditRecordError("輪次事件記錄格式不正確")
+            sequence = event.get("sequence")
+            if (event.get("record_type") != "event" or
+                    event.get("schema_version") != AUDIT_SCHEMA_VERSION or
+                    event.get("round_id") != header["round_id"] or
+                    not isinstance(sequence, int) or isinstance(sequence, bool) or
+                    sequence <= previous_sequence or
+                    not isinstance(event.get("kind"), str) or not event["kind"] or
+                    not isinstance(event.get("message"), str) or
+                    not isinstance(event.get("detail"), dict) or
+                    not isinstance(event.get("observed_at"), str) or
+                    not isinstance(event.get("elapsed_seconds"), (int, float)) or
+                    isinstance(event.get("elapsed_seconds"), bool) or
+                    not math.isfinite(event["elapsed_seconds"])):
+                raise AuditRecordError("輪次事件格式、識別或順序不正確")
+            display_position = event.get("display_position")
+            if (display_position is not None and
+                    (not isinstance(display_position, int) or
+                     isinstance(display_position, bool) or display_position < 1)):
+                raise AuditRecordError("輪次事件顯示位置格式不正確")
+            if event["kind"] == "result" and (
+                    display_position is None or
+                    not isinstance(event.get("status"), str) or not event["status"] or
+                    "sn" not in event):
+                raise AuditRecordError("結果事件缺少有效顯示位置、狀態或 SN 欄位")
+            event_count += 1
+            if sequence != event_count or event["kind"] in {
+                    "audit_write_failed", "session_write_failed"}:
+                audit_complete = False
+            previous_sequence = sequence
+        after = os.fstat(handle.fileno())
+        if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+            raise AuditRecordError("輪次紀錄在查詢期間已變更")
+        header["audit_complete"] = audit_complete
+        handle.seek(0)
+        handle.readline()
+    except Exception:
+        handle.close()
+        raise
+
+    def events():
+        try:
+            for line in handle:
+                yield json.loads(line)
+            after = os.fstat(handle.fileno())
+            if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                raise AuditRecordError("輪次紀錄在查詢期間已變更")
+        finally:
+            handle.close()
+
+    iterator = events()
+    weakref.finalize(iterator, handle.close)
+    return header, iterator

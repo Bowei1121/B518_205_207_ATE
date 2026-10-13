@@ -5,6 +5,7 @@ import time
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from audit_records import AuditEvent, RoundAuditStore
 from app_event_store import AppEventStore
@@ -54,6 +55,183 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual(result.events[0].key, "round:round-1:101")
             self.assertEqual(result.events[-1].key, "round:round-1:2")
             self.assertEqual(audit.audit_path.read_bytes(), before)
+
+    def test_query_snapshot_pages_all_events_and_loads_detail_only_on_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = RoundAuditStore(
+                sessions, "round-page-1", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            long_diagnostic = "large raw diagnostic evidence " * 2000
+            for sequence in range(1, 206):
+                audit.append_event(
+                    AuditEvent(
+                        sequence, "round_ready", "FCT 來源已就緒", None,
+                        detail={"raw_diagnostic": long_diagnostic if sequence == 103 else ""}),
+                    "2026-10-13T10:00:00+08:00", float(sequence))
+            self.assertTrue(audit.flush())
+            source_bytes = audit.audit_path.read_bytes()
+
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            try:
+                self.assertEqual(result.total_count, 205)
+                self.assertEqual(result.page_count, 3)
+                self.assertEqual(len(result.get_page(1).events), 100)
+                self.assertEqual(len(result.get_page(2).events), 100)
+                final_page = result.get_page(3)
+                self.assertEqual(len(final_page.events), 5)
+                all_summaries = (result.get_page(1).events + result.get_page(2).events +
+                                 final_page.events)
+                self.assertEqual([item.sequence for item in all_summaries],
+                                 list(range(1, 206)))
+                self.assertEqual(len({item.key for item in all_summaries}), 205)
+                self.assertFalse(hasattr(all_summaries[0], "raw_record"))
+                self.assertFalse(hasattr(all_summaries[0], "diagnostic"))
+                self.assertFalse(hasattr(all_summaries[0], "detail"))
+
+                selected = next(item for item in result.get_page(2).events
+                                if item.sequence == 103)
+                detailed = result.get_detail(selected.key)
+                self.assertEqual(detailed.key, selected.key)
+                self.assertEqual(detailed.sequence, 103)
+                self.assertEqual(detailed.detail["raw_diagnostic"], long_diagnostic)
+                self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+                audit.append_event(
+                    AuditEvent(206, "round_ready", "later saved event", None),
+                    "2026-10-13T10:00:00+08:00", 206.0)
+                self.assertTrue(audit.flush())
+                bytes_after_append = audit.audit_path.read_bytes()
+                self.assertEqual(result.total_count, 205)
+                self.assertEqual(len(result.get_page(3).events), 5)
+                self.assertEqual(audit.audit_path.read_bytes(), bytes_after_append)
+                refreshed = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+                try:
+                    self.assertEqual(refreshed.total_count, 206)
+                finally:
+                    refreshed.close()
+                snapshot_path = result._store_path
+            finally:
+                result.close()
+            self.assertFalse(snapshot_path.exists())
+            with self.assertRaisesRegex(RuntimeError, "snapshot is closed"):
+                result.get_page(1)
+
+    def test_detail_service_coalesces_selection_and_discards_late_detail(self):
+        from historical_event_query import HistoricalEventDetailService
+
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            self._write_audit(sessions, [
+                "2026-10-13T10:00:00+00:00", "2026-10-13T10:00:01+00:00"])
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            first_key, latest_key = (item.key for item in result.events)
+            entered, release = threading.Event(), threading.Event()
+            original_get_detail = result.get_detail
+
+            def blocked_detail(event_key):
+                if event_key == first_key:
+                    entered.set()
+                    if not release.wait(5):
+                        raise RuntimeError("detail gate timed out")
+                return original_get_detail(event_key)
+
+            result.get_detail = blocked_detail
+            service = HistoricalEventDetailService()
+            try:
+                stale_request = service.submit(result, first_key)
+                self.assertTrue(entered.wait(2))
+                latest_request = service.submit(result, latest_key)
+                self.assertTrue(service.is_pending(latest_request))
+                self.assertIsNone(service.take_result(stale_request))
+                release.set()
+                deadline = time.monotonic() + 3
+                completion = None
+                while time.monotonic() < deadline:
+                    completion = service.take_result(latest_request)
+                    if completion is not None:
+                        break
+                    time.sleep(0.005)
+                self.assertIsNotNone(completion)
+                self.assertTrue(completion.succeeded)
+                self.assertEqual(completion.event.key, latest_key)
+                self.assertFalse(service.is_pending(latest_request))
+            finally:
+                release.set()
+                service.shutdown()
+                result.close()
+
+    def test_page_reads_run_off_ui_and_latest_page_replaces_blocked_request(self):
+        from historical_event_query import HistoricalEventDetailService
+
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            self._write_audit(sessions, [
+                "2026-10-13T10:00:00+00:00"] * 205)
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            entered, release = threading.Event(), threading.Event()
+            original_get_page = result.get_page
+            page_reader_threads = []
+
+            def blocked_page(page_number):
+                page_reader_threads.append(threading.get_ident())
+                if page_number == 2:
+                    entered.set()
+                    if not release.wait(5):
+                        raise RuntimeError("page gate timed out")
+                return original_get_page(page_number)
+
+            result.get_page = blocked_page
+            service = HistoricalEventDetailService()
+            try:
+                first_request = service.submit_page(result, 2)
+                self.assertTrue(entered.wait(2))
+                latest_request = service.submit_page(result, 3)
+                self.assertTrue(service.is_pending(latest_request))
+                release.set()
+                deadline = time.monotonic() + 3
+                completion = None
+                while time.monotonic() < deadline:
+                    completion = service.take_result(latest_request)
+                    if completion is not None:
+                        break
+                    time.sleep(0.005)
+                self.assertIsNone(service.take_result(first_request))
+                self.assertIsNotNone(completion)
+                self.assertTrue(completion.succeeded)
+                self.assertEqual(completion.page.page_number, 3)
+                self.assertEqual(len(completion.page.events), 5)
+                self.assertTrue(page_reader_threads)
+                self.assertTrue(all(thread_id != threading.get_ident()
+                                    for thread_id in page_reader_threads))
+            finally:
+                release.set()
+                service.shutdown()
+                result.close()
+
+    def test_exactly_one_hundred_events_stay_on_one_full_page(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            self._write_audit(sessions, ["2026-10-13T10:00:00+00:00"] * 100)
+
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            try:
+                self.assertEqual(result.total_count, 100)
+                self.assertEqual(result.page_count, 1)
+                self.assertEqual(len(result.get_page(1).events), 100)
+                with self.assertRaises(IndexError):
+                    result.get_page(2)
+            finally:
+                result.close()
 
     def test_single_result_is_returned_without_claiming_a_later_page(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -177,7 +355,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     release_first.wait(2)
                     raise RuntimeError("obsolete query failure")
                 latest_entered.set()
-                return HistoricalEventQueryResult(date_range, (), 0, 0, 0, ())
+                return SimpleNamespace(date_range=date_range)
             finally:
                 with calls_lock:
                     active_calls -= 1

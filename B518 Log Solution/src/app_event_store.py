@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 import ctypes
+import weakref
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -267,6 +268,237 @@ def read_app_event_store(path: Path) -> dict:
         raise _AppEventCleanupError(
             "app_events_read_failed", "App 事件紀錄無法讀取：{}".format(error))
     return _validate_app_event_store_payload(payload)
+
+
+class _JsonStreamReader:
+    """Incrementally decode JSON values without retaining the full source file."""
+
+    def __init__(self, handle):
+        self.handle = handle
+        self.decoder = json.JSONDecoder()
+        self.buffer = ""
+        self.position = 0
+        self.eof = False
+        self.chunk_size = 64 * 1024
+
+    def _fill(self):
+        if self.eof:
+            return False
+        chunk = self.handle.read(self.chunk_size)
+        if not chunk:
+            self.eof = True
+            return False
+        self.buffer += chunk
+        return True
+
+    def _compact(self):
+        if self.position >= 64 * 1024:
+            self.buffer = self.buffer[self.position:]
+            self.position = 0
+
+    def _skip_space(self):
+        while True:
+            while self.position < len(self.buffer) and self.buffer[self.position].isspace():
+                self.position += 1
+            if self.position < len(self.buffer) or not self._fill():
+                return
+
+    def peek(self):
+        self._skip_space()
+        if self.position >= len(self.buffer):
+            return ""
+        return self.buffer[self.position]
+
+    def take(self, expected):
+        actual = self.peek()
+        if actual != expected:
+            raise ValueError("JSON 格式不正確，預期 {!r}，取得 {!r}".format(expected, actual))
+        self.position += 1
+        self._compact()
+
+    def value(self):
+        self._skip_space()
+        while True:
+            try:
+                decoded, end = self.decoder.raw_decode(self.buffer, self.position)
+            except json.JSONDecodeError:
+                if not self._fill():
+                    raise
+                self.chunk_size = min(self.chunk_size * 2, 8 * 1024 * 1024)
+            else:
+                self.position = end
+                self.chunk_size = 64 * 1024
+                self._compact()
+                return decoded
+
+
+def _iter_app_event_payload(handle, metadata):
+    """Parse the top-level store while yielding one event object at a time."""
+    reader = _JsonStreamReader(handle)
+    top_level_keys = set()
+    has_events = False
+    reader.take("{")
+    if reader.peek() == "}":
+        reader.take("}")
+        raise ValueError("App 事件紀錄缺少 events 陣列")
+    while True:
+        key = reader.value()
+        if not isinstance(key, str):
+            raise ValueError("App 事件紀錄欄位名稱格式不正確")
+        if key in top_level_keys:
+            raise ValueError("App 事件紀錄欄位重複")
+        top_level_keys.add(key)
+        reader.take(":")
+        if key == "events":
+            has_events = True
+            reader.take("[")
+            if reader.peek() != "]":
+                while True:
+                    yield reader.value()
+                    delimiter = reader.peek()
+                    if delimiter == "]":
+                        break
+                    reader.take(",")
+            reader.take("]")
+        else:
+            metadata[key] = reader.value()
+        delimiter = reader.peek()
+        if delimiter == "}":
+            reader.take("}")
+            break
+        reader.take(",")
+    if not has_events:
+        raise ValueError("App 事件紀錄缺少 events 陣列")
+    if reader.peek():
+        raise ValueError("App 事件紀錄含有多餘資料")
+
+
+def iter_app_event_store_events(path: Path):
+    """Validate an App event store, then stream its events from the same open file.
+
+    Validation is a first bounded-memory pass. The returned iterator is a second
+    pass over the same descriptor, so an atomic path replacement cannot redirect
+    the query to a different journal. Only event IDs and sequence integers are
+    retained while validating; event details are decoded one at a time.
+    """
+    path = Path(path)
+    try:
+        handle = path.open("r", encoding="utf-8")
+        before = os.fstat(handle.fileno())
+    except (OSError, UnicodeError) as error:
+        raise _AppEventCleanupError(
+            "app_events_read_failed", "App 事件紀錄無法讀取：{}".format(error))
+
+    seen = set()
+    live_sequences = set()
+    event_count = 0
+    previous_sequence = 0
+
+    def validate_event(event):
+        nonlocal event_count, previous_sequence
+        event_count += 1
+        if (not isinstance(event, dict) or event.get("record_type") != "app_event" or
+                event.get("schema_version") != APP_EVENT_RECORD_VERSION or
+                type(event.get("sequence")) is not int or event["sequence"] <= previous_sequence or
+                not isinstance(event.get("event_id"), str) or not event["event_id"] or
+                event["event_id"] in seen or "round_id" in event or
+                not isinstance(event.get("occurred_at"), str) or
+                not isinstance(event.get("kind"), str) or
+                not isinstance(event.get("localized_message"), dict) or
+                event["localized_message"].get("version") != 1 or
+                not isinstance(event["localized_message"].get("message_id"), str) or
+                not isinstance(event["localized_message"].get("parameters"), dict) or
+                not isinstance(event["localized_message"].get("en"), str) or
+                not isinstance(event["localized_message"].get("zh-TW"), str) or
+                not isinstance(event.get("diagnostic", ""), str)):
+            raise _AppEventCleanupError(
+                "app_events_invalid", "App 事件紀錄內容不完整或序號不連續")
+        try:
+            occurred_at = datetime.fromisoformat(event["occurred_at"])
+        except ValueError:
+            raise _AppEventCleanupError("app_events_time_invalid", "App 事件時間格式無效")
+        if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+            raise _AppEventCleanupError("app_events_time_missing", "App 事件時間缺少時區")
+        seen.add(event["event_id"])
+        live_sequences.add(event["sequence"])
+        previous_sequence = event["sequence"]
+
+    try:
+        metadata = {}
+        for event in _iter_app_event_payload(handle, metadata):
+            validate_event(event)
+        after = os.fstat(handle.fileno())
+        if not _same_file_entry(before, after):
+            raise _AppEventCleanupError(
+                "app_events_changed", "App 事件紀錄在查詢期間已變更")
+        if (metadata.get("record_type") != "app_event_store" or
+                type(metadata.get("schema_version")) is not int or
+                metadata["schema_version"] not in {APP_EVENT_STORE_VERSION,
+                                                     APP_EVENT_STORE_RETENTION_VERSION}):
+            raise _AppEventCleanupError(
+                "app_events_unknown_format", "App 事件紀錄格式或版本不受支援")
+        store_version = metadata["schema_version"]
+        retired = metadata.get("retired_sequences")
+        next_sequence = metadata.get("next_sequence")
+        if store_version == APP_EVENT_STORE_VERSION:
+            if "retired_sequences" in metadata or "next_sequence" in metadata:
+                raise _AppEventCleanupError(
+                    "app_events_sequence_invalid", "App 事件紀錄序號保留資訊需要新版格式")
+            retired = []
+            next_sequence = event_count + 1
+            if previous_sequence != event_count:
+                raise _AppEventCleanupError(
+                    "app_events_invalid", "App 事件紀錄內容不完整或序號不連續")
+        elif "retired_sequences" not in metadata or "next_sequence" not in metadata:
+            raise _AppEventCleanupError(
+                "app_events_sequence_missing", "App 事件紀錄序號保留資訊不完整")
+        if (not isinstance(retired, list) or type(next_sequence) is not int or
+                next_sequence < 1):
+            raise _AppEventCleanupError(
+                "app_events_sequence_invalid", "App 事件紀錄序號保留資訊無效")
+        previous_end = 0
+        retired_count = 0
+        for item in retired:
+            if (not isinstance(item, list) or len(item) != 2 or
+                    type(item[0]) is not int or type(item[1]) is not int or
+                    item[0] <= previous_end or item[1] < item[0] or
+                    item[1] >= next_sequence):
+                raise _AppEventCleanupError(
+                    "app_events_sequence_invalid", "App 事件紀錄序號保留範圍無效")
+            retired_count += item[1] - item[0] + 1
+            if any(item[0] <= sequence <= item[1] for sequence in live_sequences):
+                raise _AppEventCleanupError(
+                    "app_events_sequence_invalid", "App 事件紀錄已刪除序號仍有事件")
+            previous_end = item[1]
+        if (any(sequence >= next_sequence for sequence in live_sequences) or
+                len(live_sequences) + retired_count != next_sequence - 1):
+            raise _AppEventCleanupError(
+                "app_events_sequence_gap", "App 事件紀錄存在未解釋的序號缺口")
+        handle.seek(0)
+    except _AppEventCleanupError:
+        handle.close()
+        raise
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        handle.close()
+        raise _AppEventCleanupError(
+            "app_events_read_failed", "App 事件紀錄無法讀取：{}".format(error))
+
+    # Re-parse in chunks and yield event objects one at a time.
+    def iter_second_pass():
+        try:
+            metadata = {}
+            yield from _iter_app_event_payload(handle, metadata)
+            after = os.fstat(handle.fileno())
+            if not _same_file_entry(before, after):
+                raise _AppEventCleanupError(
+                    "app_events_changed", "App 事件紀錄在查詢期間已變更")
+        finally:
+            handle.close()
+
+    handle.seek(0)
+    iterator = iter_second_pass()
+    weakref.finalize(iterator, handle.close)
+    return iterator
 
 
 def _validate_app_event_store_payload(payload: object) -> dict:

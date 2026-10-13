@@ -1,17 +1,21 @@
-"""Date-bounded first-page queries over the existing read-only history sources."""
+"""Date-bounded, paged snapshots over the existing read-only history sources."""
 
 from __future__ import annotations
 
-import bisect
+import json
 import os
+import sqlite3
+import tempfile
 import threading
 import time
+import weakref
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from historical_event_display import HistoricalEvent, iter_historical_events
+from historical_event_display import (HistoricalEvent, iter_historical_events,
+                                      legacy_historical_event_message_record)
 
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
@@ -113,17 +117,299 @@ class HistoricalEventDateRange:
 
 
 @dataclass(frozen=True)
-class HistoricalEventQueryResult:
+class HistoricalEventSummary:
+    """Small list-row data; source diagnostics and raw details stay in the snapshot."""
+
+    key: str
+    source: str
+    occurred_at: str
+    message: str
+    kind: str = ""
+    round_id: Optional[str] = None
+    sequence: Optional[int] = None
+    localized_message: Optional[dict] = None
+    station: str = ""
+    platform: str = ""
+    unrecognized: bool = False
+    source_order: int = 0
+
+
+@dataclass(frozen=True)
+class HistoricalEventQueryPage:
     date_range: HistoricalEventDateRange
-    events: Tuple[HistoricalEvent, ...]
+    page_number: int
+    page_size: int
     total_count: int
-    unclassified_count: int
-    source_issue_count: int
-    diagnostics: Tuple[HistoricalEvent, ...]
+    events: Tuple[HistoricalEventSummary, ...]
+
+
+class HistoricalEventQueryResult:
+    """A fixed, temporary query snapshot with bounded pages and lazy detail reads."""
+
+    def __init__(self, date_range: HistoricalEventDateRange, total_count: int,
+                 unclassified_count: int, source_issue_count: int,
+                 diagnostics: Tuple[HistoricalEvent, ...], store_path: Path,
+                 page_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE):
+        self.date_range = date_range
+        self.total_count = total_count
+        self.unclassified_count = unclassified_count
+        self.source_issue_count = source_issue_count
+        self.diagnostics = diagnostics
+        self._store_path = Path(store_path)
+        self.page_size = page_size
+        self._first_page = ()
+        self._closed = False
+        self._finalizer = weakref.finalize(self, _remove_snapshot, self._store_path)
+
+    @property
+    def events(self) -> Tuple[HistoricalEventSummary, ...]:
+        """Compatibility view of the first bounded page."""
+        self._ensure_open()
+        return self._first_page
+
+    @property
+    def page_count(self) -> int:
+        if self.total_count == 0:
+            return 0
+        return (self.total_count + self.page_size - 1) // self.page_size
+
+    def get_page(self, page_number: int) -> HistoricalEventQueryPage:
+        """Read at most one page from the immutable query snapshot, never the sources."""
+        if type(page_number) is not int or page_number < 1:
+            raise ValueError("page_number must be a positive integer")
+        self._ensure_open()
+        if self.page_count and page_number > self.page_count:
+            raise IndexError("page_number is outside this query snapshot")
+        if not self.page_count and page_number != 1:
+            raise IndexError("an empty query only has its empty first page")
+        offset = (page_number - 1) * self.page_size
+        connection = sqlite3.connect(str(self._store_path))
+        try:
+            rows = connection.execute(
+                "SELECT summary_json FROM matching_events "
+                "ORDER BY local_wall_order DESC, aware_rank ASC, epoch DESC, "
+                "stable_identity ASC, sequence_number ASC, event_key ASC, "
+                "source_order ASC LIMIT ? OFFSET ?",
+                (self.page_size, offset),
+            ).fetchall()
+        finally:
+            connection.close()
+        summaries = tuple(_summary_from_json(row[0]) for row in rows)
+        return HistoricalEventQueryPage(
+            self.date_range, page_number, self.page_size,
+            self.total_count, summaries)
+
+    def get_detail(self, event_key: str) -> Optional[HistoricalEvent]:
+        """Load the original event only for the selected identity."""
+        if not isinstance(event_key, str) or not event_key:
+            raise ValueError("event_key must be a non-empty string")
+        self._ensure_open()
+        connection = sqlite3.connect(str(self._store_path))
+        try:
+            row = connection.execute(
+                "SELECT event_json FROM matching_events WHERE event_key = ?",
+                (event_key,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return _event_from_json(row[0]) if row is not None else None
+
+    def close(self) -> None:
+        """Release this query's temporary snapshot; safe to call more than once."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._finalizer.alive:
+            self._finalizer()
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("historical query snapshot is closed")
 
     @property
     def is_limited(self) -> bool:
-        return self.total_count > len(self.events)
+        """Whether the first page alone omits matching rows (legacy H1 indicator)."""
+        return self.total_count > self.page_size
+
+
+def _remove_snapshot(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _summary_from_json(value: str) -> HistoricalEventSummary:
+    return HistoricalEventSummary(**json.loads(value))
+
+
+def _event_from_json(value: str) -> HistoricalEvent:
+    return HistoricalEvent(**json.loads(value))
+
+
+def _event_summary_json(event: HistoricalEvent) -> str:
+    localized_message = event.localized_message
+    if localized_message is None:
+        localized_message = legacy_historical_event_message_record(event)
+    return json.dumps({
+        "key": event.key, "source": event.source, "occurred_at": event.occurred_at,
+        "message": event.message, "kind": event.kind, "round_id": event.round_id,
+        "sequence": event.sequence, "localized_message": localized_message,
+        "station": event.station, "platform": event.platform,
+        "unrecognized": event.unrecognized, "source_order": event.source_order,
+    }, ensure_ascii=False, separators=(",", ":"))
+
+
+def _event_json(event: HistoricalEvent) -> str:
+    return json.dumps({
+        "key": event.key, "source": event.source, "occurred_at": event.occurred_at,
+        "message": event.message, "kind": event.kind, "round_id": event.round_id,
+        "sequence": event.sequence, "localized_message": event.localized_message,
+        "diagnostic": event.diagnostic, "detail": event.detail,
+        "raw_record": event.raw_record, "station": event.station,
+        "platform": event.platform, "unrecognized": event.unrecognized,
+        "source_order": event.source_order,
+    }, ensure_ascii=False, separators=(",", ":"))
+
+
+@dataclass(frozen=True)
+class HistoricalEventDetailCompletion:
+    request_id: int
+    event_key: Optional[str]
+    succeeded: bool
+    event: Optional[HistoricalEvent] = None
+    error: Optional[Exception] = None
+    page: Optional[HistoricalEventQueryPage] = None
+
+
+@dataclass
+class _HistoricalEventDetailRequest:
+    request_id: int
+    result: HistoricalEventQueryResult
+    event_key: Optional[str]
+    page_number: Optional[int] = None
+    cancellation_event: threading.Event = field(default_factory=threading.Event)
+
+
+class HistoricalEventDetailService:
+    """Load only the currently selected detail on one bounded background worker."""
+
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._next_request_id = 0
+        self._latest_request_id = None
+        self._active: Optional[_HistoricalEventDetailRequest] = None
+        self._pending: Optional[_HistoricalEventDetailRequest] = None
+        self._worker: Optional[threading.Thread] = None
+        self._completed: Optional[HistoricalEventDetailCompletion] = None
+        self._closed = False
+
+    def submit(self, result: HistoricalEventQueryResult, event_key: str) -> int:
+        if not isinstance(event_key, str) or not event_key:
+            raise ValueError("event_key must be a non-empty string")
+        return self._submit(result, event_key, None)
+
+    def submit_page(self, result: HistoricalEventQueryResult, page_number: int) -> int:
+        if type(page_number) is not int or page_number < 1:
+            raise ValueError("page_number must be a positive integer")
+        return self._submit(result, None, page_number)
+
+    def _submit(self, result: HistoricalEventQueryResult, event_key: Optional[str],
+                page_number: Optional[int]) -> int:
+        if not isinstance(result, HistoricalEventQueryResult):
+            raise TypeError("result must be a HistoricalEventQueryResult")
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("historical detail service is closed")
+            self._next_request_id += 1
+            request = _HistoricalEventDetailRequest(
+                self._next_request_id, result, event_key, page_number)
+            self._invalidate_work_locked()
+            self._pending = request
+            self._latest_request_id = request.request_id
+            self._completed = None
+            if self._worker is None:
+                self._worker = threading.Thread(
+                    target=self._run, name="HistoricalEventDetail", daemon=True)
+                self._worker.start()
+            self._condition.notify_all()
+            return request.request_id
+
+    def cancel(self, request_id: Optional[int] = None) -> None:
+        with self._condition:
+            if request_id is not None and request_id != self._latest_request_id:
+                return
+            self._latest_request_id = None
+            self._invalidate_work_locked()
+            self._completed = None
+            self._condition.notify_all()
+
+    def take_result(self, request_id: int) -> Optional[HistoricalEventDetailCompletion]:
+        with self._condition:
+            if self._closed or request_id != self._latest_request_id:
+                return None
+            completion = self._completed
+            if completion is not None and completion.request_id == request_id:
+                self._completed = None
+                self._latest_request_id = None
+                return completion
+            return None
+
+    def is_pending(self, request_id: int) -> bool:
+        with self._condition:
+            return (not self._closed and self._latest_request_id == request_id and
+                    (self._completed is not None or
+                     (self._active is not None and self._active.request_id == request_id) or
+                     (self._pending is not None and self._pending.request_id == request_id)))
+
+    def shutdown(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._latest_request_id = None
+            self._invalidate_work_locked()
+            self._completed = None
+            self._condition.notify_all()
+
+    def _invalidate_work_locked(self) -> None:
+        if self._active is not None:
+            self._active.cancellation_event.set()
+        if self._pending is not None:
+            self._pending.cancellation_event.set()
+            self._pending = None
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                if self._closed or self._pending is None:
+                    self._worker = None
+                    self._condition.notify_all()
+                    return
+                request = self._pending
+                self._pending = None
+                self._active = request
+            try:
+                if request.page_number is not None:
+                    page = request.result.get_page(request.page_number)
+                    completion = HistoricalEventDetailCompletion(
+                        request.request_id, None, True, page=page)
+                else:
+                    event = request.result.get_detail(request.event_key)
+                    completion = HistoricalEventDetailCompletion(
+                        request.request_id, request.event_key, event is not None, event=event)
+            except Exception as error:
+                completion = HistoricalEventDetailCompletion(
+                    request.request_id, request.event_key, False, error=error)
+            with self._condition:
+                if self._active is request:
+                    self._active = None
+                if (not self._closed and self._latest_request_id == request.request_id and
+                        not request.cancellation_event.is_set()):
+                    self._completed = completion
+                if self._closed or self._pending is None:
+                    self._worker = None
+                    self._condition.notify_all()
+                    return
+                self._condition.notify_all()
 
 
 @dataclass(frozen=True)
@@ -177,6 +463,8 @@ class HistoricalEventQueryService:
                 self._pending.cancellation_event.set()
             self._pending = request
             self._latest_generation = request.generation
+            for completion in self._completed.values():
+                _discard_query_completion(completion)
             self._completed.clear()
             if self._worker is None:
                 self._worker = threading.Thread(
@@ -196,7 +484,9 @@ class HistoricalEventQueryService:
             if self._pending is not None and self._pending.generation == generation:
                 self._pending.cancellation_event.set()
                 self._pending = None
-            self._completed.pop(generation, None)
+            completion = self._completed.pop(generation, None)
+            if completion is not None:
+                _discard_query_completion(completion)
             self._condition.notify_all()
             return True
 
@@ -225,6 +515,8 @@ class HistoricalEventQueryService:
         with self._condition:
             self._closed = True
             self._latest_generation = None
+            for completion in self._completed.values():
+                _discard_query_completion(completion)
             self._completed.clear()
             if self._active is not None:
                 self._active.cancellation_event.set()
@@ -261,11 +553,19 @@ class HistoricalEventQueryService:
                         self._latest_generation == request.generation and
                         not request.cancellation_event.is_set()):
                     self._completed[request.generation] = completion
+                else:
+                    _discard_query_completion(completion)
                 if self._closed or self._pending is None:
                     self._worker = None
                     self._condition.notify_all()
                     return
                 self._condition.notify_all()
+
+
+def _discard_query_completion(completion: HistoricalEventQueryCompletion) -> None:
+    if (completion.succeeded and
+            isinstance(completion.result, HistoricalEventQueryResult)):
+        completion.result.close()
 
 
 def parse_historical_event_date_range(start_text: str, end_text: str
@@ -297,59 +597,85 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                             limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
                             cancellation_event: Optional[threading.Event] = None
                             ) -> HistoricalEventQueryResult:
-    """Read saved history and retain only the newest bounded result set.
+    """Freeze matching source events into a temporary, disk-backed query snapshot.
 
-    Existing strict source readers remain authoritative. Raw details are carried only by
-    matching first-page records; no display text is built while scanning.
+    The retained in-memory page contains only summaries. Original records and large
+    diagnostics remain in the temporary snapshot until a selected key requests detail.
     """
     if not isinstance(date_range, HistoricalEventDateRange):
         raise TypeError("date_range must be a HistoricalEventDateRange")
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
     page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
-    ordered = []
+    descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
+    os.close(descriptor)
+    store_path = Path(raw_path)
+    connection = None
     total_count = 0
     unclassified_count = 0
     source_issue_count = 0
     diagnostics = []
+    try:
+        connection = sqlite3.connect(str(store_path))
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.execute(
+            "CREATE TABLE matching_events ("
+            "event_key TEXT NOT NULL, local_wall_order INTEGER NOT NULL, "
+            "aware_rank INTEGER NOT NULL, epoch REAL, stable_identity TEXT NOT NULL, "
+            "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
+            "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)"
+        )
+        connection.execute(
+            "CREATE INDEX event_key_lookup ON matching_events(event_key)")
 
-    _raise_if_query_cancelled(cancellation_event)
-    for event in iter_historical_events(session_root, app_event_path):
         _raise_if_query_cancelled(cancellation_event)
-        if event.source in {"read_error", "read_warning"}:
-            source_issue_count += 1
-        occurred_at = _parse_occurred_at(event.occurred_at, date_range._local_timezone)
-        if occurred_at is None:
-            unclassified_count += 1
-            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
-                diagnostics.append(event)
-            continue
-        parsed, epoch, local_wall_order = occurred_at
-        if epoch is None:
-            in_range = date_range.start <= parsed.date() <= date_range.end
-        else:
-            in_range = date_range._start_epoch <= epoch < date_range._end_epoch
-        if not in_range:
-            continue
+        for event in iter_historical_events(session_root, app_event_path):
+            _raise_if_query_cancelled(cancellation_event)
+            if event.source in {"read_error", "read_warning"}:
+                source_issue_count += 1
+            occurred_at = _parse_occurred_at(
+                event.occurred_at, date_range._local_timezone)
+            if occurred_at is None:
+                unclassified_count += 1
+                if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                    diagnostics.append(event)
+                continue
+            parsed, epoch, local_wall_order = occurred_at
+            if epoch is None:
+                in_range = date_range.start <= parsed.date() <= date_range.end
+            else:
+                in_range = date_range._start_epoch <= epoch < date_range._end_epoch
+            if not in_range:
+                continue
 
-        total_count += 1
-        sequence = event.sequence if type(event.sequence) is int else event.source_order
-        stable_identity = event.round_id or event.key
-        # Naive records are ordered by their local wall time. Do not guess which
-        # occurrence they refer to during a daylight-saving fold; aware timestamps
-        # at the same wall time remain ordered by their known instants.
-        sort_key = (-local_wall_order, 0 if epoch is not None else 1,
-                    -epoch if epoch is not None else 0,
-                    stable_identity, sequence, event.key, event.source_order)
-        bisect.insort(ordered, (sort_key, event.key, event))
-        if len(ordered) > page_size:
-            ordered.pop()
+            sequence = event.sequence if type(event.sequence) is int else event.source_order
+            stable_identity = event.round_id or event.key
+            connection.execute(
+                "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event.key, local_wall_order, 0 if epoch is not None else 1, epoch,
+                 stable_identity, sequence, event.source_order,
+                 _event_summary_json(event), _event_json(event)))
+            total_count += 1
 
-    _raise_if_query_cancelled(cancellation_event)
-
-    return HistoricalEventQueryResult(
-        date_range, tuple(item[2] for item in ordered), total_count,
-        unclassified_count, source_issue_count, tuple(diagnostics))
+        _raise_if_query_cancelled(cancellation_event)
+        connection.execute("CREATE INDEX event_order_lookup ON matching_events("
+                           "local_wall_order DESC, aware_rank ASC, epoch DESC, "
+                           "stable_identity ASC, sequence_number ASC, event_key ASC, "
+                           "source_order ASC)")
+        connection.commit()
+        connection.close()
+        connection = None
+        result = HistoricalEventQueryResult(
+            date_range, total_count, unclassified_count, source_issue_count,
+            tuple(diagnostics), store_path, page_size)
+        result._first_page = result.get_page(1).events
+        return result
+    except Exception:
+        if connection is not None:
+            connection.close()
+        _remove_snapshot(store_path)
+        raise
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:
@@ -368,9 +694,9 @@ def _parse_occurred_at(value: str, local_timezone: _LocalTimezoneSnapshot):
         else:
             epoch = parsed.timestamp()
             local_wall = local_timezone.wall_time(epoch)
-        wall_order = (local_wall.toordinal() * 86400 + local_wall.hour * 3600 +
-                      local_wall.minute * 60 + local_wall.second +
-                      local_wall.microsecond / 1000000.0)
+        wall_order = ((local_wall.toordinal() * 86400 + local_wall.hour * 3600 +
+                       local_wall.minute * 60 + local_wall.second) * 1000000 +
+                      local_wall.microsecond)
         return parsed, epoch, wall_order
     except (TypeError, ValueError, OverflowError, OSError):
         return None

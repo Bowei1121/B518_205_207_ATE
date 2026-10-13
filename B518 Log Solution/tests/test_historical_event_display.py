@@ -6,6 +6,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from historical_event_display import (read_historical_events,
+                                      iter_historical_events,
                                       render_historical_event,
                                       render_historical_event_message)
 from language_catalog import ENGLISH, LANGUAGE_RESOURCES, TRADITIONAL_CHINESE
@@ -73,6 +74,32 @@ class HistoricalEventDisplayTests(unittest.TestCase):
             message = render_historical_event_message(record, ENGLISH)
 
         self.assertEqual(message.message, "FCT round start accepted")
+
+    def test_query_iterator_streams_validated_disk_sources_instead_of_bulk_readers(self):
+        from app_event_store import AppEventStore
+        from audit_records import AuditEvent, RoundAuditStore
+
+        audit = RoundAuditStore(
+            self.sessions, "stream-round", "FCT", "2026-10-08T10:00:00+08:00", 0.0)
+        audit.append_event(AuditEvent(1, "round_ready", "FCT ready", None),
+                           "2026-10-08T10:01:00+08:00", 60.0)
+        self.assertTrue(audit.flush())
+        app_path = self.root / "app-events.json"
+        app_store = AppEventStore(app_path)
+        app_store.record("app.event_store.recovered")
+        self.assertTrue(app_store.flush())
+        app_store.stop()
+
+        with patch("audit_records.read_round_audit",
+                   side_effect=AssertionError("query retained a whole audit payload")), \
+                patch("app_event_store.read_app_event_store",
+                      side_effect=AssertionError("query retained a whole App event payload")):
+            records = list(iter_historical_events(self.sessions, app_path))
+
+        self.assertEqual({record.source for record in records}, {"round", "app"})
+        self.assertIn("round:stream-round:1", {record.key for record in records})
+        app_record = next(record for record in records if record.source == "app")
+        self.assertTrue(app_record.key.startswith("app:"))
 
     def test_equal_timestamp_round_events_keep_numeric_audit_sequence_order(self):
         round_id = "round-sequence-order"
