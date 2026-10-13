@@ -1,0 +1,65 @@
+# C4 local validation — 2026-10-13
+
+## Scope and baseline
+
+- Ticket: cleanup-reason C4 / GitHub #36, parent #28. This is not language L4 or multilingual M8.
+- Git root: `/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution`; Python project: `B518 Log Solution/`.
+- Fixed Standards/Spec review base and mainline starting SHA: `9d53ced227591f92cd20bad789ebdccdb05f8950`.
+- C4 branch/worktree: `LanguageRefresh/ticket-08` at `/private/tmp/B518-LanguageRefresh-C4`.
+- C2 (`316fc7005b3e1ca4992da5601a9882b543228177`, integration `657ce8a2f53aba543fac663217d2057f0abb489a`) and C3 (`7639be8b8af1fb77461706d763ae95402ae3a3cc`, integration `509800011496e90fbd6aabf23a68f90bbdaa10e7`, final delivery `e13060fff25d89b5ed630f09ce0421e20f771734`) are ancestors of the C4 base. Their final evidence records formal producer migration, structured bilingual records, archive/App-event safety, recovery, fresh-reader/Tk coverage, full desktop suites and fixed-base reviews without blockers. C1’s final evidence and post-merge full-suite recovery of its earlier notice-window test stall are recorded in `../retention-reason-ticket-01/local-validation.md` and the 2026-10-13 project summary. No C1/C2/C3 remediation was mixed into C4.
+- At start, direct `git ls-remote` queries showed both Gitea (`origin`) and GitHub refs for `B518-Log-Solution` at `9d53ced`; C4 branch refs did not exist. Existing primary-worktree edits in `PROJECT_SUMMARY_2026-10-09.md` and `PROJECT_SUMMARY_2026-10-12.md`, and all other worktrees, were left untouched.
+
+## Screen and data-path inventory
+
+| Surface / entry | Reason and normal-data responsibility | C4 result and evidence |
+| --- | --- | --- |
+| Main page archive/save status (`_refresh_archive_statuses`) | Reads public `RoundCoordinator.archive_statuses`; status identity, save state, archive time and retry eligibility are not reason text. Normal round/save events refresh this view. | Structured reasons and legacy message fallback both use `_retention_reason_detail` → C1 `present_cleanup_reason`; archived timestamp, round ID and save-state policy remain raw/unchanged. `test_real_tk_distinguishes_unsaved_saved_and_archived_round_states`. |
+| Settings live cleanup status (`_refresh_retention_cleanup_status`) | Reads current public cleanup status and latest persisted summary. | Current structured reason and legacy message use the same presenter/detail path. Save-close skipped reason now exposes the selected-language outer text plus full captured bilingual source record. Real-Tk close test below. |
+| Settings cleanup summary list/details | Reads public summaries, round outcomes, App-event outcomes and archive-verification result details. | Existing structured/legacy rows all use `_retention_reason_detail`; data refresh, retry and summary ordering remain unchanged. `test_real_tk_reads_mixed_cleanup_reason_ledger_and_keeps_raw_evidence_read_only`, `test_real_tk_shows_startup_cleanup_summary_after_disk_deletion`, `test_real_tk_app_event_cleanup_failure_is_visible_and_retryable`. |
+| Central compatibility/presentation module | `cleanup_reasons.present_cleanup_reason` owns new IDs, captured-language fallback, reliable legacy matching and unknown handling. | Only this compatibility Implementation retains legacy Chinese exact/prefix recognition. A source scan found no Chinese reason matching in Tk; remaining `startswith` uses concern profile/path handling, not cleanup reasons. `tests.test_cleanup_reasons` covers exact-match, near-miss, unknown, malformed and missing-resource behavior. |
+| Persistence and safety | Round ledger/active plans/recovery, App journal/retired sequence, archive records, atomic replace/fsync, deletion eligibility and close coordination. | No producer, journal, ledger schema, cleanup eligibility, timing, path, sequence, archive or recovery implementation changed. Reading/language refresh perform no cleanup and write no old summary. |
+
+The 2026-10-13 implementation scan used `rg -n 'startswith\(| in .*message|message.* in |startswith\(' src --glob '*.py'` filtered to cleanup/archive/reason, plus a Chinese cleanup/archive phrase scan. Remaining old-reason recognition is confined to `src/cleanup_reasons.py`; C4 intentionally retains it for compatibility.
+
+## Ticket acceptance (8)
+
+| # | Result | Evidence |
+| --- | --- | --- |
+| 1 | Pass | Main-page archive/protection status and Settings live/list/detail paths render through the shared public presentation contract; Tk-side Chinese matching is absent. The final code diff is limited to the two Settings/Main-page reason-rendering call sites. |
+| 2 | Pass | Known IDs render in the active language; unknown and malformed records retain the localized outer explanation and complete available raw details through C1. Existing `tests.test_cleanup_reasons` cases and real-Tk mixed-ledger test passed. |
+| 3 | Pass | Parent seven-scenario matrix is mapped below on final candidate SHA `af6c21996da36eea1365e0634dacd4db978bdbca`; full Tk suite passed. |
+| 4 | Pass | Real Tk displays localized reason with original bilingual JSON/diagnostic; selected cleanup/round identity, result, timestamps, counts and App-event sequence are asserted by C1–C3 UI/persistence cases. Ledger bytes remain identical through language refresh in `test_real_tk_cleanup_status_shows_captured_reason_details_during_close`; historical summary bytes remain identical in `test_real_tk_reads_mixed_cleanup_reason_ledger_and_keeps_raw_evidence_read_only`. |
+| 5 | Pass | Actual Settings Tk window reads mixed old/new ledger data and actual archived/cleanup status, including fresh-reader coverage in the existing real-Tk suite; the newly added close-skip case verifies detail in the same running App. |
+| 6 | Pass | Fixed-base/candidate `compare_app_event_retention.py` output: parity for corrupt (0 deleted/1 skipped, bytes unchanged), mixed (2 deleted/1 skipped, sequence 3 remains, retired 1–2, next sequence 4), not-expired (0 deleted/1 skipped, sequence 1 remains), and path-swap (0 deleted/1 failed, external unchanged and managed original preserved). C2 evidence supplies paired trusted-round/archive deletion/retention cases. C4 did not modify any cleanup producer or eligibility module. |
+| 7 | Pass | Existing behavior cases were retained; no callback-count/private-registration test was added. Public real-Tk and disk assertions cover visible states and effects. The obsolete assertion that English source text must be absent everywhere was corrected to require Chinese outer display while retaining English in inspectable raw details. |
+| 8 | Pass for C4 scope | C4 is independently implementable after C2/C3 and does not depend on language L4. This evidence does not claim bundle/factory/field acceptance or alter remote #28. Mainline merge and destination synchronization remain delivery steps to complete after review. |
+
+## Parent specification second-item scenarios (7)
+
+| Scenario | Final-version command/data evidence | Result |
+| --- | --- | --- |
+| 1. New round, App-event and archive reasons | C2 and C3 final evidence plus this revision’s live-status/detail real-Tk cases; formal producer fixtures are unchanged by C4. | Captured reason ID, parameters, same-record English/Traditional Chinese and raw diagnostic remain visible. |
+| 2. Fresh read of saved summaries | `B518_TK_TESTS=1 PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_reads_mixed_cleanup_reason_ledger_and_keeps_raw_evidence_read_only -v` (pass); C2/C3 full-suite fresh-reader evidence. | Reason, outcome, time, count, run/round and applicable sequence survive disk reconstruction and App display. |
+| 3. Known legacy and mixed data | `tests.test_cleanup_reasons`, `tests.test_round_retention`, the mixed-ledger Tk case and the C2/C3 evidence. | Only producer-backed legacy values translate; bytes are not rewritten. |
+| 4. Unknown/inapplicable formats | `tests.test_cleanup_reasons` unknown/malformed/missing-resource cases and the mixed-ledger Tk case. | Localized outer notice, captured-English fallback and raw detail; no internal key or guessed safety category. |
+| 5. Save failure/recovery | `tests.test_round_retention`, `tests.test_app_event_store`, `test_real_tk_app_event_cleanup_failure_is_visible_and_retryable`; C2/C3 recovery evidence. | Existing progress is retained and retried through existing APIs; no false durable-success claim or duplicate cleanup. |
+| 6. Cleanup safety | Fixed-base comparison output above; C2 paired round/archive comparison and C3 app-event suite; no C4 producer/policy edits. | Same-input delete/retain/count/sequence outcomes; deadlines, protection, paths, symlinks and durability gates remain owned by C1–C3 implementations. |
+| 7. Language/read behavior | `test_real_tk_cleanup_status_shows_captured_reason_details_during_close` and mixed-ledger Tk case. | Real menu language change updates the existing view, keeps saved ledger bytes and summary count unchanged, and does not start another cleanup. |
+
+## Commands and results
+
+- Runtime preflight (outside GUI sandbox): `/opt/anaconda3/bin/python3` = Python 3.11.7; Tk 8.6 / Tcl 8.6; Tk windowing system `aqua`; real root create/update/destroy succeeded.
+- Focused non-GUI reasons/retention/App-event/archive suite: `PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_cleanup_reasons tests.test_round_retention tests.test_app_event_store tests.test_round_archival -q` — 82 tests, OK.
+- Real-Tk acceptance group: `B518_TK_TESTS=1 PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_reads_mixed_cleanup_reason_ledger_and_keeps_raw_evidence_read_only tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_shows_startup_cleanup_summary_after_disk_deletion tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_app_event_cleanup_failure_is_visible_and_retryable tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_cleanup_status_shows_captured_reason_details_during_close tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_distinguishes_unsaved_saved_and_archived_round_states -v` — 5 tests, OK.
+- Regression after legacy archive fallback change: the two relevant UI cases plus cleanup reason, retention and App-event modules — 67 tests, OK.
+- Full required command on final code/test SHA `af6c21996da36eea1365e0634dacd4db978bdbca`: `B518_TK_TESTS=1 PYTHONFAULTHANDLER=1 PYTHONPATH=src /opt/anaconda3/bin/python3 -u scripts/run_tests.py` — 405 tests / 142.185 seconds / exit 0. Full output is preserved in `desktop-suite-final.log`.
+- Earlier full-suite attempt on `bca1f33` had two failures: an old UI assertion incorrectly forbade English inside the required inspectable raw bilingual detail (corrected; targeted real-Tk test passes), and an unrelated 2-second event synchronization timeout (the isolated case passed immediately; the complete final suite also passed). Neither failure is hidden or treated as a passing result.
+- No project type-checker configuration was found; no type-check claim is made.
+- C4 source changes do not touch production cleanup, journal, ledger, archive, recovery or shutdown modules. The full final regression and fixed-base outcome comparison passed. KVM regression is included in the 405-test full suite.
+
+## Reviews and delivery state
+
+- Final source/test SHA before docs: `af6c21996da36eea1365e0634dacd4db978bdbca`; fixed review base remains `9d53ced227591f92cd20bad789ebdccdb05f8950`.
+- Final full suite was run on that SHA. Standards/Spec review, documentation commit, merge, post-merge full suite, final remote SHA queries and safe branch/worktree cleanup are pending and must be recorded here before declaring delivery complete.
+- At validation time, ticket branch pushes had been confirmed by push output; direct final `ls-remote` confirmation after the latest code commit is still required.
+- Bundle, factory, target-device and field acceptance are out of scope and not claimed.
