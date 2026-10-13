@@ -122,22 +122,29 @@ def _timestamp_sort_key(value: str):
 def render_historical_event(event: HistoricalEvent, language: str
                             ) -> HistoricalEventPresentation:
     """Render with current resources, preserving capture-time text and raw evidence."""
-    detail = _format_detail(event)
+    message = render_historical_event_message(event, language)
+    return HistoricalEventPresentation(message.message, _format_detail(event),
+                                       message.unrecognized)
+
+
+def render_historical_event_message(event: HistoricalEvent, language: str
+                                    ) -> HistoricalEventPresentation:
+    """Render only the list message; detailed raw evidence is prepared on selection."""
     if event.source == "read_error":
         return HistoricalEventPresentation(
-            translate("history.read_error", language, reason=event.message), detail)
+            translate("history.read_error", language, reason=event.message), "")
     if event.source == "read_warning":
-        return HistoricalEventPresentation(translate("history.incomplete", language), detail)
+        return HistoricalEventPresentation(translate("history.incomplete", language), "")
 
     if event.localized_message is not None:
         return HistoricalEventPresentation(_render_captured_message(
-            event.localized_message, event.message, language), detail)
+            event.localized_message, event.message, language), "")
 
     legacy = _recognize_legacy_audit_event(event)
     if legacy is not None:
         return HistoricalEventPresentation(
-            _render_captured_message(legacy.as_record(), legacy.english, language), detail)
-    return HistoricalEventPresentation(translate("history.unrecognized", language), detail, True)
+            _render_captured_message(legacy.as_record(), legacy.english, language), "")
+    return HistoricalEventPresentation(translate("history.unrecognized", language), "", True)
 
 
 def _render_captured_message(localized: dict, saved_message: str, language: str) -> str:

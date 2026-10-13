@@ -84,6 +84,47 @@ class HistoricalEventQueryTests(unittest.TestCase):
                              list(range(1, 11)))
             self.assertEqual(len({event.round_id for event in result.events}), 1)
 
+    def test_naive_fall_back_wall_time_is_not_assigned_an_absolute_fold(self):
+        original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                sessions = Path(temporary) / "sessions"
+                self._write_audit(sessions, [
+                    "2026-11-01T05:30:00+00:00",  # first 01:30, daylight time
+                    "2026-11-01T01:30:00",        # naive wall time, fold unknown
+                    "2026-11-01T06:30:00+00:00",  # second 01:30, standard time
+                ])
+
+                result = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 11, 1), date(2026, 11, 1)))
+
+            # Both known instants are ordered by their actual instant. The naive record
+            # remains a wall-time record and is placed by a deterministic tie policy.
+            self.assertEqual([event.sequence for event in result.events], [3, 1, 2])
+        finally:
+            if original_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original_tz
+            time.tzset()
+
+    def test_unreadable_source_is_counted_separately_from_an_empty_date_range(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            broken_app_store = root / "app-events.json"
+            broken_app_store.write_text("not-json\n", encoding="utf-8")
+
+            result = query_historical_events(
+                root / "sessions", broken_app_store,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+
+            self.assertEqual(result.total_count, 0)
+            self.assertEqual(result.source_issue_count, 1)
+            self.assertEqual(result.diagnostics[0].source, "read_error")
+
     def test_offset_and_local_wall_times_use_inclusive_local_calendar_dates(self):
         original_tz = os.environ.get("TZ")
         os.environ["TZ"] = "America/Los_Angeles"
@@ -162,15 +203,44 @@ class HistoricalEventQueryTests(unittest.TestCase):
         with self.assertRaises(HistoricalEventDateError) as missing:
             parse_historical_event_date_range("", "2026-10-13")
         self.assertEqual(missing.exception.field_name, "start")
+        with self.assertRaises(HistoricalEventDateError) as missing_end:
+            parse_historical_event_date_range("2026-10-13", "")
+        self.assertEqual(missing_end.exception.field_name, "end")
         with self.assertRaises(HistoricalEventDateError) as invalid:
             parse_historical_event_date_range("2026-02-30", "2026-10-13")
         self.assertEqual(invalid.exception.field_name, "start")
+        with self.assertRaises(HistoricalEventDateError) as invalid_end:
+            parse_historical_event_date_range("2026-10-13", "2026-02-30")
+        self.assertEqual(invalid_end.exception.field_name, "end")
         with self.assertRaises(HistoricalEventDateError) as reversed_range:
             parse_historical_event_date_range("2026-10-14", "2026-10-13")
         self.assertEqual(reversed_range.exception.field_name, "end")
         recent = recent_historical_event_date_range(date(2026, 10, 13), 90)
         self.assertEqual(recent.start, date(2026, 7, 16))
         self.assertEqual(recent.end, date(2026, 10, 13))
+
+    def test_custom_range_crossing_month_and_year_keeps_both_calendar_days(self):
+        original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                sessions = Path(temporary) / "sessions"
+                self._write_audit(sessions, [
+                    "2026-12-31T23:59:59+00:00", "2027-01-01T00:00:00+00:00"])
+
+                result = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 12, 31), date(2027, 1, 1)))
+
+            self.assertEqual(result.total_count, 2)
+            self.assertEqual([event.sequence for event in result.events], [2, 1])
+        finally:
+            if original_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original_tz
+            time.tzset()
 
     def test_empty_single_day_and_mixed_sources_keep_existing_source_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:

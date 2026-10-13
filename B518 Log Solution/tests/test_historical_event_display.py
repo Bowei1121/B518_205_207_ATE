@@ -5,7 +5,9 @@ from dataclasses import replace
 from unittest.mock import patch
 from pathlib import Path
 
-from historical_event_display import read_historical_events, render_historical_event
+from historical_event_display import (read_historical_events,
+                                      render_historical_event,
+                                      render_historical_event_message)
 from language_catalog import ENGLISH, LANGUAGE_RESOURCES, TRADITIONAL_CHINESE
 
 
@@ -58,6 +60,19 @@ class HistoricalEventDisplayTests(unittest.TestCase):
         self.assertEqual(unknown.message, "無法安全翻譯此歷史事件；詳細資料保留原始紀錄。")
         self.assertIn('"original_message": "FCT 本輪已接受開始"', unknown.detail)
         self.assertEqual(path.read_bytes(), before)
+
+    def test_list_message_does_not_format_full_detail_until_record_is_selected(self):
+        round_id = "round-summary-only"
+        self._write_audit(round_id, "FCT", [self._legacy_event(
+            round_id, 1, "round_started", "FCT 本輪已接受開始")])
+        record = next(item for item in read_historical_events(self.sessions)
+                      if item.source == "round")
+
+        with patch("historical_event_display._format_detail",
+                   side_effect=AssertionError("list formatting built full detail")):
+            message = render_historical_event_message(record, ENGLISH)
+
+        self.assertEqual(message.message, "FCT round start accepted")
 
     def test_equal_timestamp_round_events_keep_numeric_audit_sequence_order(self):
         round_id = "round-sequence-order"

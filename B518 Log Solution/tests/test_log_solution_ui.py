@@ -5894,14 +5894,32 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.historical_end_var.set("2026-10-09")
                     root.update()
                     self.assertEqual(app.historical_start_var.get(), "2026-10-09")
-                    self.assertEqual(app.historical_query_status.cget("text"),
-                                     app._t("app.settings.history.querying"))
+                    self.assertIn(app._t("app.settings.history.querying"),
+                                  app.historical_query_status.cget("text"))
+                    self.assertIn("2026-01-01",
+                                  app.historical_query_status.cget("text"))
                     release_read.set()
                     self.wait_for_ui(
                         root,
                         lambda: app._historical_query_result is not None and
                         app._historical_query_result.date_range.start == submitted_start)
                 self.assertEqual(app._historical_query_result.date_range.end, submitted_end)
+                previous_success = app._historical_query_result
+                app.historical_start_var.set("2026-01-01")
+                app.historical_end_var.set(today.isoformat())
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=RuntimeError("controlled read failure")):
+                    app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                    app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                    root.update()
+                    self.wait_for_ui(
+                        root,
+                        lambda: app._historical_query_status_key ==
+                        "app.settings.history.query_failed")
+                self.assertIs(app._historical_query_result, previous_success)
+                failed_status = app.historical_query_status.cget("text")
+                self.assertIn("2026-10-08", failed_status)
+                self.assertIn("2026-10-13", failed_status)
                 keys = [record.key for record in app._historical_event_records]
                 round_index = keys.index("round:round-history-1:1")
                 click_history_row(round_index)
@@ -5975,11 +5993,35 @@ class LogSolutionUiTests(unittest.TestCase):
                     lambda: app._historical_query_result is not None and
                     app._historical_query_result.date_range.start.isoformat() == "2099-01-01")
                 self.assertEqual(app._historical_event_records, ())
-                self.assertIn(app._t("app.settings.history.no_results"),
+                self.assertIn("歷史讀取不完整",
                               app.historical_query_status.cget("text"))
                 self.assertEqual(legacy_path.read_bytes(), legacy_before)
                 self.assertEqual(audit_path.read_bytes(), audit_before)
                 self.assertEqual(app_path.read_bytes(), app_events_before)
+
+                unreadable_app_path = root_path / "unreadable-app-events.json"
+                unreadable_app_path.write_text("not-json\n", encoding="utf-8")
+                previous_incomplete_result = app._historical_query_result
+                app.historical_start_var.set("2099-01-01")
+                app.historical_end_var.set("2099-01-01")
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=lambda _sessions, _app_path, date_range:
+                           query_historical_events(session_root, unreadable_app_path,
+                                                   date_range)):
+                    app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                    app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                    root.update()
+                    self.wait_for_ui(
+                        root,
+                        lambda: app._historical_query_result is not None and
+                        app._historical_query_result is not previous_incomplete_result and
+                        app._historical_query_result.source_issue_count > 0)
+                self.assertEqual(app._historical_query_result.total_count, 0)
+                self.assertGreater(app._historical_query_result.source_issue_count, 0)
+                self.assertIn("歷史讀取不完整",
+                              app.historical_query_status.cget("text"))
+                self.assertNotIn(app._t("app.settings.history.no_results"),
+                                 app.historical_query_status.cget("text"))
             finally:
                 if "release_read" in locals():
                     release_read.set()

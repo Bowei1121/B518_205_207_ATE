@@ -54,6 +54,7 @@ class HistoricalEventQueryResult:
     events: Tuple[HistoricalEvent, ...]
     total_count: int
     unclassified_count: int
+    source_issue_count: int
     diagnostics: Tuple[HistoricalEvent, ...]
 
     @property
@@ -102,17 +103,20 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     ordered = []
     total_count = 0
     unclassified_count = 0
+    source_issue_count = 0
     diagnostics = []
 
     for event in iter_historical_events(session_root, app_event_path):
+        if event.source in {"read_error", "read_warning"}:
+            source_issue_count += 1
         occurred_at = _parse_occurred_at(event.occurred_at)
         if occurred_at is None:
             unclassified_count += 1
             if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
                 diagnostics.append(event)
             continue
-        parsed, epoch = occurred_at
-        if parsed.tzinfo is None:
+        parsed, epoch, local_wall_order = occurred_at
+        if epoch is None:
             in_range = date_range.start <= parsed.date() <= date_range.end
         else:
             in_range = date_range._start_epoch <= epoch < date_range._end_epoch
@@ -122,14 +126,19 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         total_count += 1
         sequence = event.sequence if type(event.sequence) is int else event.source_order
         stable_identity = event.round_id or event.key
-        sort_key = (-epoch, stable_identity, sequence, event.key, event.source_order)
+        # Naive records are ordered by their local wall time. Do not guess which
+        # occurrence they refer to during a daylight-saving fold; aware timestamps
+        # at the same wall time remain ordered by their known instants.
+        sort_key = (-local_wall_order, 0 if epoch is not None else 1,
+                    -epoch if epoch is not None else 0,
+                    stable_identity, sequence, event.key, event.source_order)
         bisect.insort(ordered, (sort_key, event.key, event))
         if len(ordered) > page_size:
             ordered.pop()
 
     return HistoricalEventQueryResult(
         date_range, tuple(item[2] for item in ordered), total_count,
-        unclassified_count, tuple(diagnostics))
+        unclassified_count, source_issue_count, tuple(diagnostics))
 
 
 def _parse_occurred_at(value: str):
@@ -138,8 +147,15 @@ def _parse_occurred_at(value: str):
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None or parsed.utcoffset() is None:
-            return parsed, time.mktime(parsed.timetuple())
-        return parsed, parsed.timestamp()
+            epoch = None
+            local_wall = parsed
+        else:
+            epoch = parsed.timestamp()
+            local_wall = datetime.fromtimestamp(epoch)
+        wall_order = (local_wall.toordinal() * 86400 + local_wall.hour * 3600 +
+                      local_wall.minute * 60 + local_wall.second +
+                      local_wall.microsecond / 1000000.0)
+        return parsed, epoch, wall_order
     except (TypeError, ValueError, OverflowError, OSError):
         return None
 

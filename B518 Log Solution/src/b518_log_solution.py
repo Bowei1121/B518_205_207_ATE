@@ -17,7 +17,8 @@ from typing import Dict, Optional
 from app_event_store import AppEventStore
 from cleanup_reasons import present_cleanup_reason
 from localized_notice import LanguageRefreshNotifications, show_notice
-from historical_event_display import HistoricalEvent, render_historical_event
+from historical_event_display import (HistoricalEvent, render_historical_event,
+                                      render_historical_event_message)
 from historical_event_query import (HistoricalEventDateError, HistoricalEventDateRange,
                                     HistoricalEventQueryResult,
                                     parse_historical_event_date_range,
@@ -2974,6 +2975,15 @@ class B518LogSolutionApp:
                            **self._historical_query_status_parameters)
         elif result is None:
             text = self._t("app.settings.history.not_queried")
+        elif result.source_issue_count or result.unclassified_count:
+            text = self._t(
+                "app.settings.history.incomplete_results",
+                count=result.total_count, issues=result.source_issue_count,
+                unclassified=result.unclassified_count)
+            if result.is_limited:
+                text += " " + self._t(
+                    "app.settings.history.first_page", shown=len(result.events),
+                    count=result.total_count)
         elif result.total_count == 0:
             text = self._t("app.settings.history.no_results")
         elif result.is_limited:
@@ -2983,9 +2993,12 @@ class B518LogSolutionApp:
             text = self._t("app.settings.history.result_count", count=result.total_count,
                            start=result.date_range.start.isoformat(),
                            end=result.date_range.end.isoformat())
-        if not self._historical_query_status_key and result is not None and result.unclassified_count:
-            text += " " + self._t("app.settings.history.unclassified",
-                                  count=result.unclassified_count)
+        if (result is not None and self._historical_query_status_key in {
+                "app.settings.history.querying", "app.settings.history.query_failed"}):
+            text += " " + self._t(
+                "app.settings.history.previous_result_range",
+                start=result.date_range.start.isoformat(),
+                end=result.date_range.end.isoformat())
         self.historical_query_status.configure(text=text)
 
     def _refresh_historical_event_window(self) -> None:
@@ -3019,7 +3032,7 @@ class B518LogSolutionApp:
         event_list.delete(0, "end")
         selected_index = None
         for index, event in enumerate(self._historical_event_records):
-            presentation = render_historical_event(event, self.current_language)
+            presentation = render_historical_event_message(event, self.current_language)
             category_id = ("app.settings.history.source.app" if event.source == "app" else
                            "app.settings.history.source.error" if event.source in {
                                "read_error", "read_warning"} else
