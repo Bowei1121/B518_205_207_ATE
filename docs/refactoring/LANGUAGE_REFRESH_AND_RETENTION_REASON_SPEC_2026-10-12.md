@@ -136,6 +136,10 @@
 
 C2 (#34) 在固定 review base `d3068bff31fb1f99422121cf9d48e3c925a1c3c2` 上，將正式輪次清理及封存驗證 producer 接入 C1 同筆原因契約，並以真實暫存輪次、ledger、全新讀取器及 Settings 真 Tk 查閱驗證雙語、參數、原始診斷和關聯保持。可信封存／期限、受保護／未知／損壞資料、刪除計畫、路徑完整性、摘要失敗恢復及既存摘要唯讀回歸均通過；基準與 C2 的配對對照也涵蓋保存期限變更、受保護輪次、路徑替換、初始計畫及最終摘要保存故障與全新讀取器恢復。固定基準雙軸審查無阻擋；完整桌面 Tk 套件在票分支與本機快轉主線各通過 394 tests。詳細證據見 [C2 local validation](evidence/retention-reason-ticket-02/local-validation.md)。這只記錄第二項中輪次／封存 producer 的適用覆蓋，不代表 App-event producer、所有正式畫面、父規格第二項或整體規格完成；C3 與 C4 仍待交付。
 
+### C3 實作狀態與驗證範圍（2026-10-13；部分待驗）
+
+C3 (#35) 已將正式 App-event 清理 producer 的成功、跳過、失敗及狀態原因接入 C1 固定識別／參數／同筆雙語／原始診斷契約，保留原事件時間、全域期限、退休序號、pending 與耐久性保護、管理根目錄、路徑檢查、原子替換及父目錄 fsync；原因不參與 outcome 或刪除資格。真實暫存 journal 經公開清理及 ledger 保存後由全新 coordinator 讀取；兩個 C3 真 Tk 查閱測試曾於較早版本通過，最終程式的聚焦 Tk 重試及完整套件則在 `tkinter.Tk()` 的 AppKit 建窗階段以 exit 134 中止，故最終可見畫面及完整含 Tk 套件仍待驗，不能標示 C3 完成或合併。最終程式非 Tk 的 App-event／retention 聚焦套件通過 55 tests；同資料的固定基準／候選刪除、保留、計數及序號對照相同。歷史 397-test 通過發生在最後耐久性修正之前，不作為最終版本通過證據。詳見 [C3 local validation](evidence/retention-reason-ticket-03/local-validation.md)。C4 全畫面整合及父規格第二項完整驗收仍未完成。
+
 每項完成新增行為驗證、適用既有回歸及專案必要檢查，記錄實際命令、結果及限制。沒有執行的桌面或發布環境驗收不得宣稱通過；「試看看」以可觀察操作驗收，不代表已完成實測。
 
 ## Out of Scope

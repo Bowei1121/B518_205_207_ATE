@@ -2,7 +2,7 @@
 
 ## 前次討論與結果
 
-- 延續 2026-10-12 的多視窗語言更新與清理原因表述工作。C1（清理原因組 #33）已實作集中原因捕捉／呈現、新舊 ledger 相容讀取、未知原因安全說明與真正 Tk 查閱；C2（#34）與 C3（#35）正式 producer 遷移、C4（#36）全畫面整合仍是後續票。
+- 延續 2026-10-12 的多視窗語言更新與清理原因表述工作。C1（#33）及 C2（#34）已完成並有最終驗收證據；C3（#35）正式 App-event producer 已實作且非 Tk 契約測試通過，但最終 Tk 全套被 macOS AppKit 建窗異常阻擋；C4（#36）全畫面整合仍待執行。
 - C1 固定審查基準為 `14d7c23195d66962b86b8b301cdcc587b3a15c3d`。最終程式／測試 SHA 為 `5cf609d7a4a168d3701490b2ce51b27bafe25d3e`，票分支最終文件提交為 `fc43073eafcfb47053b6948086d9754ef1588b58`。缺少目前語言資源時使用捕捉時保存英文的回歸測試先失敗、實作後通過；固定基準 Standards／Spec 複審無阻擋。
 - 真正 Tk 桌面完整套件在程式／測試 SHA `5cf609d` 通過 394 項／145.474 秒；本機主線快轉合併後，最初一次套件執行停在既有提示視窗重開案例。受控 Tk 檢查確認提示視窗可見、確認按鈕持有焦點與模態 grab，Escape 能關閉視窗；隔離測試通過 1 項／2.444 秒。之後主線完整套件於 Python 3.11.7／Tk 8.6 通過 394 項／127.882 秒／結束碼 0，第一次停住未再重現，也未因該次停住修改產品或測試。
 
@@ -26,3 +26,10 @@
 
 - C1 的原因表述只控制顯示，不參與清理資格；可信封存時間、App 原事件時間、期限、保存保護、路徑／符號連結、原子替換及 fsync 行為沿用既有契約。正式輪次／封存與 App 事件 producer 尚未分別由 C2／C3 遷移；C4 才負責全部畫面及父規格第二項完整驗收。
 - 清理原因父規格第二項尚未完成。C2、C3、C4 未交付前，不宣稱全部清理原因雙語化或全 App 畫面整合完成。遠端 Issue #28 與各拆票均未修改或關閉。
+
+## C3（清理原因組 #35）
+
+- C3 固定審查基準是 `f80e86a51907988613185155ed69552c9f392426`；確認該基準包含 C1 的相容原因讀取／呈現和 C2 輪次／封存 producer。C1 的提示視窗重開／Escape／wait_window 收尾問題已有實際 Tk 操作及 post-merge 全套證據；C2 已有正式 producer、全套及 review 證據。C3 只負責 App-event producer，C2 非本票直接依賴，C4 才負責全畫面統一與父規格第二項完整驗收。
+- App-event 清理現在於正式決策點捕捉 C1 結構化原因；保留原事件時間、全域期限、退休序號、pending／耐久性保護、管理根目錄、符號連結／路徑替換、原子替換與目錄 fsync。補上期限掃描後變更時的即時重新資格檢查，保存為 `skipped` 原因，不誤報刪除或失敗；刪除政策及恢復協調未重寫。真 journal → 清理 → ledger → 全新 coordinator → 真 Tk Settings／診斷完成查閱證據。
+- 最終版本 `fffe809` 的 `tests.test_app_event_store tests.test_round_retention` 聚焦套件通過 55 項；固定基準與候選的刪除／保留、計數及序號對照一致。完整含 Tk 套件於 2026-10-13 11:50 及兩個直接相關 Tk 個測均在 `tkinter.Tk()` 建窗階段因 macOS AppKit `NSInternalInconsistencyException: Invalid parameter not satisfying: aString != nil` 中止，exit 134；完整堆疊與命令見 [C3 驗收紀錄](evidence/retention-reason-ticket-03/local-validation.md)。歷史 397 項全套通過發生於最終耐久性修復前，不可代表目前交付版。C3 保持部分驗證，必要桌面全套／畫面驗收仍阻擋合併；無專案型別檢查設定。
+- C3 程式與恢復耐久性修正已逐批提交至 `LanguageRefresh/ticket-07`，最新為 `fffe809`；文件目前更新中。需要最後直接查詢 GitHub 與 Gitea 的票分支 SHA。主線仍未合併，C3 專用 branch/worktree 保留；既存主線 summary 修改及 C1／其他 worktree 均不動。C4 與父規格第二項不宣稱完成。
