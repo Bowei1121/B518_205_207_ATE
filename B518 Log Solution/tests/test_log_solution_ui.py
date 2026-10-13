@@ -5711,12 +5711,15 @@ class LogSolutionUiTests(unittest.TestCase):
 
                     summaries_before_language_change = len(
                         app.rounds.retention_cleanup_summaries())
+                    ledger_path = Path(temporary) / "round-retention-ledger.json"
+                    ledger_before_language_change = ledger_path.read_bytes()
                     self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
                     self.assertIn("關閉保存期間暫停清理", app.retention_cleanup_status.get())
                     self.assertIn('"zh-TW": "關閉保存期間暫停清理。"',
                                   app.retention_cleanup_status.get())
                     self.assertEqual(len(app.rounds.retention_cleanup_summaries()),
                                      summaries_before_language_change)
+                    self.assertEqual(ledger_path.read_bytes(), ledger_before_language_change)
                     release_write.set()
                     self.wait_for(lambda: app.rounds.app_event_status().complete)
                     self.wait_for(lambda: app.rounds.close_status().status == "complete")
