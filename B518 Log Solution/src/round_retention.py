@@ -302,6 +302,9 @@ class RoundRetentionStore:
         with self._lock:
             try:
                 ledger = self._load_ledger()
+                prior_run = next((item for item in ledger["runs"]
+                                  if item.get("run_id") == run_id), {})
+                commit_intent = prior_run.get("app_event_commit_intent")
                 ledger["runs"] = [item for item in ledger["runs"] if item.get("run_id") != run_id]
                 ledger["runs"].append(_summary_to_dict(final))
                 ledger["runs"] = ledger["runs"][-1000:]
@@ -310,7 +313,30 @@ class RoundRetentionStore:
                         plan = ledger.get("active_plans", {}).get(result.round_id)
                         if plan is not None and plan.get("deletion_complete"):
                             ledger["active_plans"].pop(result.round_id, None)
-                self._write_ledger(ledger)
+                if self._write_ledger(ledger) is False:
+                    diagnostic = "清理摘要目錄的耐久同步未確認"
+                    failure_message = "清理已處理，但結果摘要尚未確認安全保存：{}".format(diagnostic)
+                    failure_reason = _round_reason(
+                        "cleanup.ledger_save_failed", {"diagnostic": diagnostic}, diagnostic)
+                    uncertain = RetentionSummary(
+                        run_id, started, completed, retention_days, trigger, "failed",
+                        tuple(results), failure_message, app_events, failure_reason)
+                    uncertain_row = _summary_to_dict(uncertain)
+                    if isinstance(commit_intent, dict):
+                        uncertain_row["app_event_commit_intent"] = commit_intent
+                    retry_ledger = self._load_ledger()
+                    retry_ledger["runs"] = [item for item in retry_ledger["runs"]
+                                             if item.get("run_id") != run_id]
+                    retry_ledger["runs"].append(uncertain_row)
+                    retry_ledger["runs"] = retry_ledger["runs"][-1000:]
+                    if self._write_ledger(retry_ledger) is False:
+                        self._summaries = tuple(
+                            _summary_from_dict(item) for item in retry_ledger["runs"])
+                        self._status = RetentionStatus(
+                            "failed", failure_message, self._summaries, failure_reason)
+                        return self._status
+                    ledger = retry_ledger
+                    status, message, message_reason = "failed", failure_message, failure_reason
                 self._summaries = tuple((_summary_from_dict(item) for item in ledger["runs"]))
                 self._status = RetentionStatus(status, message, self._summaries, message_reason)
             except Exception as error:
@@ -366,7 +392,8 @@ class RoundRetentionStore:
                 changed = True
             if not changed:
                 return
-            self._write_ledger(ledger)
+            if self._write_ledger(ledger) is False:
+                raise OSError("App 事件清理恢復摘要的 ledger 目錄耐久同步失敗")
             self._summaries = tuple(_summary_from_dict(item) for item in ledger["runs"])
             self._status = RetentionStatus(
                 "failed", "上次清理摘要中斷；已依 App journal 退休序號檢查恢復進度",

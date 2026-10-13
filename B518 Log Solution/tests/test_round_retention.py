@@ -532,6 +532,62 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(read_app_event_store(store.path)["events"][0]["sequence"],
                              event.sequence)
 
+    def test_app_cleanup_does_not_report_complete_when_final_ledger_directory_sync_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger_path = root / "ledger" / "retention.json"
+            now = datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now - timedelta(days=31))
+            self.addCleanup(store.stop)
+            event = store.record("app.hotkey.unavailable", {}, "expired evidence")
+            self.assertTrue(store.flush())
+            coordinator = RoundCoordinator(
+                audit_root=root / "sessions", wall_clock=lambda: now,
+                retention_ledger_path=ledger_path)
+            self.addCleanup(coordinator.request_close)
+            coordinator.register_app_event_store(store, root)
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            real_fsync = round_retention.os.fsync
+            injected = {"failed": False}
+
+            def fail_final_summary_directory_sync(retention_store, payload):
+                row = payload["runs"][-1]
+                app_events = row.get("app_events") or {}
+                if (row["status"] == "complete" and app_events.get("outcome") == "complete" and
+                        not injected["failed"]):
+                    def fail_once(descriptor):
+                        observed = os.fstat(descriptor)
+                        ledger_directory = os.stat(ledger_path.parent)
+                        if (stat.S_ISDIR(observed.st_mode) and
+                                (observed.st_dev, observed.st_ino) ==
+                                (ledger_directory.st_dev, ledger_directory.st_ino)):
+                            injected["failed"] = True
+                            raise OSError("injected final summary directory fsync failure")
+                        return real_fsync(descriptor)
+                    with patch.object(round_retention.os, "fsync", fail_once):
+                        return original_write(retention_store, payload)
+                return original_write(retention_store, payload)
+
+            with patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                              fail_final_summary_directory_sync):
+                coordinator.request_retention_cleanup(30, "final-summary-directory-fsync-failure")
+                self.wait_until(lambda: coordinator.retention_cleanup_status().status == "failed")
+
+            status = coordinator.retention_cleanup_status()
+            self.assertTrue(injected["failed"])
+            self.assertEqual(status.status, "failed")
+            summary = next(item for item in status.summaries
+                           if item.trigger == "final-summary-directory-fsync-failure")
+            self.assertEqual(summary.status, "failed")
+            self.assertEqual(summary.app_events.outcome, "complete")
+            self.assertEqual(summary.app_events.deleted_sequences, (event.sequence,))
+            saved_row = next(item for item in json.loads(ledger_path.read_text())["runs"]
+                             if item["run_id"] == summary.run_id)
+            self.assertEqual(saved_row["status"], "failed")
+            self.assertIn("app_event_commit_intent", saved_row)
+            self.assertEqual(read_app_event_store(store.path)["events"], [])
+
     def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
