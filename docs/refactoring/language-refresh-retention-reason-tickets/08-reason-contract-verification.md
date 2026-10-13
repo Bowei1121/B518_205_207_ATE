@@ -24,4 +24,4 @@ Part of #28 — https://github.com/Bowei1121/B518_205_207_ATE/issues/28
 
 ## Local validation
 
-Final candidate validation and scenario mapping: [C4 local validation](../evidence/retention-reason-ticket-04/local-validation.md). The parent second item is documented as complete only after mainline integration and post-merge verification.
+Final candidate and fast-forward-mainline validation, including all eight C4 acceptance items and the seven parent second-item scenarios: [C4 local validation](../evidence/retention-reason-ticket-04/local-validation.md). The integrated mainline SHA passed the required full Tk-enabled suite. Bundle, factory, target-device and field acceptance are outside this ticket.
