@@ -73,3 +73,10 @@
 
 - 使用者核可H1–H8拆分。已建立GitHub #38–45，全部ready-for-agent，並設定原生阻擋關係：H2/H3→H1；H4→H3；H5→H2/H4；H6→H3/H4；H7→H2/H3；H8→H5/H6/H7（箭頭指向阻擋票）。
 - 每票有本機獨立文件及總覽，父規格#37未修改或關閉；先從H1開始。逐票必要開發／測試／桌面驗證可合併，工廠驗收不阻擋。票件發布不等於程式實作或容量驗收完成。
+
+## H1 後續實作與驗收 — 2026-10-13
+
+- H1 在 `HistoricalEventQuery/ticket-01` 實作日期條件與背景首批查詢，接入既有歷史頁面和來源讀取／呈現流程。開啟及編輯日期不讀來源；放大鏡／Return 提交有效條件，最新事件優先顯示最多100筆，明確說明後續分頁尚未交付。來源優先與事件身分沿用既有 reader。
+- 審查發現的四項缺口均已修正：不為無時區 fall-back 時間猜測 fold 絕對時刻；重查／失敗時舊結果仍標示舊日期；讀取錯誤或無日期資料使狀態明確標示不完整；列出首批摘要不提前格式化完整詳細原文。真正 Tk 驗收檢查慢讀中可編輯、查詢失敗保留、損壞來源不冒稱無事件、選取後原文／雙語詳細及捲動保持。
+- 固定 Standards／Spec review base `5aa83e2438dca802706aaba9aa10daa09bbee150`；最後程式／測試 commit `714d7239ba60bf55fd337b7f270eca7f51d24892`。Python 3.8.10、Tk/Tcl 8.6/8.6 的解鎖 Aqua 桌面完整含 Tk 套件 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 417 項、130.078 秒、exit 0；聚焦 query/display 25 項及 H1 真 Tk 案例也通過。複審發現查詢送出後排序仍可能讀取變動中的 process timezone，已於 `714d723` 快照凍結 timezone，並以跨 DST fold、送出後切換 TZ 的測試驗證；其後固定基準 Standards／Spec 複審均無阻擋。非阻擋可攜性限制詳見 [H1 local validation](evidence/historical-event-query-ticket-01/local-validation.md)。無專案型別檢查設定，不宣稱型別檢查通過。
+- 來源 audit、舊 `events.log` 及 App event journal 在真正暫存 Tk 驗收查詢前後逐檔 bytes 相同。測試不是持久索引／容量保證；H2 負責完整取消與生命週期，H3 完整分頁，H4 持久索引及增量成本，H5–H8 依各自範圍接續。本機 merge、GitHub/Gitea final refs、文件 SHA 與分支清理結果待本票最終交付紀錄補齊。父規格 #37、Issue #38及現場資料未修改。

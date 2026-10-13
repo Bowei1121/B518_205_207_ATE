@@ -134,3 +134,7 @@
 - 前次 5 萬筆約 1.95 秒為合成舊紀錄讀取／排序與文字準備兩段中位數合計，未含 Tk 插入及現場磁碟；只作現況背景，不作本規格現場性能承諾。
 - 後續可拆垂直開發票，分階段遷移並最終移除舊全量桌面路徑；本 spec 本身不建立子票、不修改產品程式。
 - 工廠後續驗收另記每日運轉時間、實際事件／產品比例、三個月存量、現場硬碟與 Tk 回應；可合併與可部署的狀態分別記錄。
+
+## H1 implementation coverage — 2026-10-13
+
+H1 applies the date-range entry and first-page subset of this specification: recent-90-day default, explicit date submission, local-day boundaries, existing mixed-source precedence, bounded newest-first results, original-detail lookup on selection, and background reading with an interactive Tk window. The H1 implementation and its seven acceptance checks have independent evidence in [H1 local validation](evidence/historical-event-query-ticket-01/local-validation.md). This coverage note does not mark the full parent specification delivered: cancellation/latest-query lifecycle is H2, complete pagination is H3, persistent index and incremental-read guarantees are H4, and the remaining stories stay assigned to H2–H8. It does not claim factory-volume or deployment acceptance.
