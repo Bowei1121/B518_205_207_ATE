@@ -330,7 +330,10 @@ class RoundRetentionStore:
                     ledger = pending_ledger
                 ledger["runs"] = [item for item in ledger["runs"] if item.get("run_id") != run_id]
                 final_row = _summary_to_dict(final)
-                if isinstance(commit_intent, dict):
+                # A skipped before-replace gate proves no journal commit occurred;
+                # do not let recovery reinterpret that legitimate outcome as failure.
+                if (isinstance(commit_intent, dict) and
+                        (app_events is None or app_events.outcome != "skipped")):
                     final_row["app_event_commit_intent"] = commit_intent
                 ledger["runs"].append(final_row)
                 ledger["runs"] = ledger["runs"][-1000:]
@@ -1028,7 +1031,7 @@ def _summary_to_dict(item: RetentionSummary) -> dict:
                             "skipped_count": item.app_events.skipped_count,
                             "failed_count": item.app_events.failed_count,
                             "reason": item.app_events.reason,
-            "deleted_sequences": list(item.app_events.deleted_sequences),
+                            "deleted_sequences": list(item.app_events.deleted_sequences),
                             **({"reason_message": item.app_events.reason_message}
                                if item.app_events.reason_message is not None else {})}
                            if item.app_events is not None else None),

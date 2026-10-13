@@ -625,7 +625,9 @@ class RoundRetentionTests(unittest.TestCase):
             store = AppEventStore(root / "app-events.json", clock=lambda: event_time)
             expired = store.record("app.hotkey.unavailable", {}, "still protected after extension")
             self.assertTrue(store.flush())
-            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            ledger_path = root / "round-retention-ledger.json"
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0],
+                                      retention_ledger_path=ledger_path)
             rounds.register_app_event_store(store, root)
             entered = threading.Event()
             release = threading.Event()
@@ -653,6 +655,20 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(reassessed.outcome, "skipped")
             self.assertEqual(reassessed.reason_message["message_id"],
                              "app.settings.retention.reason.app_events_period_changed")
+
+            recovered_store = AppEventStore(store.path, clock=lambda: now[0])
+            self.addCleanup(recovered_store.stop)
+            recovered = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0],
+                                         retention_ledger_path=ledger_path)
+            self.addCleanup(recovered.request_close)
+            recovered.register_app_event_store(recovered_store, root)
+            recovered_result = next(item for item in recovered.retention_cleanup_summaries()
+                                    if item.run_id == rounds.retention_cleanup_summaries()[0].run_id)
+            self.assertEqual(recovered_result.status, "complete")
+            self.assertEqual(recovered_result.app_events.outcome, "skipped")
+            self.assertEqual(recovered_result.app_events.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_period_changed")
+            self.assertIsNone(recovered_result.app_event_commit_intent)
 
     def test_deadline_is_inclusive_and_a_round_before_deadline_is_preserved(self):
         with tempfile.TemporaryDirectory() as temporary:
