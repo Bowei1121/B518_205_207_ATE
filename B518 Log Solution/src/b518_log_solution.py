@@ -2319,11 +2319,21 @@ class B518LogSolutionApp:
             "failed": "app.settings.retention.cleanup.failed",
             "skipped": "app.settings.retention.cleanup.skipped",
         }.get(status.status, "app.settings.retention.cleanup.failed")
+        if status.reason_message is not None:
+            status_reason = present_cleanup_reason(status.reason_message, self.current_language)
+            status_reason_text = status_reason.text
+            if status_reason.diagnostic:
+                status_reason_text += "\n" + self._t(
+                    "app.settings.retention.reason.raw_diagnostic",
+                    diagnostic=status_reason.diagnostic)
+        else:
+            status_reason_text = self._retention_reason_detail(status.message)
         detail = self._t(
             status_message,
-            reason=self._retention_reason_detail(
-                latest.message_reason if latest and latest.message_reason is not None
-                else status.message) if status.status == "skipped" else "")
+            reason=(status_reason_text if status.reason_message is not None else
+                    self._retention_reason_detail(
+                        latest.message_reason if latest and latest.message_reason is not None
+                        else status.message)) if status.status == "skipped" else "")
         if status.status == "failed" and status.message:
             reason = (status.reason_message if status.reason_message is not None else status.message)
             detail += "\n" + self._retention_reason_detail(reason)
