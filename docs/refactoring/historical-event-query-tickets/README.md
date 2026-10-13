@@ -23,7 +23,7 @@ H1建立可展示的背景日期查詢及首批結果；H2與H3在此基礎各�
 
 ### H1 delivery status — 2026-10-13
 
-H1 的日期條件、背景首批查詢與真正 Tk 驗收已在 `HistoricalEventQuery/ticket-01` 完成；完整含 Tk 套件及固定基準 Standards／Spec 審查已通過。程式分支已同步至設定的 GitHub 與 Gitea push 目的地；最終文件提交、合併、主線重驗、直接遠端查詢及分支清理仍待完成。逐項命令、runtime、來源 bytes 與日期邊界證據見 [H1 local validation](../evidence/historical-event-query-ticket-01/local-validation.md)。本階段只有最新 100 筆首批結果；完整多頁查閱屬 H3、持久索引與正常增量讀取成本屬 H4。此狀態不代表 H2–H8 或父規格 #37 全部完成，也不代表工廠容量／現場驗收完成。
+H1 的日期條件、背景首批查詢與真正 Tk 驗收已完成，固定基準 Standards／Spec 審查及合併後完整含 Tk 套件均通過。票分支已於兩個遠端直接核對後安全刪除；最終文件提交與同步資訊列於 [H1 local validation](../evidence/historical-event-query-ticket-01/local-validation.md) 及本次交付回報。本階段只有最新 100 筆首批結果；完整多頁查閱屬 H3、持久索引與正常增量讀取成本屬 H4。此狀態不代表 H2–H8 或父規格 #37 全部完成，也不代表工廠容量／現場驗收完成。
 
 ## 規格覆蓋
 
