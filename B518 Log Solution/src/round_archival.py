@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from audit_records import AuditRecordError, read_round_audit
+from cleanup_reasons import capture_cleanup_reason
 
 
 ARCHIVE_SCHEMA_VERSION = 1
@@ -44,6 +45,7 @@ class ArchiveSnapshot:
     components: Tuple[ArchiveComponent, ...] = ()
     save_state: str = "waiting"
     station: str = ""
+    reason_message: Optional[object] = None
 
     @property
     def cleanup_eligible(self) -> bool:
@@ -54,6 +56,12 @@ def _aware_timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("封存時間必須包含時區")
     return value.isoformat(timespec="seconds")
+
+
+def _archive_reason(reason: str, parameters=None, diagnostic: str = "") -> dict:
+    """Capture a fixed archive-validation reason where the validation decision is made."""
+    return capture_cleanup_reason(
+        "app.settings.retention.reason." + reason, parameters or {}, diagnostic)
 
 
 def normalize_archive_time(value: datetime) -> datetime:
@@ -226,14 +234,19 @@ def read_round_archive(path: Path, expected_round_id: Optional[str] = None) -> A
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        return ArchiveSnapshot(round_id, "protected", message="封存資訊無法讀取：{}".format(error), path=path)
+        diagnostic = str(error)
+        return ArchiveSnapshot(
+            round_id, "protected", message="封存資訊無法讀取：{}".format(diagnostic),
+            path=path, reason_message=_archive_reason(
+                "archive_read_failed", {"diagnostic": diagnostic}, diagnostic))
     if not isinstance(payload, dict):
         return ArchiveSnapshot(round_id, "protected", message="封存資訊格式不正確", path=path)
     candidate_id = payload.get("round_id")
     if isinstance(candidate_id, str):
         round_id = candidate_id
     if payload.get("record_type") != "round_archive" or payload.get("schema_version") != ARCHIVE_SCHEMA_VERSION:
-        return ArchiveSnapshot(round_id, "protected", message="封存資訊版本未知", path=path)
+        return ArchiveSnapshot(round_id, "protected", message="封存資訊版本未知", path=path,
+                               reason_message=_archive_reason("archive_unknown_version"))
     seal_digest = payload.get("seal_sha256")
     unsigned_payload = dict(payload)
     unsigned_payload.pop("seal_sha256", None)

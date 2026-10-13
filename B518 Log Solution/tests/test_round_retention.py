@@ -135,10 +135,21 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(summary[0].retention_days, 365)
             self.assertEqual(summary[0].deleted_round_ids, (round_id,),
                              (summary[0], list((root / "sessions").rglob("*"))))
+            deleted_reason = summary[0].results[0].reason_message
+            self.assertEqual(deleted_reason["message_id"],
+                             "app.settings.retention.reason.deleted")
+            self.assertEqual(deleted_reason["parameters"], {})
+            self.assertEqual(deleted_reason["en"], "Trusted round records were completely deleted.")
+            self.assertEqual(deleted_reason["zh-TW"], "已完整刪除可信輪次資料。")
             for path, contents in protected_files.items():
                 self.assertEqual(path.read_bytes(), contents)
             self.assertEqual(json.loads((root / "round-retention-ledger.json").read_text())[
                 "schema_version"], 2)
+            restored = RoundCoordinator(
+                audit_root=root / "sessions", wall_clock=lambda: now[0],
+                retention_ledger_path=root / "round-retention-ledger.json")
+            restored_result = restored.retention_cleanup_summaries()[-1].results[0]
+            self.assertEqual(restored_result.reason_message, deleted_reason)
 
     def test_existing_cleanup_schedule_prunes_expired_app_events_and_persists_summary(self):
         with tempfile.TemporaryDirectory() as temporary:

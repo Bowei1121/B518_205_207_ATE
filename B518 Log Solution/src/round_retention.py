@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Optional, Tuple
 
+from cleanup_reasons import capture_cleanup_reason
 from round_archival import normalize_archive_time, read_round_archive
 
 
@@ -217,7 +218,9 @@ class RoundRetentionStore:
                     continue
                 try:
                     self._delete_round(run_id, round_id, manifests, components, retention_days)
-                    results.append(RetentionRoundResult(round_id, "deleted", "已完整刪除可信輪次資料"))
+                    results.append(RetentionRoundResult(
+                        round_id, "deleted", "已完整刪除可信輪次資料",
+                        _round_reason("deleted")))
                 except Exception as error:
                     results.append(RetentionRoundResult(round_id, "failed", str(error)))
             app_events = None
@@ -411,8 +414,9 @@ class RoundRetentionStore:
                     self._validate_resume_directories(paths, len(paths))
                     if any(Path(raw_path).exists() or Path(raw_path).is_symlink() for raw_path in paths):
                         raise ValueError("已完成刪除的輪次資料重新出現")
-                    results.append(RetentionRoundResult(round_id, "deleted",
-                                                        "刪除已完成，補寫先前中斷的摘要"))
+                    results.append(RetentionRoundResult(
+                        round_id, "deleted", "刪除已完成，補寫先前中斷的摘要",
+                        _round_reason("recovery_summary")))
                     continue
                 staged_path = (Path(paths[staged_index]).with_name(staged_name)
                                if staged_name is not None else None)
@@ -508,7 +512,9 @@ class RoundRetentionStore:
                 ledger["active_plans"][round_id] = plan
                 self._write_ledger(ledger)
                 self._remove_empty_managed_directories(paths)
-                results.append(RetentionRoundResult(round_id, "deleted", "依持久刪除計畫完成中斷復原"))
+                results.append(RetentionRoundResult(
+                    round_id, "deleted", "依持久刪除計畫完成中斷復原",
+                    _round_reason("recovered_deleted")))
             except Exception as error:
                 results.append(RetentionRoundResult(round_id, "failed", "中斷刪除復原失敗：{}".format(error)))
 
@@ -814,6 +820,12 @@ def _file_record(path: Path) -> dict:
             digest.update(chunk)
             size += len(chunk)
     return {"size": size, "sha256": digest.hexdigest()}
+
+
+def _round_reason(reason: str, parameters=None, diagnostic: str = "") -> dict:
+    """Capture one round-cleanup reason at its producer, independent of its display text."""
+    return capture_cleanup_reason(
+        "app.settings.retention.reason." + reason, parameters or {}, diagnostic)
 
 
 def _summary_to_dict(item: RetentionSummary) -> dict:

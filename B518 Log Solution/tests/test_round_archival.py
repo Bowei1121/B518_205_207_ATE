@@ -418,6 +418,9 @@ class RoundArchivalTests(unittest.TestCase):
             missing = read_round_archive(path, expected_round_id="legacy-round")
             self.assertEqual(missing.status, "protected")
             self.assertIn("無法讀取", missing.message)
+            self.assertEqual(missing.reason_message["message_id"],
+                             "app.settings.retention.reason.archive_read_failed")
+            self.assertEqual(missing.reason_message["diagnostic"], missing.message.split("：", 1)[1])
 
             path.parent.mkdir()
             path.write_text(json.dumps({"record_type": "round_archive", "schema_version": 99,
@@ -425,6 +428,8 @@ class RoundArchivalTests(unittest.TestCase):
             unknown = read_round_archive(path, expected_round_id="legacy-round")
             self.assertEqual(unknown.status, "protected")
             self.assertIn("版本未知", unknown.message)
+            self.assertEqual(unknown.reason_message["message_id"],
+                             "app.settings.retention.reason.archive_unknown_version")
 
     def test_archive_time_must_have_timezone_and_legacy_session_stays_readable(self):
         with tempfile.TemporaryDirectory() as temporary:
