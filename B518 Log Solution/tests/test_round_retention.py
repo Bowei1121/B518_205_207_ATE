@@ -233,6 +233,11 @@ class RoundRetentionTests(unittest.TestCase):
             self.wait_until(lambda: rounds.retention_cleanup_status().status == "complete")
             self.assertTrue(archive.path.parent.exists())
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].results[0].outcome, "skipped")
+            reason = rounds.retention_cleanup_summaries()[-1].results[0].reason_message
+            self.assertEqual(reason["message_id"],
+                             "app.settings.retention.reason.not_expired")
+            self.assertEqual(reason["en"], "The retention period has not elapsed.")
+            self.assertEqual(reason["zh-TW"], "尚未到保存期限。")
 
             previous_count = len(rounds.retention_cleanup_summaries())
             now[0] = archived_at + timedelta(days=365)

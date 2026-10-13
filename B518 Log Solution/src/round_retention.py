@@ -203,18 +203,26 @@ class RoundRetentionStore:
                 if round_id in resumed_round_ids:
                     continue
                 if not self._cleanup_allowed():
-                    results.append(RetentionRoundResult(round_id, "skipped", "關閉保存期間暫停清理"))
+                    results.append(RetentionRoundResult(
+                        round_id, "skipped", "關閉保存期間暫停清理",
+                        _round_reason("close")))
                     continue
                 if round_id in set(self._protected_round_ids()):
-                    results.append(RetentionRoundResult(round_id, "skipped", "本次 App 執行仍受保護"))
+                    results.append(RetentionRoundResult(
+                        round_id, "skipped", "本次 App 執行仍受保護",
+                        _round_reason("protected")))
                     continue
                 archive_times = [datetime.fromisoformat(item.archived_at) for item in manifests]
                 if any(value.tzinfo is None or value.utcoffset() is None for value in archive_times):
-                    results.append(RetentionRoundResult(round_id, "skipped", "可信封存時間缺少時區"))
+                    results.append(RetentionRoundResult(
+                        round_id, "skipped", "可信封存時間缺少時區",
+                        _round_reason("timezone")))
                     continue
                 archived_at = min(archive_times)
                 if archived_at > cutoff:
-                    results.append(RetentionRoundResult(round_id, "skipped", "尚未到保存期限"))
+                    results.append(RetentionRoundResult(
+                        round_id, "skipped", "尚未到保存期限",
+                        _round_reason("not_expired")))
                     continue
                 try:
                     self._delete_round(run_id, round_id, manifests, components, retention_days)
