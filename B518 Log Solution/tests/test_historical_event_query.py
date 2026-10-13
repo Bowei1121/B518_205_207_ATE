@@ -111,6 +111,32 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 os.environ["TZ"] = original_tz
             time.tzset()
 
+    def test_query_uses_timezone_captured_when_date_range_was_submitted(self):
+        original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                sessions = Path(temporary) / "sessions"
+                self._write_audit(sessions, [
+                    "2026-11-01T05:30:00+00:00",  # NY 01:30 daylight time
+                    "2026-11-01T06:15:00+00:00",  # NY 01:15 standard time
+                ])
+                submitted_range = HistoricalEventDateRange(
+                    date(2026, 11, 1), date(2026, 11, 1))
+                os.environ["TZ"] = "Asia/Tokyo"
+                time.tzset()
+
+                result = query_historical_events(sessions, None, submitted_range)
+
+            self.assertEqual([event.sequence for event in result.events], [1, 2])
+        finally:
+            if original_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original_tz
+            time.tzset()
+
     def test_unreadable_source_is_counted_separately_from_an_empty_date_range(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import bisect
+import os
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -14,6 +15,66 @@ from historical_event_display import HistoricalEvent, iter_historical_events
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
 _DIAGNOSTIC_SAMPLE_LIMIT = 20
+
+
+class _LocalTimezoneSnapshot:
+    """Immutable local-zone rules captured when the query is submitted."""
+
+    def __init__(self, zone=None, foundation_zone=None, fallback=None):
+        self._zone = zone
+        self._foundation_zone = foundation_zone
+        self._fallback = fallback
+
+    def wall_time(self, epoch: float) -> datetime:
+        if self._zone is not None:
+            return datetime.fromtimestamp(epoch, self._zone).replace(tzinfo=None)
+        if self._foundation_zone is not None:
+            from Foundation import NSDate
+            moment = NSDate.dateWithTimeIntervalSince1970_(epoch)
+            offset = self._foundation_zone.secondsFromGMTForDate_(moment)
+            return datetime.utcfromtimestamp(epoch) + timedelta(seconds=offset)
+        return datetime.fromtimestamp(epoch, self._fallback)
+
+
+def _capture_local_timezone() -> _LocalTimezoneSnapshot:
+    """Capture named local timezone rules without consulting process TZ in a worker."""
+    zone_name = _local_timezone_name()
+    if zone_name:
+        try:
+            from zoneinfo import ZoneInfo
+            return _LocalTimezoneSnapshot(zone=ZoneInfo(zone_name))
+        except ImportError:
+            pass
+        except (KeyError, OSError, ValueError):
+            pass
+        try:
+            from Foundation import NSTimeZone
+            zone = NSTimeZone.timeZoneWithName_(zone_name)
+            if zone is not None:
+                return _LocalTimezoneSnapshot(foundation_zone=zone)
+        except ImportError:
+            pass
+    return _LocalTimezoneSnapshot(fallback=datetime.now().astimezone().tzinfo or timezone.utc)
+
+
+def _local_timezone_name() -> Optional[str]:
+    configured = os.environ.get("TZ", "").lstrip(":")
+    if configured and not os.path.isabs(configured) and "/" in configured:
+        return configured
+    candidates = [configured] if configured else []
+    try:
+        candidates.append(os.path.realpath("/etc/localtime"))
+    except OSError:
+        pass
+    marker = "zoneinfo/"
+    for candidate in candidates:
+        if marker in candidate:
+            name = candidate.split(marker, 1)[1]
+            if name and not name.startswith("posix/") and not name.startswith("right/"):
+                return name
+        if candidate and "/" not in candidate and not candidate.startswith("<"):
+            return candidate
+    return None
 
 
 class HistoricalEventDateError(ValueError):
@@ -31,6 +92,7 @@ class HistoricalEventDateRange:
     end: date
     _start_epoch: float = field(init=False, repr=False)
     _end_epoch: float = field(init=False, repr=False)
+    _local_timezone: _LocalTimezoneSnapshot = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.start, date) or isinstance(self.start, datetime):
@@ -46,6 +108,7 @@ class HistoricalEventDateRange:
             raise HistoricalEventDateError("end", "unrepresentable") from error
         object.__setattr__(self, "_start_epoch", start_epoch)
         object.__setattr__(self, "_end_epoch", end_epoch)
+        object.__setattr__(self, "_local_timezone", _capture_local_timezone())
 
 
 @dataclass(frozen=True)
@@ -109,7 +172,7 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     for event in iter_historical_events(session_root, app_event_path):
         if event.source in {"read_error", "read_warning"}:
             source_issue_count += 1
-        occurred_at = _parse_occurred_at(event.occurred_at)
+        occurred_at = _parse_occurred_at(event.occurred_at, date_range._local_timezone)
         if occurred_at is None:
             unclassified_count += 1
             if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
@@ -141,7 +204,7 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         unclassified_count, source_issue_count, tuple(diagnostics))
 
 
-def _parse_occurred_at(value: str):
+def _parse_occurred_at(value: str, local_timezone: _LocalTimezoneSnapshot):
     if not value:
         return None
     try:
@@ -151,7 +214,7 @@ def _parse_occurred_at(value: str):
             local_wall = parsed
         else:
             epoch = parsed.timestamp()
-            local_wall = datetime.fromtimestamp(epoch)
+            local_wall = local_timezone.wall_time(epoch)
         wall_order = (local_wall.toordinal() * 86400 + local_wall.hour * 3600 +
                       local_wall.minute * 60 + local_wall.second +
                       local_wall.microsecond / 1000000.0)
