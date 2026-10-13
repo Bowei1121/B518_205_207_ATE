@@ -1,0 +1,148 @@
+"""Date-bounded first-page queries over the existing read-only history sources."""
+
+from __future__ import annotations
+
+import bisect
+import time
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Optional, Tuple
+
+from historical_event_display import HistoricalEvent, iter_historical_events
+
+
+HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
+_DIAGNOSTIC_SAMPLE_LIMIT = 20
+
+
+class HistoricalEventDateError(ValueError):
+    """A date range is missing, invalid, or reversed."""
+
+    def __init__(self, field_name: str, message: str):
+        super().__init__(message)
+        self.field_name = field_name
+
+
+@dataclass(frozen=True)
+class HistoricalEventDateRange:
+    start: date
+    end: date
+    _start_epoch: float = field(init=False, repr=False)
+    _end_epoch: float = field(init=False, repr=False)
+
+    def __post_init__(self):
+        if not isinstance(self.start, date) or isinstance(self.start, datetime):
+            raise HistoricalEventDateError("start", "開始日期無效")
+        if not isinstance(self.end, date) or isinstance(self.end, datetime):
+            raise HistoricalEventDateError("end", "結束日期無效")
+        if self.start > self.end:
+            raise HistoricalEventDateError("end", "開始日期不可晚於結束日期")
+        try:
+            start_epoch = _local_midnight_epoch(self.start)
+            end_epoch = _local_midnight_epoch(self.end + timedelta(days=1))
+        except (OverflowError, OSError, ValueError) as error:
+            raise HistoricalEventDateError("end", "日期範圍無法表示") from error
+        object.__setattr__(self, "_start_epoch", start_epoch)
+        object.__setattr__(self, "_end_epoch", end_epoch)
+
+
+@dataclass(frozen=True)
+class HistoricalEventQueryResult:
+    date_range: HistoricalEventDateRange
+    events: Tuple[HistoricalEvent, ...]
+    total_count: int
+    unclassified_count: int
+    diagnostics: Tuple[HistoricalEvent, ...]
+
+    @property
+    def is_limited(self) -> bool:
+        return self.total_count > len(self.events)
+
+
+def parse_historical_event_date_range(start_text: str, end_text: str
+                                      ) -> HistoricalEventDateRange:
+    """Validate ISO calendar dates without starting a read or changing existing results."""
+    if not start_text:
+        raise HistoricalEventDateError("start", "請輸入開始日期")
+    if not end_text:
+        raise HistoricalEventDateError("end", "請輸入結束日期")
+    try:
+        start = date.fromisoformat(start_text)
+    except (TypeError, ValueError):
+        raise HistoricalEventDateError("start", "開始日期格式無效，請使用 YYYY-MM-DD")
+    try:
+        end = date.fromisoformat(end_text)
+    except (TypeError, ValueError):
+        raise HistoricalEventDateError("end", "結束日期格式無效，請使用 YYYY-MM-DD")
+    return HistoricalEventDateRange(start, end)
+
+
+def recent_historical_event_date_range(today: date, days: int = 90) -> HistoricalEventDateRange:
+    if type(days) is not int or days < 1:
+        raise ValueError("days must be a positive integer")
+    return HistoricalEventDateRange(today - timedelta(days=days - 1), today)
+
+
+def query_historical_events(session_root: Path, app_event_path: Optional[Path],
+                            date_range: HistoricalEventDateRange,
+                            limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE
+                            ) -> HistoricalEventQueryResult:
+    """Read saved history and retain only the newest bounded result set.
+
+    Existing strict source readers remain authoritative. Raw details are carried only by
+    matching first-page records; no display text is built while scanning.
+    """
+    if not isinstance(date_range, HistoricalEventDateRange):
+        raise TypeError("date_range must be a HistoricalEventDateRange")
+    if type(limit) is not int or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
+    ordered = []
+    total_count = 0
+    unclassified_count = 0
+    diagnostics = []
+
+    for event in iter_historical_events(session_root, app_event_path):
+        occurred_at = _parse_occurred_at(event.occurred_at)
+        if occurred_at is None:
+            unclassified_count += 1
+            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                diagnostics.append(event)
+            continue
+        parsed, epoch = occurred_at
+        if parsed.tzinfo is None:
+            in_range = date_range.start <= parsed.date() <= date_range.end
+        else:
+            in_range = date_range._start_epoch <= epoch < date_range._end_epoch
+        if not in_range:
+            continue
+
+        total_count += 1
+        sequence = event.sequence if type(event.sequence) is int else event.source_order
+        stable_identity = event.round_id or event.key
+        sort_key = (-epoch, stable_identity, sequence, event.key, event.source_order)
+        bisect.insort(ordered, (sort_key, event.key, event))
+        if len(ordered) > page_size:
+            ordered.pop()
+
+    return HistoricalEventQueryResult(
+        date_range, tuple(item[2] for item in ordered), total_count,
+        unclassified_count, tuple(diagnostics))
+
+
+def _parse_occurred_at(value: str):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return parsed, time.mktime(parsed.timetuple())
+        return parsed, parsed.timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _local_midnight_epoch(value: date) -> float:
+    local_midnight = datetime.combine(value, datetime.min.time())
+    return time.mktime(local_midnight.timetuple())

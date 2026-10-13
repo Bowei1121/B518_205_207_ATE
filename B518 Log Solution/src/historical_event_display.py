@@ -42,14 +42,18 @@ class HistoricalEventPresentation:
 def read_historical_events(session_root: Path, app_event_path: Optional[Path] = None
                            ) -> Tuple[HistoricalEvent, ...]:
     """Reconstruct disk history using the existing strict readers; never repair or write."""
+    return tuple(sorted(iter_historical_events(session_root, app_event_path), key=_event_sort_key))
+
+
+def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = None):
+    """Yield disk history source by source without retaining a combined history collection."""
     root = Path(session_root)
-    records = []
     if root.exists():
         try:
             directories = sorted(path for path in root.iterdir() if path.is_dir())
         except OSError as error:
             directories = []
-            records.append(_read_error("round", root, str(error)))
+            yield _read_error("round", root, str(error))
         for directory in directories:
             audit_path = directory / "audit.jsonl"
             legacy_path = directory / "events.log"
@@ -57,46 +61,44 @@ def read_historical_events(session_root: Path, app_event_path: Optional[Path] = 
                 try:
                     audit = read_round_audit(audit_path)
                 except Exception as error:
-                    records.append(_read_error("round", audit_path, str(error)))
+                    yield _read_error("round", audit_path, str(error))
                     continue
                 header = audit["round"]
                 round_id = header["round_id"]
                 station = header.get("station", "")
                 platform = header.get("config", {}).get("platform", "")
                 for event in audit["events"]:
-                    records.append(HistoricalEvent(
+                    yield HistoricalEvent(
                         "round:{}:{}".format(round_id, event["sequence"]), "round",
                         event["observed_at"], event["message"], event["kind"], round_id,
                         event["sequence"], event.get("localized_message"),
                         _diagnostic(event), event.get("detail", {}), event, station, platform,
-                    ))
+                    )
                 if not audit.get("audit_complete", False):
-                    records.append(HistoricalEvent(
+                    yield HistoricalEvent(
                         "warning:round:{}".format(round_id), "read_warning", "",
                         "Audit records report an incomplete save", round_id=round_id,
                         station=station, platform=platform,
                         raw_record={"audit_path": str(audit_path),
                                     "reason": "audit_complete is false"},
-                    ))
+                    )
             elif legacy_path.is_file():
-                records.extend(_read_legacy_session_events(legacy_path))
+                yield from _read_legacy_session_events(legacy_path)
 
     if app_event_path is not None and Path(app_event_path).exists():
         path = Path(app_event_path)
         try:
             store = read_app_event_store(path)
         except Exception as error:
-            records.append(_read_error("app", path, str(error)))
+            yield _read_error("app", path, str(error))
         else:
             for event in store["events"]:
-                records.append(HistoricalEvent(
+                yield HistoricalEvent(
                     "app:{}".format(event["event_id"]), "app", event["occurred_at"],
                     event["message"], event["kind"], None, event["sequence"],
                     event.get("localized_message"), event.get("diagnostic", ""),
                     event.get("localized_message", {}).get("parameters", {}), event,
-                ))
-
-    return tuple(sorted(records, key=_event_sort_key))
+                )
 
 
 def _event_sort_key(event: HistoricalEvent):
