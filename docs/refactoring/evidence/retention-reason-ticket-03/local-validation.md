@@ -87,3 +87,14 @@ actual:   app.settings.retention.reason.cleanup.interrupted
 ```
 
 The successful cleanup's persisted final row still carries `app_event_commit_intent`; `_summary_from_dict` interprets a complete row with that marker as durability awaiting revalidation and changes its presentation to interrupted. Thus the live coordinator reports completion while the fresh reader does not reconstruct the same completed summary. That revision had a concrete C3 regression/acceptance blocker. The subsequent final-code fix and desktop pass above resolve it without weakening uncertain replace/fsync protection; the failed run and diagnosis are retained as historical evidence. No code or assertions were changed during that diagnosis.
+
+
+## Post-merge verification and delivery
+
+All eight C3 acceptance items and the final fixed-base Standards/Spec documentation reviews passed at pre-merge documentation SHA `509800011496e90fbd6aabf23a68f90bbdaa10e7`; no code changed after `7639be8b8af1fb77461706d763ae95402ae3a3cc`. Before integration, direct queries and fetches found both GitHub and Gitea mainline refs at fixed base `f80e86a51907988613185155ed69552c9f392426`, both ancestors of the ticket.
+
+The mainline worktree's pre-existing `PROJECT_SUMMARY_2026-10-09.md` and `PROJECT_SUMMARY_2026-10-12.md` changes were copied to a private temporary backup with SHA-256 hashes and temporarily stashed by explicit paths. The target worktree was checked clean before `git merge --ff-only LanguageRefresh/ticket-07`. Integration was a **fast-forward** to `509800011496e90fbd6aabf23a68f90bbdaa10e7`, not a new merge commit.
+
+From the mainline Python project directory, the same authorized desktop command was rerun: **404 tests / 133.908 seconds / exit 0**. Raw output: [desktop-suite-postmerge.log](desktop-suite-postmerge.log). Both final logs contain no Tcl_AsyncDelete, ignored Tk destructor exception or residual invalid-command callback. This post-merge pass covers the same final code, actual App/Tk summary/diagnostic/retry and disk-rebuild cases as the ticket pass. There is no configured type-checking command.
+
+Final source-App acceptance is complete. C1 is in the fixed-base ancestry with final validation evidence; C2 already in that baseline retains its round/archive contract. C3 changes only the App-event producer and necessary local screen use of C1's reason contract. C4 complete screen consolidation, parent second-item completion, formal bundle and factory/field verification remain separate. No issue was published, edited or closed. Destination synchronization and cleanup are recorded below after execution.
