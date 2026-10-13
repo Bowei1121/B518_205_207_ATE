@@ -27,7 +27,7 @@ H1 的日期條件、背景首批查詢與真正 Tk 驗收已完成，固定基�
 
 ### H2 delivery status — 2026-10-13
 
-H2 已完成查詢世代隔離、協作取消、最新待處理請求合併與歷史視窗關閉／重開收尾；在真正 Tk 慢讀下驗證重查、取消及 App 關閉仍可操作，完整驗收與 runtime 差異記於 [H2 local validation](../evidence/historical-event-query-ticket-02/local-validation.md)。H2 的完整套件在 Python 3.11.7／Tk 8.6 桌面執行通過；Python 3.8/Tk 的 Tcl abort 亦在固定基準重現，兩者分開記錄。H3–H8 與父規格 #37 尚未因此完成，完整分頁、持久索引及工廠驗收仍各依其票件範圍。
+H2 已完成查詢世代隔離、協作取消、最新待處理請求合併與歷史視窗關閉／重開收尾；在真正 Tk 慢讀下驗證重查、取消及 App 關閉仍可操作，並已快轉合併至 `B518-Log-Solution`。合併後完整含 Tk 套件在 Python 3.11.7／Tk 8.6 桌面再次通過；Python 3.8/Tk 的 Tcl abort 亦在固定基準重現，兩者分開記錄。逐項驗收、runtime 差異、審查、merge 及目的地同步證據見 [H2 local validation](../evidence/historical-event-query-ticket-02/local-validation.md)。H3–H8 與父規格 #37 尚未因此完成，完整分頁、持久索引及工廠驗收仍各依其票件範圍。
 
 ## 規格覆蓋
 
