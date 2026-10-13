@@ -98,3 +98,16 @@ The mainline worktree's pre-existing `PROJECT_SUMMARY_2026-10-09.md` and `PROJEC
 From the mainline Python project directory, the same authorized desktop command was rerun: **404 tests / 133.908 seconds / exit 0**. Raw output: [desktop-suite-postmerge.log](desktop-suite-postmerge.log). Both final logs contain no Tcl_AsyncDelete, ignored Tk destructor exception or residual invalid-command callback. This post-merge pass covers the same final code, actual App/Tk summary/diagnostic/retry and disk-rebuild cases as the ticket pass. There is no configured type-checking command.
 
 Final source-App acceptance is complete. C1 is in the fixed-base ancestry with final validation evidence; C2 already in that baseline retains its round/archive contract. C3 changes only the App-event producer and necessary local screen use of C1's reason contract. C4 complete screen consolidation, parent second-item completion, formal bundle and factory/field verification remain separate. No issue was published, edited or closed. Destination synchronization and cleanup are recorded below after execution.
+
+
+### Synchronization, cleanup and protected changes
+
+Post-merge validation/documentation commit: `e13060fff25d89b5ed630f09ce0421e20f771734`. At 2026-10-13 13:01:53 Asia/Taipei, direct `git ls-remote` queries confirmed both GitHub and Gitea mainline and ticket refs at this SHA. Only after that confirmation, the already-merged `LanguageRefresh/ticket-07` remote branch was deleted at both existing push destinations, its clean local worktree `/private/tmp/B518-LanguageRefresh-C3` was removed without force, its clean C3 comparison worktree `/private/tmp/B518-C3-baseline` was removed without force, and the local ticket branch was deleted with `git branch -d`. Before removal, both worktrees had no tracked or untracked changes; their only ignored files were Python test caches.
+
+At 13:03:33, direct queries confirmed both mainline refs still at `e13060fff25d89b5ed630f09ce0421e20f771734`, no remote ticket refs, and no local ticket branch. No other series branch/worktree or push destination was removed. The primary project checkout is on `B518-Log-Solution`. The two pre-existing summary changes were restored and compared byte-for-byte via their backup SHA-256 hashes; only the stash created for this protection was dropped. They remain uncommitted, exactly as before this ticket, and are excluded from all C3 commits.
+
+Final delivery consists of code/test SHA `7639be8b8af1fb77461706d763ae95402ae3a3cc`, fast-forward integration result `509800011496e90fbd6aabf23a68f90bbdaa10e7` (no merge commit), post-merge evidence commit `e13060fff25d89b5ed630f09ce0421e20f771734`, and the final documentation commit containing this cleanup addendum. The final documentation SHA and post-push direct destination confirmation are reported in the delivery response; it changes no code/resources/tests and needs no new bundle. C3 has no remaining acceptance blocker.
+
+Raw log SHA-256:
+- `desktop-suite-final.log`: `38f9eb9484bad55eacd5602709a512ad88d74e6691c713aeea1fc96b153457c5`
+- `desktop-suite-postmerge.log`: `4239e1bef686e39ec5046a5634124f8401db91ca72b851551ce55e0cbb7119ba`
