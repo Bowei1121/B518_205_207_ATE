@@ -357,6 +357,29 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(outside.read_bytes(), original_external_bytes)
         self.assertEqual((moved_parent / managed_store_path.name).read_bytes(), original_managed_bytes)
 
+    def test_journal_symlink_installed_after_initial_pin_is_reported_as_path_change(self):
+        self.store.record("app.hotkey.unavailable", {}, "protected")
+        self.assertTrue(self.store.flush())
+        outside = Path(self.temp.name) / "outside.json"
+        outside.write_bytes(b"external sentinel")
+        original_external = outside.read_bytes()
+        from app_event_store import _read_at as read_at
+
+        def install_symlink_before_pinned_read(directory_fd, name):
+            self.path.unlink()
+            self.path.symlink_to(outside)
+            return read_at(directory_fd, name)
+
+        with patch("app_event_store._read_at", side_effect=install_symlink_before_pinned_read):
+            result = self.store.cleanup_expired(
+                self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_path_changed")
+        self.assertEqual(outside.read_bytes(), original_external)
+        self.assertTrue(self.path.is_symlink())
+
     def test_retention_ancestor_swap_before_managed_root_pin_cannot_reach_external_journal(self):
         base = Path(self.temp.name) / "managed-parent"
         managed_root = base / "app"

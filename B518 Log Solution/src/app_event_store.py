@@ -517,7 +517,14 @@ class AppEventStore:
                 root_fd = _open_managed_directory(root, ())
                 parent_fd = _open_managed_directory(root, relative.parts[:-1])
                 try:
-                    original_bytes, original_stat = _read_at(parent_fd, relative.parts[-1])
+                    try:
+                        original_bytes, original_stat = _read_at(parent_fd, relative.parts[-1])
+                    except OSError as error:
+                        if error.errno in {errno.ELOOP, errno.EMLINK}:
+                            raise _AppEventCleanupError(
+                                "app_events_path_changed",
+                                "App 事件目標在安全檢查後變成符號連結") from error
+                        raise
                 except FileNotFoundError:
                     return AppEventCleanupResult(
                         "complete", reason="沒有 App 事件需要清理",
