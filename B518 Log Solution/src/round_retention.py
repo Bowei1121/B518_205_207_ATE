@@ -334,12 +334,24 @@ class RoundRetentionStore:
                     payload = json.loads(manifest.read_text(encoding="utf-8"))
                     raw_paths = tuple(Path(entry["path"]) for entry in payload["components"])
                     if any(not self._safe_file(path) for path in raw_paths):
-                        raise ValueError("必要資料路徑含符號連結或不在 App 管理範圍")
+                        diagnostic = "必要資料路徑含符號連結或不在 App 管理範圍"
+                        rejected.append(RetentionRoundResult(
+                            snapshot.round_id, "skipped", diagnostic,
+                            _round_reason("unsafe_component", {}, diagnostic)))
+                        continue
                     expected_by_name = {component.name: component.path for component in snapshot.components}
                     if any(path.resolve() != expected_by_name.get(path.name) for path in raw_paths):
-                        raise ValueError("封存路徑與驗證後路徑不一致")
+                        diagnostic = "封存路徑與驗證後路徑不一致"
+                        rejected.append(RetentionRoundResult(
+                            snapshot.round_id, "skipped", diagnostic,
+                            _round_reason("archive_path_mismatch", {}, diagnostic)))
+                        continue
                     if not self._only_known_files(manifest, raw_paths):
-                        raise ValueError("輪次目錄含未知檔案，整輪保留")
+                        diagnostic = "輪次目錄含未知檔案，整輪保留"
+                        rejected.append(RetentionRoundResult(
+                            snapshot.round_id, "skipped", diagnostic,
+                            _round_reason("unknown_file", {}, diagnostic)))
+                        continue
                     record = (snapshot, manifest, raw_paths)
                     groups.setdefault(snapshot.round_id, []).append(record)
                 except (OSError, ValueError, KeyError, TypeError) as error:

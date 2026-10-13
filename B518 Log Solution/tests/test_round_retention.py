@@ -828,6 +828,8 @@ class RoundRetentionTests(unittest.TestCase):
             result = next(item for item in rounds.retention_cleanup_summaries()[-1].results
                           if item.round_id == round_id)
             self.assertEqual(result.outcome, "skipped")
+            self.assertEqual(result.reason_message["message_id"],
+                             "app.settings.retention.reason.unknown_file")
 
     def test_symlinked_component_to_external_data_is_preserved_and_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -849,7 +851,10 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertTrue(external.exists())
             self.assertTrue(result_path.is_symlink())
             self.assertTrue(archive.path.exists())
-            self.assertEqual(rounds.retention_cleanup_summaries()[-1].results[0].outcome, "skipped")
+            result = rounds.retention_cleanup_summaries()[-1].results[0]
+            self.assertEqual(result.outcome, "skipped")
+            self.assertEqual(result.reason_message["message_id"],
+                             "app.settings.retention.reason.unsafe_component")
 
     def test_parent_replaced_with_external_symlink_during_unlink_cannot_delete_external_file(self):
         with tempfile.TemporaryDirectory() as temporary:
