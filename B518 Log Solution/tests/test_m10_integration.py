@@ -110,6 +110,8 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 app.open_app_diagnostics()
                 app.open_historical_events()
                 self.pump(root, lambda: app.rounds.app_event_status().complete)
+                app.historical_event_refresh_button.invoke()
+                self.pump(root, lambda: app._historical_query_result is not None)
                 app.conflict_list.selection_set(0)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 before = app.rounds.snapshot()

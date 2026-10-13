@@ -5095,7 +5095,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app.open_historical_events()
                 app.historical_event_refresh_button.invoke()
-                self.wait_for(lambda: app._historical_query_result is not None)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                 history_window = app.historical_event_window
                 history_index = next(
                     index for index, event in enumerate(app._historical_event_records)
