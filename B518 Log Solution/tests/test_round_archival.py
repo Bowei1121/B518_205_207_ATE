@@ -399,6 +399,8 @@ class RoundArchivalTests(unittest.TestCase):
             results.write_text("slot,sn,status,source,updated_at\n", encoding="utf-8")
             changed = read_round_archive(archived.path, expected_round_id="round-archive")
             self.assertEqual(changed.status, "protected")
+            self.assertEqual(changed.reason_message["message_id"],
+                             "app.settings.retention.reason.archive_component_changed")
             rearchived = write_round_archive(
                 audit_path, session_path,
                 datetime(2026, 10, 8, 9, 30, tzinfo=timezone.utc),
@@ -410,6 +412,8 @@ class RoundArchivalTests(unittest.TestCase):
             rearchived.path.write_text(json.dumps(payload), encoding="utf-8")
             tampered = read_round_archive(rearchived.path, expected_round_id="round-archive")
             self.assertEqual(tampered.status, "protected")
+            self.assertEqual(tampered.reason_message["message_id"],
+                             "app.settings.retention.reason.archive_integrity_failed")
             self.assertIn("完整性", tampered.message)
 
     def test_missing_or_unknown_archive_metadata_keeps_old_round_protected(self):

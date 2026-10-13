@@ -64,6 +64,14 @@ def _archive_reason(reason: str, parameters=None, diagnostic: str = "") -> dict:
         "app.settings.retention.reason." + reason, parameters or {}, diagnostic)
 
 
+def _rejected_archive(round_id: str, reason: str, message: str, archived_at: str = "",
+                      path: Optional[Path] = None, diagnostic: str = "") -> ArchiveSnapshot:
+    parameters = {"diagnostic": diagnostic} if diagnostic else {}
+    return ArchiveSnapshot(
+        round_id, "protected", archived_at, message, path,
+        reason_message=_archive_reason(reason, parameters, diagnostic))
+
+
 def normalize_archive_time(value: datetime) -> datetime:
     """Attach the local timezone to a naive injected wall-clock value."""
     if value.tzinfo is None or value.utcoffset() is None:
@@ -240,53 +248,69 @@ def read_round_archive(path: Path, expected_round_id: Optional[str] = None) -> A
             path=path, reason_message=_archive_reason(
                 "archive_read_failed", {"diagnostic": diagnostic}, diagnostic))
     if not isinstance(payload, dict):
-        return ArchiveSnapshot(round_id, "protected", message="封存資訊格式不正確", path=path)
+        return _rejected_archive(round_id, "archive_format_invalid", "封存資訊格式不正確",
+                                 path=path)
     candidate_id = payload.get("round_id")
     if isinstance(candidate_id, str):
         round_id = candidate_id
-    if payload.get("record_type") != "round_archive" or payload.get("schema_version") != ARCHIVE_SCHEMA_VERSION:
-        return ArchiveSnapshot(round_id, "protected", message="封存資訊版本未知", path=path,
-                               reason_message=_archive_reason("archive_unknown_version"))
+    if payload.get("record_type") != "round_archive":
+        return _rejected_archive(round_id, "archive_format_invalid", "封存資訊格式不正確",
+                                 path=path)
+    if payload.get("schema_version") != ARCHIVE_SCHEMA_VERSION:
+        return _rejected_archive(round_id, "archive_unknown_version", "封存資訊版本未知",
+                                 path=path)
     seal_digest = payload.get("seal_sha256")
     unsigned_payload = dict(payload)
     unsigned_payload.pop("seal_sha256", None)
-    if not isinstance(seal_digest, str) or seal_digest != _manifest_digest(unsigned_payload):
-        return ArchiveSnapshot(round_id, "protected", message="封存資訊完整性驗證失敗", path=path)
+    if not isinstance(seal_digest, str) or not seal_digest:
+        return _rejected_archive(round_id, "archive_integrity_missing", "封存完整性資訊缺失",
+                                 path=path)
+    if seal_digest != _manifest_digest(unsigned_payload):
+        return _rejected_archive(round_id, "archive_integrity_failed", "封存資訊完整性驗證失敗",
+                                 path=path)
     if (not round_id or (expected_round_id is not None and round_id != expected_round_id)):
-        return ArchiveSnapshot(round_id, "protected", message="封存輪次身分不一致", path=path)
+        return _rejected_archive(round_id, "archive_round_identity_mismatch", "封存輪次身分不一致",
+                                 path=path)
     archived_at = payload.get("archived_at")
     try:
         parsed_time = datetime.fromisoformat(archived_at) if isinstance(archived_at, str) else None
     except ValueError:
         parsed_time = None
     if parsed_time is None or parsed_time.tzinfo is None or parsed_time.utcoffset() is None:
-        return ArchiveSnapshot(round_id, "protected", message="封存時間無效或缺少時區", path=path)
+        return _rejected_archive(round_id, "archive_invalid_time", "封存時間無效或缺少時區",
+                                 path=path, diagnostic=str(archived_at or ""))
     entries = payload.get("components")
     if payload.get("integrity") != "sha256-and-size" or not isinstance(entries, list):
-        return ArchiveSnapshot(round_id, "protected", archived_at, "封存完整性資訊缺失", path)
+        return _rejected_archive(round_id, "archive_integrity_missing", "封存完整性資訊缺失",
+                                 archived_at, path)
     expected_names = {"audit.jsonl", *_REQUIRED_SESSION_FILES}
     if len(entries) != len(expected_names) or {item.get("name") for item in entries
                                                 if isinstance(item, dict)} != expected_names:
-        return ArchiveSnapshot(round_id, "protected", archived_at, "封存組成資料不完整", path)
+        return _rejected_archive(round_id, "archive_components_incomplete", "封存組成資料不完整",
+                                 archived_at, path)
     components = []
     for entry in entries:
         if not isinstance(entry, dict):
-            return ArchiveSnapshot(round_id, "protected", archived_at, "封存組成資料格式不正確", path)
+            return _rejected_archive(round_id, "archive_component_format_invalid",
+                                     "封存組成資料格式不正確", archived_at, path)
         try:
             component_path = Path(entry.get("path", ""))
         except (TypeError, ValueError):
-            return ArchiveSnapshot(round_id, "protected", archived_at,
-                                   "封存組成資料路徑不正確", path)
+            return _rejected_archive(round_id, "archive_component_path_invalid",
+                                     "封存組成資料路徑不正確", archived_at, path)
         try:
             actual = _component(component_path)
         except (OSError, ValueError) as error:
-            return ArchiveSnapshot(round_id, "protected", archived_at,
-                                   "必要輪次紀錄缺失或無法讀取：{}".format(error), path)
+            diagnostic = str(error)
+            return _rejected_archive(
+                round_id, "archive_component_read_failed",
+                "必要輪次紀錄缺失或無法讀取：{}".format(diagnostic), archived_at, path,
+                diagnostic)
         if (not isinstance(entry.get("size"), int) or isinstance(entry.get("size"), bool) or
                 entry.get("size") != actual.size or entry.get("sha256") != actual.sha256 or
                 component_path.name != entry.get("name")):
-            return ArchiveSnapshot(round_id, "protected", archived_at,
-                                   "必要輪次紀錄內容已變更", path)
+            return _rejected_archive(round_id, "archive_component_changed",
+                                     "必要輪次紀錄內容已變更", archived_at, path)
         components.append(actual)
     audit_components = [item for item in components if item.name == "audit.jsonl"]
     session_meta = [item for item in components if item.name == "session.json"]
@@ -295,12 +319,14 @@ def read_round_archive(path: Path, expected_round_id: Optional[str] = None) -> A
             audit_components[0].path, session_meta[0].path.parent)
     except (AuditRecordError, OSError, UnicodeError, json.JSONDecodeError, IndexError,
             TypeError, ValueError) as error:
-        return ArchiveSnapshot(round_id, "protected", archived_at,
-                               "必要輪次紀錄無法重建：{}".format(error), path)
+        diagnostic = str(error)
+        return _rejected_archive(
+            round_id, "archive_component_rebuild_failed",
+            "必要輪次紀錄無法重建：{}".format(diagnostic), archived_at, path, diagnostic)
     if (verified_round_id != round_id or
             tuple(sorted(verified_components, key=lambda item: item.name)) !=
             tuple(sorted(components, key=lambda item: item.name))):
-        return ArchiveSnapshot(round_id, "protected", archived_at,
-                               "磁碟紀錄未完整保存或輪次身分不一致", path)
+        return _rejected_archive(round_id, "archive_disk_incomplete",
+                                 "磁碟紀錄未完整保存或輪次身分不一致", archived_at, path)
     return ArchiveSnapshot(round_id, "archived", archived_at, path=path,
                            components=tuple(sorted(components, key=lambda item: item.name)))
