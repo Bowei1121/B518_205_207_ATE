@@ -42,7 +42,7 @@ python3 -m py_compile src/app_event_store.py src/audit_records.py src/b518_log_s
 git diff --check
 ```
 
-- Runtime used for real Tk: `/opt/anaconda3/bin/python3`, Python 3.11.7, Aqua Tcl/Tk 8.6.12, logged-in macOS desktop. The whole suite was run in the accessible desktop session; no Tk test was skipped. Final full-suite result on the current code: 428 tests, 145.082 seconds, exit 0.
+- Runtime used for real Tk: `/opt/anaconda3/bin/python3`, Python 3.11.7, Aqua Tcl/Tk 8.6.12, logged-in macOS desktop. The whole suite was run in the accessible desktop session; no Tk test was skipped. Final full-suite result after the review fix: 429 tests, 143.026 seconds, exit 0. An earlier full run on the same runtime had one error from `TemporaryDirectory` cleanup in `test_archive_check_racing_a_new_round_event_seals_the_latest_disk_contents`; the case passed alone and the 17-test `test_round_archival` module passed, then the complete suite passed. The initial failure is retained here rather than represented as a pass.
 - Focused history/source tests: 55 tests passed after the final streaming-reader refactor.
 - Four real-Tk H1/H2/H3 plus integrated language-refresh tests passed after the page/detail request race was fixed.
 - `py_compile` and `git diff --check` passed after the final source-reader refactor.
@@ -51,7 +51,7 @@ git diff --check
 
 ## Review, final revision, and limits
 
-- Fixed Standards/Spec review base remains `d0a244b6b53a31e1fc9e57ceefcf9d9f1e959f79`; review results and final revision are recorded after both review axes complete. Program/test commit: `f8efec9` (`Implement paged historical event snapshots`); both configured push destinations accepted it. Final documentation commit and direct destination SHA checks are recorded after those steps occur.
+- Fixed Standards/Spec review base remains `d0a244b6b53a31e1fc9e57ceefcf9d9f1e959f79`. Standards found a close/open race where SQLite could create a new empty file after snapshot removal; the snapshot now opens read-only and a barrier-controlled regression proves that the path stays absent. Spec review found no blocking gaps or scope creep. Non-blocking notes: page-read failures leave the prior page visible without a localized recovery message (full recovery UX is H5); `HistoricalEventDetailService` also owns page-read coordination, so its name is slightly narrow. Program/test commits are `f8efec9` and `f17f62b`; the latter is the final code/test revision. Both configured push destinations accepted `f17f62b`. Final documentation commit and direct destination SHA checks are recorded after those steps occur.
 - H3 may perform the initial query's background source scan. It does not provide H4's durable index, reuse after restart, or guarantee that a later query avoids scanning unchanged sources. H5's full recovery surface, H6's cleanup/save race integration, H7's complete icon/keyboard/localization contract, and H8 capacity/full-spec closeout are not claimed.
 - Physical mouse hardware is not separately claimed: Tk event-driven widget input was used for the actual arrow controls. The app's real window and Tk lifecycle were exercised.
-- No external parent issue was modified. Commit, merge, direct remote SHA checks, ticket branch cleanup, and final document SHA are added after those steps occur.
+- No external parent issue was modified. The first complete-suite attempt's temporary-cleanup error was investigated as above and did not recur in the isolated case, archival module, or final full run. Commit, merge, direct remote SHA checks, ticket branch cleanup, and final document SHA are added after those steps occur.
