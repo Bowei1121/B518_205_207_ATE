@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from audit_records import AuditEvent, RoundAuditStore
+from app_event_store import AppEventStore
 from historical_event_query import (HistoricalEventDateError, HistoricalEventDateRange,
                                     parse_historical_event_date_range,
                                     query_historical_events,
@@ -50,6 +51,38 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual(result.events[0].key, "round:round-1:101")
             self.assertEqual(result.events[-1].key, "round:round-1:2")
             self.assertEqual(audit.audit_path.read_bytes(), before)
+
+    def test_single_result_is_returned_without_claiming_a_later_page(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            self._write_audit(sessions, ["2026-10-13T10:00:00+00:00"])
+
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+
+            self.assertEqual(result.total_count, 1)
+            self.assertEqual(len(result.events), 1)
+            self.assertFalse(result.is_limited)
+
+    def test_equal_instants_use_round_identity_then_numeric_sequence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            audit = RoundAuditStore(
+                sessions, "round-1", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            same_instant = "2026-10-13T10:00:00+00:00"
+            for sequence in range(1, 11):
+                audit.append_event(AuditEvent(sequence, "round_ready", "ready", None),
+                                   same_instant, float(sequence))
+            self.assertTrue(audit.flush())
+
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+
+            self.assertEqual([event.sequence for event in result.events],
+                             list(range(1, 11)))
+            self.assertEqual(len({event.round_id for event in result.events}), 1)
 
     def test_offset_and_local_wall_times_use_inclusive_local_calendar_dates(self):
         original_tz = os.environ.get("TZ")
@@ -138,6 +171,40 @@ class HistoricalEventQueryTests(unittest.TestCase):
         recent = recent_historical_event_date_range(date(2026, 10, 13), 90)
         self.assertEqual(recent.start, date(2026, 7, 16))
         self.assertEqual(recent.end, date(2026, 10, 13))
+
+    def test_empty_single_day_and_mixed_sources_keep_existing_source_precedence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, [
+                "2026-10-13T10:00:00+00:00", "2026-10-13T10:01:00+00:00"])
+            legacy_path = audit.audit_path.parent / "events.log"
+            legacy_path.write_text(
+                '{"timestamp":"2026-10-13T10:00:30","message":"must not duplicate audit"}\n',
+                encoding="utf-8")
+            app_store = AppEventStore(
+                root / "app-events.json",
+                clock=lambda: datetime(2026, 10, 13, 10, 0, 30, tzinfo=timezone.utc),
+            )
+            app_store.record("app.startup.started")
+            self.assertTrue(app_store.flush())
+            before = (audit.audit_path.read_bytes(), legacy_path.read_bytes(),
+                      app_store.path.read_bytes())
+
+            selected_day = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+            result = query_historical_events(sessions, app_store.path, selected_day)
+            empty = query_historical_events(
+                sessions, app_store.path,
+                HistoricalEventDateRange(date(2026, 10, 14), date(2026, 10, 14)))
+
+            self.assertEqual(result.total_count, 3)
+            self.assertEqual([event.source for event in result.events], ["round", "app", "round"])
+            self.assertEqual([event.sequence for event in result.events], [2, 1, 1])
+            self.assertEqual(empty.total_count, 0)
+            self.assertEqual(empty.events, ())
+            self.assertEqual((audit.audit_path.read_bytes(), legacy_path.read_bytes(),
+                              app_store.path.read_bytes()), before)
+            app_store.stop()
 
 
 if __name__ == "__main__":

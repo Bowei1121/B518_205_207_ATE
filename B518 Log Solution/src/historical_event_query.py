@@ -19,8 +19,9 @@ _DIAGNOSTIC_SAMPLE_LIMIT = 20
 class HistoricalEventDateError(ValueError):
     """A date range is missing, invalid, or reversed."""
 
-    def __init__(self, field_name: str, message: str):
-        super().__init__(message)
+    def __init__(self, field_name: str, reason: str):
+        self.reason = reason
+        super().__init__(reason)
         self.field_name = field_name
 
 
@@ -33,16 +34,16 @@ class HistoricalEventDateRange:
 
     def __post_init__(self):
         if not isinstance(self.start, date) or isinstance(self.start, datetime):
-            raise HistoricalEventDateError("start", "開始日期無效")
+            raise HistoricalEventDateError("start", "start_invalid")
         if not isinstance(self.end, date) or isinstance(self.end, datetime):
-            raise HistoricalEventDateError("end", "結束日期無效")
+            raise HistoricalEventDateError("end", "end_invalid")
         if self.start > self.end:
-            raise HistoricalEventDateError("end", "開始日期不可晚於結束日期")
+            raise HistoricalEventDateError("end", "reversed")
         try:
             start_epoch = _local_midnight_epoch(self.start)
             end_epoch = _local_midnight_epoch(self.end + timedelta(days=1))
         except (OverflowError, OSError, ValueError) as error:
-            raise HistoricalEventDateError("end", "日期範圍無法表示") from error
+            raise HistoricalEventDateError("end", "unrepresentable") from error
         object.__setattr__(self, "_start_epoch", start_epoch)
         object.__setattr__(self, "_end_epoch", end_epoch)
 
@@ -64,17 +65,17 @@ def parse_historical_event_date_range(start_text: str, end_text: str
                                       ) -> HistoricalEventDateRange:
     """Validate ISO calendar dates without starting a read or changing existing results."""
     if not start_text:
-        raise HistoricalEventDateError("start", "請輸入開始日期")
+        raise HistoricalEventDateError("start", "start_required")
     if not end_text:
-        raise HistoricalEventDateError("end", "請輸入結束日期")
+        raise HistoricalEventDateError("end", "end_required")
     try:
         start = date.fromisoformat(start_text)
     except (TypeError, ValueError):
-        raise HistoricalEventDateError("start", "開始日期格式無效，請使用 YYYY-MM-DD")
+        raise HistoricalEventDateError("start", "start_invalid")
     try:
         end = date.fromisoformat(end_text)
     except (TypeError, ValueError):
-        raise HistoricalEventDateError("end", "結束日期格式無效，請使用 YYYY-MM-DD")
+        raise HistoricalEventDateError("end", "end_invalid")
     return HistoricalEventDateRange(start, end)
 
 

@@ -6,8 +6,10 @@ import queue
 import json
 import sys
 import subprocess
+import threading
 import time
 import tkinter as tk
+from datetime import date
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, ttk
 from typing import Dict, Optional
@@ -15,7 +17,12 @@ from typing import Dict, Optional
 from app_event_store import AppEventStore
 from cleanup_reasons import present_cleanup_reason
 from localized_notice import LanguageRefreshNotifications, show_notice
-from historical_event_display import HistoricalEvent, read_historical_events, render_historical_event
+from historical_event_display import HistoricalEvent, render_historical_event
+from historical_event_query import (HistoricalEventDateError, HistoricalEventDateRange,
+                                    HistoricalEventQueryResult,
+                                    parse_historical_event_date_range,
+                                    query_historical_events,
+                                    recent_historical_event_date_range)
 from global_hotkey import HotkeyRegistration, create_global_hotkey
 from log_monitoring import MonitorEvent
 from monitoring_round import RoundCoordinator, RoundEvent
@@ -160,9 +167,30 @@ class B518LogSolutionApp:
         self.historical_event_heading = None
         self.historical_event_detail_heading = None
         self.historical_event_refresh_button = None
+        self.historical_range_label = None
+        self.historical_start_label = None
+        self.historical_end_label = None
+        self.historical_range_choice = None
+        self.historical_start_var = None
+        self.historical_end_var = None
+        self.historical_start_entry = None
+        self.historical_end_entry = None
+        self.historical_date_error = None
+        self.historical_query_status = None
         self._historical_event_records: tuple[HistoricalEvent, ...] = ()
         self._historical_event_selected_key: Optional[str] = None
         self._historical_restore_after_id = None
+        self._historical_range_mode = "last90"
+        self._historical_date_error_key = None
+        self._updating_historical_controls = False
+        self._historical_query_result: Optional[HistoricalEventQueryResult] = None
+        self._historical_query_status_key = "app.settings.history.not_queried"
+        self._historical_query_status_parameters = {}
+        self._historical_query_diagnostics = ()
+        self._historical_query_generation = 0
+        self._historical_query_queue = None
+        self._historical_query_after_id = None
+        self._historical_query_inflight_range: Optional[HistoricalEventDateRange] = None
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
         self.settings_log: Optional[tk.Text] = None
@@ -2712,21 +2740,68 @@ class B518LogSolutionApp:
         self.settings_log.configure(state="disabled")
 
     def open_historical_events(self) -> None:
-        """Open a read-only view reconstructed from persisted Session and App records."""
+        """Open the date-query view without reading persisted history until Search."""
         if self.historical_event_window and self.historical_event_window.winfo_exists():
-            self._reload_historical_events()
             self.historical_event_window.deiconify()
             self.historical_event_window.lift()
             return
         window = tk.Toplevel(self.root)
         self.historical_event_window = window
-        self._historical_event_records = read_historical_events(
-            self.session_root, getattr(self.app_events, "path", None))
+        self._historical_event_records = ()
+        self._historical_event_selected_key = None
+        self._historical_query_result = None
+        self._historical_query_diagnostics = ()
+        self._historical_query_status_key = "app.settings.history.not_queried"
+        self._historical_query_status_parameters = {}
+        self._historical_range_mode = "last90"
         window.title(self._t("app.settings.history.title"))
         window.geometry("820x560")
         window.minsize(560, 360)
         outer = ttk.Frame(window, padding=12)
         outer.pack(fill="both", expand=True)
+
+        range_controls = ttk.Frame(outer)
+        range_controls.pack(fill="x", pady=(0, 6))
+        self.historical_range_label = ttk.Label(
+            range_controls, text=self._t("app.settings.history.range"))
+        self.historical_range_label.grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.historical_range_choice = ttk.Combobox(
+            range_controls, state="readonly", width=18,
+            values=self._historical_range_mode_labels())
+        self.historical_range_choice.grid(row=0, column=1, sticky="w")
+        self.historical_range_choice.current(3)
+        self.historical_range_choice.bind(
+            "<<ComboboxSelected>>", self._on_historical_range_mode_selected)
+        self.historical_start_var = tk.StringVar(master=window)
+        self.historical_end_var = tk.StringVar(master=window)
+        initial_range = recent_historical_event_date_range(date.today(), 90)
+        self.historical_start_var.set(initial_range.start.isoformat())
+        self.historical_end_var.set(initial_range.end.isoformat())
+        dates = ttk.Frame(outer)
+        dates.pack(fill="x", pady=(0, 3))
+        self.historical_start_label = ttk.Label(
+            dates, text=self._t("app.settings.history.start"))
+        self.historical_start_label.grid(row=0, column=0, sticky="w", padx=(0, 5))
+        self.historical_start_entry = ttk.Entry(
+            dates, textvariable=self.historical_start_var, width=12)
+        self.historical_start_entry.grid(row=0, column=1, sticky="w", padx=(0, 12))
+        self.historical_end_label = ttk.Label(
+            dates, text=self._t("app.settings.history.end"))
+        self.historical_end_label.grid(row=0, column=2, sticky="w", padx=(0, 5))
+        self.historical_end_entry = ttk.Entry(
+            dates, textvariable=self.historical_end_var, width=12)
+        self.historical_end_entry.grid(row=0, column=3, sticky="w")
+        self.historical_start_entry.bind(
+            "<KeyRelease>", self._on_historical_date_edited, add="+")
+        self.historical_end_entry.bind(
+            "<KeyRelease>", self._on_historical_date_edited, add="+")
+        self.historical_date_error = ttk.Label(
+            outer, text="", foreground="#b91c1c", wraplength=780)
+        self.historical_date_error.pack(fill="x", anchor="w")
+        self.historical_query_status = ttk.Label(
+            outer, text=self._t("app.settings.history.not_queried"), wraplength=780)
+        self.historical_query_status.pack(fill="x", anchor="w", pady=(0, 5))
+
         headings = ttk.Frame(outer)
         headings.pack(fill="x")
         self.historical_event_heading = ttk.Label(
@@ -2754,9 +2829,10 @@ class B518LogSolutionApp:
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
         self.historical_event_refresh_button = ttk.Button(
-            controls, text=self._t("app.settings.history.refresh"),
+            controls, text="🔍", width=4, takefocus=True,
             command=self._reload_historical_events)
         self.historical_event_refresh_button.pack(side="right")
+        window.bind("<Return>", self._submit_historical_event_query, add="+")
         self._refresh_historical_event_window()
         window.protocol("WM_DELETE_WINDOW", self._close_historical_event_window)
         window.bind("<Destroy>", self._on_historical_event_destroy, add="+")
@@ -2766,10 +2842,151 @@ class B518LogSolutionApp:
             lambda: self.historical_event_window is window and window.winfo_exists(),
         )
 
+    def _historical_range_mode_keys(self):
+        return ("today", "last7", "last30", "last90", "single", "custom")
+
+    def _historical_range_mode_labels(self):
+        return tuple(self._t("app.settings.history.mode." + key)
+                     for key in self._historical_range_mode_keys())
+
+    def _on_historical_range_mode_selected(self, _event=None) -> None:
+        if self._updating_historical_controls or self.historical_range_choice is None:
+            return
+        selected = self.historical_range_choice.current()
+        keys = self._historical_range_mode_keys()
+        if selected < 0 or selected >= len(keys):
+            return
+        self._historical_range_mode = keys[selected]
+        today = date.today()
+        if self._historical_range_mode == "today":
+            date_range = recent_historical_event_date_range(today, 1)
+        elif self._historical_range_mode.startswith("last"):
+            days = int(self._historical_range_mode[4:])
+            date_range = recent_historical_event_date_range(today, days)
+        elif self._historical_range_mode == "single":
+            date_range = recent_historical_event_date_range(today, 1)
+        else:
+            return
+        self._updating_historical_controls = True
+        try:
+            self.historical_start_var.set(date_range.start.isoformat())
+            self.historical_end_var.set(date_range.end.isoformat())
+        finally:
+            self._updating_historical_controls = False
+        self._set_historical_date_error(None)
+
+    def _on_historical_date_edited(self, _event=None) -> None:
+        if self._updating_historical_controls:
+            return
+        self._historical_range_mode = "custom"
+        self._updating_historical_controls = True
+        try:
+            self.historical_range_choice.current(5)
+        finally:
+            self._updating_historical_controls = False
+
+    def _set_historical_date_error(self, message_key) -> None:
+        self._historical_date_error_key = message_key
+        if self.historical_date_error is not None:
+            self.historical_date_error.configure(
+                text=self._t(message_key) if message_key else "")
+
     def _reload_historical_events(self) -> None:
-        self._historical_event_records = read_historical_events(
-            self.session_root, getattr(self.app_events, "path", None))
-        self._refresh_historical_event_window()
+        self._submit_historical_event_query()
+
+    def _submit_historical_event_query(self, _event=None):
+        window = self.historical_event_window
+        if window is None or not window.winfo_exists():
+            return "break"
+        try:
+            date_range = parse_historical_event_date_range(
+                self.historical_start_var.get(), self.historical_end_var.get())
+        except HistoricalEventDateError as error:
+            self._set_historical_date_error(
+                "app.settings.history.validation." + error.reason)
+            if error.field_name == "start":
+                self.historical_start_entry.focus_set()
+            else:
+                self.historical_end_entry.focus_set()
+            return "break"
+
+        self._set_historical_date_error(None)
+        self._historical_query_generation += 1
+        generation = self._historical_query_generation
+        result_queue = queue.Queue(maxsize=1)
+        self._historical_query_queue = result_queue
+        self._historical_query_inflight_range = date_range
+        self._historical_query_status_key = "app.settings.history.querying"
+        self._historical_query_status_parameters = {}
+        self.historical_event_refresh_button.configure(state="disabled")
+        self._refresh_historical_query_status()
+        app_event_path = getattr(self.app_events, "path", None)
+
+        def run_query():
+            try:
+                result_queue.put((True, query_historical_events(
+                    self.session_root, app_event_path, date_range)))
+            except Exception as error:
+                result_queue.put((False, error))
+
+        worker = threading.Thread(target=run_query,
+                                  name="HistoricalEventDateQuery", daemon=True)
+        worker.start()
+        self._schedule_historical_query_poll(window, generation, result_queue)
+        return "break"
+
+    def _schedule_historical_query_poll(self, window, generation, result_queue) -> None:
+        self._historical_query_after_id = self._schedule_ui(
+            40, self._poll_historical_event_query, window, generation, result_queue)
+
+    def _poll_historical_event_query(self, window, generation, result_queue) -> None:
+        self._historical_query_after_id = None
+        if (generation != self._historical_query_generation or
+                self.historical_event_window is not window or not window.winfo_exists()):
+            return
+        try:
+            succeeded, payload = result_queue.get_nowait()
+        except queue.Empty:
+            self._schedule_historical_query_poll(window, generation, result_queue)
+            return
+        self.historical_event_refresh_button.configure(state="normal")
+        self._historical_query_inflight_range = None
+        self._historical_query_queue = None
+        if succeeded:
+            self._historical_query_result = payload
+            self._historical_event_records = payload.events
+            self._historical_query_diagnostics = payload.diagnostics
+            self._historical_event_selected_key = None
+            self._historical_query_status_key = ""
+            self._historical_query_status_parameters = {}
+            self._refresh_historical_event_window()
+        else:
+            self._historical_query_status_key = "app.settings.history.query_failed"
+            self._historical_query_status_parameters = {"reason": str(payload)}
+            self._refresh_historical_query_status()
+
+    def _refresh_historical_query_status(self) -> None:
+        if self.historical_query_status is None:
+            return
+        result = self._historical_query_result
+        if self._historical_query_status_key:
+            text = self._t(self._historical_query_status_key,
+                           **self._historical_query_status_parameters)
+        elif result is None:
+            text = self._t("app.settings.history.not_queried")
+        elif result.total_count == 0:
+            text = self._t("app.settings.history.no_results")
+        elif result.is_limited:
+            text = self._t("app.settings.history.first_page", shown=len(result.events),
+                           count=result.total_count)
+        else:
+            text = self._t("app.settings.history.result_count", count=result.total_count,
+                           start=result.date_range.start.isoformat(),
+                           end=result.date_range.end.isoformat())
+        if not self._historical_query_status_key and result is not None and result.unclassified_count:
+            text += " " + self._t("app.settings.history.unclassified",
+                                  count=result.unclassified_count)
+        self.historical_query_status.configure(text=text)
 
     def _refresh_historical_event_window(self) -> None:
         window = self.historical_event_window
@@ -2779,13 +2996,26 @@ class B518LogSolutionApp:
         selected = self._historical_event_selected_key
         event_list = self.historical_event_list
         detail_view = self.historical_event_detail
-        list_top = event_list.yview()[0]
+        list_top_index = int(event_list.index("@0,0")) if event_list.size() else 0
+        list_top_key = (self._historical_event_records[list_top_index].key
+                        if list_top_index < len(self._historical_event_records) else
+                        "__query_diagnostics__" if self._historical_query_diagnostics and
+                        list_top_index == len(self._historical_event_records) else None)
         detail_top = detail_view.index("@0,0")
         self.historical_event_heading.configure(text=self._t("app.settings.history.events"))
         self.historical_event_detail_heading.configure(
             text=self._t("app.settings.history.detail"))
-        self.historical_event_refresh_button.configure(
-            text=self._t("app.settings.history.refresh"))
+        self.historical_range_label.configure(text=self._t("app.settings.history.range"))
+        self.historical_start_label.configure(text=self._t("app.settings.history.start"))
+        self.historical_end_label.configure(text=self._t("app.settings.history.end"))
+        self._updating_historical_controls = True
+        try:
+            self.historical_range_choice.configure(values=self._historical_range_mode_labels())
+            self.historical_range_choice.current(
+                self._historical_range_mode_keys().index(self._historical_range_mode))
+        finally:
+            self._updating_historical_controls = False
+        self._refresh_historical_query_status()
         event_list.delete(0, "end")
         selected_index = None
         for index, event in enumerate(self._historical_event_records):
@@ -2800,33 +3030,62 @@ class B518LogSolutionApp:
                 event.occurred_at or "—", category, presentation.message))
             if event.key == selected:
                 selected_index = index
+        if self._historical_query_diagnostics:
+            warning_index = len(self._historical_event_records)
+            event_list.insert("end", "— · {} · {}".format(
+                self._t("app.settings.history.source.error"),
+                self._t("app.settings.history.unclassified",
+                        count=(self._historical_query_result.unclassified_count
+                               if self._historical_query_result else
+                               len(self._historical_query_diagnostics)))))
+            if selected == "__query_diagnostics__":
+                selected_index = warning_index
         if selected_index is None and self._historical_event_records:
             selected_index = 0
+        elif selected_index is None and self._historical_query_diagnostics:
+            selected_index = len(self._historical_event_records)
         if selected_index is not None:
             event_list.selection_clear(0, "end")
             event_list.selection_set(selected_index)
             event_list.activate(selected_index)
-            self._historical_event_selected_key = self._historical_event_records[selected_index].key
-            self._render_historical_event_detail(self._historical_event_records[selected_index])
-        else:
+            if selected_index < len(self._historical_event_records):
+                event = self._historical_event_records[selected_index]
+                self._historical_event_selected_key = event.key
+                self._render_historical_event_detail(event)
+            else:
+                self._historical_event_selected_key = "__query_diagnostics__"
+                self._render_historical_query_diagnostics()
+        elif self._historical_event_records:
             self._historical_event_selected_key = None
             self._set_historical_event_detail(self._t("app.settings.history.empty"))
+        else:
+            self._historical_event_selected_key = None
+            self._set_historical_event_detail(
+                self._t("app.settings.history.empty") if self._historical_query_result is None
+                else self._t("app.settings.history.no_results"))
         if self._historical_restore_after_id is not None:
             self._cancel_ui_timer(self._historical_restore_after_id)
 
         def restore_view():
             self._historical_restore_after_id = None
             self._restore_historical_event_view(
-                window, event_list, detail_view, list_top, detail_top)
+                window, event_list, detail_view, list_top_key, detail_top)
 
         self._historical_restore_after_id = self._schedule_ui("idle", restore_view)
 
-    @staticmethod
-    def _restore_historical_event_view(window, event_list, detail_view,
-                                       list_top: float, detail_top: str) -> None:
+    def _restore_historical_event_view(self, window, event_list, detail_view,
+                                       list_top_key: Optional[str], detail_top: str) -> None:
         if not window.winfo_exists():
             return
-        event_list.yview_moveto(list_top)
+        if list_top_key == "__query_diagnostics__":
+            list_top_index = (len(self._historical_event_records)
+                              if self._historical_query_diagnostics else 0)
+        else:
+            list_top_index = next((index for index, event in enumerate(
+                self._historical_event_records) if event.key == list_top_key), 0)
+        if event_list.size():
+            target = min(max(0, list_top_index), event_list.size() - 1)
+            event_list.yview_moveto(float(target) / event_list.size())
         detail_view.yview(detail_top)
 
     def _select_historical_event(self, _event=None) -> None:
@@ -2840,10 +3099,26 @@ class B518LogSolutionApp:
             record = self._historical_event_records[index]
             self._historical_event_selected_key = record.key
             self._render_historical_event_detail(record)
+        elif (index == len(self._historical_event_records) and
+              self._historical_query_diagnostics):
+            self._historical_event_selected_key = "__query_diagnostics__"
+            self._render_historical_query_diagnostics()
 
     def _render_historical_event_detail(self, event: HistoricalEvent) -> None:
         presentation = render_historical_event(event, self.current_language)
         self._set_historical_event_detail(presentation.message + "\n\n" + presentation.detail)
+
+    def _render_historical_query_diagnostics(self) -> None:
+        sections = []
+        for event in self._historical_query_diagnostics:
+            presentation = render_historical_event(event, self.current_language)
+            sections.append(presentation.message + "\n\n" + presentation.detail)
+        remaining = (self._historical_query_result.unclassified_count -
+                     len(self._historical_query_diagnostics))
+        if remaining > 0:
+            sections.append(self._t("app.settings.history.diagnostics_truncated",
+                                    count=remaining))
+        self._set_historical_event_detail("\n\n".join(sections))
 
     def _set_historical_event_detail(self, value: str) -> None:
         widget = self.historical_event_detail
@@ -2872,12 +3147,28 @@ class B518LogSolutionApp:
         if self._historical_restore_after_id is not None:
             self._cancel_ui_timer(self._historical_restore_after_id)
             self._historical_restore_after_id = None
+        if self._historical_query_after_id is not None:
+            self._cancel_ui_timer(self._historical_query_after_id)
+            self._historical_query_after_id = None
+        self._historical_query_generation += 1
+        self._historical_query_queue = None
+        self._historical_query_inflight_range = None
         self.historical_event_window = None
         self.historical_event_list = None
         self.historical_event_detail = None
         self.historical_event_heading = None
         self.historical_event_detail_heading = None
         self.historical_event_refresh_button = None
+        self.historical_range_label = None
+        self.historical_start_label = None
+        self.historical_end_label = None
+        self.historical_range_choice = None
+        self.historical_start_var = None
+        self.historical_end_var = None
+        self.historical_start_entry = None
+        self.historical_end_entry = None
+        self.historical_date_error = None
+        self.historical_query_status = None
         self._historical_event_selected_key = None
 
     def _close_settings(self) -> None:

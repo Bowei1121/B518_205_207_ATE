@@ -36,6 +36,7 @@ import app_event_store
 import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
+from historical_event_query import query_historical_events, recent_historical_event_date_range
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE, language_name
 
@@ -5093,6 +5094,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("Application started", diagnostic_detail_english)
 
                 app.open_historical_events()
+                app.historical_event_refresh_button.invoke()
+                self.wait_for(lambda: app._historical_query_result is not None)
                 history_window = app.historical_event_window
                 history_index = next(
                     index for index, event in enumerate(app._historical_event_records)
@@ -5114,7 +5117,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch.object(
                         app.rounds, "app_event_records",
                         side_effect=AssertionError("language refresh re-read App events")), \
-                        patch("b518_log_solution.read_historical_events",
+                        patch("b518_log_solution.query_historical_events",
                               side_effect=AssertionError(
                                   "language refresh re-read historical sources")):
                     select_language(TRADITIONAL_CHINESE)
@@ -5753,22 +5756,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 "timestamp": "2026-10-08T10:00:03+08:00",
                 "message": "Legacy operator note — keep this original wording",
                 "detail": {"operator_note": "raw legacy detail"},
-            }, ensure_ascii=False) + "\n", encoding="utf-8")
+            }, ensure_ascii=False) + "\nnot-json legacy evidence\n", encoding="utf-8")
             legacy_before = legacy_path.read_bytes()
             audit = RoundAuditStore(
                 session_root, "round-history-1", "FCT", "2026-10-08T10:00:00+08:00",
                 10.0, {"platform": "atlas"},
             )
             audit.append_event(AuditEvent(1, "round_started", "FCT 本輪已接受開始", None),
-                               "2026-10-08T10:00:01+08:00", 1.0)
+                               "2026-10-08T10:00:02+08:00", 1.0)
             audit.append_event(AuditEvent(
                 2, "final", "slot1 最終 PASS", 1, "SN-HISTORY", "PASS",
                 "/sources/history.csv", {}, make_bilingual_message(
                     "platform.atlas.final", {"station": "FCT", "slot": 1, "status": "PASS"}),
             ), "2026-10-08T10:00:02+08:00", 2.0)
             long_diagnostic = "diagnostic evidence " * 500
-            for sequence in range(3, 41):
-                detail = {"raw_diagnostic": long_diagnostic} if sequence == 40 else {}
+            for sequence in range(3, 151):
+                detail = {"raw_diagnostic": long_diagnostic} if sequence == 50 else {}
                 audit.append_event(AuditEvent(
                     sequence, "round_ready", "FCT 來源已就緒", None,
                     detail=detail,
@@ -5802,9 +5805,103 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
+                app_events_before = app_path.read_bytes()
                 app.open_historical_events()
+                self.assertEqual(app.historical_event_list.size(), 0)
+                self.assertIn("Search", app.historical_query_status.cget("text"))
+                self.assertEqual(app.historical_start_var.get(),
+                                 recent_historical_event_date_range(
+                                     datetime.now().date(), 90).start.isoformat())
+                today = datetime.now().date()
+                for mode_index, days in ((0, 1), (1, 7), (2, 30), (3, 90), (4, 1)):
+                    app.historical_range_choice.current(mode_index)
+                    app.historical_range_choice.event_generate("<<ComboboxSelected>>")
+                    root.update()
+                    expected_range = recent_historical_event_date_range(today, days)
+                    self.assertEqual(app.historical_start_var.get(),
+                                     expected_range.start.isoformat())
+                    self.assertEqual(app.historical_end_var.get(), today.isoformat())
+                    self.assertIsNone(app._historical_query_result)
+                app.historical_start_var.set("2026-01-01")
+                app.historical_end_var.set(today.isoformat())
+                app.historical_range_choice.current(5)
+                app.historical_range_choice.event_generate("<<ComboboxSelected>>")
+                root.update()
+                self.assertEqual(app.historical_range_choice.current(), 5)
+                self.assertIsNone(app._historical_query_result)
+                app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                 root.update_idletasks()
                 self.assertTrue(app.historical_event_window.winfo_exists())
+                self.assertLessEqual(len(app._historical_event_records), 100)
+                self.assertEqual(len(app._historical_event_records), 100)
+                self.assertEqual(app.historical_event_list.size(), 101)
+                self.assertGreater(app._historical_query_result.total_count, 100)
+                self.assertIn("Showing the newest 100", app.historical_query_status.cget("text"))
+                warning_index = len(app._historical_event_records)
+                self.assertEqual(app.historical_event_list.size(), warning_index + 1)
+                click_history_row(warning_index)
+                warning_detail = app.historical_event_detail.get("1.0", "end")
+                self.assertIn("not-json legacy evidence", warning_detail)
+                self.assertEqual(app._historical_event_selected_key,
+                                 "__query_diagnostics__")
+                previous_records = app._historical_event_records
+                previous_result = app._historical_query_result
+                app.historical_start_var.set("2026-02-30")
+                app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.assertEqual(
+                    app.historical_date_error.cget("text"),
+                    app._t("app.settings.history.validation.start_invalid"))
+                self.assertIs(app._historical_query_result, previous_result)
+                self.assertIs(app._historical_event_records, previous_records)
+                app.historical_start_var.set("2026-10-14")
+                app.historical_end_var.set("2026-10-13")
+                app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.assertEqual(
+                    app.historical_date_error.cget("text"),
+                    app._t("app.settings.history.validation.reversed"))
+                self.assertIs(app._historical_query_result, previous_result)
+                app.historical_start_var.set("2026-10-08")
+                app.historical_end_var.set("2026-10-13")
+                app.historical_range_choice.current(5)
+
+                read_entered = threading.Event()
+                release_read = threading.Event()
+                submitted_start = datetime.strptime(
+                    app.historical_start_var.get(), "%Y-%m-%d").date()
+                submitted_end = datetime.strptime(
+                    app.historical_end_var.get(), "%Y-%m-%d").date()
+
+                def controlled_slow_read(*args, **kwargs):
+                    read_entered.set()
+                    if not release_read.wait(20):
+                        raise RuntimeError("controlled history read timed out")
+                    return query_historical_events(*args, **kwargs)
+
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=controlled_slow_read):
+                    app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                    app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                    root.update()
+                    self.wait_for(read_entered.is_set)
+                    app.historical_start_var.set("2026-10-09")
+                    app.historical_end_var.set("2026-10-09")
+                    root.update()
+                    self.assertEqual(app.historical_start_var.get(), "2026-10-09")
+                    self.assertEqual(app.historical_query_status.cget("text"),
+                                     app._t("app.settings.history.querying"))
+                    release_read.set()
+                    self.wait_for_ui(
+                        root,
+                        lambda: app._historical_query_result is not None and
+                        app._historical_query_result.date_range.start == submitted_start)
+                self.assertEqual(app._historical_query_result.date_range.end, submitted_end)
                 keys = [record.key for record in app._historical_event_records]
                 round_index = keys.index("round:round-history-1:1")
                 click_history_row(round_index)
@@ -5840,19 +5937,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("FCT round start accepted",
                               app.historical_event_list.get(round_index))
 
-                long_key = "round:round-history-1:40"
+                long_key = "round:round-history-1:50"
                 long_index = [record.key for record in app._historical_event_records].index(long_key)
                 click_history_row(long_index)
                 app.historical_event_list.yview_moveto(0.65)
                 app.historical_event_detail.yview_moveto(0.5)
                 root.update_idletasks()
-                list_top_before = app.historical_event_list.yview()[0]
+                list_top_before = int(app.historical_event_list.index("@0,0"))
                 detail_top_before = app.historical_event_detail.index("@0,0")
                 select_language_with_real_menu(TRADITIONAL_CHINESE)
-                root.update_idletasks()
+                root.update()
                 self.assertEqual(app._historical_event_selected_key, long_key)
-                self.assertAlmostEqual(app.historical_event_list.yview()[0],
-                                       list_top_before, places=2)
+                self.assertEqual(int(app.historical_event_list.index("@0,0")),
+                                 list_top_before)
                 self.assertEqual(app.historical_event_detail.index("@0,0"),
                                  detail_top_before)
                 self.assertIn(long_diagnostic,
@@ -5868,8 +5965,24 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.historical_event_detail.get("1.0", "end"))
                 self.assertIn("raw legacy detail",
                               app.historical_event_detail.get("1.0", "end"))
+                app.historical_start_var.set("2099-01-01")
+                app.historical_end_var.set("2099-01-01")
+                app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.wait_for_ui(
+                    root,
+                    lambda: app._historical_query_result is not None and
+                    app._historical_query_result.date_range.start.isoformat() == "2099-01-01")
+                self.assertEqual(app._historical_event_records, ())
+                self.assertIn(app._t("app.settings.history.no_results"),
+                              app.historical_query_status.cget("text"))
                 self.assertEqual(legacy_path.read_bytes(), legacy_before)
+                self.assertEqual(audit_path.read_bytes(), audit_before)
+                self.assertEqual(app_path.read_bytes(), app_events_before)
             finally:
+                if "release_read" in locals():
+                    release_read.set()
                 app._close_historical_event_window()
                 app.hotkey.close()
                 root.destroy()
