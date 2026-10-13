@@ -6113,7 +6113,37 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
                 app.open_historical_events()
+                initial_cancel_entered = threading.Event()
+                initial_cancel_release = threading.Event()
+                initial_cancel_finished = threading.Event()
+
+                def controlled_initial_cancel(sessions, event_path, date_range,
+                                              cancellation_event=None):
+                    initial_cancel_entered.set()
+                    try:
+                        if not initial_cancel_release.wait(10):
+                            raise RuntimeError("initial cancellation gate timed out")
+                        return original_query(
+                            sessions, event_path, date_range,
+                            cancellation_event=cancellation_event)
+                    finally:
+                        initial_cancel_finished.set()
+
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=controlled_initial_cancel):
+                    set_dates(date(2025, 12, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertTrue(initial_cancel_entered.wait(2))
+                    self.assertIsNone(app._historical_query_result)
+                    click(app.historical_event_cancel_button)
+                    self.assertEqual(app._historical_query_status_key,
+                                     "app.settings.history.query_cancelled")
+                    self.assertIsNone(app._historical_query_result)
+                    initial_cancel_release.set()
+                    self.assertTrue(initial_cancel_finished.wait(2))
+
                 initial_range = recent_historical_event_date_range(date.today(), 90)
+                set_dates(initial_range.start, initial_range.end)
                 click(app.historical_event_refresh_button)
                 self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                 old_result = app._historical_query_result
