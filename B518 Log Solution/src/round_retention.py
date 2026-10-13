@@ -156,8 +156,10 @@ class RoundRetentionStore:
         try:
             ledger = self._load_ledger()
             self._summaries = tuple(_summary_from_dict(item) for item in ledger["runs"])
-            if ledger.get("active_plans") or (self._summaries and
-                                                self._summaries[-1].status == "running"):
+            has_unresolved_event_intent = any(
+                summary.app_event_commit_intent is not None for summary in self._summaries)
+            if (ledger.get("active_plans") or has_unresolved_event_intent or
+                    (self._summaries and self._summaries[-1].status == "running")):
                 self._status = RetentionStatus(
                     "failed", "上次背景清理中斷；將依持久進度重新驗證", self._summaries,
                     _round_reason("cleanup.interrupted"))
@@ -327,7 +329,10 @@ class RoundRetentionStore:
                         return self._status
                     ledger = pending_ledger
                 ledger["runs"] = [item for item in ledger["runs"] if item.get("run_id") != run_id]
-                ledger["runs"].append(_summary_to_dict(final))
+                final_row = _summary_to_dict(final)
+                if isinstance(commit_intent, dict):
+                    final_row["app_event_commit_intent"] = commit_intent
+                ledger["runs"].append(final_row)
                 ledger["runs"] = ledger["runs"][-1000:]
                 for result in results:
                     if result.outcome == "deleted":
@@ -358,7 +363,13 @@ class RoundRetentionStore:
                         return self._status
                     ledger = retry_ledger
                     status, message, message_reason = "failed", failure_message, failure_reason
-                self._summaries = tuple((_summary_from_dict(item) for item in ledger["runs"]))
+                display_rows = []
+                for item in ledger["runs"]:
+                    display_row = dict(item)
+                    if item.get("run_id") == run_id and status == "complete":
+                        display_row.pop("app_event_commit_intent", None)
+                    display_rows.append(_summary_from_dict(display_row))
+                self._summaries = tuple(display_rows)
                 self._status = RetentionStatus(status, message, self._summaries, message_reason)
             except Exception as error:
                 diagnostic = str(error)
@@ -396,10 +407,11 @@ class RoundRetentionStore:
                 if committed:
                     row["app_events"] = intent
                     row["app_events"]["outcome"] = "complete"
-                    row["status"] = "failed"
-                    row["message"] = (
-                        "App 事件刪除已由退休序號確認；原清理摘要未完成保存，請重新檢查清理狀態")
-                    row["message_reason"] = _round_reason("cleanup.interrupted")
+                    if row.get("status") != "complete":
+                        row["status"] = "failed"
+                        row["message"] = (
+                            "App 事件刪除已由退休序號確認；原清理摘要未完成保存，請重新檢查清理狀態")
+                        row["message_reason"] = _round_reason("cleanup.interrupted")
                     row.pop("app_event_commit_intent", None)
                 else:
                     row["status"] = "failed"
@@ -1034,9 +1046,17 @@ def _summary_to_dict(item: RetentionSummary) -> dict:
 
 def _summary_from_dict(item: dict) -> RetentionSummary:
     app_events = item.get("app_events")
+    status = item.get("status", "failed")
+    message = item.get("message", "")
+    message_reason = item.get("message_reason")
+    commit_intent = item.get("app_event_commit_intent")
+    if status == "complete" and isinstance(commit_intent, dict):
+        status = "failed"
+        message = "App 事件清理耐久性尚待 journal 重新驗證"
+        message_reason = _round_reason("cleanup.interrupted")
     return RetentionSummary(item["run_id"], item["started_at"], item.get("completed_at", ""),
                             item["retention_days"], item.get("trigger", "unknown"),
-                            item.get("status", "failed"), tuple(
+                            status, tuple(
                                 RetentionRoundResult(row.get("round_id", ""),
                                                      row.get("outcome", "failed"),
                                                      row.get("reason", ""),
@@ -1051,5 +1071,5 @@ def _summary_from_dict(item: dict) -> RetentionSummary:
                                 app_events.get("reason_message"),
                                 tuple(app_events.get("deleted_sequences", ())))
                             if isinstance(app_events, dict) else None,
-                            item.get("message_reason"),
-                            item.get("app_event_commit_intent"))
+                            message_reason,
+                            commit_intent)

@@ -590,6 +590,14 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertIn("app_event_commit_intent", saved_row)
             self.assertEqual(read_app_event_store(store.path)["events"], [])
 
+            crash_state = json.loads(ledger_path.read_text())
+            uncertain_row = next(item for item in crash_state["runs"]
+                                 if item["run_id"] == summary.run_id)
+            uncertain_row["status"] = "complete"
+            uncertain_row["app_events"] = dict(uncertain_row["app_event_commit_intent"])
+            uncertain_row["app_events"]["outcome"] = "complete"
+            ledger_path.write_text(json.dumps(crash_state), encoding="utf-8")
+
             recovered_store = AppEventStore(store.path, clock=lambda: now)
             self.addCleanup(recovered_store.stop)
             recovered = RoundCoordinator(
@@ -597,11 +605,14 @@ class RoundRetentionTests(unittest.TestCase):
                 retention_ledger_path=ledger_path)
             self.addCleanup(recovered.request_close)
             recovered.register_app_event_store(recovered_store, root)
+            pre_reconciliation = next(item for item in recovered.retention_cleanup_summaries()
+                                      if item.run_id == summary.run_id)
+            self.assertEqual(pre_reconciliation.status, "failed")
             recovered.request_retention_cleanup(30, "rebuild-after-summary-fsync-failure")
             self.wait_until(lambda: recovered.retention_cleanup_status().status == "complete")
             recovered_run = next(item for item in recovered.retention_cleanup_summaries()
                                  if item.run_id == summary.run_id)
-            self.assertEqual(recovered_run.status, "failed")
+            self.assertEqual(recovered_run.status, "complete")
             self.assertEqual(recovered_run.app_events.outcome, "complete")
             self.assertEqual(recovered_run.app_events.deleted_sequences, (event.sequence,))
 
