@@ -305,6 +305,27 @@ class RoundRetentionStore:
                 prior_run = next((item for item in ledger["runs"]
                                   if item.get("run_id") == run_id), {})
                 commit_intent = prior_run.get("app_event_commit_intent")
+                if (isinstance(commit_intent, dict) and app_events is not None and
+                        app_events.outcome == "complete" and app_events.deleted_count > 0):
+                    pending_message = "App 事件刪除已由 journal 驗證；正等待清理摘要耐久確認"
+                    pending_reason = _round_reason("cleanup.interrupted")
+                    pending = RetentionSummary(
+                        run_id, started, completed, retention_days, trigger, "failed",
+                        tuple(results), pending_message, None, pending_reason)
+                    pending_row = _summary_to_dict(pending)
+                    pending_row["app_event_commit_intent"] = commit_intent
+                    pending_ledger = self._load_ledger()
+                    pending_ledger["runs"] = [item for item in pending_ledger["runs"]
+                                               if item.get("run_id") != run_id]
+                    pending_ledger["runs"].append(pending_row)
+                    pending_ledger["runs"] = pending_ledger["runs"][-1000:]
+                    if self._write_ledger(pending_ledger) is False:
+                        self._summaries = tuple(
+                            _summary_from_dict(item) for item in pending_ledger["runs"])
+                        self._status = RetentionStatus(
+                            "failed", pending_message, self._summaries, pending_reason)
+                        return self._status
+                    ledger = pending_ledger
                 ledger["runs"] = [item for item in ledger["runs"] if item.get("run_id") != run_id]
                 ledger["runs"].append(_summary_to_dict(final))
                 ledger["runs"] = ledger["runs"][-1000:]
