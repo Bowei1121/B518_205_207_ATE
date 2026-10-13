@@ -17,10 +17,10 @@
 
 - C2 固定 review base 為 `d3068bff31fb1f99422121cf9d48e3c925a1c3c2`；查證 C1 最終程式 `5cf609d7a4a168d3701490b2ce51b27bafe25d3e` 是其祖先，且基準已含 C1 ledger 相容讀取、原因捕捉／呈現、原始診斷、英文回退、真 Tk 與審查完成證據。C1 先前提示視窗重開測試的暫停問題已在固定基準前以可見視窗／焦點／modal grab／Escape 操作及後續完整桌面套件驗證處理；本次 C2 另重新完成全套。
 - 輪次清理成功／跳過／失敗、即時狀態及封存驗證 producer 現於正式產生點捕捉 C1 原因識別、參數、同筆英文／繁中與診斷；schema 2、active plans、刪除進度、可信封存時間、資格與路徑／完整性門檻維持。補強後符號連結、路徑不一致及未知檔案有專屬原因識別，仍維持原 skipped 與保留結果。App-event producer 留在 C3，完整畫面遷移留在 C4。
-- 固定基準及 C2 版的 `tests.test_round_archival tests.test_round_retention` 均各 45 tests / OK。最新 code/test SHA `316fc7005b3e1ca4992da5601a9882b543228177` 的 Python 3.11.7 / Tk 8.6 桌面完整套件通過 394 tests / 143.542 s / exit 0。限制：同一次完整套件在受限 runner 首次於 `tkinter.Tk()` 的 AppKit/LaunchServices `NSException`（exit 134）中止；該次記錄為失敗，之後以已授權桌面執行相同命令完整通過，未把中止當成功或跳過 Tk 案例。無專案既有型別檢查設定。
-- Spec 審查發現只有雙方各跑 45 項回歸尚不能逐情境證明刪除／保留結果一致；補跑同一個 byte-identical fixture 的基準／C2 公開入口對照：超期刪除、期限內保留、損壞封存保留、外部 symlink 保留結果完全一致，外部檔案 SHA-256 也相同。細節與 fixture/harness SHA 見 C2 驗收證據；該證據缺口已補，需把證據更新納入最後複審。
-- C2 真 Tk 使用正式輪次封存及公開清理入口、隔離暫存資料、保存 ledger、全新 coordinator 讀取與既有 Settings 摘要視窗；雙語原因、原始診斷、磁碟 bytes 不變及 archive write failure/retry 有測試證據。逐項命令與限制見 [C2 local validation](evidence/retention-reason-ticket-02/local-validation.md)。
-- C2 程式批次 `f01da46`、`699c1f7`、`3ae1036`、`c469105`、`71ca138`、`fbd6d6a`、`316fc70` 已推送。2026-10-13 09:17 Asia/Taipei 直接查詢 Gitea 與 GitHub：主線皆為 `d3068bff31fb1f99422121cf9d48e3c925a1c3c2`，C2 branch 皆為 `316fc7005b3e1ca4992da5601a9882b543228177`。固定基準雙軸審查、文件最終 SHA、本機合併、合併後全套、最終推送查詢及安全清理仍待完成；不得提前宣稱 C2 已整合交付。
+- 固定基準及 C2 版的 `tests.test_round_archival tests.test_round_retention` 均各 45 tests / OK。C2 code/test SHA `316fc7005b3e1ca4992da5601a9882b543228177` 的 Python 3.11.7 / Tk 8.6 桌面完整套件通過 394 tests / 143.542 s / exit 0；在本機快轉主線 SHA `657ce8a2f53aba543fac663217d2057f0abb489a` 再通過 394 tests / 168.394 s / exit 0。首次受限 runner 在 `tkinter.Tk()` 的 AppKit/LaunchServices `NSException`（exit 134）中止並記錄為失敗；相同全套之後在已授權桌面環境完整通過，未將中止當成功或跳過 Tk 案例。無專案既有型別檢查設定。
+- 基準／C2 使用相同暫存 fixture 的正式清理入口，對照期限前／後、期限變更、受保護輪次、損壞封存、外部 symlink、目錄替換、初始計畫保存失敗，以及刪除完成後摘要保存失敗和全新讀取器恢復；所有正規化結果一致，外部檔案雜湊不變。最後 Spec 複審者獨立重跑五個延伸情境並確認一致。詳細 fixture／harness 證據見 [C2 local validation](evidence/retention-reason-ticket-02/local-validation.md)。
+- C2 真 Tk 使用正式輪次封存及公開清理入口、隔離暫存資料、保存 ledger、全新 coordinator 讀取與既有 Settings 摘要視窗；雙語原因、原始診斷、磁碟 bytes 不變及 archive write failure/retry 有驗收證據。固定基準 Standards／Spec 雙軸複審無阻擋；非阻擋整理建議為移除 `_archive_failure` 未使用參數並考慮合併兩個小型捕捉包裝函式。
+- C2 程式與證據批次已推送票分支；本機快轉 merge SHA `657ce8a2f53aba543fac663217d2057f0abb489a`。最終文件批次、GitHub/Gitea 主線同步直接查詢及僅清理 C2 分支／worktree 待最後完成，未提前宣稱遠端整合完成。
 
 ## 驗收界線
 
