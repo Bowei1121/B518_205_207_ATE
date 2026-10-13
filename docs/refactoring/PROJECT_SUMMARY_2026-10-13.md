@@ -20,7 +20,7 @@
 - 固定基準及 C2 版的 `tests.test_round_archival tests.test_round_retention` 均各 45 tests / OK。C2 code/test SHA `316fc7005b3e1ca4992da5601a9882b543228177` 的 Python 3.11.7 / Tk 8.6 桌面完整套件通過 394 tests / 143.542 s / exit 0；在本機快轉主線 SHA `657ce8a2f53aba543fac663217d2057f0abb489a` 再通過 394 tests / 168.394 s / exit 0。首次受限 runner 在 `tkinter.Tk()` 的 AppKit/LaunchServices `NSException`（exit 134）中止並記錄為失敗；相同全套之後在已授權桌面環境完整通過，未將中止當成功或跳過 Tk 案例。無專案既有型別檢查設定。
 - 基準／C2 使用相同暫存 fixture 的正式清理入口，對照期限前／後、期限變更、受保護輪次、損壞封存、外部 symlink、目錄替換、初始計畫保存失敗，以及刪除完成後摘要保存失敗和全新讀取器恢復；所有正規化結果一致，外部檔案雜湊不變。最後 Spec 複審者獨立重跑五個延伸情境並確認一致。詳細 fixture／harness 證據見 [C2 local validation](evidence/retention-reason-ticket-02/local-validation.md)。
 - C2 真 Tk 使用正式輪次封存及公開清理入口、隔離暫存資料、保存 ledger、全新 coordinator 讀取與既有 Settings 摘要視窗；雙語原因、原始診斷、磁碟 bytes 不變及 archive write failure/retry 有驗收證據。固定基準 Standards／Spec 雙軸複審無阻擋；非阻擋整理建議為移除 `_archive_failure` 未使用參數並考慮合併兩個小型捕捉包裝函式。
-- C2 程式與證據批次已推送票分支；本機快轉 merge SHA `657ce8a2f53aba543fac663217d2057f0abb489a`。最終文件批次、GitHub/Gitea 主線同步直接查詢及僅清理 C2 分支／worktree 待最後完成，未提前宣稱遠端整合完成。
+- C2 本機快轉後的主線已推送至 Gitea 與 GitHub。最後文件 SHA `344337f256f3ee45461ee7d7f0e108c1d96ef2be`；2026-10-13 09:47 Asia/Taipei 逐一直接查詢兩目的地皆回報主線 `344337f256f3ee45461ee7d7f0e108c1d96ef2be`，且 `LanguageRefresh/ticket-06` refs 均不存在。已用一般刪除移除已合併的本地／遠端票分支及乾淨 C2 專用 worktree；其他 C1、L1 及專案 worktree 保留。原先兩份主線 summary 修改另以 stash `4a27ee0f7dc51a60740a6efe24d16fbd426f53ae` 保護，待完成文件提交後原樣還原並驗證。
 
 ## 驗收界線
 
