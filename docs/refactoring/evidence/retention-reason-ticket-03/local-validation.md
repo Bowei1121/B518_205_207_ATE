@@ -1,10 +1,10 @@
 # C3 local validation — App-event cleanup reasons
 
-Date: 2026-10-13 (Asia/Taipei)  
-Ticket: cleanup-reason C3, GitHub #35 (parent #28)  
-Branch: `LanguageRefresh/ticket-07`  
-Fixed review base: `f80e86a51907988613185155ed69552c9f392426`  
-Code commits: `4e19cd608d20362feaeb96912c8a277e955d11af`, `cdaa1ddf6a9f12d25ef5fd90c901ef97c5a8c534`, `373da606bc60516db3a91c678485a3f8417c7ec4`, `e1b4e3ac0f84c1c9a8d146d579c3170b82dc893a`, `cd1fc76aae1892947c63bc948d6cbc666b6c0667`, `34c38112232033e52985b616584a56a20b2eac08`, `14c83faae1b556a8f1bd051e339046e82d6f2f4d`, `fffe809` (latest code/test commit; final full-Tk gate remains blocked)
+Date: 2026-10-13 (Asia/Taipei)
+Ticket: cleanup-reason C3, GitHub #35 (parent #28)
+Branch: `LanguageRefresh/ticket-07`
+Fixed review base: `f80e86a51907988613185155ed69552c9f392426`
+Code commits: `4e19cd608d20362feaeb96912c8a277e955d11af`, `cdaa1ddf6a9f12d25ef5fd90c901ef97c5a8c534`, `373da606bc60516db3a91c678485a3f8417c7ec4`, `e1b4e3ac0f84c1c9a8d146d579c3170b82dc893a`, `cd1fc76aae1892947c63bc948d6cbc666b6c0667`, `34c38112232033e52985b616584a56a20b2eac08`, `14c83faae1b556a8f1bd051e339046e82d6f2f4d`, `fffe809`, `4cb353f` (latest code/test commit; final full-Tk gate remains blocked)
 
 ## Baseline, dependencies, and scope
 
@@ -39,21 +39,23 @@ At the start, direct `git ls-remote` queries found both Gitea and GitHub `B518-L
 
 Interpreter: `/opt/anaconda3/bin/python3`, Python 3.11.7; Tk/Tcl 8.6. The current runner did not have a usable macOS AppKit/Tk desktop session, as shown by the native crash evidence below. There is no repository type-check configuration or command in the Python project; no checker was added.
 
-Latest focused store/coordinator checks on final code: `PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_app_event_store tests.test_round_retention -q` — 55 tests, OK (9.318 seconds). The recovery test also verifies the localized pending-durability status is surfaced before journal revalidation. Earlier focused actual-Tk cleanup checks passed 2 tests on commit `14c83fa`; the final code's retry was blocked before the tests could run, as described below.
+Latest focused store/coordinator checks on final code: `PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_app_event_store tests.test_round_retention -q` — 55 tests, OK (9.649 seconds). The recovery tests verify both that uncertain durability remains pending until journal revalidation and that a legitimate deadline-change `skipped` result remains `complete/skipped` with its original reason after a fresh coordinator reads the ledger. Earlier focused actual-Tk cleanup checks passed 2 tests on commit `14c83fa`; the final code's retry was blocked before the tests could run, as described below.
 
-The required full suite was last retried against final code `fffe809` on 2026-10-13. The command was:
+The required full suite was rerun against the latest code `4cb353f` on 2026-10-13 at 12:00 Asia/Taipei. The command was:
 
 ```text
 B518_TK_TESTS=1 PYTHONFAULTHANDLER=1 PYTHONPATH=src \
   /opt/anaconda3/bin/python3 scripts/run_tests.py
 ```
 
-Runtime was Python 3.11.7 / Tk 8.6. The process exited **134** during UI test class setup at `tests/test_log_solution_ui.py:483`, before the Tk-dependent test cases ran. macOS logged `Connection Invalid error for service com.apple.hiservices-xpcservice`; AppKit raised `NSInternalInconsistencyException: Invalid parameter not satisfying: aString != nil`. The native stack reaches `NSMenuItem initWithTitle` → Tk `TkpSetMainMenubar` → `_tkinter.create` → `tkinter.Tk()`. The attempt is recorded as a failure, not a pass. Re-running the two C3-specific Tk tests on the same final code failed at the same `tkinter.Tk()` setup with exit 134. No test-selection, mock, or runtime bypass was used.
+Runtime was Python 3.11.7 / Tk 8.6. The process exited **134** at 12:00:04 during UI test class setup at `tests/test_log_solution_ui.py:483`, before the Tk-dependent test cases ran. macOS logged `Connection Invalid error for service com.apple.hiservices-xpcservice`; AppKit raised `NSInternalInconsistencyException: Invalid parameter not satisfying: aString != nil`. The native stack reaches `NSMenuItem initWithTitle` → Tk `TkpSetMainMenubar` → `_tkinter.create` → `tkinter.Tk()`. The attempt is recorded as a failure, not a pass. Re-running the two C3-specific Tk tests on the same final code also failed at the same `tkinter.Tk()` setup with exit 134. No test-selection, mock, or runtime bypass was used.
 
 Historical context only: an earlier C3 version at `cdaa1dd` passed 397 tests / 132.210 seconds, while the fixed base passed 394 tests / 133.033 seconds. Those runs predate the final durability-recovery hardening and do not satisfy the final-code full-suite gate. The fixed-base and earlier C3 `Tcl_AsyncDelete` aborts remain documented elsewhere in the work history; neither replaces the current AppKit failure. To unblock, rerun the exact full-suite command on a macOS desktop session where a standalone `tkinter.Tk()` can create and destroy its root window, then rerun focused C3 Tk tests and verify the cleanup summary/retry in the actual App.
 
+After the recovery fix in `4cb353f`, `scripts/compare_app_event_retention.py` was rerun against the fixed-base source and final candidate using isolated temporary journals. Both produced the same mixed result (2 deleted, 1 skipped, 0 failed; remaining sequence `[3]`; retired range `[1,2]`; next sequence 4), the same not-expired result (0 deleted, 1 skipped, sequence 1 retained), the same corrupt-store protection (0 deleted, 1 skipped, bytes unchanged), and the same path-swap refusal (0 deleted, 1 failed, original managed path retained and external target unchanged). The script reported `PARITY: identical deletion/retention/count/sequence results`.
+
 ## Review and delivery status
 
-Fixed Standards/Spec review base: `f80e86a51907988613185155ed69552c9f392426`. Standards and Spec review on code through `14c83fa` found no blocking findings; the non-blocking recovery-message consistency suggestion was fixed at `fffe809` and covered by the 55-test focused run. Review of that final tiny diff and final documentation review are pending. Required final-code full Tk suite and direct final remote-SHA confirmation remain outstanding.
+Fixed Standards/Spec review base: `f80e86a51907988613185155ed69552c9f392426`. Standards review through `14c83fa` found no blocking findings; its indentation and evidence whitespace suggestions were fixed. The Spec review identified that a legitimate final-gate `skipped` result could retain a pre-replace intent and be rewritten to `failed` during fresh-reader reconciliation. Commit `4cb353f` adds a regression through the public cleanup/fresh-reader path and removes that intent from a known skipped final result; 55 focused tests pass and the required full suite was attempted on this commit, but the Tk/AppKit setup aborted as recorded above. Re-run both fixed-base reviews on the final code/docs before delivery. Direct final remote-SHA confirmation remains outstanding.
 
 The C3 branch is not merged. Latest successful push output advanced both Gitea and GitHub ticket refs to `fffe809`; final direct `ls-remote` SHA checks must be recorded after the documentation commit. No remote issue was modified. C3 does not claim C4 screen unification, parent second-item completion, bundle verification or factory/field acceptance. Because final-code full Tk validation is blocked, the branch and worktree must remain for continuation.

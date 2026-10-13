@@ -23,4 +23,4 @@ App 事件清理改用同一原因契約，清理結果摘要可用繁中／英�
 
 ## Delivery status
 
-正式 producer 與保存／恢復實作、非 Tk 聚焦測試已完成；固定基準 review 在上一程式提交未發現阻擋，但最後一行狀態修正及本文件尚待複審。本票仍為部分完成。必要完整含 Tk 套件在 2026-10-13 11:50 的 `tkinter.Tk()` 建窗階段遭 macOS AppKit `NSInternalInconsistencyException` 中止（exit 134），同一 runtime 的兩個直接相關 Tk 個測也在建窗前以相同錯誤中止。不得合併或清理票分支；請在可正常建立 Tk 主視窗的 macOS 桌面重新執行完整驗收，證據與最小步驟見 [C3 驗收紀錄](../evidence/retention-reason-ticket-03/local-validation.md)。
+正式 producer 與保存／恢復實作、非 Tk 聚焦測試已完成；Spec 複審發現的期限延長後 skipped 恢復錯誤已在 `4cb353f` 修正並有回歸測試，最終固定基準複審待重跑。本票仍為部分完成。必要完整含 Tk 套件已在 2026-10-13 12:00 的 `tkinter.Tk()` 建窗階段遭 macOS AppKit `NSInternalInconsistencyException` 中止（exit 134），同一 runtime 的兩個直接相關 Tk 個測也在建窗前以相同錯誤中止。不得合併或清理票分支；請在可正常建立 Tk 主視窗的 macOS 桌面重新執行完整驗收，證據與最小步驟見 [C3 驗收紀錄](../evidence/retention-reason-ticket-03/local-validation.md)。
