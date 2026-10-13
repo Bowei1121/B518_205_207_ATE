@@ -173,7 +173,26 @@ class RoundArchivalTests(unittest.TestCase):
             self.assertEqual(first.status, "archived")
 
             now[0] += timedelta(days=1)
-            self.assertTrue(rounds.retry_saves(started.round_id))
+            entered = threading.Event()
+            release = threading.Event()
+            original_check = RoundCoordinator._archive_tracked_round
+
+            def hold_archive_check(coordinator, round_id, round_):
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError("archive verification test barrier timed out")
+                return original_check(coordinator, round_id, round_)
+
+            with patch.object(RoundCoordinator, "_archive_tracked_round", hold_archive_check):
+                self.assertTrue(rounds.retry_saves(started.round_id))
+                try:
+                    self.assertTrue(entered.wait(3))
+                    rechecking = rounds.archive_status(started.round_id)
+                    self.assertEqual(rechecking.status, "saving")
+                    self.assertEqual(rechecking.reason_message["message_id"],
+                                     "app.settings.retention.reason.archive.saving")
+                finally:
+                    release.set()
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
                 status = rounds.archive_status(started.round_id)
