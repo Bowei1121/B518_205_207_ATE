@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import stat
 import tempfile
 import threading
 import time
@@ -374,6 +375,93 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(
                 sum(item.app_events.deleted_count for item in after_delete.retention_cleanup_summaries()
                     if item.app_events is not None), 1)
+
+    def test_recovery_waits_for_directory_durability_before_crediting_replaced_journal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now - timedelta(days=31))
+            self.addCleanup(store.stop)
+            event = store.record("app.hotkey.unavailable", {}, "expired evidence")
+            self.assertTrue(store.flush())
+            coordinator = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            self.addCleanup(coordinator.request_close)
+            coordinator.register_app_event_store(store, root)
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            original_replace = app_event_store._atomic_replace_at
+            real_fsync = app_event_store.os.fsync
+            injected = {"directory_fsyncs": 0, "summary": False}
+
+            def fail_replace_directory_fsync(directory_fd, name, content, expected, commit_gate):
+                def fail_journal_directory_sync(descriptor):
+                    if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                        injected["directory_fsyncs"] += 1
+                        raise OSError("injected journal directory fsync failure")
+                    return real_fsync(descriptor)
+                with patch.object(app_event_store.os, "fsync", fail_journal_directory_sync):
+                    return original_replace(directory_fd, name, content, expected, commit_gate)
+
+            def fail_final_summary(retention_store, payload):
+                row = payload["runs"][-1]
+                app_events = row.get("app_events") or {}
+                if (row["status"] == "failed" and app_events.get("outcome") == "failed" and
+                        not injected["summary"]):
+                    injected["summary"] = True
+                    raise OSError("injected final cleanup summary failure")
+                return original_write(retention_store, payload)
+
+            with patch.object(app_event_store, "_atomic_replace_at", fail_replace_directory_fsync), \
+                    patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                                 fail_final_summary):
+                coordinator.request_retention_cleanup(30, "fsync-and-summary-failure")
+                self.wait_until(lambda: injected["summary"] and
+                                coordinator.retention_cleanup_status().status == "failed")
+
+            self.assertTrue(injected["summary"])
+            self.assertGreaterEqual(injected["directory_fsyncs"], 1)
+            self.assertEqual(read_app_event_store(store.path)["events"], [])
+            interrupted = json.loads((root / "round-retention-ledger.json").read_text())[
+                "runs"][-1]
+            self.assertEqual(interrupted["status"], "running")
+            run_id = interrupted["run_id"]
+
+            recovery_syncs = [0]
+            def fail_first_recovery_directory_fsync(descriptor):
+                if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    recovery_syncs[0] += 1
+                    if recovery_syncs[0] == 1:
+                        raise OSError("recovery directory fsync still unavailable")
+                return real_fsync(descriptor)
+
+            fresh = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            self.addCleanup(fresh.request_close)
+            fresh_store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            self.addCleanup(fresh_store.stop)
+            fresh.register_app_event_store(fresh_store, root)
+            with patch.object(app_event_store.os, "fsync",
+                              fail_first_recovery_directory_fsync):
+                fresh.request_retention_cleanup(30, "first-recovery")
+                self.wait_until(lambda: recovery_syncs[0] >= 1 and
+                                fresh.retention_cleanup_status().status == "failed")
+                unresolved = json.loads((root / "round-retention-ledger.json").read_text())[
+                    "runs"]
+                old_row = next(item for item in unresolved if item["run_id"] == run_id)
+                self.assertEqual(old_row["status"], "running")
+                self.assertIsNone(old_row.get("app_events"))
+                self.assertIn("app_event_commit_intent", old_row)
+
+                fresh.request_retention_cleanup(30, "durable-recovery")
+                self.wait_until(lambda: recovery_syncs[0] >= 2 and any(
+                    item.trigger == "durable-recovery"
+                    for item in fresh.retention_cleanup_summaries()))
+                self.wait_until(lambda: fresh.retention_cleanup_status().status == "complete")
+            recovered = next(item for item in fresh.retention_cleanup_summaries()
+                             if item.run_id == run_id)
+            self.assertEqual(recovered.status, "failed")
+            self.assertEqual(recovered.app_events.outcome, "complete")
+            self.assertEqual(recovered.app_events.deleted_sequences, (event.sequence,))
+            self.assertGreaterEqual(recovery_syncs[0], 2)
 
     def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
         with tempfile.TemporaryDirectory() as temporary:

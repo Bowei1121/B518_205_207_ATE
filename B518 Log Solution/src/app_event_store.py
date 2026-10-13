@@ -403,15 +403,60 @@ class AppEventStore:
         persisted.extend(item for item in pending if item["event_id"] not in known)
         return tuple(json.loads(json.dumps(item, ensure_ascii=False)) for item in persisted)
 
-    def cleanup_commit_is_durable(self, deleted_sequences: Iterable[int]) -> bool:
-        """Confirm a prepared cleanup intent from the persisted serial retirement state."""
+    def cleanup_commit_is_durable(self, deleted_sequences: Iterable[int],
+                                  managed_root: Path) -> bool:
+        """Confirm a prepared intent and sync its pinned journal directory on recovery."""
         sequences = tuple(deleted_sequences)
-        with self._condition:
-            present = {item["sequence"] for item in self._events}
-            retired = tuple(tuple(item) for item in self._retired_sequences)
-        return all(sequence not in present and any(start <= sequence <= end
-                                                   for start, end in retired)
-                   for sequence in sequences)
+        if not sequences:
+            return False
+        root = _absolute_managed_path(managed_root)
+        requested_path = _absolute_managed_path(self.path)
+        try:
+            relative = requested_path.relative_to(root)
+        except ValueError:
+            raise _AppEventCleanupError(
+                "app_events_outside", "App 事件檔不在管理根目錄")
+        if not relative.parts or any(part in {".", ".."} for part in relative.parts):
+            raise _AppEventCleanupError(
+                "app_events_outside", "App 事件檔不在管理根目錄")
+
+        root_fd = parent_fd = current_root_fd = current_parent_fd = None
+        try:
+            root_fd = _open_managed_directory(root, ())
+            parent_fd = _open_managed_directory(root, relative.parts[:-1])
+            data, _metadata = _read_at(parent_fd, relative.parts[-1])
+            payload = _validate_app_event_store_payload(json.loads(data.decode("utf-8")))
+
+            def contains_retirement(candidate):
+                present = {item["sequence"] for item in candidate["events"]}
+                retired = tuple(tuple(item) for item in candidate.get("retired_sequences", []))
+                return all(sequence not in present and any(start <= sequence <= end
+                                                           for start, end in retired)
+                           for sequence in sequences)
+
+            if not contains_retirement(payload):
+                return False
+
+            # The journal rename may have succeeded even though its original
+            # directory fsync failed. A fresh reader seeing the retired serials
+            # is not enough; sync the pinned containing directory before crediting
+            # the old cleanup run with a durable deletion.
+            os.fsync(parent_fd)
+            current_root_fd = _open_managed_directory(root, ())
+            current_parent_fd = _open_managed_directory(root, relative.parts[:-1])
+            if (not _same_directory(os.fstat(root_fd), os.fstat(current_root_fd)) or
+                    not _same_directory(os.fstat(parent_fd), os.fstat(current_parent_fd))):
+                raise _AppEventCleanupError(
+                    "app_events_path_changed",
+                    "App 事件管理路徑在清理恢復期間已變更")
+            confirmed_data, _metadata = _read_at(current_parent_fd, relative.parts[-1])
+            confirmed = _validate_app_event_store_payload(
+                json.loads(confirmed_data.decode("utf-8")))
+            return contains_retirement(confirmed)
+        finally:
+            for descriptor in (current_parent_fd, current_root_fd, parent_fd, root_fd):
+                if descriptor is not None:
+                    os.close(descriptor)
 
     def record(self, message_id: str, parameters=None, diagnostic: str = "",
                kind: str = "app_diagnostic") -> AppEvent:

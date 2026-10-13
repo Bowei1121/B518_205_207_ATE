@@ -343,7 +343,8 @@ class RoundRetentionStore:
                     continue
                 sequences = intent.get("deleted_sequences")
                 committed = (isinstance(sequences, list) and sequences and
-                             store.cleanup_commit_is_durable(sequences))
+                             store.cleanup_commit_is_durable(
+                                 sequences, self._app_event_root))
                 if committed:
                     row["app_events"] = intent
                     row["app_events"]["outcome"] = "complete"
