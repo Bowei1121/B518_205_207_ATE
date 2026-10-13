@@ -342,7 +342,16 @@ class RoundRetentionStore:
                         plan = ledger.get("active_plans", {}).get(result.round_id)
                         if plan is not None and plan.get("deletion_complete"):
                             ledger["active_plans"].pop(result.round_id, None)
-                if self._write_ledger(ledger) is False:
+                summary_saved = self._write_ledger(ledger)
+                if (summary_saved is not False and status == "complete" and
+                        "app_event_commit_intent" in final_row):
+                    # Persist the complete summary with its recovery receipt first.
+                    # Only retire the receipt after those result bytes are durable;
+                    # a crash during retirement can then expose either complete
+                    # copy without losing the durable journal/result association.
+                    final_row.pop("app_event_commit_intent")
+                    summary_saved = self._write_ledger(ledger)
+                if summary_saved is False:
                     diagnostic = "清理摘要目錄的耐久同步未確認"
                     failure_message = "清理已處理，但結果摘要尚未確認安全保存：{}".format(diagnostic)
                     failure_reason = _round_reason(

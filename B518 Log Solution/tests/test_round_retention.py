@@ -190,10 +190,17 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(summary.app_events.failed_count, 0)
             self.assertTrue(summary.run_id)
             self.assertEqual(summary.trigger, "app-startup")
+            ledger_path = root / "round-retention-ledger.json"
+            ledger_bytes = ledger_path.read_bytes()
             fresh_reader = RoundCoordinator(
                 audit_root=root / "sessions", wall_clock=lambda: now[0],
-                retention_ledger_path=root / "round-retention-ledger.json")
+                retention_ledger_path=ledger_path)
             restored_summary = fresh_reader.retention_cleanup_summaries()[-1]
+            self.assertEqual(restored_summary.status, "complete")
+            self.assertEqual(restored_summary.message_reason, summary.message_reason)
+            self.assertEqual(restored_summary.run_id, summary.run_id)
+            self.assertEqual(restored_summary.completed_at, summary.completed_at)
+            self.assertEqual(ledger_path.read_bytes(), ledger_bytes)
             self.assertEqual(restored_summary.app_events.deleted_count, 1)
             self.assertEqual(restored_summary.app_events.outcome, "complete")
             self.assertEqual(restored_summary.app_events.reason_message,
@@ -616,6 +623,74 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(recovered_run.status, "complete")
             self.assertEqual(recovered_run.app_events.outcome, "complete")
             self.assertEqual(recovered_run.app_events.deleted_sequences, (event.sequence,))
+
+    def test_receipt_retirement_sync_failure_keeps_same_cleanup_recoverable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)
+            ledger_path = root / "round-retention-ledger.json"
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now - timedelta(days=31))
+            event = store.record("app.hotkey.unavailable", {}, "expired evidence")
+            self.assertTrue(store.flush())
+            coordinator = RoundCoordinator(
+                audit_root=root / "sessions", wall_clock=lambda: now,
+                retention_ledger_path=ledger_path)
+            coordinator.register_app_event_store(store, root)
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            real_fsync = round_retention.os.fsync
+
+            fresh = None
+
+            def fail_receipt_retirement_sync(retention_store, payload):
+                row = payload["runs"][-1]
+                if (row["status"] == "complete" and row.get("app_events") and
+                        "app_event_commit_intent" not in row):
+                    def fail_directory(descriptor):
+                        observed = os.fstat(descriptor)
+                        ledger_directory = os.stat(ledger_path.parent)
+                        if (stat.S_ISDIR(observed.st_mode) and
+                                (observed.st_dev, observed.st_ino) ==
+                                (ledger_directory.st_dev, ledger_directory.st_ino)):
+                            raise OSError("receipt retirement directory fsync unavailable")
+                        return real_fsync(descriptor)
+                    with patch.object(round_retention.os, "fsync", fail_directory):
+                        return original_write(retention_store, payload)
+                return original_write(retention_store, payload)
+
+            try:
+                with patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                                  fail_receipt_retirement_sync):
+                    coordinator.request_retention_cleanup(30, "receipt-sync-failure")
+                    self.wait_until(lambda: coordinator.retention_cleanup_status().status == "failed")
+                failed = coordinator.retention_cleanup_summaries()[-1]
+                self.assertEqual(failed.status, "failed")
+                self.assertEqual(failed.message_reason["message_id"],
+                                 "app.settings.retention.reason.cleanup.ledger_save_failed")
+                self.assertEqual(failed.app_events.deleted_sequences, (event.sequence,))
+                self.assertEqual(read_app_event_store(store.path)["events"], [])
+                fresh = RoundCoordinator(
+                    audit_root=root / "sessions", wall_clock=lambda: now,
+                    retention_ledger_path=ledger_path)
+                fresh.register_app_event_store(store, root)
+                restored = fresh.retention_cleanup_summaries()[-1]
+                self.assertEqual(restored.run_id, failed.run_id)
+                self.assertEqual(restored.status, "failed")
+                self.assertEqual(restored.app_events.reason_message, failed.app_events.reason_message)
+                fresh.request_retention_cleanup(30, "receipt-sync-recovery")
+                self.wait_until(lambda: fresh.retention_cleanup_status().status == "complete")
+                original_run = next(item for item in fresh.retention_cleanup_summaries()
+                                    if item.run_id == failed.run_id)
+                self.assertEqual(original_run.app_events.deleted_sequences, (event.sequence,))
+                self.assertEqual(original_run.app_events.deleted_count, 1)
+                self.assertEqual(fresh.retention_cleanup_summaries()[-1].app_events.deleted_count, 0)
+            finally:
+                if fresh is not None:
+                    fresh.request_close()
+                    self.wait_until(lambda: fresh.close_status().status == "complete")
+                coordinator.request_close()
+                self.wait_until(lambda: coordinator.close_status().status == "complete")
+                store.stop()
 
     def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
         with tempfile.TemporaryDirectory() as temporary:
