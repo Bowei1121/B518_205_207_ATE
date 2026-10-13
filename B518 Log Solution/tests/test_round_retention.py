@@ -185,6 +185,9 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(summary.app_events.reason_message["parameters"], {
                 "deleted_count": 1, "skipped_count": 1,
             })
+            self.assertEqual(summary.app_events.failed_count, 0)
+            self.assertTrue(summary.run_id)
+            self.assertEqual(summary.trigger, "app-startup")
             fresh_reader = RoundCoordinator(
                 audit_root=root / "sessions", wall_clock=lambda: now[0],
                 retention_ledger_path=root / "round-retention-ledger.json")
@@ -196,6 +199,43 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(disk["events"][0]["localized_message"]["message_id"],
                              "app.profile.save_failed")
             self.assertNotIn("round_id", disk["events"][0])
+
+    def test_app_event_cleanup_failure_reason_is_saved_and_rebuilt_without_changing_journal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)]
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now[0] - timedelta(days=31))
+            event = store.record("app.hotkey.unavailable", {}, "old evidence")
+            self.assertTrue(store.flush())
+            original_journal = store.path.read_bytes()
+            rounds = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now[0])
+            rounds.register_app_event_store(store, root)
+
+            with patch("app_event_store._atomic_replace_at",
+                       side_effect=OSError("injected journal write failure")):
+                rounds.request_retention_cleanup(30, "manual-retry")
+                self.wait_until(lambda: rounds.retention_cleanup_status().status == "failed")
+
+            summary = rounds.retention_cleanup_summaries()[-1]
+            self.assertEqual(summary.app_events.outcome, "failed")
+            self.assertEqual(summary.app_events.failed_count, 1)
+            self.assertEqual(summary.app_events.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_persistence_failed")
+            self.assertIn("injected journal write failure",
+                          summary.app_events.reason_message["diagnostic"])
+            self.assertEqual(store.path.read_bytes(), original_journal)
+
+            fresh_reader = RoundCoordinator(
+                audit_root=root / "sessions", wall_clock=lambda: now[0],
+                retention_ledger_path=root / "round-retention-ledger.json")
+            restored = fresh_reader.retention_cleanup_summaries()[-1]
+            self.assertEqual(restored.run_id, summary.run_id)
+            self.assertEqual(restored.app_events.reason_message,
+                             summary.app_events.reason_message)
+            self.assertEqual(store.path.read_bytes(), original_journal)
+            self.assertEqual(read_app_event_store(store.path)["events"][0]["event_id"],
+                             event.event_id)
 
     def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -229,6 +269,10 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual([item["event_id"] for item in events], [expired.event_id])
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].retention_days, 365)
             self.assertEqual(rounds.retention_cleanup_summaries()[-1].app_events.deleted_count, 0)
+            reassessed = rounds.retention_cleanup_summaries()[0].app_events
+            self.assertEqual(reassessed.outcome, "skipped")
+            self.assertEqual(reassessed.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_period_changed")
 
     def test_deadline_is_inclusive_and_a_round_before_deadline_is_preserved(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -14,6 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from app_event_store import AppEventCleanupError
 from cleanup_reasons import capture_cleanup_reason
 from language_catalog import capture_round_event_message, make_bilingual_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
@@ -1282,7 +1283,8 @@ class RoundCoordinator:
             self._audit_root,
             retention_ledger_path or self._audit_root.parent / "round-retention-ledger.json",
             self._wall_clock, self._protected_round_ids, self._retention_cleanup_allowed,
-            self._effective_retention_days, self._delete_if_currently_expired)
+            self._effective_retention_days, self._delete_if_currently_expired,
+            self._delete_app_event_if_currently_expired)
             if self._audit_root is not None else None)
         self._retention_worker_active = False
         self._retention_trigger_pending = False
@@ -1664,6 +1666,21 @@ class RoundCoordinator:
             if archived_at + timedelta(days=self._retention_days) > normalize_archive_time(
                     self._wall_clock()):
                 raise ValueError("保存期限在刪除前已延長，停止刪除並保留剩餘進度")
+            operation()
+
+    def _delete_app_event_if_currently_expired(self, occurred_at: datetime,
+                                               operation: Callable[[], None]) -> None:
+        """Recheck App-event eligibility against its original time before replacement."""
+        with self._lock:
+            if self._closing:
+                raise AppEventCleanupError(
+                    "close", "關閉保存期間暫停清理", outcome="skipped")
+            if occurred_at + timedelta(days=self._retention_days) > normalize_archive_time(
+                    self._wall_clock()):
+                raise AppEventCleanupError(
+                    "app_events_period_changed",
+                    "保存期限在清理期間變更，App 事件保留並等待重新判定",
+                    outcome="skipped")
             operation()
 
     def retry_close_saves(self) -> CloseSnapshot:

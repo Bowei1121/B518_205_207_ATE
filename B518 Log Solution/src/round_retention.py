@@ -134,7 +134,8 @@ class RoundRetentionStore:
                  protected_round_ids: Callable[[], Iterable[str]],
                  cleanup_allowed: Callable[[], bool],
                  effective_retention_days: Callable[[], int],
-                 delete_if_expired: Callable[[datetime, Callable[[], None]], None]):
+                 delete_if_expired: Callable[[datetime, Callable[[], None]], None],
+                 delete_app_event_if_expired: Callable[[datetime, Callable[[], None]], None] = None):
         requested_root = Path(managed_root).absolute()
         self._root_is_symlink = requested_root.is_symlink()
         self.root = requested_root.resolve()
@@ -144,6 +145,7 @@ class RoundRetentionStore:
         self._cleanup_allowed = cleanup_allowed
         self._effective_retention_days = effective_retention_days
         self._delete_if_expired = delete_if_expired
+        self._delete_app_event_if_expired = delete_app_event_if_expired or delete_if_expired
         self._app_event_store = None
         self._app_event_root = None
         self._lock = threading.RLock()
@@ -253,7 +255,8 @@ class RoundRetentionStore:
                 else:
                     cutoff = normalize_archive_time(self._wall_clock()) - timedelta(days=retention_days)
                     outcome = self._app_event_store.cleanup_expired(
-                        cutoff, self._app_event_root, before_replace=self._delete_if_expired)
+                        cutoff, self._app_event_root,
+                        before_replace=self._delete_app_event_if_expired)
                     app_events = RetentionAppEventResult(
                         outcome.status, outcome.deleted_count, outcome.skipped_count,
                         outcome.failed_count, outcome.reason, outcome.reason_message)

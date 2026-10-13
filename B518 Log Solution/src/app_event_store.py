@@ -131,9 +131,13 @@ class AppEventCleanupResult:
 class _AppEventCleanupError(ValueError):
     """Validation error with a stable reason chosen by its producer."""
 
-    def __init__(self, message_id: str, detail: str):
+    def __init__(self, message_id: str, detail: str, outcome: str = "failed"):
         super().__init__(detail)
         self.message_id = message_id
+        self.outcome = outcome
+
+
+AppEventCleanupError = _AppEventCleanupError
 
 
 def _cleanup_reason(suffix: str, parameters=None, diagnostic: str = "") -> dict:
@@ -603,6 +607,10 @@ class AppEventStore:
                                              reason="已刪除到期 App 事件",
                                              reason_message=reason_message)
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+                if isinstance(error, _AppEventCleanupError) and error.outcome == "skipped":
+                    return AppEventCleanupResult(
+                        "skipped", skipped_count=len(payload["events"]), reason=str(error),
+                        reason_message=_cleanup_reason(error.message_id, diagnostic=str(error)))
                 reason_id = getattr(error, "message_id", None)
                 if reason_id is None:
                     reason_id = ("app_events_persistence_failed" if stage in
