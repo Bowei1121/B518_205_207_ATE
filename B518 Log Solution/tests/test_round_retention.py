@@ -135,6 +135,10 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(summary[0].retention_days, 365)
             self.assertEqual(summary[0].deleted_round_ids, (round_id,),
                              (summary[0], list((root / "sessions").rglob("*"))))
+            self.assertEqual(summary[0].message_reason["message_id"],
+                             "app.settings.retention.reason.cleanup.run_summary")
+            self.assertEqual(rounds.retention_cleanup_status().reason_message,
+                             summary[0].message_reason)
             deleted_reason = summary[0].results[0].reason_message
             self.assertEqual(deleted_reason["message_id"],
                              "app.settings.retention.reason.deleted")

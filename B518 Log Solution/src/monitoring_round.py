@@ -14,6 +14,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from cleanup_reasons import capture_cleanup_reason
 from language_catalog import capture_round_event_message, make_bilingual_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
@@ -50,6 +51,20 @@ class RoundState(str, Enum):
     AWAITING_REVIEW = "AWAITING_REVIEW"
     COMPLETED = "COMPLETED"
     STOPPED = "STOPPED"
+
+
+def _archive_reason(reason: str, parameters=None, diagnostic: str = "") -> dict:
+    return capture_cleanup_reason(
+        "app.settings.retention.reason.archive." + reason, parameters or {}, diagnostic)
+
+
+def _archive_failure(reason: str, message: str, diagnostic: str = "") -> dict:
+    return _archive_reason(reason, {"diagnostic": diagnostic} if diagnostic else {}, diagnostic)
+
+
+def _round_retention_reason(reason: str, parameters=None, diagnostic: str = "") -> dict:
+    return capture_cleanup_reason(
+        "app.settings.retention.reason." + reason, parameters or {}, diagnostic)
 
 
 def _has_source_test_time(value: object) -> bool:
@@ -584,40 +599,47 @@ class MonitoringRound:
         """Verify and seal this round while serializing against round operations."""
         with self._poll_lock:
             snapshot = self.snapshot()
-            def status(state, message):
+            def status(state, message, reason, parameters=None, diagnostic=""):
                 return ArchiveSnapshot(self.round_id, state, message=message,
-                                       save_state=snapshot.save_state, station=self.station)
+                                       save_state=snapshot.save_state, station=self.station,
+                                       reason_message=_archive_reason(reason, parameters, diagnostic))
 
             ended_state = snapshot.state in {RoundState.COMPLETED, RoundState.STOPPED} or (
                 snapshot.state == RoundState.AWAITING_REVIEW and snapshot.collection_stopped)
             if not ended_state or not snapshot.collection_stopped:
-                return status("protected", "輪次尚未結束")
+                return status("protected", "輪次尚未結束", "round_not_finished")
             if snapshot.pending_conflicts:
-                return status("protected", "仍有待確認衝突")
+                return status("protected", "仍有待確認衝突", "pending_conflicts")
             if snapshot.round_alarm is not None and not snapshot.round_alarm.acknowledged_at:
-                return status("protected", "仍有未確認警報")
+                return status("protected", "仍有未確認警報", "pending_alarm")
             if snapshot.save_state == "failed":
-                return status("failed", snapshot.save_errors[0] if snapshot.save_errors else "輪次保存失敗")
+                message = snapshot.save_errors[0] if snapshot.save_errors else "輪次保存失敗"
+                return status("failed", message, "save_failed", {"diagnostic": message}, message)
             if snapshot.save_state != "complete":
-                return status("saving", "等待 Session 與 audit 完整保存")
+                return status("saving", "等待 Session 與 audit 完整保存", "saving")
             if not snapshot.audit_complete:
-                return status("protected", "audit 尚未完整保存")
+                return status("protected", "audit 尚未完整保存", "audit_incomplete")
             audit_path = getattr(self._audit_store, "audit_path", None)
             session_path = self.session_path
             if audit_path is None or session_path is None:
-                return status("protected", "缺少可驗證的 Session 或 audit 位置")
+                return status("protected", "缺少可驗證的 Session 或 audit 位置", "location_missing")
             try:
                 archived = write_round_archive(
                     audit_path, session_path, archived_at, expected_round_id=self.round_id)
             except OSError as error:
-                return ArchiveSnapshot(self.round_id, "failed", message=str(error),
+                diagnostic = str(error)
+                return ArchiveSnapshot(self.round_id, "failed", message=diagnostic,
                                        path=Path(audit_path).parent / "round-archive.json",
-                                       save_state=snapshot.save_state, station=self.station)
+                                       save_state=snapshot.save_state, station=self.station,
+                                       reason_message=_archive_failure("write_failed", diagnostic,
+                                                                       diagnostic))
             except (AuditRecordError, TypeError, ValueError) as error:
-                return status("protected", str(error))
+                diagnostic = str(error)
+                return status("protected", diagnostic, "validation_failed",
+                              {"diagnostic": diagnostic}, diagnostic)
             return ArchiveSnapshot(archived.round_id, archived.status, archived.archived_at,
                                    archived.message, archived.path, archived.components,
-                                   snapshot.save_state, self.station)
+                                   snapshot.save_state, self.station, archived.reason_message)
 
     def _audit_write_failed(self, record: dict, message: str) -> None:
         with self._lock:
@@ -1287,7 +1309,8 @@ class RoundCoordinator:
             self._tracked_rounds[session.round_id] = session
             self._archive_states[session.round_id] = ArchiveSnapshot(
                 session.round_id, "waiting", message="輪次尚未完成",
-                save_state="waiting", station=station)
+                save_state="waiting", station=station,
+                reason_message=_archive_reason("round_not_finished"))
             self._prune_saved_rounds_locked()
             self._events = []
             try:
@@ -1399,7 +1422,7 @@ class RoundCoordinator:
         snapshot = round_.snapshot()
         return ArchiveSnapshot(status.round_id, status.status, status.archived_at,
                                status.message, status.path, status.components,
-                               snapshot.save_state, status.station)
+                               snapshot.save_state, status.station, status.reason_message)
 
     def archive_statuses(self) -> Tuple[ArchiveSnapshot, ...]:
         """Return lightweight archive and protection states for this App run."""
@@ -1446,7 +1469,8 @@ class RoundCoordinator:
                     if snapshot.save_state == "saving":
                         status = ArchiveSnapshot(
                             round_id, "saving", message="等待 Session 與 audit 完整保存",
-                            save_state=snapshot.save_state, station=round_.station)
+                            save_state=snapshot.save_state, station=round_.station,
+                            reason_message=_archive_reason("saving"))
                         retry_after_save = True
                     else:
                         status = self._archive_tracked_round(round_id, round_)
@@ -1488,15 +1512,21 @@ class RoundCoordinator:
             archived = write_round_archive(
                 audit_path, session_path, now, expected_round_id=round_id)
         except OSError as error:
-            return ArchiveSnapshot(round_id, "failed", message=str(error),
+            diagnostic = str(error)
+            return ArchiveSnapshot(round_id, "failed", message=diagnostic,
                                    path=audit_path.parent / "round-archive.json",
-                                   save_state="complete", station=station)
+                                   save_state="complete", station=station,
+                                   reason_message=_archive_failure("write_failed", diagnostic,
+                                                                   diagnostic))
         except (AuditRecordError, TypeError, ValueError) as error:
-            return ArchiveSnapshot(round_id, "protected", message=str(error),
-                                   save_state="complete", station=station)
+            diagnostic = str(error)
+            return ArchiveSnapshot(round_id, "protected", message=diagnostic,
+                                   save_state="complete", station=station,
+                                   reason_message=_archive_failure("validation_failed", diagnostic,
+                                                                   diagnostic))
         return ArchiveSnapshot(archived.round_id, archived.status, archived.archived_at,
                                archived.message, archived.path, archived.components,
-                               "complete", station)
+                               "complete", station, archived.reason_message)
 
     def _archive_tracked_round(self, round_id: str, round_: MonitoringRound) -> ArchiveSnapshot:
         """Serialize seal writes for a tracked round against retry and close requests."""
@@ -1558,9 +1588,11 @@ class RoundCoordinator:
         """Queue/coalesce a cleanup run without blocking the caller."""
         if type(retention_days) is not int or retention_days <= 0:
             return RetentionStatus("failed", "保存天數無效，未執行清理",
-                                   self.retention_cleanup_summaries())
+                                   self.retention_cleanup_summaries(),
+                                   _round_retention_reason("cleanup.invalid_setting"))
         if self._retention_store is None:
-            return RetentionStatus("failed", "未設定 App 管理的輪次資料目錄")
+            return RetentionStatus("failed", "未設定 App 管理的輪次資料目錄", (),
+                                   _round_retention_reason("cleanup.root_missing"))
         with self._lock:
             self._retention_days = retention_days
             if self._closing:
@@ -1568,7 +1600,8 @@ class RoundCoordinator:
                 self._retention_pending_trigger = trigger
                 self._retention_trigger_pending = True
                 return self._retention_store.status.__class__(
-                    "skipped", "關閉保存期間不啟動新清理", self._retention_store.summaries)
+                    "skipped", "關閉保存期間不啟動新清理", self._retention_store.summaries,
+                    _round_retention_reason("close"))
             self._retention_pending_days = retention_days
             self._retention_pending_trigger = trigger
             if self._retention_worker_active:
@@ -1581,7 +1614,8 @@ class RoundCoordinator:
 
     def retention_cleanup_status(self) -> RetentionStatus:
         if self._retention_store is None:
-            return RetentionStatus("idle", "未設定 App 管理的輪次資料目錄")
+            return RetentionStatus("idle", "未設定 App 管理的輪次資料目錄", (),
+                                   _round_retention_reason("cleanup.root_missing"))
         return self._retention_store.status
 
     def retention_cleanup_summaries(self) -> Tuple[RetentionSummary, ...]:

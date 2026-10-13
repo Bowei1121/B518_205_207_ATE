@@ -1185,10 +1185,12 @@ class B518LogSolutionApp:
             state = (self._t("main.archived") if detail_status.cleanup_eligible else
                      self._t("main.archive_protected") if detail_status.save_state == "complete" else
                      self._t(save_state_message_id(detail_status.save_state)))
-            reason = detail_status.message
+            reason = (self._retention_reason_detail(detail_status.reason_message)
+                      if detail_status.reason_message is not None else detail_status.message)
             if detail_status.save_state == "failed":
                 snapshot = self.rounds.round_snapshot(detail_status.round_id)
-                if snapshot is not None and snapshot.save_errors:
+                if (detail_status.reason_message is None and snapshot is not None and
+                        snapshot.save_errors):
                     reason = snapshot.save_errors[-1]
             if detail_status.cleanup_eligible:
                 reason = str(detail_status.archived_at)
@@ -2323,7 +2325,8 @@ class B518LogSolutionApp:
                 latest.message_reason if latest and latest.message_reason is not None
                 else status.message) if status.status == "skipped" else "")
         if status.status == "failed" and status.message:
-            detail += "\n" + self._retention_reason_detail(status.message)
+            reason = (status.reason_message if status.reason_message is not None else status.message)
+            detail += "\n" + self._retention_reason_detail(reason)
         if latest is not None:
             outcomes = latest.results
             detail += "\n" + self._t(

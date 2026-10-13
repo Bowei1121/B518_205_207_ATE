@@ -1739,6 +1739,28 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._refresh_retention_cleanup_status()
                 self.assertIn("deleted 1 rounds", app.retention_cleanup_status.get())
                 self.assertIn("App events deleted 1", app.retention_cleanup_status.get())
+                ledger_path = session_root.parent / "round-retention-ledger.json"
+                ledger_bytes = ledger_path.read_bytes()
+                previous_rounds = app.rounds
+                fresh_reader = RoundCoordinator(
+                    audit_root=session_root, retention_ledger_path=ledger_path)
+                self._app_round_coordinators.remove(fresh_reader)
+                restored = fresh_reader.retention_cleanup_summaries()[-1]
+                self.assertEqual(restored.deleted_round_ids, (archived_round.round_id,))
+                self.assertEqual(restored.results[0].reason_message["message_id"],
+                                 "app.settings.retention.reason.deleted")
+                self.assertEqual(restored.message_reason["message_id"],
+                                 "app.settings.retention.reason.cleanup.run_summary")
+                app.rounds = fresh_reader
+                app._refresh_retention_cleanup_status()
+                self.assertIn("Trusted round records were completely deleted",
+                              app.retention_cleanup_status.get())
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                self.assertIn("已完整刪除可信輪次資料。", app.retention_cleanup_status.get())
+                self.assertEqual(ledger_path.read_bytes(), ledger_bytes)
+                app.rounds = previous_rounds
+                self.select_language_from_menu(app, root, ENGLISH)
+                app._refresh_retention_cleanup_status()
                 remaining = read_app_event_store(app_event_path)
                 self.assertNotIn(old_app_event.event_id,
                                  [item["event_id"] for item in remaining["events"]])
@@ -1971,7 +1993,14 @@ class LogSolutionUiTests(unittest.TestCase):
                                 str(app.archive_retry_button["state"]) == "normal" and
                                 "temporary archive fault" in app.archive_round_detail.cget("text"))
                     self.wait_for(archive_failure_visible)
+                    self.assertEqual(rounds.archive_status(started.round_id).reason_message["message_id"],
+                                     "app.settings.retention.reason.archive.write_failed")
                     self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
+
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                self.assertIn("無法寫入可信輪次封存資訊", app.archive_status_label.cget("text"))
+                self.assertIn("temporary archive fault", app.archive_status_label.cget("text"))
+                self.select_language_from_menu(app, root, ENGLISH)
 
                 app.archive_retry_button.invoke()
                 self.wait_for_ui(root, lambda:

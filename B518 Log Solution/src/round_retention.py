@@ -123,6 +123,7 @@ class RetentionStatus:
     status: str = "idle"
     message: str = "尚未執行背景清理"
     summaries: Tuple[RetentionSummary, ...] = ()
+    reason_message: Optional[object] = None
 
 
 class RoundRetentionStore:
@@ -154,15 +155,18 @@ class RoundRetentionStore:
             if ledger.get("active_plans") or (self._summaries and
                                                 self._summaries[-1].status == "running"):
                 self._status = RetentionStatus(
-                    "failed", "上次背景清理中斷；將依持久進度重新驗證", self._summaries)
+                    "failed", "上次背景清理中斷；將依持久進度重新驗證", self._summaries,
+                    _round_reason("cleanup.interrupted"))
         except Exception as error:
             self._status = RetentionStatus(
-                "failed", "既有清理摘要或復原進度無法讀取：{}".format(error), self._summaries)
+                "failed", "既有清理摘要或復原進度無法讀取：{}".format(error), self._summaries,
+                _round_reason("cleanup.ledger_read_failed", {"diagnostic": str(error)}, str(error)))
 
     @property
     def status(self) -> RetentionStatus:
         with self._lock:
-            return RetentionStatus(self._status.status, self._status.message, self._summaries)
+            return RetentionStatus(self._status.status, self._status.message, self._summaries,
+                                   self._status.reason_message)
 
     @property
     def summaries(self) -> Tuple[RetentionSummary, ...]:
@@ -177,7 +181,8 @@ class RoundRetentionStore:
 
     def run(self, retention_days: int, trigger: str) -> RetentionStatus:
         if type(retention_days) is not int or retention_days <= 0:
-            return self._finish_status("failed", "保存天數無效，未執行清理")
+            return self._finish_status("failed", "保存天數無效，未執行清理",
+                                       "cleanup.invalid_setting")
         started = self._wall_clock().astimezone().isoformat(timespec="seconds")
         run_id = str(uuid.uuid4())
         results = []
@@ -188,9 +193,14 @@ class RoundRetentionStore:
                 ledger["runs"].append(_summary_to_dict(summary))
                 ledger["runs"] = ledger["runs"][-1000:]
                 self._write_ledger(ledger)
-                self._status = RetentionStatus("running", "背景清理進行中", self._summaries)
+                self._status = RetentionStatus(
+                    "running", "背景清理進行中", self._summaries,
+                    _round_reason("cleanup.running"))
             except Exception as error:
-                return self._finish_status("failed", "無法保存清理摘要，未刪除資料：{}".format(error))
+                diagnostic = str(error)
+                return self._finish_status(
+                    "failed", "無法保存清理摘要，未刪除資料：{}".format(diagnostic),
+                    "cleanup.ledger_save_failed", {"diagnostic": diagnostic}, diagnostic)
 
         try:
             self._resume_active_plan(results, retention_days)
@@ -230,7 +240,10 @@ class RoundRetentionStore:
                         round_id, "deleted", "已完整刪除可信輪次資料",
                         _round_reason("deleted")))
                 except Exception as error:
-                    results.append(RetentionRoundResult(round_id, "failed", str(error)))
+                    diagnostic = str(error)
+                    results.append(RetentionRoundResult(
+                        round_id, "failed", diagnostic,
+                        _round_reason("cleanup.round_failed", {"diagnostic": diagnostic}, diagnostic)))
             app_events = None
             if self._app_event_store is not None:
                 if not self._cleanup_allowed():
@@ -244,7 +257,10 @@ class RoundRetentionStore:
                         outcome.status, outcome.deleted_count, outcome.skipped_count,
                         outcome.failed_count, outcome.reason)
         except Exception as error:
-            results.append(RetentionRoundResult("", "failed", str(error)))
+            diagnostic = str(error)
+            results.append(RetentionRoundResult(
+                "", "failed", diagnostic,
+                _round_reason("cleanup.round_failed", {"diagnostic": diagnostic}, diagnostic)))
             app_events = None
 
         completed = self._wall_clock().astimezone().isoformat(timespec="seconds")
@@ -257,8 +273,16 @@ class RoundRetentionStore:
             app_events.deleted_count if app_events else 0,
             app_events.skipped_count if app_events else 0,
             app_events.failed_count if app_events else 0)
+        message_reason = _round_reason("cleanup.run_summary", {
+            "deleted": sum(item.outcome == "deleted" for item in results),
+            "skipped": sum(item.outcome == "skipped" for item in results),
+            "failed": sum(item.outcome == "failed" for item in results),
+            "app_deleted": app_events.deleted_count if app_events else 0,
+            "app_skipped": app_events.skipped_count if app_events else 0,
+            "app_failed": app_events.failed_count if app_events else 0,
+        })
         final = RetentionSummary(run_id, started, completed, retention_days, trigger,
-                                 status, tuple(results), message, app_events)
+                                 status, tuple(results), message, app_events, message_reason)
         with self._lock:
             try:
                 ledger = self._load_ledger()
@@ -272,9 +296,12 @@ class RoundRetentionStore:
                             ledger["active_plans"].pop(result.round_id, None)
                 self._write_ledger(ledger)
                 self._summaries = tuple((_summary_from_dict(item) for item in ledger["runs"]))
-                self._status = RetentionStatus(status, message, self._summaries)
+                self._status = RetentionStatus(status, message, self._summaries, message_reason)
             except Exception as error:
-                return self._finish_status("failed", "清理結果摘要保存失敗：{}；請檢查清理進度".format(error))
+                diagnostic = str(error)
+                return self._finish_status(
+                    "failed", "清理結果摘要保存失敗：{}；請檢查清理進度".format(diagnostic),
+                    "cleanup.ledger_save_failed", {"diagnostic": diagnostic}, diagnostic)
         return self.status
 
     def _discover(self):
@@ -292,12 +319,16 @@ class RoundRetentionStore:
                     continue
                 manifest = base / name
                 if not self._safe_file(manifest):
-                    rejected.append(RetentionRoundResult("", "skipped", "封存檔路徑含符號連結或越界"))
+                    rejected.append(RetentionRoundResult(
+                        "", "skipped", "封存檔路徑含符號連結或越界",
+                        _round_reason("unsafe_manifest")))
                     continue
                 snapshot = read_round_archive(manifest)
                 if snapshot.status != "archived":
                     rejected.append(RetentionRoundResult(snapshot.round_id, "skipped",
-                                                          snapshot.message or "封存證據無效"))
+                                                          snapshot.message or "封存證據無效",
+                                                          snapshot.reason_message or
+                                                          _round_reason("invalid_archive")))
                     continue
                 try:
                     payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -312,7 +343,10 @@ class RoundRetentionStore:
                     record = (snapshot, manifest, raw_paths)
                     groups.setdefault(snapshot.round_id, []).append(record)
                 except (OSError, ValueError, KeyError, TypeError) as error:
-                    rejected.append(RetentionRoundResult(snapshot.round_id, "skipped", str(error)))
+                    diagnostic = str(error)
+                    rejected.append(RetentionRoundResult(
+                        snapshot.round_id, "skipped", diagnostic,
+                        _round_reason("cleanup.round_failed", {"diagnostic": diagnostic}, diagnostic)))
 
         candidates = []
         blocked_round_ids = {item.round_id for item in rejected if item.round_id}
@@ -394,7 +428,9 @@ class RoundRetentionStore:
             if plan is None:
                 continue
             if round_id in set(self._protected_round_ids()) or not self._cleanup_allowed():
-                results.append(RetentionRoundResult(round_id, "skipped", "中斷清理輪次目前仍受保護"))
+                results.append(RetentionRoundResult(
+                    round_id, "skipped", "中斷清理輪次目前仍受保護",
+                    _round_reason("recovery_protected")))
                 continue
             try:
                 archived_at = datetime.fromisoformat(plan["archived_at"])
@@ -443,7 +479,8 @@ class RoundRetentionStore:
                         self._write_ledger(ledger)
                     results.append(RetentionRoundResult(
                         round_id, "skipped",
-                        "目前保存期限尚未到期；已還原中斷時的暫置資料並保留其餘進度"))
+                        "目前保存期限尚未到期；已還原中斷時的暫置資料並保留其餘進度",
+                        _round_reason("recovered_not_expired")))
                     continue
                 self._validate_resume_directories(paths, next_index, staged_path)
                 for index, raw_path in enumerate(paths):
@@ -524,7 +561,10 @@ class RoundRetentionStore:
                     round_id, "deleted", "依持久刪除計畫完成中斷復原",
                     _round_reason("recovered_deleted")))
             except Exception as error:
-                results.append(RetentionRoundResult(round_id, "failed", "中斷刪除復原失敗：{}".format(error)))
+                diagnostic = str(error)
+                results.append(RetentionRoundResult(
+                    round_id, "failed", "中斷刪除復原失敗：{}".format(diagnostic),
+                    _round_reason("cleanup.recovery_failed", {"diagnostic": diagnostic}, diagnostic)))
 
     def _validate_resume_directories(self, paths, next_index: int, staged_path=None) -> None:
         """Reject new or unknown files before resuming an interrupted round delete."""
@@ -772,9 +812,11 @@ class RoundRetentionStore:
         except (OSError, ValueError):
             return False
 
-    def _finish_status(self, status: str, message: str) -> RetentionStatus:
+    def _finish_status(self, status: str, message: str, reason: Optional[str] = None,
+                       parameters=None, diagnostic: str = "") -> RetentionStatus:
         with self._lock:
-            self._status = RetentionStatus(status, message, self._summaries)
+            reason_message = (_round_reason(reason, parameters, diagnostic) if reason else None)
+            self._status = RetentionStatus(status, message, self._summaries, reason_message)
             return self._status
 
     def _load_ledger(self) -> dict:
