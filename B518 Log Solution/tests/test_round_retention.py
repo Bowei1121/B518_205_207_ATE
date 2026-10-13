@@ -608,6 +608,7 @@ class RoundRetentionTests(unittest.TestCase):
             pre_reconciliation = next(item for item in recovered.retention_cleanup_summaries()
                                       if item.run_id == summary.run_id)
             self.assertEqual(pre_reconciliation.status, "failed")
+            self.assertIn("耐久性尚待", pre_reconciliation.message)
             recovered.request_retention_cleanup(30, "rebuild-after-summary-fsync-failure")
             self.wait_until(lambda: recovered.retention_cleanup_status().status == "complete")
             recovered_run = next(item for item in recovered.retention_cleanup_summaries()

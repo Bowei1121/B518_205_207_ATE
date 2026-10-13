@@ -1061,7 +1061,7 @@ def _summary_from_dict(item: dict) -> RetentionSummary:
                                                      row.get("outcome", "failed"),
                                                      row.get("reason", ""),
                                                      row.get("reason_message"))
-                                for row in item.get("results", [])), item.get("message", ""),
+                                for row in item.get("results", [])), message,
                             RetentionAppEventResult(
                                 app_events.get("outcome", "failed"),
                                 app_events.get("deleted_count", 0),
