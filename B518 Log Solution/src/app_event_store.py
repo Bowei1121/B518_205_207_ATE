@@ -15,7 +15,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Deque, Optional, Tuple
+from typing import Callable, Deque, Iterable, Optional, Tuple
 
 from language_catalog import BilingualMessage, make_bilingual_message
 from cleanup_reasons import capture_cleanup_reason
@@ -126,6 +126,7 @@ class AppEventCleanupResult:
     failed_count: int = 0
     reason: str = ""
     reason_message: Optional[dict] = None
+    deleted_sequences: Tuple[int, ...] = ()
 
 
 class _AppEventCleanupError(ValueError):
@@ -402,6 +403,16 @@ class AppEventStore:
         persisted.extend(item for item in pending if item["event_id"] not in known)
         return tuple(json.loads(json.dumps(item, ensure_ascii=False)) for item in persisted)
 
+    def cleanup_commit_is_durable(self, deleted_sequences: Iterable[int]) -> bool:
+        """Confirm a prepared cleanup intent from the persisted serial retirement state."""
+        sequences = tuple(deleted_sequences)
+        with self._condition:
+            present = {item["sequence"] for item in self._events}
+            retired = tuple(tuple(item) for item in self._retired_sequences)
+        return all(sequence not in present and any(start <= sequence <= end
+                                                   for start, end in retired)
+                   for sequence in sequences)
+
     def record(self, message_id: str, parameters=None, diagnostic: str = "",
                kind: str = "app_diagnostic") -> AppEvent:
         captured = json.loads(json.dumps(parameters or {}, ensure_ascii=False, sort_keys=True))
@@ -420,7 +431,8 @@ class AppEventStore:
             return event
 
     def cleanup_expired(self, cutoff: datetime, managed_root: Path,
-                        before_replace: Callable[[datetime, Callable[[], None]], None] = None
+                        before_replace: Callable[[datetime, Callable[[], None]], None] = None,
+                        before_commit: Callable[[dict], None] = None
                         ) -> AppEventCleanupResult:
         """Delete only fully persisted, timezone-valid App events at or before cutoff.
 
@@ -566,13 +578,34 @@ class AppEventStore:
                 updated = self._payload(retained, payload.get("next_sequence", max(
                     (item["sequence"] for item in payload["events"]), default=0) + 1), merged)
                 content = _json_bytes(updated)
+                deleted_sequences = tuple(expired_sequences)
+                reason_message = capture_cleanup_reason(
+                    "app.settings.retention.reason.app_events_deleted",
+                    {"deleted_count": len(expired_sequences),
+                     "skipped_count": len(retained)})
+                commit_intent = {
+                    "outcome": "complete",
+                    "deleted_count": len(expired_sequences),
+                    "skipped_count": len(retained),
+                    "failed_count": 0,
+                    "reason": "已刪除到期 App 事件",
+                    "reason_message": reason_message,
+                    "deleted_sequences": list(deleted_sequences),
+                }
                 stage = "commit"
                 def commit_gate(commit):
                     def verify_then_commit():
-                        current_root_fd = _open_managed_directory(root, ())
+                        current_root_fd = None
                         current_parent_fd = None
                         try:
-                            current_parent_fd = _open_managed_directory(root, relative.parts[:-1])
+                            try:
+                                current_root_fd = _open_managed_directory(root, ())
+                                current_parent_fd = _open_managed_directory(
+                                    root, relative.parts[:-1])
+                            except OSError as error:
+                                raise _AppEventCleanupError(
+                                    "app_events_path_changed",
+                                    "App 事件管理路徑在清理期間已變更：{}".format(error))
                             if (not _same_directory(os.fstat(current_root_fd), os.fstat(root_fd)) or
                                     not _same_directory(os.fstat(current_parent_fd),
                                                         os.fstat(parent_fd))):
@@ -583,11 +616,16 @@ class AppEventStore:
                         finally:
                             if current_parent_fd is not None:
                                 os.close(current_parent_fd)
-                            os.close(current_root_fd)
+                            if current_root_fd is not None:
+                                os.close(current_root_fd)
 
                     if before_replace is not None:
+                        if before_commit is not None:
+                            before_commit(commit_intent)
                         before_replace(max(expired_times), verify_then_commit)
                     else:
+                        if before_commit is not None:
+                            before_commit(commit_intent)
                         verify_then_commit()
 
                 _atomic_replace_at(parent_fd, relative.parts[-1], content,
@@ -598,14 +636,11 @@ class AppEventStore:
                     self._revision += 1
                     self._error = ""
                     self._error_message_id = ""
-                reason_message = capture_cleanup_reason(
-                    "app.settings.retention.reason.app_events_deleted",
-                    {"deleted_count": len(expired_sequences),
-                     "skipped_count": len(retained)})
                 return AppEventCleanupResult("complete", deleted_count=len(expired_sequences),
                                              skipped_count=len(retained),
                                              reason="已刪除到期 App 事件",
-                                             reason_message=reason_message)
+                                             reason_message=reason_message,
+                                             deleted_sequences=deleted_sequences)
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
                 if isinstance(error, _AppEventCleanupError) and error.outcome == "skipped":
                     return AppEventCleanupResult(

@@ -178,6 +178,7 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(disk["events"][0]["diagnostic"], "new diagnostic")
             summary = rounds.retention_cleanup_summaries()[-1]
             self.assertEqual(summary.app_events.deleted_count, 1)
+            self.assertEqual(summary.app_events.deleted_sequences, (old.sequence,))
             self.assertEqual(summary.app_events.status if hasattr(summary.app_events, "status")
                              else summary.app_events.outcome, "complete")
             self.assertEqual(summary.app_events.reason_message["message_id"],
@@ -236,6 +237,143 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(store.path.read_bytes(), original_journal)
             self.assertEqual(read_app_event_store(store.path)["events"][0]["event_id"],
                              event.event_id)
+
+    def test_app_event_commit_intent_recovers_same_run_after_final_summary_write_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now - timedelta(days=31))
+            event = store.record("app.hotkey.unavailable", {}, "expired evidence")
+            self.assertTrue(store.flush())
+            coordinator = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            coordinator.register_app_event_store(store, root)
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            failed_final_write = [False]
+
+            def fail_after_journal_replace(retention_store, payload):
+                last = payload["runs"][-1]
+                app_events = last.get("app_events") or {}
+                if (last["status"] == "complete" and app_events.get("outcome") == "complete" and
+                        not failed_final_write[0]):
+                    failed_final_write[0] = True
+                    raise OSError("injected final cleanup summary failure")
+                return original_write(retention_store, payload)
+
+            with patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                              fail_after_journal_replace):
+                coordinator.request_retention_cleanup(30, "app-startup")
+                self.wait_until(lambda: coordinator.retention_cleanup_status().status == "failed")
+
+            self.assertTrue(failed_final_write[0])
+            self.assertEqual(read_app_event_store(store.path)["events"], [])
+            interrupted = json.loads((root / "round-retention-ledger.json").read_text())[
+                "runs"][-1]
+            self.assertEqual(interrupted["status"], "running")
+            self.assertEqual(interrupted["app_event_commit_intent"]["deleted_sequences"],
+                             [event.sequence])
+            self.assertEqual(interrupted["app_event_commit_intent"]["reason_message"]["message_id"],
+                             "app.settings.retention.reason.app_events_deleted")
+
+            fresh_store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            restored = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            restored.register_app_event_store(fresh_store, root)
+            restored.request_retention_cleanup(30, "manual-retry")
+            self.wait_until(lambda: restored.retention_cleanup_status().status == "complete")
+
+            original_run = next(item for item in restored.retention_cleanup_summaries()
+                                if item.run_id == interrupted["run_id"])
+            self.assertEqual(original_run.status, "failed")
+            self.assertEqual(original_run.app_events.outcome, "complete")
+            self.assertEqual(original_run.app_events.deleted_count, 1)
+            self.assertEqual(original_run.app_events.deleted_sequences, (event.sequence,))
+            self.assertEqual(original_run.app_events.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_deleted")
+            self.assertEqual(original_run.app_events.reason_message["parameters"], {
+                "deleted_count": 1, "skipped_count": 0,
+            })
+            self.assertIsNone(original_run.app_events.reason_message.get("round_id"))
+            self.assertFalse(any("app_event_commit_intent" in item
+                                 for item in json.loads((root / "round-retention-ledger.json")
+                                                        .read_text())["runs"]
+                                 if item["run_id"] == interrupted["run_id"]))
+
+    def test_uncommitted_app_event_intent_cannot_claim_a_later_run_deletion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 9, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json",
+                                  clock=lambda: now - timedelta(days=31))
+            event = store.record("app.hotkey.unavailable", {}, "expired evidence")
+            self.assertTrue(store.flush())
+            coordinator = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            coordinator.register_app_event_store(store, root)
+            original_write = round_retention.RoundRetentionStore._write_ledger
+            original_rename = app_event_store._renameat
+            injected = {"replace": False, "summary": False}
+
+            def fail_before_rename(source_fd, source_name, destination_fd, destination_name):
+                if not injected["replace"]:
+                    injected["replace"] = True
+                    raise OSError("injected journal rename failure")
+                return original_rename(source_fd, source_name, destination_fd, destination_name)
+
+            def fail_final_summary(retention_store, payload):
+                row = payload["runs"][-1]
+                app_events = row.get("app_events") or {}
+                if (row["status"] == "failed" and app_events.get("outcome") == "failed" and
+                        not injected["summary"]):
+                    injected["summary"] = True
+                    raise OSError("injected final cleanup summary failure")
+                return original_write(retention_store, payload)
+
+            with patch.object(app_event_store, "_renameat", fail_before_rename), \
+                    patch.object(round_retention.RoundRetentionStore, "_write_ledger",
+                                 fail_final_summary):
+                coordinator.request_retention_cleanup(30, "first-attempt")
+                self.wait_until(lambda: coordinator.retention_cleanup_status().status == "failed")
+
+            self.assertTrue(injected["replace"])
+            self.assertTrue(injected["summary"])
+            journal_after_failed_attempt = read_app_event_store(store.path)
+            self.assertEqual([item["sequence"] for item in journal_after_failed_attempt["events"]],
+                             [event.sequence])
+            interrupted_row = json.loads((root / "round-retention-ledger.json").read_text())[
+                "runs"][-1]
+            self.assertEqual(interrupted_row["status"], "running")
+            self.assertEqual(interrupted_row["app_event_commit_intent"]["deleted_sequences"],
+                             [event.sequence])
+
+            fresh_store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            retry = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            retry.register_app_event_store(fresh_store, root)
+            retry.request_retention_cleanup(30, "second-attempt")
+            self.wait_until(lambda: retry.retention_cleanup_status().status == "complete")
+
+            retry_summary = retry.retention_cleanup_summaries()
+            old_run = next(item for item in retry_summary
+                           if item.run_id == interrupted_row["run_id"])
+            new_run = next(item for item in retry_summary
+                           if item.trigger == "second-attempt")
+            self.assertEqual(old_run.status, "failed")
+            self.assertIsNone(old_run.app_events)
+            self.assertEqual(new_run.app_events.deleted_count, 1)
+            self.assertEqual(new_run.app_events.deleted_sequences, (event.sequence,))
+            self.assertEqual(read_app_event_store(fresh_store.path)["events"], [])
+
+            after_delete = RoundCoordinator(audit_root=root / "sessions", wall_clock=lambda: now)
+            after_delete.register_app_event_store(
+                AppEventStore(root / "app-events.json", clock=lambda: now), root)
+            after_delete.request_retention_cleanup(30, "third-attempt")
+            self.wait_until(lambda: after_delete.retention_cleanup_status().status == "complete")
+            old_run_after_later_delete = next(
+                item for item in after_delete.retention_cleanup_summaries()
+                if item.run_id == interrupted_row["run_id"])
+            self.assertEqual(old_run_after_later_delete.status, "failed")
+            self.assertIsNone(old_run_after_later_delete.app_events)
+            self.assertEqual(
+                sum(item.app_events.deleted_count for item in after_delete.retention_cleanup_summaries()
+                    if item.app_events is not None), 1)
 
     def test_app_event_cleanup_rechecks_extended_deadline_before_replacing_journal(self):
         with tempfile.TemporaryDirectory() as temporary:

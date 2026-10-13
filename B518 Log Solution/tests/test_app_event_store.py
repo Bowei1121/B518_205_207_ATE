@@ -352,6 +352,8 @@ class AppEventStoreTests(unittest.TestCase):
             before_replace=replace_after_swap)
 
         self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_path_changed")
         self.assertEqual(outside.read_bytes(), original_external_bytes)
         self.assertEqual((moved_parent / managed_store_path.name).read_bytes(), original_managed_bytes)
 

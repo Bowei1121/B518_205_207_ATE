@@ -73,6 +73,11 @@ class M10SourceIntegrationTests(unittest.TestCase):
                        RoundCoordinator(*a, monotonic=lambda: elapsed[0], **kw)):
                 app = B518LogSolutionApp(root, hotkey_factory=LocalHotkey,
                                          session_root=base / "sessions")
+            # Complete the startup cleanup before this test requests its own run;
+            # otherwise the public coordinator may coalesce the manual request
+            # behind startup work and the byte-preservation snapshot races its
+            # queued follow-up summary write.
+            self.pump(root, lambda: app.rounds.retention_cleanup_status().status == "complete")
 
             class ClockPreparation(RoundStartPreparation):
                 def prepare(self, profile, session_root, **kwargs):
@@ -125,8 +130,11 @@ class M10SourceIntegrationTests(unittest.TestCase):
                           and app.rounds.snapshot().save_state == "complete")
                 audit_path = app.rounds.session_path / "audit.jsonl"
                 journal = base / "app-events.json"
+                cleanup_summaries_before = len(app.rounds.retention_cleanup_summaries())
                 app.rounds.request_retention_cleanup(365, "L4-byte-preservation-check")
-                self.pump(root, lambda: app.rounds.retention_cleanup_status().status == "complete")
+                self.pump(root, lambda:
+                          len(app.rounds.retention_cleanup_summaries()) > cleanup_summaries_before
+                          and app.rounds.retention_cleanup_status().status == "complete")
                 cleanup_ledger = base / "round-retention-ledger.json"
                 protected_source_and_summary = (source_file.read_bytes(),
                                                 cleanup_ledger.read_bytes())
@@ -216,7 +224,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     snapshot = app.rounds.snapshot()
                     if snapshot is not None:
                         for conflict in snapshot.pending_conflicts:
-                            app.rounds.resolve_review(conflict.conflict_id, "original")
+                            app.rounds.resolve_review(conflict.conflict_id, "keep_original")
                         alarm = app.rounds.snapshot().round_alarm
                         if alarm and not alarm.acknowledged_at:
                             app.rounds.acknowledge_round_alarm(snapshot.round_id, alarm.alarm_id)

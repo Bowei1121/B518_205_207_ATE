@@ -94,6 +94,7 @@ class RetentionAppEventResult:
     failed_count: int = 0
     reason: str = ""
     reason_message: Optional[object] = None
+    deleted_sequences: Tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,7 @@ class RetentionSummary:
     message: str = ""
     app_events: Optional[RetentionAppEventResult] = None
     message_reason: Optional[object] = None
+    app_event_commit_intent: Optional[dict] = None
 
     @property
     def deleted_round_ids(self) -> Tuple[str, ...]:
@@ -185,6 +187,13 @@ class RoundRetentionStore:
         if type(retention_days) is not int or retention_days <= 0:
             return self._finish_status("failed", "保存天數無效，未執行清理",
                                        "cleanup.invalid_setting")
+        try:
+            self._reconcile_app_event_commit_intents()
+        except Exception as error:
+            diagnostic = str(error)
+            return self._finish_status(
+                "failed", "無法確認先前 App 事件清理進度：{}".format(diagnostic),
+                "cleanup.ledger_read_failed", {"diagnostic": diagnostic}, diagnostic)
         started = self._wall_clock().astimezone().isoformat(timespec="seconds")
         run_id = str(uuid.uuid4())
         results = []
@@ -256,10 +265,13 @@ class RoundRetentionStore:
                     cutoff = normalize_archive_time(self._wall_clock()) - timedelta(days=retention_days)
                     outcome = self._app_event_store.cleanup_expired(
                         cutoff, self._app_event_root,
-                        before_replace=self._delete_app_event_if_expired)
+                        before_replace=self._delete_app_event_if_expired,
+                        before_commit=lambda intent: self._persist_app_event_commit_intent(
+                            run_id, intent))
                     app_events = RetentionAppEventResult(
                         outcome.status, outcome.deleted_count, outcome.skipped_count,
-                        outcome.failed_count, outcome.reason, outcome.reason_message)
+                        outcome.failed_count, outcome.reason, outcome.reason_message,
+                        outcome.deleted_sequences)
         except Exception as error:
             diagnostic = str(error)
             results.append(RetentionRoundResult(
@@ -307,6 +319,56 @@ class RoundRetentionStore:
                     "failed", "清理結果摘要保存失敗：{}；請檢查清理進度".format(diagnostic),
                     "cleanup.ledger_save_failed", {"diagnostic": diagnostic}, diagnostic)
         return self.status
+
+    def _persist_app_event_commit_intent(self, run_id: str, intent: dict) -> None:
+        """Durably associate the imminent journal replace with its cleanup run."""
+        with self._lock:
+            ledger = self._load_ledger()
+            row = next((item for item in ledger["runs"] if item.get("run_id") == run_id), None)
+            if row is None or row.get("status") != "running":
+                raise ValueError("App 事件清理執行摘要已不存在或不在進行中")
+            row["app_event_commit_intent"] = intent
+            self._write_ledger(ledger)
+
+    def _reconcile_app_event_commit_intents(self) -> None:
+        store = self._app_event_store
+        if store is None:
+            return
+        with self._lock:
+            ledger = self._load_ledger()
+            changed = False
+            for row in ledger["runs"]:
+                intent = row.get("app_event_commit_intent")
+                if not isinstance(intent, dict):
+                    continue
+                sequences = intent.get("deleted_sequences")
+                committed = (isinstance(sequences, list) and sequences and
+                             store.cleanup_commit_is_durable(sequences))
+                if committed:
+                    row["app_events"] = intent
+                    row["app_events"]["outcome"] = "complete"
+                    row["status"] = "failed"
+                    row["message"] = (
+                        "App 事件刪除已由退休序號確認；原清理摘要未完成保存，請重新檢查清理狀態")
+                    row["message_reason"] = _round_reason("cleanup.interrupted")
+                    row.pop("app_event_commit_intent", None)
+                else:
+                    row["status"] = "failed"
+                    row["message"] = (
+                        "上次 App 事件清理未能由 journal 退休序號確認；事件仍受保護並待重新判定")
+                    row["message_reason"] = _round_reason("cleanup.interrupted")
+                    # This intent was only a pre-replace receipt. Once the journal
+                    # proves the deletion did not commit, it must never be allowed
+                    # to match a later run's retirement of the same serials.
+                    row.pop("app_event_commit_intent", None)
+                changed = True
+            if not changed:
+                return
+            self._write_ledger(ledger)
+            self._summaries = tuple(_summary_from_dict(item) for item in ledger["runs"])
+            self._status = RetentionStatus(
+                "failed", "上次清理摘要中斷；已依 App journal 退休序號檢查恢復進度",
+                self._summaries, _round_reason("cleanup.interrupted"))
 
     def _discover(self):
         if not self.root.exists():
@@ -903,6 +965,7 @@ def _summary_to_dict(item: RetentionSummary) -> dict:
                             "skipped_count": item.app_events.skipped_count,
                             "failed_count": item.app_events.failed_count,
                             "reason": item.app_events.reason,
+            "deleted_sequences": list(item.app_events.deleted_sequences),
                             **({"reason_message": item.app_events.reason_message}
                                if item.app_events.reason_message is not None else {})}
                            if item.app_events is not None else None),
@@ -913,6 +976,8 @@ def _summary_to_dict(item: RetentionSummary) -> dict:
                         for result in item.results]}
     if item.message_reason is not None:
         record["message_reason"] = item.message_reason
+    if item.app_event_commit_intent is not None:
+        record["app_event_commit_intent"] = item.app_event_commit_intent
     return record
 
 
@@ -932,6 +997,8 @@ def _summary_from_dict(item: dict) -> RetentionSummary:
                                 app_events.get("skipped_count", 0),
                                 app_events.get("failed_count", 0),
                                 app_events.get("reason", ""),
-                                app_events.get("reason_message"))
+                                app_events.get("reason_message"),
+                                tuple(app_events.get("deleted_sequences", ())))
                             if isinstance(app_events, dict) else None,
-                            item.get("message_reason"))
+                            item.get("message_reason"),
+                            item.get("app_event_commit_intent"))
