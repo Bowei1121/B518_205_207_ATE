@@ -23,4 +23,4 @@ None (can start immediately).
 
 ## Verification
 
-Implementation and evidence: [C1 local validation](../evidence/retention-reason-ticket-01/local-validation.md). C2 and C3 producer migrations and C4 all-screen migration remain separate tickets.
+Implementation and evidence: [C1 local validation](../evidence/retention-reason-ticket-01/local-validation.md). C1 was fast-forward integrated into `B518-Log-Solution` at `fc43073eafcfb47053b6948086d9754ef1588b58`; the post-merge desktop suite passed 394 tests. C2 and C3 producer migrations and C4 all-screen migration remain separate tickets.
