@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import bisect
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from historical_event_display import HistoricalEvent, iter_historical_events
 
@@ -125,6 +126,148 @@ class HistoricalEventQueryResult:
         return self.total_count > len(self.events)
 
 
+@dataclass(frozen=True)
+class HistoricalEventQueryCompletion:
+    generation: int
+    date_range: HistoricalEventDateRange
+    succeeded: bool
+    result: Optional[HistoricalEventQueryResult] = None
+    error: Optional[Exception] = None
+
+
+@dataclass
+class _HistoricalEventQueryRequest:
+    generation: int
+    date_range: HistoricalEventDateRange
+    cancellation_event: threading.Event = field(default_factory=threading.Event)
+
+
+class HistoricalEventQueryService:
+    """Coordinate one active read and keep only the newest pending request.
+
+    Submitting or cancelling never waits for filesystem work. A source reader that
+    cannot be interrupted still cannot publish after its request becomes stale.
+    """
+
+    def __init__(self, session_root: Path, app_event_path: Optional[Path],
+                 query_function: Optional[Callable] = None):
+        self._session_root = Path(session_root)
+        self._app_event_path = Path(app_event_path) if app_event_path else None
+        self._query_function = query_function or query_historical_events
+        self._condition = threading.Condition()
+        self._next_generation = 0
+        self._latest_generation = None
+        self._active: Optional[_HistoricalEventQueryRequest] = None
+        self._pending: Optional[_HistoricalEventQueryRequest] = None
+        self._worker: Optional[threading.Thread] = None
+        self._completed: Dict[int, HistoricalEventQueryCompletion] = {}
+        self._closed = False
+
+    def submit(self, date_range: HistoricalEventDateRange) -> int:
+        if not isinstance(date_range, HistoricalEventDateRange):
+            raise TypeError("date_range must be a HistoricalEventDateRange")
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("historical query service is closed")
+            self._next_generation += 1
+            request = _HistoricalEventQueryRequest(self._next_generation, date_range)
+            if self._active is not None:
+                self._active.cancellation_event.set()
+            if self._pending is not None:
+                self._pending.cancellation_event.set()
+            self._pending = request
+            self._latest_generation = request.generation
+            self._completed.clear()
+            if self._worker is None:
+                self._worker = threading.Thread(
+                    target=self._run, name="HistoricalEventDateQuery", daemon=True)
+                self._worker.start()
+            self._condition.notify_all()
+            return request.generation
+
+    def cancel(self, generation: int) -> bool:
+        """Invalidate one current request and signal cooperative cancellation."""
+        with self._condition:
+            if self._closed or self._latest_generation != generation:
+                return False
+            self._latest_generation = None
+            if self._active is not None and self._active.generation == generation:
+                self._active.cancellation_event.set()
+            if self._pending is not None and self._pending.generation == generation:
+                self._pending.cancellation_event.set()
+                self._pending = None
+            self._completed.pop(generation, None)
+            self._condition.notify_all()
+            return True
+
+    def take_result(self, generation: int) -> Optional[HistoricalEventQueryCompletion]:
+        """Return a completion only while its generation is still current."""
+        with self._condition:
+            if self._closed or self._latest_generation != generation:
+                return None
+            completion = self._completed.pop(generation, None)
+            if completion is not None:
+                self._latest_generation = None
+            return completion
+
+    def is_pending(self, generation: int) -> bool:
+        """Tell a UI poller whether this generation can still complete."""
+        with self._condition:
+            if self._closed or self._latest_generation != generation:
+                return False
+            if generation in self._completed:
+                return True
+            return ((self._active is not None and self._active.generation == generation) or
+                    (self._pending is not None and self._pending.generation == generation))
+
+    def shutdown(self) -> None:
+        """Stop accepting work and invalidate results without joining a reader."""
+        with self._condition:
+            self._closed = True
+            self._latest_generation = None
+            self._completed.clear()
+            if self._active is not None:
+                self._active.cancellation_event.set()
+            if self._pending is not None:
+                self._pending.cancellation_event.set()
+                self._pending = None
+            self._condition.notify_all()
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                if self._closed or self._pending is None:
+                    self._worker = None
+                    self._condition.notify_all()
+                    return
+                request = self._pending
+                self._pending = None
+                self._active = request
+
+            try:
+                result = self._query_function(
+                    self._session_root, self._app_event_path, request.date_range,
+                    cancellation_event=request.cancellation_event)
+                completion = HistoricalEventQueryCompletion(
+                    request.generation, request.date_range, True, result=result)
+            except Exception as error:
+                completion = HistoricalEventQueryCompletion(
+                    request.generation, request.date_range, False, error=error)
+
+            with self._condition:
+                if self._active is request:
+                    self._active = None
+                if (not self._closed and
+                        self._latest_generation == request.generation and
+                        not request.cancellation_event.is_set()):
+                    self._completed[request.generation] = completion
+                if self._closed or self._pending is None:
+                    self._worker = None
+                    self._condition.notify_all()
+                    return
+                self._condition.notify_all()
+
+
 def parse_historical_event_date_range(start_text: str, end_text: str
                                       ) -> HistoricalEventDateRange:
     """Validate ISO calendar dates without starting a read or changing existing results."""
@@ -151,7 +294,8 @@ def recent_historical_event_date_range(today: date, days: int = 90) -> Historica
 
 def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                             date_range: HistoricalEventDateRange,
-                            limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE
+                            limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
+                            cancellation_event: Optional[threading.Event] = None
                             ) -> HistoricalEventQueryResult:
     """Read saved history and retain only the newest bounded result set.
 
@@ -169,7 +313,9 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     source_issue_count = 0
     diagnostics = []
 
+    _raise_if_query_cancelled(cancellation_event)
     for event in iter_historical_events(session_root, app_event_path):
+        _raise_if_query_cancelled(cancellation_event)
         if event.source in {"read_error", "read_warning"}:
             source_issue_count += 1
         occurred_at = _parse_occurred_at(event.occurred_at, date_range._local_timezone)
@@ -199,9 +345,16 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         if len(ordered) > page_size:
             ordered.pop()
 
+    _raise_if_query_cancelled(cancellation_event)
+
     return HistoricalEventQueryResult(
         date_range, tuple(item[2] for item in ordered), total_count,
         unclassified_count, source_issue_count, tuple(diagnostics))
+
+
+def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise RuntimeError("historical event query cancelled")
 
 
 def _parse_occurred_at(value: str, local_timezone: _LocalTimezoneSnapshot):

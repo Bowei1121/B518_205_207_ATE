@@ -13,7 +13,7 @@ import time
 import threading
 import unittest
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from tkinter import font as tkfont, ttk
@@ -36,7 +36,9 @@ import app_event_store
 import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
-from historical_event_query import query_historical_events, recent_historical_event_date_range
+from historical_event_query import (HistoricalEventDateRange, HistoricalEventQueryResult,
+                                    query_historical_events,
+                                    recent_historical_event_date_range)
 from machine_profiles import MachineProfile, MachineProfileStore, ProfileCatalog, migrate_legacy_preferences
 from language_catalog import DEFAULT_LANGUAGE, ENGLISH, TRADITIONAL_CHINESE, language_name
 
@@ -5097,6 +5099,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_event_refresh_button.invoke()
                 self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                 history_window = app.historical_event_window
+                self.assertEqual(
+                    app.historical_event_cancel_button.cget("text"),
+                    app._t("app.settings.history.cancel_query"))
                 history_index = next(
                     index for index, event in enumerate(app._historical_event_records)
                     if (event.localized_message or {}).get("message_id")
@@ -5135,6 +5140,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                 self.assertEqual(diagnostics_window.title(), app._t("app.diagnostic.heading"))
                 self.assertEqual(history_window.title(), app._t("app.settings.history.title"))
+                self.assertEqual(app.historical_event_cancel_button.cget("text"), "取消查詢")
                 self.assertIn("App 已啟動", app.app_diagnostics_list.get(diagnostic_index))
                 self.assertIn("App 已啟動", app.app_diagnostics_detail.get("1.0", "end-1c"))
                 self.assertNotEqual(app.app_diagnostics_list.get(diagnostic_index),
@@ -5154,6 +5160,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIs(app.settings_window, settings_window)
                 self.assertIs(app.app_diagnostics_window, diagnostics_window)
                 self.assertIs(app.historical_event_window, history_window)
+                self.assertEqual(app.historical_event_cancel_button.cget("text"), "Cancel search")
                 self.assertEqual(app.profile_editor_project.get(), "Unsaved Integrated Draft")
                 self.assertEqual(tuple(app.app_diagnostics_list.curselection()),
                                  diagnostic_selection)
@@ -6005,7 +6012,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_start_var.set("2099-01-01")
                 app.historical_end_var.set("2099-01-01")
                 with patch("b518_log_solution.query_historical_events",
-                           side_effect=lambda _sessions, _app_path, date_range:
+                           side_effect=lambda _sessions, _app_path, date_range, **_kwargs:
                            query_historical_events(session_root, unreadable_app_path,
                                                    date_range)):
                     app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
@@ -6028,6 +6035,226 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_historical_event_window()
                 app.hotkey.close()
                 root.destroy()
+                self.assertTrue(audit.flush())
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_query_latest_request_cancel_and_window_lifecycle(self):
+        from audit_records import AuditEvent, RoundAuditStore
+
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            app_path = root_path / "app-events.json"
+            audit = RoundAuditStore(
+                session_root, "query-lifecycle", "FCT", "2026-10-13T00:00:00+08:00",
+                0.0)
+            audit.append_event(
+                AuditEvent(1, "round_ready", "FCT saved result", None,
+                           detail={"raw_diagnostic": "keep selected result"}),
+                datetime.now().astimezone().replace(microsecond=0).isoformat(), 1.0)
+            self.assertTrue(audit.flush())
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=app_path)
+            gates = {}
+            entered = {}
+            finished = {}
+            query_dates = []
+            original_query = query_historical_events
+
+            def click(button):
+                root.update_idletasks()
+                x, y = max(2, button.winfo_width() // 2), max(2, button.winfo_height() // 2)
+                button.event_generate("<ButtonPress-1>", x=x, y=y)
+                button.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            def set_dates(start, end=None):
+                app.historical_start_entry.delete(0, "end")
+                app.historical_start_entry.insert(0, start.isoformat())
+                app.historical_end_entry.delete(0, "end")
+                app.historical_end_entry.insert(0, (end or start).isoformat())
+                root.update()
+
+            def click_row(index):
+                app.historical_event_list.see(index)
+                root.update()
+                x, y, _width, height = app.historical_event_list.bbox(index)
+                point = (max(2, x + 4), y + max(1, height // 2))
+                app.historical_event_list.event_generate(
+                    "<ButtonPress-1>", x=point[0], y=point[1])
+                app.historical_event_list.event_generate(
+                    "<ButtonRelease-1>", x=point[0], y=point[1])
+                root.update()
+
+            def controlled_query(sessions, event_path, date_range, cancellation_event=None):
+                query_dates.append(date_range.start)
+                gate = gates.get(date_range.start)
+                finished[date_range.start] = threading.Event()
+                try:
+                    if gate is not None:
+                        entered[date_range.start] = cancellation_event
+                        gate[0].set()
+                        if not gate[1].wait(10):
+                            raise RuntimeError("controlled history query gate timed out")
+                        if date_range.start == date(2026, 1, 1):
+                            raise RuntimeError("obsolete request failed after replacement")
+                    return original_query(sessions, event_path, date_range,
+                                          cancellation_event=cancellation_event)
+                finally:
+                    finished[date_range.start].set()
+
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                initial_range = recent_historical_event_date_range(date.today(), 90)
+                click(app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                old_result = app._historical_query_result
+                initial_range = old_result.date_range
+                saved_key = "round:query-lifecycle:1"
+                saved_index = next(index for index, record in enumerate(
+                    app._historical_event_records) if record.key == saved_key)
+                click_row(saved_index)
+                old_key = app._historical_event_selected_key
+                old_detail = app.historical_event_detail.get("1.0", "end")
+                self.assertEqual(old_key, "round:query-lifecycle:1")
+
+                first_gate = (threading.Event(), threading.Event())
+                coalesced_gate = (threading.Event(), threading.Event())
+                latest_gate = (threading.Event(), threading.Event())
+                cancel_gate = (threading.Event(), threading.Event())
+                close_gate = (threading.Event(), threading.Event())
+                reopened_gate = (threading.Event(), threading.Event())
+                app_close_gate = (threading.Event(), threading.Event())
+                gates.update({
+                    date(2026, 1, 1): first_gate,
+                    date(2026, 2, 1): coalesced_gate,
+                    date(2026, 3, 1): latest_gate,
+                    date(2026, 4, 1): cancel_gate,
+                    date(2026, 5, 1): close_gate,
+                    date(2026, 6, 1): reopened_gate,
+                    date(2026, 7, 1): app_close_gate,
+                })
+
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=controlled_query):
+                    set_dates(date(2026, 1, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertTrue(first_gate[0].wait(2))
+                    self.assertEqual(str(app.historical_event_refresh_button.cget("state")),
+                                     "normal")
+                    set_dates(date(2026, 2, 1))
+                    self.assertEqual(app._historical_query_result, old_result)
+                    self.assertEqual(app._historical_event_selected_key, old_key)
+                    self.assertIn("keep selected result", old_detail)
+                    click(app.historical_event_refresh_button)
+                    set_dates(date(2026, 3, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertEqual(app._historical_query_result, old_result)
+                    self.assertEqual(app._historical_event_selected_key, old_key)
+                    self.assertFalse(coalesced_gate[0].is_set())
+                    self.assertEqual(query_dates, [date(2026, 1, 1)])
+                    first_gate[1].set()
+                    self.assertTrue(latest_gate[0].wait(2))
+                    self.assertEqual(query_dates,
+                                     [date(2026, 1, 1), date(2026, 3, 1)])
+                    self.assertEqual(app.historical_start_var.get(), "2026-03-01")
+                    self.assertEqual(app._historical_query_result, old_result)
+                    self.assertIn(initial_range.start.isoformat(),
+                                  app.historical_query_status.cget("text"))
+                    latest_gate[1].set()
+                    self.wait_for_ui(
+                        root, lambda: app._historical_query_result is not old_result and
+                        app._historical_query_result.date_range.start == date(2026, 3, 1))
+                    latest_result = app._historical_query_result
+                    self.assertNotEqual(app._historical_query_status_key,
+                                        "app.settings.history.query_failed")
+
+                    set_dates(date(2026, 4, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertTrue(cancel_gate[0].wait(2))
+                    self.assertEqual(str(app.historical_event_cancel_button.cget("state")),
+                                     "normal")
+                    click(app.historical_event_cancel_button)
+                    self.assertIsNone(app._historical_query_generation)
+                    self.assertEqual(app._historical_query_status_key,
+                                     "app.settings.history.query_cancelled")
+                    self.assertIs(app._historical_query_result, latest_result)
+                    self.assertIn("2026-03-01",
+                                  app.historical_query_status.cget("text"))
+                    self.assertEqual(str(app.historical_event_cancel_button.cget("state")),
+                                     "disabled")
+                    cancel_gate[1].set()
+                    self.wait_for(lambda: date(2026, 4, 1) in query_dates)
+                    deadline = time.monotonic() + 0.1
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.005)
+                    self.assertIs(app._historical_query_result, latest_result)
+                    self.assertEqual(app._historical_query_status_key,
+                                     "app.settings.history.query_cancelled")
+
+                    set_dates(date(2026, 5, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertTrue(close_gate[0].wait(2))
+                    old_window = app.historical_event_window
+                    close_script = old_window.protocol("WM_DELETE_WINDOW")
+                    old_window.tk.call(close_script)
+                    root.update()
+                    self.assertIsNone(app.historical_event_window)
+                    self.assertTrue(entered[date(2026, 5, 1)].is_set())
+                    new_window_query_count = len(query_dates)
+
+                    app.open_historical_events()
+                    new_window = app.historical_event_window
+                    self.assertIsNot(new_window, old_window)
+                    self.assertIsNone(app._historical_query_result)
+                    self.assertEqual(len(query_dates), new_window_query_count)
+                    set_dates(date(2026, 6, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertEqual(len(query_dates), new_window_query_count)
+                    close_gate[1].set()
+                    self.assertTrue(reopened_gate[0].wait(2))
+                    reopened_gate[1].set()
+                    self.wait_for_ui(
+                        root, lambda: app._historical_query_result is not None and
+                        app._historical_query_result.date_range.start == date(2026, 6, 1))
+                    self.assertIs(app.historical_event_window, new_window)
+                    self.assertEqual(app._historical_query_status_key, "")
+                    self.assertEqual(query_dates.count(date(2026, 5, 1)), 1)
+                    self.assertEqual(query_dates.count(date(2026, 6, 1)), 1)
+                    set_dates(date(2026, 7, 1))
+                    click(app.historical_event_refresh_button)
+                    self.assertTrue(app_close_gate[0].wait(2))
+                    app.close()
+                    self.assertTrue(entered[date(2026, 7, 1)].is_set())
+                    deadline = time.monotonic() + 5
+                    while not app._ui_destroyed and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.005)
+                    self.assertTrue(app._ui_destroyed,
+                                    "App close waited for the obsolete history reader")
+                    self.assertEqual(app.rounds.close_status().status, "complete")
+                    app_close_gate[1].set()
+                    self.assertTrue(finished[date(2026, 7, 1)].wait(2))
+            finally:
+                for _entered, release in gates.values():
+                    release.set()
+                if not app._ui_destroyed:
+                    app._close_historical_event_window()
+                    app.rounds.request_close()
+                    self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                    self.wait_for(lambda: app.app_events.status().complete)
+                    app.hotkey.close()
+                    app.app_events.stop()
+                    root.destroy()
                 self.assertTrue(audit.flush())
 
     def test_file_dialog_buttons_use_current_language_and_cancel_without_changes(self):

@@ -1,5 +1,6 @@
 import tempfile
 import os
+import threading
 import time
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -8,6 +9,8 @@ from pathlib import Path
 from audit_records import AuditEvent, RoundAuditStore
 from app_event_store import AppEventStore
 from historical_event_query import (HistoricalEventDateError, HistoricalEventDateRange,
+                                    HistoricalEventQueryResult,
+                                    HistoricalEventQueryService,
                                     parse_historical_event_date_range,
                                     query_historical_events,
                                     recent_historical_event_date_range)
@@ -150,6 +153,66 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual(result.total_count, 0)
             self.assertEqual(result.source_issue_count, 1)
             self.assertEqual(result.diagnostics[0].source, "read_error")
+
+    def test_query_service_coalesces_pending_work_and_only_publishes_latest_result(self):
+        first_entered = threading.Event()
+        release_first = threading.Event()
+        latest_entered = threading.Event()
+        first_cancellation = []
+        calls = []
+        active_calls = 0
+        max_active_calls = 0
+        calls_lock = threading.Lock()
+
+        def controlled_query(_sessions, _app_events, date_range, cancellation_event=None):
+            nonlocal active_calls, max_active_calls
+            with calls_lock:
+                calls.append(date_range.start)
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            try:
+                if date_range.start == date(2026, 1, 1):
+                    first_cancellation.append(cancellation_event)
+                    first_entered.set()
+                    release_first.wait(2)
+                    raise RuntimeError("obsolete query failure")
+                latest_entered.set()
+                return HistoricalEventQueryResult(date_range, (), 0, 0, 0, ())
+            finally:
+                with calls_lock:
+                    active_calls -= 1
+
+        service = HistoricalEventQueryService(Path("/unused/sessions"), None,
+                                              query_function=controlled_query)
+        first_range = HistoricalEventDateRange(date(2026, 1, 1), date(2026, 1, 1))
+        middle_range = HistoricalEventDateRange(date(2026, 2, 1), date(2026, 2, 1))
+        latest_range = HistoricalEventDateRange(date(2026, 3, 1), date(2026, 3, 1))
+        try:
+            first_generation = service.submit(first_range)
+            self.assertTrue(first_entered.wait(1))
+            service.submit(middle_range)
+            latest_generation = service.submit(latest_range)
+
+            self.assertTrue(first_cancellation[0].is_set())
+            self.assertEqual(calls, [first_range.start])
+            release_first.set()
+            self.assertTrue(latest_entered.wait(1))
+
+            deadline = time.monotonic() + 1
+            completion = None
+            while completion is None and time.monotonic() < deadline:
+                completion = service.take_result(latest_generation)
+                time.sleep(0.005)
+
+            self.assertIsNotNone(completion)
+            self.assertTrue(completion.succeeded)
+            self.assertEqual(completion.date_range, latest_range)
+            self.assertEqual(calls, [first_range.start, latest_range.start])
+            self.assertEqual(max_active_calls, 1)
+            self.assertIsNone(service.take_result(first_generation))
+        finally:
+            release_first.set()
+            service.shutdown()
 
     def test_offset_and_local_wall_times_use_inclusive_local_calendar_dates(self):
         original_tz = os.environ.get("TZ")
