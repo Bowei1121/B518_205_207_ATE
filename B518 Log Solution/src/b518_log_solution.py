@@ -1186,7 +1186,8 @@ class B518LogSolutionApp:
                      self._t("main.archive_protected") if detail_status.save_state == "complete" else
                      self._t(save_state_message_id(detail_status.save_state)))
             reason = (self._retention_reason_detail(detail_status.reason_message)
-                      if detail_status.reason_message is not None else detail_status.message)
+                      if detail_status.reason_message is not None else
+                      self._retention_reason_detail(detail_status.message))
             if detail_status.save_state == "failed":
                 snapshot = self.rounds.round_snapshot(detail_status.round_id)
                 if (detail_status.reason_message is None and snapshot is not None and
