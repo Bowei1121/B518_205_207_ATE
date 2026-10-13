@@ -1751,12 +1751,22 @@ class LogSolutionUiTests(unittest.TestCase):
                                  "app.settings.retention.reason.deleted")
                 self.assertEqual(restored.message_reason["message_id"],
                                  "app.settings.retention.reason.cleanup.run_summary")
+                self.assertEqual(restored.app_events.reason_message["message_id"],
+                                 "app.settings.retention.reason.app_events_deleted")
+                self.assertEqual(restored.app_events.reason_message["parameters"][
+                    "deleted_count"], 1)
+                self.assertEqual(restored.app_events.reason_message["parameters"][
+                    "skipped_count"], restored.app_events.skipped_count)
                 app.rounds = fresh_reader
                 app._refresh_retention_cleanup_status()
                 self.assertIn("Trusted round records were completely deleted",
                               app.retention_cleanup_status.get())
+                self.assertIn(restored.app_events.reason_message["en"],
+                              app.retention_cleanup_status.get())
                 self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
                 self.assertIn("已完整刪除可信輪次資料。", app.retention_cleanup_status.get())
+                self.assertIn(restored.app_events.reason_message["zh-TW"],
+                              app.retention_cleanup_status.get())
                 self.assertEqual(ledger_path.read_bytes(), ledger_bytes)
                 app.rounds = previous_rounds
                 self.select_language_from_menu(app, root, ENGLISH)
@@ -1844,6 +1854,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._refresh_retention_cleanup_status()
                     self.assertIn("retention media unavailable",
                                   app.retention_cleanup_status.get())
+                    failed_reason = app.rounds.retention_cleanup_summaries()[-1].app_events.reason_message
+                    self.assertEqual(failed_reason["message_id"],
+                                     "app.settings.retention.reason.app_events_persistence_failed")
+                    self.assertIn("retention media unavailable", failed_reason["diagnostic"])
                     still_saved = read_app_event_store(app_event_path)["events"]
                     self.assertIn(expired_event.event_id,
                                   [item["event_id"] for item in still_saved])
@@ -1864,7 +1878,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(retained_event.event_id,
                               [item["event_id"] for item in
                                read_app_event_store(app_event_path)["events"]])
-                self.assertIn("not yet expired", app.retention_cleanup_status.get())
+                success_reason = app.rounds.retention_cleanup_summaries()[-1].app_events.reason_message
+                self.assertEqual(success_reason["message_id"],
+                                 "app.settings.retention.reason.app_events_deleted")
+                self.assertIn(success_reason["en"], app.retention_cleanup_status.get())
                 self.assertIn("retention media unavailable",
                               app.rounds.retention_cleanup_summaries()[0].app_events.reason)
 
@@ -1877,7 +1894,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app.retention_retry_button.cget("text"), "重試背景清理")
                 self.assertIn("App 事件：刪除 1", app.retention_cleanup_status.get())
-                self.assertIn("尚未到保存期限", app.retention_cleanup_status.get())
+                self.assertIn(success_reason["zh-TW"], app.retention_cleanup_status.get())
                 app.rounds.request_close()
                 pump_until(lambda: app.rounds.close_status().status == "complete")
             finally:

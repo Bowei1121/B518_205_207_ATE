@@ -248,14 +248,15 @@ class RoundRetentionStore:
             if self._app_event_store is not None:
                 if not self._cleanup_allowed():
                     app_events = RetentionAppEventResult(
-                        "skipped", skipped_count=1, reason="關閉保存期間暫停清理")
+                        "skipped", skipped_count=1, reason="關閉保存期間暫停清理",
+                        reason_message=_round_reason("close"))
                 else:
                     cutoff = normalize_archive_time(self._wall_clock()) - timedelta(days=retention_days)
                     outcome = self._app_event_store.cleanup_expired(
                         cutoff, self._app_event_root, before_replace=self._delete_if_expired)
                     app_events = RetentionAppEventResult(
                         outcome.status, outcome.deleted_count, outcome.skipped_count,
-                        outcome.failed_count, outcome.reason)
+                        outcome.failed_count, outcome.reason, outcome.reason_message)
         except Exception as error:
             diagnostic = str(error)
             results.append(RetentionRoundResult(

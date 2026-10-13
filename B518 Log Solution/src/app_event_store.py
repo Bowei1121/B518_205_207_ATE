@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Deque, Optional, Tuple
 
 from language_catalog import BilingualMessage, make_bilingual_message
+from cleanup_reasons import capture_cleanup_reason
 
 
 APP_EVENT_RECORD_VERSION = 1
@@ -124,6 +125,20 @@ class AppEventCleanupResult:
     skipped_count: int = 0
     failed_count: int = 0
     reason: str = ""
+    reason_message: Optional[dict] = None
+
+
+class _AppEventCleanupError(ValueError):
+    """Validation error with a stable reason chosen by its producer."""
+
+    def __init__(self, message_id: str, detail: str):
+        super().__init__(detail)
+        self.message_id = message_id
+
+
+def _cleanup_reason(suffix: str, parameters=None, diagnostic: str = "") -> dict:
+    return capture_cleanup_reason(
+        "app.settings.retention.reason." + suffix, parameters or {}, diagnostic)
 
 
 def _json_bytes(payload: object) -> bytes:
@@ -178,7 +193,7 @@ def _read_at(directory_fd: int, name: str) -> Tuple[bytes, os.stat_result]:
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
-            raise ValueError("App 事件目標不是一般檔案")
+            raise _AppEventCleanupError("app_events_not_regular", "App 事件目標不是一般檔案")
         chunks = []
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
@@ -222,7 +237,7 @@ def _atomic_replace_at(directory_fd: int, name: str, content: bytes,
             finally:
                 os.close(current_fd)
             if not stat.S_ISREG(current.st_mode) or not _same_file_entry(current, expected):
-                raise ValueError("App 事件紀錄在清理期間已變更")
+                raise _AppEventCleanupError("app_events_changed", "App 事件紀錄在清理期間已變更")
             _renameat(directory_fd, temporary_name, directory_fd, name)
             replaced = True
 
@@ -244,7 +259,8 @@ def read_app_event_store(path: Path) -> dict:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ValueError("App 事件紀錄無法讀取：{}".format(error))
+        raise _AppEventCleanupError(
+            "app_events_read_failed", "App 事件紀錄無法讀取：{}".format(error))
     return _validate_app_event_store_payload(payload)
 
 
@@ -254,20 +270,20 @@ def _validate_app_event_store_payload(payload: object) -> dict:
             payload["schema_version"] not in {APP_EVENT_STORE_VERSION,
                                                 APP_EVENT_STORE_RETENTION_VERSION} or
             not isinstance(payload.get("events"), list)):
-        raise ValueError("App 事件紀錄格式或版本不受支援")
+        raise _AppEventCleanupError("app_events_unknown_format", "App 事件紀錄格式或版本不受支援")
     store_version = payload["schema_version"]
     retired = payload.get("retired_sequences")
     next_sequence = payload.get("next_sequence")
     if store_version == APP_EVENT_STORE_VERSION:
         if "retired_sequences" in payload or "next_sequence" in payload:
-            raise ValueError("App 事件紀錄序號保留資訊需要新版格式")
+            raise _AppEventCleanupError("app_events_sequence_invalid", "App 事件紀錄序號保留資訊需要新版格式")
         retired = []
         next_sequence = len(payload["events"]) + 1
     elif "retired_sequences" not in payload or "next_sequence" not in payload:
-        raise ValueError("App 事件紀錄序號保留資訊不完整")
+        raise _AppEventCleanupError("app_events_sequence_missing", "App 事件紀錄序號保留資訊不完整")
     if (not isinstance(retired, list) or type(next_sequence) is not int or
             next_sequence < 1):
-        raise ValueError("App 事件紀錄序號保留資訊無效")
+        raise _AppEventCleanupError("app_events_sequence_invalid", "App 事件紀錄序號保留資訊無效")
     retired_ranges = []
     previous_end = 0
     for item in retired:
@@ -275,7 +291,7 @@ def _validate_app_event_store_payload(payload: object) -> dict:
                 type(item[0]) is not int or type(item[1]) is not int or
                 item[0] <= previous_end or item[1] < item[0] or
                 item[1] >= next_sequence):
-            raise ValueError("App 事件紀錄序號保留範圍無效")
+            raise _AppEventCleanupError("app_events_sequence_invalid", "App 事件紀錄序號保留範圍無效")
         retired_ranges.append((item[0], item[1]))
         previous_end = item[1]
     seen = set()
@@ -297,25 +313,25 @@ def _validate_app_event_store_payload(payload: object) -> dict:
                 not isinstance(event["localized_message"].get("en"), str) or
                 not isinstance(event["localized_message"].get("zh-TW"), str) or
                 not isinstance(event.get("diagnostic", ""), str)):
-            raise ValueError("App 事件紀錄內容不完整或序號不連續")
+            raise _AppEventCleanupError("app_events_invalid", "App 事件紀錄內容不完整或序號不連續")
         try:
             occurred_at = datetime.fromisoformat(event["occurred_at"])
         except ValueError:
-            raise ValueError("App 事件時間格式無效")
+            raise _AppEventCleanupError("app_events_time_invalid", "App 事件時間格式無效")
         if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
-            raise ValueError("App 事件時間缺少時區")
+            raise _AppEventCleanupError("app_events_time_missing", "App 事件時間缺少時區")
         seen.add(event["event_id"])
         live_sequences.add(event["sequence"])
         previous_sequence = event["sequence"]
     if store_version == APP_EVENT_STORE_VERSION and [
             item["sequence"] for item in payload["events"]] != list(range(1, next_sequence)):
-        raise ValueError("App 事件紀錄內容不完整或序號不連續")
+        raise _AppEventCleanupError("app_events_invalid", "App 事件紀錄內容不完整或序號不連續")
     retired_count = sum(end - start + 1 for start, end in retired_ranges)
     if len(live_sequences) + retired_count != next_sequence - 1:
-        raise ValueError("App 事件紀錄存在未解釋的序號缺口")
+        raise _AppEventCleanupError("app_events_sequence_gap", "App 事件紀錄存在未解釋的序號缺口")
     for start, end in retired_ranges:
         if any(start <= sequence <= end for sequence in live_sequences):
-            raise ValueError("App 事件紀錄已刪除序號仍有事件")
+            raise _AppEventCleanupError("app_events_sequence_invalid", "App 事件紀錄已刪除序號仍有事件")
     return payload
 
 
@@ -333,6 +349,7 @@ class AppEventStore:
         self._retired_sequences = []
         self._revision = 0
         self._error = ""
+        self._error_message_id = ""
         self._error_history = []
         self._worker_active = False
         self._stopped = False
@@ -345,6 +362,7 @@ class AppEventStore:
                 self._revision = len(self._events)
         except Exception as error:
             self._error = str(error)
+            self._error_message_id = getattr(error, "message_id", "app_events_read_failed")
             self._error_history.append(self._error)
 
     @staticmethod
@@ -407,19 +425,26 @@ class AppEventStore:
         corrupt input, pending writes, or journals outside the managed root.
         """
         if (cutoff.tzinfo is None or cutoff.utcoffset() is None):
+            reason = "期限時間缺少時區"
             return AppEventCleanupResult("skipped", skipped_count=1,
-                                          reason="期限時間缺少時區")
+                                          reason=reason,
+                                          reason_message=_cleanup_reason("app_events_timezone"))
+        pin_stage = "root"
         try:
             # Keep the caller's lexical root. Resolving first would follow an
             # already-present symlink in any ancestor and bless its target as
             # managed data. Pin every component from `/` with O_NOFOLLOW.
             root = _absolute_managed_path(managed_root)
             requested_path = _absolute_managed_path(self.path)
-            relative = requested_path.relative_to(root)
+            try:
+                relative = requested_path.relative_to(root)
+            except ValueError:
+                raise _AppEventCleanupError("app_events_outside", "App 事件檔不在管理根目錄")
             if not relative.parts or any(part in {".", ".."} for part in relative.parts):
-                raise ValueError("App 事件檔不在管理根目錄")
+                raise _AppEventCleanupError("app_events_outside", "App 事件檔不在管理根目錄")
             root_probe = _open_managed_directory(root, ())
             try:
+                pin_stage = "path"
                 parent_probe = _open_managed_directory(root, relative.parts[:-1])
                 try:
                     try:
@@ -429,7 +454,11 @@ class AppEventStore:
                         entry_fd = None
                     except OSError as error:
                         if error.errno in {errno.ELOOP, errno.EMLINK}:
-                            raise ValueError("App 事件清理拒絕符號連結")
+                            reason = "App 事件清理拒絕符號連結"
+                            return AppEventCleanupResult(
+                                "skipped", skipped_count=1, reason=reason,
+                                reason_message=capture_cleanup_reason(
+                                    "app.settings.retention.reason.app_events_symlink", {}))
                         raise
                     if entry_fd is not None:
                         os.close(entry_fd)
@@ -438,27 +467,56 @@ class AppEventStore:
             finally:
                 os.close(root_probe)
         except (OSError, ValueError) as error:
-            return AppEventCleanupResult("skipped", skipped_count=1, reason=str(error))
+            reason_id = getattr(error, "message_id", None)
+            if reason_id is None:
+                reason_id = ("app_events_symlink" if isinstance(error, OSError) and
+                             error.errno in {errno.ELOOP, errno.EMLINK} else
+                             "app_events_root_invalid" if pin_stage == "root" else
+                             "app_events_path_invalid")
+            return AppEventCleanupResult(
+                "skipped", skipped_count=1, reason=str(error),
+                reason_message=_cleanup_reason(reason_id, diagnostic=str(error)))
 
         with self._io_lock:
             with self._condition:
-                if self._pending or self._worker_active or self._error:
+                if self._pending or self._worker_active:
+                    reason = self._error or "App 事件保存待補存或狀態尚未確認完整"
+                    reason_id = (self._error_message_id or "app_events_pending")
+                    parameters = {"diagnostic": reason} if reason_id in {
+                        "app_events_read_failed", "app_events_persistence_failed"} else {}
                     return AppEventCleanupResult(
                         "skipped", skipped_count=1,
-                        reason="App 事件保存待補存或狀態尚未確認完整")
+                        reason=reason,
+                        reason_message=_cleanup_reason(reason_id, parameters, self._error))
+                if self._error:
+                    reason_id = self._error_message_id or "app_events_pending"
+                    parameters = {"diagnostic": self._error} if reason_id in {
+                        "app_events_read_failed", "app_events_persistence_failed"} else {}
+                    return AppEventCleanupResult(
+                        "skipped", skipped_count=1, reason=self._error,
+                        reason_message=_cleanup_reason(reason_id, parameters, self._error))
             root_fd = parent_fd = None
+            stage = "read"
             try:
                 root_fd = _open_managed_directory(root, ())
                 parent_fd = _open_managed_directory(root, relative.parts[:-1])
                 try:
                     original_bytes, original_stat = _read_at(parent_fd, relative.parts[-1])
                 except FileNotFoundError:
-                    return AppEventCleanupResult("complete")
+                    return AppEventCleanupResult(
+                        "complete", reason="沒有 App 事件需要清理",
+                        reason_message=_cleanup_reason("app_events_no_events"))
                 try:
                     payload = _validate_app_event_store_payload(
                         json.loads(original_bytes.decode("utf-8")))
                 except (UnicodeError, json.JSONDecodeError) as error:
-                    raise ValueError("App 事件紀錄無法讀取：{}".format(error))
+                    raise _AppEventCleanupError(
+                        "app_events_read_failed", "App 事件紀錄無法讀取：{}".format(error))
+                except _AppEventCleanupError:
+                    raise
+                except ValueError:
+                    raise
+                stage = "validate"
                 cutoff_utc = cutoff.astimezone(timezone.utc)
                 retained = []
                 expired_sequences = []
@@ -474,6 +532,7 @@ class AppEventStore:
                     # A previous replace may have committed the shortened journal
                     # before its directory fsync reported failure. Reconfirm the
                     # pinned directory entry before treating this retry as complete.
+                    stage = "durability"
                     os.fsync(parent_fd)
                     next_sequence = payload.get("next_sequence", max(
                         (item["sequence"] for item in payload["events"]), default=0) + 1)
@@ -485,9 +544,13 @@ class AppEventStore:
                         self._events = list(payload["events"])
                         self._retired_sequences = payload.get("retired_sequences", [])
                         self._next_sequence = next_sequence
+                    no_events = not retained
+                    reason_message = _cleanup_reason(
+                        "app_events_no_events" if no_events else "app_events_not_expired")
                     return AppEventCleanupResult(
                         "complete", skipped_count=len(retained),
-                        reason="尚未到保存期限" if retained else "")
+                        reason="沒有 App 事件需要清理" if no_events else "尚未到保存期限",
+                        reason_message=reason_message)
                 retired = list(payload.get("retired_sequences", []))
                 retired.extend([[sequence, sequence] for sequence in expired_sequences])
                 merged = []
@@ -499,6 +562,7 @@ class AppEventStore:
                 updated = self._payload(retained, payload.get("next_sequence", max(
                     (item["sequence"] for item in payload["events"]), default=0) + 1), merged)
                 content = _json_bytes(updated)
+                stage = "commit"
                 def commit_gate(commit):
                     def verify_then_commit():
                         current_root_fd = _open_managed_directory(root, ())
@@ -508,7 +572,9 @@ class AppEventStore:
                             if (not _same_directory(os.fstat(current_root_fd), os.fstat(root_fd)) or
                                     not _same_directory(os.fstat(current_parent_fd),
                                                         os.fstat(parent_fd))):
-                                raise ValueError("App 事件管理路徑在清理期間已變更")
+                                raise _AppEventCleanupError(
+                                    "app_events_path_changed",
+                                    "App 事件管理路徑在清理期間已變更")
                             commit()
                         finally:
                             if current_parent_fd is not None:
@@ -527,11 +593,26 @@ class AppEventStore:
                     self._retired_sequences = merged
                     self._revision += 1
                     self._error = ""
+                    self._error_message_id = ""
+                reason_message = capture_cleanup_reason(
+                    "app.settings.retention.reason.app_events_deleted",
+                    {"deleted_count": len(expired_sequences),
+                     "skipped_count": len(retained)})
                 return AppEventCleanupResult("complete", deleted_count=len(expired_sequences),
                                              skipped_count=len(retained),
-                                             reason="尚未到保存期限" if retained else "")
+                                             reason="已刪除到期 App 事件",
+                                             reason_message=reason_message)
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
-                return AppEventCleanupResult("failed", failed_count=1, reason=str(error))
+                reason_id = getattr(error, "message_id", None)
+                if reason_id is None:
+                    reason_id = ("app_events_persistence_failed" if stage in
+                                 {"durability", "commit"} else "app_events_read_failed")
+                diagnostic = str(error)
+                parameters = {"diagnostic": diagnostic} if reason_id in {
+                    "app_events_read_failed", "app_events_persistence_failed"} else {}
+                return AppEventCleanupResult(
+                    "failed", failed_count=1, reason=diagnostic,
+                    reason_message=_cleanup_reason(reason_id, parameters, diagnostic))
             finally:
                 if parent_fd is not None:
                     os.close(parent_fd)
@@ -557,6 +638,7 @@ class AppEventStore:
             if self._worker_active:
                 return False
             self._error = ""
+            self._error_message_id = ""
             self._ensure_worker_locked()
             self._condition.notify_all()
             return True
@@ -621,10 +703,12 @@ class AppEventStore:
                             if self._pending and self._pending[0].event_id == event.event_id:
                                 self._pending.popleft()
                             self._error = ""
+                            self._error_message_id = ""
                             self._condition.notify_all()
                 except Exception as error:
                     with self._condition:
                         self._error = str(error)
+                        self._error_message_id = "app_events_persistence_failed"
                         self._error_history.append(self._error)
                         self._worker_active = False
                         self._condition.notify_all()

@@ -180,12 +180,19 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(summary.app_events.deleted_count, 1)
             self.assertEqual(summary.app_events.status if hasattr(summary.app_events, "status")
                              else summary.app_events.outcome, "complete")
+            self.assertEqual(summary.app_events.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_deleted")
+            self.assertEqual(summary.app_events.reason_message["parameters"], {
+                "deleted_count": 1, "skipped_count": 1,
+            })
             fresh_reader = RoundCoordinator(
                 audit_root=root / "sessions", wall_clock=lambda: now[0],
                 retention_ledger_path=root / "round-retention-ledger.json")
             restored_summary = fresh_reader.retention_cleanup_summaries()[-1]
             self.assertEqual(restored_summary.app_events.deleted_count, 1)
             self.assertEqual(restored_summary.app_events.outcome, "complete")
+            self.assertEqual(restored_summary.app_events.reason_message,
+                             summary.app_events.reason_message)
             self.assertEqual(disk["events"][0]["localized_message"]["message_id"],
                              "app.profile.save_failed")
             self.assertNotIn("round_id", disk["events"][0])

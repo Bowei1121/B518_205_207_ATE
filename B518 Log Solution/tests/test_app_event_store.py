@@ -98,6 +98,9 @@ class AppEventStoreTests(unittest.TestCase):
                 self.now[0] + timedelta(days=30), Path(self.temp.name))
             self.assertEqual(protected.status, "skipped")
             self.assertEqual(protected.skipped_count, 1)
+            self.assertEqual(protected.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_persistence_failed")
+            self.assertIn("disk full", protected.reason_message["diagnostic"])
         self.assertEqual(self.store.status().pending_count, 2)
         self.assertTrue(self.store.retry())
         self.assertTrue(self.store.flush())
@@ -162,6 +165,15 @@ class AppEventStoreTests(unittest.TestCase):
         rebuilt = read_app_event_store(self.path)
         self.assertEqual(result.deleted_count, 1)
         self.assertEqual(result.skipped_count, 1)
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_deleted")
+        self.assertEqual(result.reason_message["parameters"], {
+            "deleted_count": 1, "skipped_count": 1,
+        })
+        self.assertEqual(result.reason_message["en"],
+                         "Expired App events deleted: 1; retained before deadline: 1.")
+        self.assertEqual(result.reason_message["zh-TW"],
+                         "已刪除到期 App 事件：1 筆；期限前保留：1 筆。")
         self.assertEqual([item["event_id"] for item in rebuilt["events"]], [retained.event_id])
         self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2])
         self.assertEqual(rebuilt["events"][0]["diagnostic"], "new failure")
@@ -174,6 +186,18 @@ class AppEventStoreTests(unittest.TestCase):
         self.assertEqual(next_event.sequence, 3)
         self.assertEqual([item["sequence"] for item in rebuilt["events"]], [2, 3])
 
+    def test_retention_with_no_journal_reports_a_bilingual_no_events_reason(self):
+        result = self.store.cleanup_expired(
+            self.now[0], Path(self.temp.name))
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_no_events")
+        self.assertEqual(result.reason_message["en"],
+                         "No App events were available for retention cleanup.")
+        self.assertEqual(result.reason_message["zh-TW"],
+                         "沒有可供保存清理的 App 事件。")
+
     def test_retention_keeps_corrupt_or_unknown_journal_bytes(self):
         self.store.record("app.hotkey.unavailable", {}, "diagnostic")
         self.assertTrue(self.store.flush())
@@ -185,7 +209,38 @@ class AppEventStoreTests(unittest.TestCase):
             self.now[0] + timedelta(days=30), Path(self.temp.name))
 
         self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_read_failed")
+        self.assertTrue(result.reason_message["diagnostic"])
         self.assertEqual(self.path.read_bytes(), corrupt)
+
+    def test_retention_unknown_journal_version_is_reported_without_rewriting_bytes(self):
+        self.store.record("app.hotkey.unavailable", {}, "diagnostic")
+        self.assertTrue(self.store.flush())
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        payload["schema_version"] = 99
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+        original = self.path.read_bytes()
+
+        result = self.store.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_unknown_format")
+        self.assertEqual(result.reason_message["diagnostic"],
+                         "App 事件紀錄格式或版本不受支援")
+        self.assertEqual(self.path.read_bytes(), original)
+
+        reopened = AppEventStore(self.path, clock=lambda: self.now[0])
+        self.addCleanup(reopened.stop)
+        protected = reopened.cleanup_expired(
+            self.now[0] + timedelta(days=30), Path(self.temp.name))
+        self.assertEqual(protected.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_unknown_format")
+        self.assertEqual(protected.reason_message["diagnostic"],
+                         "App 事件紀錄格式或版本不受支援")
+        self.assertEqual(self.path.read_bytes(), original)
 
     def test_retention_uses_absolute_instant_for_deadline_comparison(self):
         old = self.store.record("app.hotkey.unavailable", {}, "old")
@@ -208,6 +263,10 @@ class AppEventStoreTests(unittest.TestCase):
         before = self.store.cleanup_expired(
             event_time - timedelta(microseconds=1), Path(self.temp.name))
         self.assertEqual(before.deleted_count, 0)
+        self.assertEqual(before.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_not_expired")
+        self.assertEqual(before.reason_message["en"], "not yet expired")
+        self.assertEqual(before.reason_message["zh-TW"], "尚未到保存期限")
         self.assertEqual(len(read_app_event_store(self.path)["events"]), 1)
 
         at_deadline = self.store.cleanup_expired(event_time, Path(self.temp.name))
@@ -233,6 +292,10 @@ class AppEventStoreTests(unittest.TestCase):
                 self.now[0] + timedelta(days=30), Path(self.temp.name))
             self.assertEqual(first.status, "failed")
             self.assertEqual(first.deleted_count, 0)
+            self.assertEqual(first.reason_message["message_id"],
+                             "app.settings.retention.reason.app_events_persistence_failed")
+            self.assertIn("retention directory fsync unavailable",
+                          first.reason_message["diagnostic"])
             self.assertEqual(read_app_event_store(self.path)["events"], [])
 
             retried = self.store.cleanup_expired(
@@ -258,6 +321,8 @@ class AppEventStoreTests(unittest.TestCase):
             self.now[0] + timedelta(days=30), Path(self.temp.name))
 
         self.assertEqual(result.status, "skipped")
+        self.assertEqual(result.reason_message["message_id"],
+                         "app.settings.retention.reason.app_events_symlink")
         self.assertEqual(outside.read_bytes(), original)
         self.assertTrue(self.path.is_symlink())
 
