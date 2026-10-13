@@ -5644,7 +5644,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.language_menu.invoke(chinese_index)
                     root.update()
                     self.assertIn("關閉保存期間暫停清理", app.retention_cleanup_status.get())
-                    self.assertNotIn("Cleanup paused", app.retention_cleanup_status.get())
+                    visible_reason, raw_details = app.retention_cleanup_status.get().split("\n", 1)
+                    self.assertNotIn("Cleanup paused", visible_reason)
+                    self.assertIn('"en": "Cleanup paused while records are being saved for app close."',
+                                  raw_details)
                     release_write.set()
                     self.wait_for(lambda: app.rounds.app_event_status().complete)
                     self.wait_for(lambda: app.rounds.close_status().status == "complete")
