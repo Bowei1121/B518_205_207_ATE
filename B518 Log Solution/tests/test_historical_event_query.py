@@ -1,8 +1,10 @@
 import tempfile
 import os
+import sqlite3
 import threading
 import time
 import unittest
+import unittest.mock
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +17,7 @@ from historical_event_query import (HistoricalEventDateError, HistoricalEventDat
                                     parse_historical_event_date_range,
                                     query_historical_events,
                                     recent_historical_event_date_range)
+import historical_event_query
 
 
 class HistoricalEventQueryTests(unittest.TestCase):
@@ -119,6 +122,45 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertFalse(snapshot_path.exists())
             with self.assertRaisesRegex(RuntimeError, "snapshot is closed"):
                 result.get_page(1)
+
+    def test_closing_snapshot_during_page_open_never_recreates_temporary_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sessions = Path(temporary) / "sessions"
+            self._write_audit(sessions, ["2026-10-13T10:00:00+00:00"])
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            snapshot_path = result._store_path
+            connect_entered, continue_connect = threading.Event(), threading.Event()
+            original_connect = sqlite3.connect
+            connect_failure = []
+
+            def blocked_connect(*args, **kwargs):
+                connect_entered.set()
+                if not continue_connect.wait(2):
+                    raise RuntimeError("connect gate timed out")
+                return original_connect(*args, **kwargs)
+
+            def read_page():
+                try:
+                    result.get_page(1)
+                except BaseException as error:
+                    connect_failure.append(error)
+
+            with unittest.mock.patch.object(historical_event_query.sqlite3, "connect",
+                                            side_effect=blocked_connect):
+                worker = threading.Thread(target=read_page)
+                worker.start()
+                self.assertTrue(connect_entered.wait(2))
+                result.close()
+                self.assertFalse(snapshot_path.exists())
+                continue_connect.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(len(connect_failure), 1)
+            self.assertIsInstance(connect_failure[0], sqlite3.OperationalError)
+            self.assertFalse(snapshot_path.exists())
 
     def test_detail_service_coalesces_selection_and_discards_late_detail(self):
         from historical_event_query import HistoricalEventDetailService

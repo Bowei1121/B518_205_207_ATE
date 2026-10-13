@@ -183,7 +183,7 @@ class HistoricalEventQueryResult:
         if not self.page_count and page_number != 1:
             raise IndexError("an empty query only has its empty first page")
         offset = (page_number - 1) * self.page_size
-        connection = sqlite3.connect(str(self._store_path))
+        connection = self._connect_snapshot_readonly()
         try:
             rows = connection.execute(
                 "SELECT summary_json FROM matching_events "
@@ -204,7 +204,7 @@ class HistoricalEventQueryResult:
         if not isinstance(event_key, str) or not event_key:
             raise ValueError("event_key must be a non-empty string")
         self._ensure_open()
-        connection = sqlite3.connect(str(self._store_path))
+        connection = self._connect_snapshot_readonly()
         try:
             row = connection.execute(
                 "SELECT event_json FROM matching_events WHERE event_key = ?",
@@ -225,6 +225,11 @@ class HistoricalEventQueryResult:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("historical query snapshot is closed")
+
+    def _connect_snapshot_readonly(self) -> sqlite3.Connection:
+        """Never recreate a snapshot if close races this read's open."""
+        self._ensure_open()
+        return sqlite3.connect(self._store_path.as_uri() + "?mode=ro", uri=True)
 
     @property
     def is_limited(self) -> bool:
