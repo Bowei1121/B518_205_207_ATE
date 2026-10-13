@@ -33,3 +33,5 @@
 - App-event 清理現在於正式決策點捕捉 C1 結構化原因；保留原事件時間、全域期限、退休序號、pending／耐久性保護、管理根目錄、符號連結／路徑替換、原子替換與目錄 fsync。補上期限掃描後變更時的即時重新資格檢查，保存為 `skipped` 原因，不誤報刪除或失敗；清理政策及恢復協調未重寫。真 journal → 清理 → ledger → 全新 coordinator 有磁碟驗收；兩個 Tk 查閱案例曾於較早版本通過，最新版本的畫面驗收仍待重跑。
 - 最新版本 `4cb353f` 的 `tests.test_app_event_store tests.test_round_retention` 聚焦套件通過 55 項；Spec 複審揭露的「期限延長後合法 skipped 在全新讀取器中被改成 failed」已用真實暫存 journal、ledger 與 fresh coordinator 回歸測試修正。固定基準與候選刪除／保留、計數及序號對照一致。最終完整含 Tk 套件於 2026-10-13 12:00 首次、12:08 再次在 `tkinter.Tk()` 建窗階段因 macOS AppKit 原生異常中止，兩次 exit 134；非 Tk 測試先行，Tk 測試本體未開始。完整命令、堆疊及重驗紀錄見 [C3 驗收紀錄](evidence/retention-reason-ticket-03/local-validation.md)。歷史 397 項全套通過發生於最終耐久性修復前，不可代表目前交付版。C3 保持部分驗證，必要桌面全套／畫面驗收仍阻擋合併；無專案型別檢查設定。
 - C3 程式 SHA 為 `4cb353f`，固定基準雙軸複審及最終驗收紀錄已提交於 `0abbb63`。程式、驗收與 review 已分批推送至 `LanguageRefresh/ticket-07`；`0abbb63` 推送後直接查詢 GitHub 與 Gitea refs，結果記於最終交付回報。主線未合併，C3 專用 branch/worktree 保留；既存主線 summary 修改及 C1／其他 worktree 均不動。C4 與父規格第二項不宣稱完成。
+
+- C3 後續查明先前 Tk 建窗中止是沙盒 GUI 服務限制：同一最小 Tk 程式沙盒內 exit 134、沙盒外 exit 0。沙盒外完整套件在 `e4d2ba7` 跑完 403 項／126.985 秒，有一項實際失敗：成功清理仍保存 commit intent，全新讀取器把摘要原因呈現為 interrupted。目前阻擋已改為具體 C3 完成摘要／恢復標記契約缺口，須修正並保留 fsync 不確定保護後重驗；尚未合併或清理。
