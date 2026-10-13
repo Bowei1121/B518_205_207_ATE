@@ -6112,6 +6112,8 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
+                audit_bytes_before_query = audit.audit_path.read_bytes()
+                app_event_bytes_before_query = app_path.read_bytes()
                 app.open_historical_events()
                 initial_cancel_entered = threading.Event()
                 initial_cancel_release = threading.Event()
@@ -6146,6 +6148,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 set_dates(initial_range.start, initial_range.end)
                 click(app.historical_event_refresh_button)
                 self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                self.assertEqual(audit.audit_path.read_bytes(), audit_bytes_before_query)
+                self.assertEqual(app_path.read_bytes(), app_event_bytes_before_query)
                 old_result = app._historical_query_result
                 initial_range = old_result.date_range
                 saved_key = "round:query-lifecycle:1"
@@ -6260,6 +6264,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(app._historical_query_status_key, "")
                     self.assertEqual(query_dates.count(date(2026, 5, 1)), 1)
                     self.assertEqual(query_dates.count(date(2026, 6, 1)), 1)
+                    self.assertEqual(audit.audit_path.read_bytes(), audit_bytes_before_query)
+                    self.assertEqual(app_path.read_bytes(), app_event_bytes_before_query)
                     set_dates(date(2026, 7, 1))
                     click(app.historical_event_refresh_button)
                     self.assertTrue(app_close_gate[0].wait(2))
