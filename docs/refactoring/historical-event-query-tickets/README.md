@@ -2,7 +2,7 @@
 
 使用者已核可H1–H8的粒度與依賴。父規格為 [GitHub #37](https://github.com/Bowei1121/B518_205_207_ATE/issues/37)，父議題未修改或關閉。
 
-所有開發票標記 ready-for-agent，GitHub 使用原生 blocked-by 關係；只有阻擋票已完成的票才可開始。目前可先開始H1。
+所有開發票標記 ready-for-agent，GitHub 使用原生 blocked-by 關係；只有阻擋票已完成的票才可開始。H1 已完成，H2 正在依其已完成的前票基準交付；H3 尚可依 H1 開始。
 
 | 票 | GitHub | 本機文件 | 阻擋 |
 | --- | --- | --- | --- |
@@ -24,6 +24,10 @@ H1建立可展示的背景日期查詢及首批結果；H2與H3在此基礎各�
 ### H1 delivery status — 2026-10-13
 
 H1 的日期條件、背景首批查詢與真正 Tk 驗收已完成，固定基準 Standards／Spec 審查及合併後完整含 Tk 套件均通過。票分支已於兩個遠端直接核對後安全刪除；最終文件提交與同步資訊列於 [H1 local validation](../evidence/historical-event-query-ticket-01/local-validation.md) 及本次交付回報。本階段只有最新 100 筆首批結果；完整多頁查閱屬 H3、持久索引與正常增量讀取成本屬 H4。此狀態不代表 H2–H8 或父規格 #37 全部完成，也不代表工廠容量／現場驗收完成。
+
+### H2 delivery status — 2026-10-13
+
+H2 已完成查詢世代隔離、協作取消、最新待處理請求合併與歷史視窗關閉／重開收尾；在真正 Tk 慢讀下驗證重查、取消及 App 關閉仍可操作，完整驗收與 runtime 差異記於 [H2 local validation](../evidence/historical-event-query-ticket-02/local-validation.md)。H2 的完整套件在 Python 3.11.7／Tk 8.6 桌面執行通過；Python 3.8/Tk 的 Tcl abort 亦在固定基準重現，兩者分開記錄。H3–H8 與父規格 #37 尚未因此完成，完整分頁、持久索引及工廠驗收仍各依其票件範圍。
 
 ## 規格覆蓋
 
