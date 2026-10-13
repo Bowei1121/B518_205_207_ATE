@@ -5663,6 +5663,75 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_cleanup_status_shows_captured_reason_details_during_close(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            write_entered = threading.Event()
+            release_write = threading.Event()
+            atomic_replace = app_event_store._atomic_replace
+
+            def hold_event_write(path, content):
+                write_entered.set()
+                if not release_write.wait(5):
+                    raise OSError("test write gate timed out")
+                atomic_replace(path, content)
+
+            def click(widget):
+                x, y = widget.winfo_width() // 2, widget.winfo_height() // 2
+                widget.event_generate("<ButtonPress-1>", x=x, y=y)
+                widget.event_generate("<ButtonRelease-1>", x=x, y=y)
+                root.update()
+
+            try:
+                app.open_settings()
+                app.settings_notebook.select(2)
+                app.rounds.request_retention_cleanup(app.profile_store.retention_days,
+                                                     "c4-status-detail")
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status == "complete")
+                self.select_language_from_menu(app, root, ENGLISH)
+                with patch("app_event_store._atomic_replace", side_effect=hold_event_write):
+                    app.rounds.record_app_event("app.settings.event.retention.saved", {"days": 365})
+                    self.wait_for(write_entered.is_set)
+                    app.rounds.request_close()
+                    self.wait_for(lambda: app.rounds.close_status().status in {"saving", "waiting"})
+                    app.retention_days_var.set(str(app.profile_store.retention_days))
+                    click(app.retention_save_button)
+                    self.assertIn("Background cleanup was skipped:",
+                                  app.retention_cleanup_status.get())
+                    self.assertIn('"en": "Cleanup paused while records are being saved for app close."',
+                                  app.retention_cleanup_status.get())
+
+                    summaries_before_language_change = len(
+                        app.rounds.retention_cleanup_summaries())
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    self.assertIn("關閉保存期間暫停清理", app.retention_cleanup_status.get())
+                    self.assertIn('"zh-TW": "關閉保存期間暫停清理。"',
+                                  app.retention_cleanup_status.get())
+                    self.assertEqual(len(app.rounds.retention_cleanup_summaries()),
+                                     summaries_before_language_change)
+                    release_write.set()
+                    self.wait_for(lambda: app.rounds.app_event_status().complete)
+                    self.wait_for(lambda: app.rounds.close_status().status == "complete")
+            finally:
+                release_write.set()
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting(self):
         from audit_records import AuditEvent, RoundAuditStore
         from language_catalog import make_bilingual_message
