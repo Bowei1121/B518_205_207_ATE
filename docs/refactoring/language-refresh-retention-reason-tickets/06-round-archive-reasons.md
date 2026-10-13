@@ -8,14 +8,16 @@ Part of #28 — https://github.com/Bowei1121/B518_205_207_ATE/issues/28
 
 ## Acceptance criteria
 
-- [ ] 輪次清理成功、跳過、失敗、即時狀態與封存驗證相關原因皆接入集中原因契約，不以中文反向推導安全分類。
-- [ ] 新摘要同筆捕捉原因識別、參數、繁中／英文與診斷，保留既有結果、時間、run／round 身分與計數。
-- [ ] 可信封存時間、全域期限、受保護輪次、未知／損壞紀錄、最終刪除核准與來源／匯出／設定排除範圍保持。
-- [ ] 保留路徑／符號連結／完整性與持久刪除計畫安全性；reason 語意只影響說明，不改 outcome 或刪除資格。
-- [ ] 沿用摘要保存與故障恢復，不新設排程或保存機制；故障重試不遺失清理進度或偽報保存完成。
-- [ ] 真實封存與清理 → 新摘要保存 → 全新讀取器 → 既有畫面查閱驗證，原始診斷及兩語說明完整。
-- [ ] 同樣來源在改造前後刪除／保留結果相同；涵蓋期限變更、受保護輪次、封存無效、路徑替換與保存失敗。
-- [ ] 既有舊摘要不改寫、App 事件尚未遷移原因仍相容讀取；記錄本票必要測試與限制。
+- [x] 輪次清理成功、跳過、失敗、即時狀態與封存驗證相關原因皆接入集中原因契約，不以中文反向推導安全分類。
+- [x] 新摘要同筆捕捉原因識別、參數、繁中／英文與診斷，保留既有結果、時間、run／round 身分與計數。
+- [x] 可信封存時間、全域期限、受保護輪次、未知／損壞紀錄、最終刪除核准與來源／匯出／設定排除範圍保持。
+- [x] 保留路徑／符號連結／完整性與持久刪除計畫安全性；reason 語意只影響說明，不改 outcome 或刪除資格。
+- [x] 沿用摘要保存與故障恢復，不新設排程或保存機制；故障重試不遺失清理進度或偽報保存完成。
+- [x] 真實封存與清理 → 新摘要保存 → 全新讀取器 → 既有畫面查閱驗證，原始診斷及兩語說明完整。
+- [x] 同樣來源在改造前後刪除／保留結果相同；涵蓋期限變更、受保護輪次、封存無效、路徑替換與保存失敗。
+- [x] 既有舊摘要不改寫、App 事件尚未遷移原因仍相容讀取；記錄本票必要測試與限制。
+
+Implementation and validation evidence: [C2 local validation](../evidence/retention-reason-ticket-02/local-validation.md). These checks cover round and archive producers only; C3 still owns App-event producer migration and C4 owns complete screen migration and the parent-wide second-item acceptance.
 
 ## Blocked by
 
