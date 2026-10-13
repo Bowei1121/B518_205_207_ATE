@@ -328,7 +328,8 @@ class RoundRetentionStore:
             if row is None or row.get("status") != "running":
                 raise ValueError("App 事件清理執行摘要已不存在或不在進行中")
             row["app_event_commit_intent"] = intent
-            self._write_ledger(ledger)
+            if self._write_ledger(ledger) is False:
+                raise OSError("App 事件清理意圖的 ledger 目錄耐久同步失敗")
 
     def _reconcile_app_event_commit_intents(self) -> None:
         store = self._app_event_store
@@ -915,7 +916,7 @@ class RoundRetentionStore:
         except FileNotFoundError:
             return {"schema_version": LEDGER_SCHEMA_VERSION, "runs": [], "active_plans": {}}
 
-    def _write_ledger(self, payload: dict) -> None:
+    def _write_ledger(self, payload: dict) -> bool:
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=".round-retention-", dir=str(self.ledger_path.parent))
         try:
@@ -932,7 +933,8 @@ class RoundRetentionStore:
                 finally:
                     os.close(fd)
             except OSError:
-                pass
+                return False
+            return True
         except Exception:
             try:
                 os.unlink(temporary)
