@@ -45,3 +45,11 @@ H2 已完成查詢世代隔離、協作取消、最新待處理請求合併與�
 ## 合併與現場驗收界線
 
 必要開發／測試／桌面驗證是逐票合併條件。工廠實際資料量、硬碟與設備效能是後續部署驗收，不阻擋票件合併回 B518 Log Solution 工作樹。216萬筆合成事件是工程壓力規模，不等於實際產品件數或現場事件量。本次建立票件，不代表程式或驗收已完成。
+
+### H3 delivery status — 2026-10-13
+
+H3 extends H1's first page into a fixed query snapshot paged in batches of at most 100. The history window exposes pure left/right controls and page information. Compact summaries are retained for listing while original event payloads live in a temporary SQLite snapshot; pages are read by range, and full detail is loaded only for the selected event. Snapshot resources are released when replaced or when the app-owned query service shuts down. Real Tk navigation, mixed-source identity/order, fixed source boundary, selected-detail loading, source-byte preservation, memory observations, and cleanup are documented in [H3 local validation](../evidence/historical-event-query-ticket-03/local-validation.md). H4's persistent/restart-reusable index and cross-query incremental cost, H5–H8, full parent delivery, and factory acceptance are outside this delivery.
+
+### H3 delivery status — 2026-10-13
+
+H3 extends H1's first page into a fixed query snapshot paged in batches of at most 100. The history window exposes pure left/right controls and page information. Compact summaries are retained for listing while original event payloads live in a temporary SQLite snapshot; pages are read by range, and full detail is loaded only for the selected event. Snapshot resources are released when replaced or when the app-owned query service shuts down. Real Tk navigation, mixed-source identity/order, fixed source boundary, selected-detail loading, source-byte preservation, memory observations, and cleanup are documented in [H3 local validation](../evidence/historical-event-query-ticket-03/local-validation.md). H4's persistent/restart-reusable index and cross-query incremental cost, H5–H8, full parent delivery, and factory acceptance are outside this delivery.

@@ -88,3 +88,10 @@
 - Python 3.8.10／Tk 8.6 預設 interpreter 的完整套件曾以 exit 134／139 發生 `Tcl_AsyncDelete`／Tk 跨執行緒 abort。固定基準的隔離 worktree 也重現：一次完整 suite 通過 417 tests，另一次加 faulthandler 執行發生 exit 139，stack 指向既有 audit/event writer 與 conflict notice 的跨執行緒 Tk `event_generate`；這是固定基準既存 runtime 問題，不將其宣稱為通過。此票選用已解鎖桌面、可成功建窗的 Python 3.11.7／Tk 8.6 執行完整 suite，並保留 Python 3.8 差異作限制證據。
 - 固定基準 Standards／Spec 雙軸審查均無阻擋。完成 commit `496346fb93f0c5bc7164130188020ae3f0f836af` 將 H2 快轉合併至 `B518-Log-Solution`（無 merge commit）；合併後在主線以 Python 3.11.7／Tk 8.6.12 Aqua 桌面重跑完整含 Tk 套件，419 tests、130.840 秒、exit 0。2026-10-13 20:13:20 CST 推送後直接查詢 GitHub 與 Gitea，兩者主線及 H2 票分支皆為 `496346fb93f0c5bc7164130188020ae3f0f836af`，`main` 仍為 `5acfb2e206c917de7b9232d41f47e54a1c866917`；票分支清理及最後文件 SHA／同步結果以本次交付回報為準。H3 完整分頁、H4 持久索引、H5 異常恢復、H6 保存／清理競態、H7 完整圖示／鍵盤／雙語整合、H8 容量與舊流程收尾仍在各自範圍；沒有宣稱工廠驗收。
 - 固定基準雙軸審查均無阻擋：Spec 確認 H2 範圍與最後版測試證據吻合，並指出單一來源檔讀取中的 I/O 無法被強制中斷，取消會立即使請求失效，返回後丟棄結果；Standards 的唯一非阻擋建議是可考慮把 generation-keyed completion map 簡化成單一 completion slot。詳細審查與最終遠端狀態見 H2 驗收證據。
+
+## H3 完整分頁與按需詳細 — 2026-10-13
+
+- H3 固定審查基準 `d0a244b6b53a31e1fc9e57ceefcf9d9f1e959f79` 已包含 H1／H2 實際程式與可查證交付證據。H3 以 SQLite 暫存固定單次查詢集合；列表記憶體只保留精簡摘要，原始 event JSON／長診斷只在選取時從暫存取得。公開頁面入口以 100 筆範圍讀取，翻頁不重新掃描來源；查詢替換或 App 所有者銷毀時關閉並刪除暫存。
+- 真 Tk 頁面整合涵蓋 audit 與 App-event 混合資料，實際箭頭操作第一／中間／末頁與返回，驗證跨頁身分集合、原詳細按需載入、慢詳細讀取期間仍可操作，且來源 bytes 不變。受控 205 筆資料含每筆 45,500 字元詳細：來源 9,419,450 bytes、SQLite 暫存 28,590,080 bytes、查詢 tracemalloc 峰值 714,189 bytes，頁面為 100／100／5；此小型可重現觀測不是 H8 容量驗收。
+- Python 3.11.7／Aqua Tk-Tcl 8.6.12 桌面完整 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 428 tests／145.082 秒／exit 0；55 項聚焦來源／query 測試、四個 H1/H2/H3 整合 Tk 案例、`py_compile` 與 `git diff --check` 均通過。程式／測試 commit `f8efec9` 已推送至 Git 設定的 Gitea 與 GitHub 兩個目的地；最後固定基準 Standards／Spec review、文件提交、合併後主線重驗及清理結果待本票後續交付流程記錄。無專案既有型別檢查設定，不宣稱型別檢查通過。
+- H3 不交付 H4 持久索引／跨重啟重用／跨查詢增量成本保證，也不宣稱 H5–H8 或父規格完整交付。非實體滑鼠硬體操作證據採真正 Tk widget event 操作；未宣稱工廠或正式部署驗收。
