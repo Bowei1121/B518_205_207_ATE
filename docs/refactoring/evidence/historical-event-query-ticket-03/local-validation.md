@@ -55,3 +55,9 @@ git diff --check
 - H3 may perform the initial query's background source scan. It does not provide H4's durable index, reuse after restart, or guarantee that a later query avoids scanning unchanged sources. H5's full recovery surface, H6's cleanup/save race integration, H7's complete icon/keyboard/localization contract, and H8 capacity/full-spec closeout are not claimed.
 - Physical mouse hardware is not separately claimed: Tk event-driven widget input was used for the actual arrow controls. The app's real window and Tk lifecycle were exercised.
 - No external parent issue was modified. The first complete-suite attempt's temporary-cleanup error was investigated as above and did not recur in the isolated case, archival module, or final full run. Commit, merge, direct remote SHA checks, ticket branch cleanup, and final document SHA are added after those steps occur.
+
+## Mainline integration verification
+
+- The H3 branch was fast-forward merged into `B518-Log-Solution`: base `d0a244b6b53a31e1fc9e57ceefcf9d9f1e959f79` → merge result `75adc7623fc0b2313cbfc231766b5e4edb15b017`; no merge commit was created.
+- After switching to the merged mainline, the complete desktop Tk suite was run again with `PATH=/opt/anaconda3/bin:$PATH B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` from `B518 Log Solution/`, using `/opt/anaconda3/bin/python3` 3.11.7 and Aqua Tcl/Tk 8.6.12. Result: 429 tests passed in 143.660 seconds, exit 0.
+- Final code/test revision: `f17f62b` (`Prevent snapshot recreation during page reads`). Mainline integration result: `75adc7623fc0b2313cbfc231766b5e4edb15b017`. The post-merge run confirms the integrated code on the target branch; documentation-only finalization and direct push-destination checks are recorded in the final addendum below.
