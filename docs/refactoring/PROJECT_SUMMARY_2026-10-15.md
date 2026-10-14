@@ -15,12 +15,12 @@
 - 每組容量 fixture 均完成首次建索引、全新服務重用、單來源變更、索引降級及分頁五個成本情境，每情境三次相同 fixture。50k 各情境 query median 為 18.998 / 3.030 / 3.444 / 24.998 / 4.826 秒；216 萬為 1,424.041 / 485.302 / 476.969 / 1,217.475 / 323.313 秒。未變更重查與分頁均解析 0 個來源、reader bytes 為 0；單來源變更只解析 1 個並重用其餘 2,150 個。完整原檔摘要比對在首次／重用／變更／降級一致。OS cache 未控制，parser bytes 不是物理 I/O，tracemalloc 不含所有 native allocations；沒有另訂規格以外的時間或 RAM 門檻。所有單次原始數據、RSS、索引／固定快照尺寸、分頁和清理在 [capacity reports](evidence/historical-event-query-ticket-08/) 保存。
 - 真正 Aqua Tk 使用 50k 與 216 萬真實暫存 audit、legacy、App 來源及實際 `B518LogSolutionApp`。216 萬驗收確認 App 產生 16,200 頁，每頁最多 100 筆，App 結果 API 的第一／中間／末頁身分 SHA 都與獨立原檔基準一致；實際 Tk 箭頭顯示第 1／2 頁並返回第 1 頁，選取詳細可見。受控慢讀期間日期草稿可編輯；5 ms 心跳最大間隔 122.105 ms。來源/App journal hashes 不變，App store 與關閉狀態 complete，Tk 已銷毀。未宣稱實體滑鼠／鍵盤設備或工廠回應時間驗證。
 - 系統預設 Python `/Library/Frameworks/Python.framework/Versions/3.8/bin/python3` 是 CPython 3.8.10 x86_64；Tk 8.6.8、Tcl 8.6.8、Aqua 桌面。最後 H8 程式／測試版本 `e076ff68005d52ec2e618c15b347506636862721` 的完整命令 `B518_TK_TESTS=1 B518_H8_CAPACITY_ROOT=/private/tmp/h8-capacity-2160000-fixture PYTHONPATH=src python3 -X faulthandler scripts/run_tests.py` 從 Python 目錄執行，**467 tests / 1,172.542 sec / exit 0 / no skips**。初次完整套件在既有模態提示 Escape 案例等待；受控 red 證明視窗 remap 後 grab 還在但 focus 為 None，修正後兩個 focused 案及完整套件均通過。初次 SIGTERM/143 及堆疊樣本也保留，未當成功證據。Repo 未配置型別檢查器。
-- H8 的 Standards/Spec 已初審。Spec 先前要求 45 列矩陣更直接連結行為、Tk、容量命令/runtime/result/limit；現已有 evidence ID catalog 逐列解析。Standards 提出分頁 hash 被標成完整集合及 App 只有第一頁可見兩個阻擋；已改稱頁面錨點 hash，並擴充上述 App 頁面與真正箭頭測試，focused 50k/2160k 與 final suite 已通過。固定基準 Standards/Spec 複審均已完成且無未解阻擋；H8 ticket 前六項已依證據勾選，最後合併項待主線重驗證及同步後勾選。
+- H8 的固定基準 Standards／Spec 複審均無未解阻擋。Spec 要求 45 列矩陣直接連結行為、Tk、容量命令/runtime/result/limit；現由 evidence ID catalog 逐列解析。Standards 提出的頁面 hash 標示及 App 首／中／末頁驗證缺口已修正，focused 50k／2160k 與最後 467-test suite 通過。
 - H8 尚未宣稱工廠資料量、設備效能、部署或父規格 #37 全面完成。每日運轉時數、事件/產品比例、三個月存量、來源大小、現場硬體與操作回應列為工廠 follow-up，不是 H8 開發合併阻擋。
 
-## Git 同步及剩餘步驟
+## Git 同步及收尾
 
-- Git root 共用 metadata 的遠端：`origin` 指向 Gitea `10.64.76.34:3000/8362/B518-205_207_ATE.git`，並額外 push 到 GitHub `Bowei1121/B518_205_207_ATE.git`；另有 `github` fetch/push remote。程式批次推送訊息成功，且直接 `ls-remote` 查詢於 H8 過程確認兩端 mainline 為固定基準、票分支為當前 H8 程式／測試提交；最後文件提交後需再次直接查詢全部 push 目的地。
-- 待完成順序：在票分支提交並推送驗收文件；再次直接查所有目的地；確認 `B518-Log-Solution` 乾淨且納入遠端後 fast-forward；在主線跑必要完整 Tk 套件；兩端同步確認後正常刪除本票分支，回到 `B518-Log-Solution`。尚未完成前不刪 H8 分支、不移除其他 worktree/stash。
+- Git root 共用 metadata 的遠端：`origin` 指向 Gitea `10.64.76.34:3000/8362/B518-205_207_ATE.git`，並額外 push 到 GitHub `Bowei1121/B518_205_207_ATE.git`；另有 `github` fetch/push remote。主線程式提交 `bd94a22a7d654d70c4a64ce2212b3bcdf83fa518` 以 fast-forward 同步兩端，H8 分支保留至最終文件提交及直接核對後才正常清理。最終目的地 SHA 與查詢時間記於 H8 local validation。
+- H8 已 fast-forward 合併至主線，主線合併後完整含 Tk 套件 467 tests / 1,092.897 seconds / exit 0 / no skips。接下來完成最終驗收文件提交、推送與兩遠端直接查詢，再正常刪除 H8 本地／遠端票分支；其他 worktree、stash 及既存修改維持原狀，細節見 H8 local validation。
 
 交付詳情：[H8 local validation](evidence/historical-event-query-ticket-08/local-validation.md)。H8 不改保存／清理／監控／裁決政策、不操作正式來源資料，不宣稱現場驗收完成。
