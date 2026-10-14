@@ -1,0 +1,32 @@
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests) ... destroyed interpreters retained before worker GC: 1
+[DEBUG-h6-gc] root owner: cell
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: method
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: frame
+[DEBUG-h6-gc] root owner: dict
+[DEBUG-h6-gc] root owner: frame
+[DEBUG-h6-gc] retained traceback: _apply_conflict_window_language /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1847
+[DEBUG-h6-gc] retained traceback: _refresh_conflict_review /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1754
+[DEBUG-h6-gc] retained traceback: <lambda> /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1725
+[DEBUG-h6-gc] retained traceback: _apply_conflict_window_language /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1847
+[DEBUG-h6-gc] retained traceback: _refresh_conflict_review /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1754
+[DEBUG-h6-gc] retained traceback: <lambda> /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/src/b518_log_solution.py 1725
+Tcl_AsyncDelete: async handler deleted by the wrong thread
+Fatal Python error: Aborted
+
+Current thread 0x0000700003a3b000 (most recent call first):
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 870 in run
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 932 in _bootstrap_inner
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 890 in _bootstrap
+
+Thread 0x00007ff853487180 (most recent call first):
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 1027 in _wait_for_tstate_lock
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 1015 in join
+  File "/private/tmp/h6-m10-gc-probe.py", line 35 in <module>

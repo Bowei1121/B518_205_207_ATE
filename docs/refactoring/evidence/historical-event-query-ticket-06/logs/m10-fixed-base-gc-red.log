@@ -1,0 +1,13 @@
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests) ... destroyed interpreters retained before worker GC: 1
+Tcl_AsyncDelete: async handler deleted by the wrong thread
+Fatal Python error: Aborted
+
+Current thread 0x000070000dea7000 (most recent call first):
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 870 in run
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 932 in _bootstrap_inner
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 890 in _bootstrap
+
+Thread 0x00007ff853487180 (most recent call first):
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 1027 in _wait_for_tstate_lock
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/threading.py", line 1015 in join
+  File "/private/tmp/h6-m10-gc-repro.py", line 20 in <module>

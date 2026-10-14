@@ -1,0 +1,13 @@
+test_language_refresh_preserves_event_log_reading_position (test_m10_integration.M10SourceIntegrationTests) ... ok
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests) ... ok
+test_session_directory_failure_is_visible_and_persisted (test_m10_integration.M10SourceIntegrationTests) ... ok
+test_visible_language_write_error_refresh_keeps_original_preferences (test_m10_integration.M10SourceIntegrationTests) ... ok
+test_visible_source_failure_notice_and_fixed_bilingual_audit (test_m10_integration.M10SourceIntegrationTests) ... ok
+test_visible_start_validation_notice_refreshes_without_accepting_a_round (test_m10_integration.M10SourceIntegrationTests) ... destroyed interpreters retained before worker GC: 0
+ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 8.093s
+
+OK
+worker GC released all destroyed interpreters safely: OK
