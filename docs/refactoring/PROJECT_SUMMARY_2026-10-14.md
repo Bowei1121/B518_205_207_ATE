@@ -17,7 +17,7 @@
 - 正確 Python 目錄、桌面 runtime `/opt/anaconda3/bin/python3` Python 3.11.7／Aqua Tk 8.6.12 執行 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 439 tests／168.128 秒／exit 0，無 Tk skip。預設 Python 3.8.10/Tk 8.6 的桌面完整套件出現 `Tcl_AsyncDelete` exit 134，固定 review base 的隔離 worktree 同樣重現；因此不宣稱 Python 3.8 suite 通過，日誌與環境限制均保留。repo 沒有型別檢查設定，不宣稱 typecheck。
 - 固定基準雙軸 review 均通過，沒有阻擋：Standards 未找到 documented-standard／ADR 違規；Spec 確認 H4 分配有覆蓋。非阻擋建議為版本 tuple 重複可考慮集中，以及 bytes 觀測是 reader 交付 parser 的 UTF-8 bytes、非 OS 級物理磁碟 I/O；詳細限制與完整審查摘要已寫入 H4 驗收證據。磁碟保存 event JSON 是為固定 H3 詳細資料快照，列表記憶體仍為精簡摘要，選取才讀詳細。
 - 合併前直接查兩遠端後，乾淨本機 `B518-Log-Solution` 於 `e13f54d539797147d0b66840e1aa26e94c34d9b8` fast-forward（無 merge commit）。兩次 post-merge Python 3.11.7 全套均在首次歷史 UI 類別 Tk 建窗時以 AppKit `NSMenuItem`／`Tk_CreateConsoleWindow` uncaught `NSException` exit 134 中止；完整 runtime／stack log 已保存。固定基準同 runtime 全套則完成 429 tests，但有一項 H3 測試的固定日期資料 `StopIteration`；基準同組 86 tests 含 Tk 通過。H4 版本全套在 merge 前曾通過 439 tests，H4 對應 query+Tk 組合後 Tk setup 仍中止；該 runtime 互動原因未釐清。故本機已整合，但主線未推送、未清理 ticket branch/worktree；不宣稱 post-merge 驗收完成。詳見 H4 local validation。
-- 已更新 H4 ticket、票總覽與父規格 H4 coverage；新增本日摘要、成本 benchmark 及測試日誌。文件尚有本次失敗證據待提交推送；全部 push destination 最後 SHA、分支／本票 worktree cleanup 未完成，受 post-merge Tk 阻擋。
+- 已更新 H4 ticket、票總覽與父規格 H4 coverage；新增本日摘要、成本 benchmark 及測試日誌。失敗證據 commit `8045c02` 已推送 H4 票分支，2026-10-14 09:17:53 CST 直接查詢 Gitea/GitHub 兩端皆為 H4 `8045c02`、主線仍為 `bbcfc1b`。本機主線目前 fast-forward `e13f54d`，post-merge Tk suite 未通過，故不推送主線，不刪除票分支或 worktree；遠端同步、分支清理仍受阻。
 
 ## 範圍界線與下一步
 
