@@ -1,0 +1,145 @@
+Command: /opt/anaconda3/bin/python3 -X faulthandler -c 'import sys, platform, tkinter; print(sys.executable, sys.version, platform.machine(), flush=True); r=tkinter.Tk(); print(r.tk.call("info", "patchlevel"), r.tk.call("tk", "windowingsystem"), flush=True); r.update(); r.destroy(); print("TK_ROOT_OK", flush=True)'
+No project modules are imported.
+Attempt 1, process returncode=-6
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+2026-10-14 09:37:02.133 python3[90339:15219073] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-14 09:37:02.133 python3[90339:15219072] Error received in message reply handler: Connection invalid
+2026-10-14 09:37:02.161 python3[90339:15219072] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+*** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Invalid parameter not satisfying: aString != nil'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x00007ff811be4e6a __exceptionPreprocess + 242
+	1   libobjc.A.dylib                     0x00007ff8116af24b objc_exception_throw + 62
+	2   Foundation                          0x00007ff812d7a87a -[NSCalendarDate initWithCoder:] + 0
+	3   AppKit                              0x00007ff8155cc7a5 -[NSMenuItem initWithTitle:action:keyEquivalent:] + 385
+	4   libtk8.6.dylib                      0x00000001018456e7 +[NSMenuItem(TKUtils) itemWithSubmenu:] + 71
+	5   libtk8.6.dylib                      0x0000000101841431 -[TKApplication(TKMenu) tkSetMainMenu:] + 257
+	6   libtk8.6.dylib                      0x0000000101842b7b TkpSetMainMenubar + 171
+	7   libtk8.6.dylib                      0x00000001017a21f6 TkSetWindowMenuBar + 1254
+	8   libtk8.6.dylib                      0x000000010179a392 ConfigureFrame + 290
+	9   libtk8.6.dylib                      0x0000000101799ed5 FrameWidgetObjCmd + 597
+	10  libtcl8.6.dylib                     0x00000001018f7c02 Tcl_EvalObjv + 354
+	11  libtcl8.6.dylib                     0x00000001018f953d TclEvalEx + 2989
+	12  libtcl8.6.dylib                     0x00000001018f898a Tcl_EvalEx + 26
+	13  libtk8.6.dylib                      0x000000010176a81a Tk_CreateConsoleWindow + 810
+	14  libtk8.6.dylib                      0x000000010183dc89 TkpInit + 617
+	15  libtk8.6.dylib                      0x00000001017917d0 Initialize + 2656
+	16  _tkinter.cpython-311-darwin.so      0x00000001015c070b Tcl_AppInit + 91
+	17  _tkinter.cpython-311-darwin.so      0x00000001015c03f9 Tkapp_New + 585
+	18  _tkinter.cpython-311-darwin.so      0x00000001015c019e _tkinter_create_impl + 222
+	19  _tkinter.cpython-311-darwin.so      0x00000001015bfda6 _tkinter_create + 182
+	20  python3.11                          0x0000000100d578c5 cfunction_vectorcall_FASTCALL + 101
+	21  python3.11                          0x0000000100e4ad1f _PyEval_EvalFrameDefault + 237855
+	22  python3.11                          0x0000000100cf1419 _PyFunction_Vectorcall + 505
+	23  python3.11                          0x0000000100d86118 slot_tp_init + 312
+	24  python3.11                          0x0000000100d7afea type_call + 122
+	25  python3.11                          0x0000000100e4b0ce _PyEval_EvalFrameDefault + 238798
+	26  python3.11                          0x0000000100e0e601 _PyEval_Vector + 497
+	27  python3.11                          0x0000000100ebc5e8 run_mod + 296
+	28  python3.11                          0x0000000100ebe749 PyRun_SimpleStringFlags + 153
+	29  python3.11                          0x0000000100edf6a1 Py_RunMain + 465
+	30  python3.11                          0x0000000100c7e478 main + 56
+	31  dyld                                0x00007ff8116e7530 start + 3056
+)
+libc++abi: terminating due to uncaught exception of type NSException
+Fatal Python error: Aborted
+
+Current thread 0x00007ff853487180 (most recent call first):
+  File "/opt/anaconda3/lib/python3.11/tkinter/__init__.py", line 2326 in __init__
+  File "<string>", line 1 in <module>
+
+Attempt 2, process returncode=-6
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+2026-10-14 09:37:03.143 python3[90340:15219111] Error received in message reply handler: Connection invalid
+2026-10-14 09:37:03.143 python3[90340:15219117] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-14 09:37:03.173 python3[90340:15219111] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+*** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Invalid parameter not satisfying: aString != nil'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x00007ff811be4e6a __exceptionPreprocess + 242
+	1   libobjc.A.dylib                     0x00007ff8116af24b objc_exception_throw + 62
+	2   Foundation                          0x00007ff812d7a87a -[NSCalendarDate initWithCoder:] + 0
+	3   AppKit                              0x00007ff8155cc7a5 -[NSMenuItem initWithTitle:action:keyEquivalent:] + 385
+	4   libtk8.6.dylib                      0x000000010eb0f6e7 +[NSMenuItem(TKUtils) itemWithSubmenu:] + 71
+	5   libtk8.6.dylib                      0x000000010eb0b431 -[TKApplication(TKMenu) tkSetMainMenu:] + 257
+	6   libtk8.6.dylib                      0x000000010eb0cb7b TkpSetMainMenubar + 171
+	7   libtk8.6.dylib                      0x000000010ea6c1f6 TkSetWindowMenuBar + 1254
+	8   libtk8.6.dylib                      0x000000010ea64392 ConfigureFrame + 290
+	9   libtk8.6.dylib                      0x000000010ea63ed5 FrameWidgetObjCmd + 597
+	10  libtcl8.6.dylib                     0x000000010ebc1c02 Tcl_EvalObjv + 354
+	11  libtcl8.6.dylib                     0x000000010ebc353d TclEvalEx + 2989
+	12  libtcl8.6.dylib                     0x000000010ebc298a Tcl_EvalEx + 26
+	13  libtk8.6.dylib                      0x000000010ea3481a Tk_CreateConsoleWindow + 810
+	14  libtk8.6.dylib                      0x000000010eb07c89 TkpInit + 617
+	15  libtk8.6.dylib                      0x000000010ea5b7d0 Initialize + 2656
+	16  _tkinter.cpython-311-darwin.so      0x000000010e88a70b Tcl_AppInit + 91
+	17  _tkinter.cpython-311-darwin.so      0x000000010e88a3f9 Tkapp_New + 585
+	18  _tkinter.cpython-311-darwin.so      0x000000010e88a19e _tkinter_create_impl + 222
+	19  _tkinter.cpython-311-darwin.so      0x000000010e889da6 _tkinter_create + 182
+	20  python3.11                          0x000000010e0218c5 cfunction_vectorcall_FASTCALL + 101
+	21  python3.11                          0x000000010e114d1f _PyEval_EvalFrameDefault + 237855
+	22  python3.11                          0x000000010dfbb419 _PyFunction_Vectorcall + 505
+	23  python3.11                          0x000000010e050118 slot_tp_init + 312
+	24  python3.11                          0x000000010e044fea type_call + 122
+	25  python3.11                          0x000000010e1150ce _PyEval_EvalFrameDefault + 238798
+	26  python3.11                          0x000000010e0d8601 _PyEval_Vector + 497
+	27  python3.11                          0x000000010e1865e8 run_mod + 296
+	28  python3.11                          0x000000010e188749 PyRun_SimpleStringFlags + 153
+	29  python3.11                          0x000000010e1a96a1 Py_RunMain + 465
+	30  python3.11                          0x000000010df48478 main + 56
+	31  dyld                                0x00007ff8116e7530 start + 3056
+)
+libc++abi: terminating due to uncaught exception of type NSException
+Fatal Python error: Aborted
+
+Current thread 0x00007ff853487180 (most recent call first):
+  File "/opt/anaconda3/lib/python3.11/tkinter/__init__.py", line 2326 in __init__
+  File "<string>", line 1 in <module>
+
+Attempt 3, process returncode=-6
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+2026-10-14 09:37:04.095 python3[90345:15219145] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-14 09:37:04.095 python3[90345:15219143] Error received in message reply handler: Connection invalid
+2026-10-14 09:37:04.123 python3[90345:15219143] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+*** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Invalid parameter not satisfying: aString != nil'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x00007ff811be4e6a __exceptionPreprocess + 242
+	1   libobjc.A.dylib                     0x00007ff8116af24b objc_exception_throw + 62
+	2   Foundation                          0x00007ff812d7a87a -[NSCalendarDate initWithCoder:] + 0
+	3   AppKit                              0x00007ff8155cc7a5 -[NSMenuItem initWithTitle:action:keyEquivalent:] + 385
+	4   libtk8.6.dylib                      0x0000000106a9d6e7 +[NSMenuItem(TKUtils) itemWithSubmenu:] + 71
+	5   libtk8.6.dylib                      0x0000000106a99431 -[TKApplication(TKMenu) tkSetMainMenu:] + 257
+	6   libtk8.6.dylib                      0x0000000106a9ab7b TkpSetMainMenubar + 171
+	7   libtk8.6.dylib                      0x00000001069fa1f6 TkSetWindowMenuBar + 1254
+	8   libtk8.6.dylib                      0x00000001069f2392 ConfigureFrame + 290
+	9   libtk8.6.dylib                      0x00000001069f1ed5 FrameWidgetObjCmd + 597
+	10  libtcl8.6.dylib                     0x0000000106b4fc02 Tcl_EvalObjv + 354
+	11  libtcl8.6.dylib                     0x0000000106b5153d TclEvalEx + 2989
+	12  libtcl8.6.dylib                     0x0000000106b5098a Tcl_EvalEx + 26
+	13  libtk8.6.dylib                      0x00000001069c281a Tk_CreateConsoleWindow + 810
+	14  libtk8.6.dylib                      0x0000000106a95c89 TkpInit + 617
+	15  libtk8.6.dylib                      0x00000001069e97d0 Initialize + 2656
+	16  _tkinter.cpython-311-darwin.so      0x000000010681870b Tcl_AppInit + 91
+	17  _tkinter.cpython-311-darwin.so      0x00000001068183f9 Tkapp_New + 585
+	18  _tkinter.cpython-311-darwin.so      0x000000010681819e _tkinter_create_impl + 222
+	19  _tkinter.cpython-311-darwin.so      0x0000000106817da6 _tkinter_create + 182
+	20  python3.11                          0x0000000105faf8c5 cfunction_vectorcall_FASTCALL + 101
+	21  python3.11                          0x00000001060a2d1f _PyEval_EvalFrameDefault + 237855
+	22  python3.11                          0x0000000105f49419 _PyFunction_Vectorcall + 505
+	23  python3.11                          0x0000000105fde118 slot_tp_init + 312
+	24  python3.11                          0x0000000105fd2fea type_call + 122
+	25  python3.11                          0x00000001060a30ce _PyEval_EvalFrameDefault + 238798
+	26  python3.11                          0x0000000106066601 _PyEval_Vector + 497
+	27  python3.11                          0x00000001061145e8 run_mod + 296
+	28  python3.11                          0x0000000106116749 PyRun_SimpleStringFlags + 153
+	29  python3.11                          0x00000001061376a1 Py_RunMain + 465
+	30  python3.11                          0x0000000105ed6478 main + 56
+	31  dyld                                0x00007ff8116e7530 start + 3056
+)
+libc++abi: terminating due to uncaught exception of type NSException
+Fatal Python error: Aborted
+
+Current thread 0x00007ff853487180 (most recent call first):
+  File "/opt/anaconda3/lib/python3.11/tkinter/__init__.py", line 2326 in __init__
+  File "<string>", line 1 in <module>

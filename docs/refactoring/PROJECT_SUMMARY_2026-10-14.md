@@ -24,3 +24,12 @@
 H4 不包含 H5 完整錯誤提示／降級／恢復介面、H6 完整固定結果與正式保存／清理競態整合、H7 完整 icon／提示／鍵盤／即時雙語、H8 5 萬及 216 萬筆容量／全規格收尾。未改監控、裁決、警報確認、產品放行、保存格式、期限、封存、清理、KVM、journal 技術、語言偏好或原始診斷；未宣稱父規格、工廠驗收或正式部署完成。
 
 後續先調查可重現的 post-merge Aqua Tk 啟動 abort，必要時在真正桌面 session 修復／重驗；不得以單次成功掩蓋失敗。完整主線 suite 通過後，才提交／推送失敗與最終驗收文件、直接查詢所有遠端、推送主線，再確認 SHA 一致後刪除本票分支與專用 worktree並留在主線。不得觸碰其他票分支、stash、worktree 或前置修改。
+
+## H4 驗收續跑及停止要求 — 2026-10-14
+
+- H5 開始前只讀查核確認 H2 已在主線祖先並有完整驗收／雙軸審查；H4 的本機整合後全套仍中止且主線未同步，依使用者的直接依賴閘門未開始 H5，也未建立 H5 分支。隨後使用者明確要求「完成 H4 的驗收，完成驗收後停止」，本次接續只完成 H4 驗收和證據同步。
+- 相同 `/opt/anaconda3/bin/python3` 最小 Tk 命令不載入任何專案模組，沙盒直接執行重現相同 `NSMenuItem`／`aString != nil`／`Tk_CreateConsoleWindow` 與 hiservices XPC 異常、exit 134。再做各三次對照：沙盒子程序均 SIGABRT（returncode -6），授權桌面環境均 returncode 0／`TK_ROOT_OK`。故前述建窗阻擋現已分類為沙盒 GUI 服務限制；無需修改 H4 產品或弱化測試。
+- 在乾淨本機 `B518-Log-Solution` `e13f54d539797147d0b66840e1aa26e94c34d9b8`，由正確 Python 子目錄，以桌面 runtime Python 3.11.7 x86_64／Aqua Tk-Tcl 8.6.12 執行 `B518_TK_TESTS=1 PYTHONPATH=src /opt/anaconda3/bin/python3 -X faulthandler scripts/run_tests.py`：439 tests／160.299 秒／OK／exit 0、無跳過。正常查詢、磁碟索引重用、增量／變動／競態、H1 日期／DST、H2 取消與關閉重開、H3 分頁及按需詳細、切語／來源 bytes、監控、保存／封存／清理及關閉回歸均包含在本次全套。
+- 重新執行真實暫存磁碟 benchmark：首建各 523,329 source bytes／解析 3；新服務與未變更重查各 source bytes 0／解析 0／重用 3；單源追加只解析 1／重用 2；五頁與選取詳細 source bytes 0，長原始診斷保留，查詢期間来源雜湊不變、快照 close 後移除。修正先前 benchmark 命令錯把 Git 根目錄當成 Python 目錄的文件敘述，未修改 benchmark 程式。完整 15 筆量測、探針及新全套日誌見 [H4 acceptance resumption](evidence/historical-event-query-ticket-04/local-validation.md)。不把 reader bytes 宣稱為實體 OS I/O 或 H8 容量。
+- 程式／測試 SHA 仍為 `12c4dd6268dd8220c928237ff33764d187cc0a29`，固定 review base 仍為 `bbcfc1b0ddeba66e54b5de1291dbeb476dcb11c3`；既有 final Standards／Spec 覆蓋未变，無未解阻擋。`git diff --check`／compileall 通過，無既有型別檢查設定。Python 3.8 舊基準可重現的 Tcl abort 不宣稱已修復或全套通過。
+- 全部既有 stash 的物件 ID／訊息在測試前後逐位元組一致；未套用或移除 stash，其他 worktree 保持原狀。本次只補 H4 文件／驗收資料，提交與同步後停在主線，保留 H4 分支、基準 worktree及前票保護修改，不開始 H5。最後文件／同步 SHA 與直接遠端查核結果追加於驗收紀錄和最終回報。

@@ -1,0 +1,16 @@
+Command: /opt/anaconda3/bin/python3 -X faulthandler -c 'import sys, platform, tkinter; print(sys.executable, sys.version, platform.machine(), flush=True); r=tkinter.Tk(); print(r.tk.call("info", "patchlevel"), r.tk.call("tk", "windowingsystem"), flush=True); r.update(); r.destroy(); print("TK_ROOT_OK", flush=True)'
+No project modules are imported.
+Attempt 1, process returncode=0
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+8.6.12 aqua
+TK_ROOT_OK
+
+Attempt 2, process returncode=0
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+8.6.12 aqua
+TK_ROOT_OK
+
+Attempt 3, process returncode=0
+/opt/anaconda3/bin/python3 3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ] x86_64
+8.6.12 aqua
+TK_ROOT_OK

@@ -21,6 +21,12 @@
 
 驗收證據：[H4 local validation](../evidence/historical-event-query-ticket-04/local-validation.md)。該紀錄會在最終審查、整合、遠端同步與分支清理後追加最終 SHA 和查核時間。
 
+### 驗收續跑 — 2026-10-14
+
+合併後 Aqua Tk 建窗中止已用零專案依賴的相同 Tk 程式確認為沙盒 GUI 存取限制：沙盒內三次 SIGABRT，授權桌面環境三次成功。乾淨 `B518-Log-Solution` 的 Python 3.11.7／Tk 8.6.12 完整含 Tk 套件通過 439 項／160.299 秒／exit 0、無跳過；七項對照、新磁碟成本量測及來源 bytes／資源回收證據已追加於上方紀錄。程式／測試仍為 `12c4dd6`，未因驗收改動產品或測試；固定基準雙軸審查仍無阻擋。Python 3.8 舊 runtime 限制另記，不宣稱其全套通過。
+
+使用者要求完成 H4 驗收後停止；保留 H4 分支、基準 worktree 及全部既有 stash，不開始 H5。同步結果以驗收紀錄與最後回報為準，未宣稱 H5–H8、父規格、部署或工廠驗收完成。
+
 ## Blocked by
 
 - [#40：完整分頁與按需查看詳細資料](https://github.com/Bowei1121/B518_205_207_ATE/issues/40)

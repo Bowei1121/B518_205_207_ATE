@@ -42,7 +42,7 @@ For each source, the reader must complete, the source version before and after t
 
 ## I/O and resource measurements
 
-Command: `PYTHONPATH=src /opt/anaconda3/bin/python3 docs/refactoring/evidence/historical-event-query-ticket-04/benchmark.py` from the repository root. Python 3.11.7, three 150-event audit sources, 450 events, five pages, long details, isolated temporary directory. Each scenario has three repetitions. First-build databases are fresh; service-reuse creates a new query service for each sample against an existing index; unchanged and mutation samples are warm. Timings are observations from this generated fixture, not product or factory performance claims.
+Command from the Python project directory `B518 Log Solution/`: `PYTHONPATH=src /opt/anaconda3/bin/python3 ../docs/refactoring/evidence/historical-event-query-ticket-04/benchmark.py`. The earlier command recorded the repository-root working directory incorrectly; this is the confirmed runnable path. Python 3.11.7, three 150-event audit sources, 450 events, five pages, long details, isolated temporary directory. Each scenario has three repetitions. First-build databases are fresh; service-reuse creates a new query service for each sample against an existing index; unchanged and mutation samples are warm. Timings are observations from this generated fixture, not product or factory performance claims.
 
 | Scenario (3 repetitions) | Wall time seconds | Source bytes read | Fully parsed / reused sources | Source version checks | Peak traced memory | Index / result snapshot bytes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ H4 does not deliver H5's complete index-degradation/recovery UI, H6's full fixed
 
 ## Integration, push, and cleanup addendum
 
-### Local integration and unresolved post-merge Tk validation
+### Local integration and post-merge Tk block (historical; resolved by the resumption below)
 
 - Before merge, a clean `B518-Log-Solution` checkout at fixed base `bbcfc1b0ddeba66e54b5de1291dbeb476dcb11c3` was fetched from both remotes. Direct `git ls-remote` calls to Gitea and GitHub confirmed both target refs at the base and both H4 refs at `e13f54d539797147d0b66840e1aa26e94c34d9b8`. Local fast-forward merge completed without a merge commit; local mainline is `e13f54d539797147d0b66840e1aa26e94c34d9b8`.
 - Post-merge required suite was run from `B518 Log Solution/` on `/opt/anaconda3/bin/python3` 3.11.7 / Aqua Tk 8.6.12. First command was `B518_TK_TESTS=1 PYTHONPATH=src /opt/anaconda3/bin/python3 scripts/run_tests.py 2>&1 | tee ../docs/refactoring/evidence/historical-event-query-ticket-04/python311-mainline-suite.log`; the shell pipeline status was `tee`'s status, so it is not used as the Python result. A second run used `set -o pipefail` and the same command with output to `../docs/refactoring/evidence/historical-event-query-ticket-04/python311-mainline-suite-retry.log`; the Python process aborted with **exit 134** before test summary. Both traces show `NSInternalInconsistencyException`, `aString != nil`, AppKit `NSMenuItem initWithTitle:action:keyEquivalent:`, Aqua Tk `Tk_CreateConsoleWindow`, and invalid `com.apple.hiservices-xpcservice` connection. The abort happened while `LogSolutionUiTests.setUpClass` was creating the first UI class root, after 170 preceding tests had printed `ok`; it is not a failed assertion. The exact logs preserve environment and stack.
@@ -82,3 +82,49 @@ H4 does not deliver H5's complete index-degradation/recovery UI, H6's full fixed
 - At 2026-10-14 09:17:53 CST, direct `git ls-remote` against Gitea and GitHub confirmed `HistoricalEventQuery/ticket-04` at `8045c02746c4d11c4a3e1a42954744c2c5acd554` on both; both remote `B518-Log-Solution` refs remain `bbcfc1b0ddeba66e54b5de1291dbeb476dcb11c3`. No mainline push or ticket-branch delete was attempted. Local mainline is `e13f54d539797147d0b66840e1aa26e94c34d9b8`, ahead of its remote by the two H4 commits.
 - Ticket checkout is clean on `HistoricalEventQuery/ticket-04`. The diagnostic baseline worktree `/private/tmp/B518-H4-python38-baseline` remains at the fixed base; pre-existing H4 edits remain protected in `stash@{0}` with their original patch/hash; older stashes and unrelated worktrees remain unchanged. Neither ticket nor diagnostic worktree was deleted because post-merge validation is blocked.
 - At 2026-10-14 09:17:53 CST, no successful post-merge full suite, mainline push, final mainline synchronization, or branch cleanup is claimed. The protected starting changes and older stashes/worktrees remain untouched.
+
+## Acceptance resumption — 2026-10-14
+
+The user requested completion of H4 acceptance, then a stop. H5 was not started. The starting checkout was clean on `HistoricalEventQuery/ticket-04` at `031a9ed10643c19f164ca19fc430a03ac23ae59e`; local `B518-Log-Solution` was `e13f54d539797147d0b66840e1aa26e94c34d9b8`. Direct queries to both existing push destinations confirmed mainline at `bbcfc1b0ddeba66e54b5de1291dbeb476dcb11c3` and H4 at `031a9ed10643c19f164ca19fc430a03ac23ae59e`. The source, tests and scripts were identical between the two local branches. All existing stashes and worktrees were retained.
+
+### Aqua Tk failure classification
+
+A minimal command that imports no project module reproduced the exact old `NSInternalInconsistencyException`, `aString != nil`, `NSMenuItem`, `Tk_CreateConsoleWindow` and invalid `com.apple.hiservices-xpcservice` trace:
+
+```sh
+/opt/anaconda3/bin/python3 -X faulthandler -c 'import sys, platform, tkinter; print(sys.executable, sys.version, platform.machine(), flush=True); r=tkinter.Tk(); print(r.tk.call("info", "patchlevel"), r.tk.call("tk", "windowingsystem"), flush=True); r.update(); r.destroy(); print("TK_ROOT_OK", flush=True)'
+```
+
+The first direct sandbox execution exited 134. A repeated probe ran the identical child command three times in each environment: sandbox child process returncodes were `[-6, -6, -6]` (SIGABRT), while the authorized desktop environment returned `[0, 0, 0]` with `TK_ROOT_OK` each time. Probe-driver exit status is not used as the children's verdict. Logs: [sandbox probe](tk-sandbox-probe-20261014.log) and [desktop probe](tk-desktop-probe-20261014.log); they include the exact command and each child result. The environment boundary was the variable changed; interpreter, Tk code and repository directory stayed the same. This establishes that the old startup symptom can occur without any H4/App code and is caused by the sandbox's GUI-service access restriction in these runs. No product repair, test weakening, exception suppression, or timing delay was introduced.
+
+### Complete mainline validation
+
+The clean local `B518-Log-Solution` at `e13f54d539797147d0b66840e1aa26e94c34d9b8` was selected for the full run. From the confirmed Python project directory, in the authorized desktop environment:
+
+```sh
+B518_TK_TESTS=1 PYTHONPATH=src /opt/anaconda3/bin/python3 -X faulthandler scripts/run_tests.py
+```
+
+**439 tests / 160.299 seconds / OK / process exit 0 / no skips.** Full output: [mainline desktop suite](python311-mainline-desktop-suite-20261014.log). The process status was captured directly, without a `tee` pipeline. Runtime was `/opt/anaconda3/bin/python3`, Python 3.11.7, x86_64, Tcl/Tk 8.6.12, Aqua. This is the explicitly selected existing interpreter, not a claim that default `python3` Python 3.8.10 passed. The older Python 3.8 baseline-reproduced `Tcl_AsyncDelete` limitation remains recorded above.
+
+No product or test file changed during this resumption. Final program/test SHA remains `12c4dd6268dd8220c928237ff33764d187cc0a29`; fixed review base remains `bbcfc1b0ddeba66e54b5de1291dbeb476dcb11c3`. Existing final Standards/Spec reviews still cover the exact source/test diff and have no unresolved blocking findings. `git diff --check` and `/opt/anaconda3/bin/python3 -m compileall -q 'B518 Log Solution/src' 'B518 Log Solution/tests'` passed. A current config search found no mypy/pyright/type-check configuration, so no type-check pass is claimed.
+
+### Seven acceptance criteria, confirmed on the accepted code
+
+| H4 criterion | Current evidence and result |
+| --- | --- |
+| 1. Derived index, protected original format and cleanup contract | `test_persistent_index_path_cannot_overwrite_or_live_inside_sources` passed. Audit/App-store, retention, close/save and monitoring regressions passed in the complete suite. Isolated raw audit, legacy and journal bytes are checked by the real-Tk history case; source hashes in the benchmark remain unchanged during queries. |
+| 2. First build, new-service reuse and date equivalence; reliable sources only | `test_persistent_index_is_reused_by_a_new_query_service`, offset-timezone-on-reuse and date/DST tests passed. The fresh-service benchmark's three repetitions read zero source bytes and reuse all three sources. |
+| 3. Add/append/replace/move/delete and scan changes | Source-addition/replacement/move/deletion/App-rewrite, same-size/restored-mtime mutation, new-audit precedence, append-before-version-confirmation and cancelled-refresh rollback/retry tests all passed. Fixture changes are deliberate saved/source mutations; every query preserves the bytes present when that query begins. |
+| 4. Event-time date rules and existing save semantics | Inclusive local calendar, offset/naive time, DST 23/25-hour days, captured timezone, cross-year/month and mixed-source query tests passed. Save retry, complete-save-before-close and archival tests also passed; no extra historical flush was added. |
+| 5. Normal incremental cost and bounded page/detail | Benchmark three repetitions: unchanged/new-service queries parse 0 and reuse 3 sources; one-source append parses 1 and reuses 2; five pages and selected details read 0 source bytes. Public page/snapshot/detail tests and real-Tk first/next/back/selected-detail cases passed. |
+| 6. Background work, real disk/restart, compact memory and desktop operation | The real-Tk historical-reader case passed its actual App index creation/reuse, widget query/page/selection, current-language rendering and raw-byte checks. Slow-query latest/cancel/window-close/reopen/App-close and paged-detail cases passed. The benchmark confirms released snapshot files and preserved long selected details. |
+| 7. Required tests, desktop regression and policy preservation | The accepted mainline's complete 439-test suite passed, without Tk skips; unchanged-code final Standards/Spec findings remain non-blocking. No product policy, original log, producer/save format, retention or KVM change was made. Factory acceptance remains separate. |
+
+### Fresh disk cost and cleanup sample
+
+The corrected benchmark command above was rerun on the same accepted code; exit 0. Raw output: [acceptance benchmark](benchmark-acceptance-20261014.json). First builds read 523,329 bytes and parse three sources each; new-service reuse and unchanged requery read zero bytes each. Single-source changes read 175,329 / 176,215 / 177,101 bytes and parse only one source while reusing two. All source-unchanged flags during queries are true. Paging selects five details over five pages with the original long detail preserved and zero source bytes; `snapshot_removed_after_close` is true. The fixture has 450 events initially and 453 after three deliberate appends. These are reader/parser byte counts and traced Python memory, not OS physical-I/O, whole-process RSS, H8 capacity or factory performance claims.
+
+### Delivery boundary and preservation
+
+H4's post-merge acceptance blocker is resolved by the controlled environment diagnosis and the complete desktop mainline run. The historical failed commands and stacks are retained above. H5–H8 and parent #37 are not marked delivered. The original three stash object IDs/messages matched byte-for-byte before and after testing; no stash was applied or dropped, and other worktrees were not changed. This acceptance-only request retains the H4 branch and baseline worktree and stops after recording/synchronizing evidence. Final push checks and document revision are recorded below and in the completion response.
