@@ -129,14 +129,20 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                             middle = baseline.get_page(
                                 max(1, (baseline.page_count + 1) // 2))
                             last = baseline.get_page(max(1, baseline.page_count))
+                            baseline_pages = {
+                                page.page_number: hashlib.sha256(
+                                    "\n".join(event.key for event in page.events).encode(
+                                        "utf-8")).hexdigest()
+                                for page in (first, middle, last)}
                             baseline_box["count"] = baseline.total_count
                             baseline_box["page_count"] = baseline.page_count
                             baseline_box["first_page"] = len(first.events)
                             baseline_box["middle_page"] = len(middle.events)
                             baseline_box["last_page"] = len(last.events)
+                            baseline_box["page_identity_sha256"] = baseline_pages
                             baseline_box["selected_detail"] = (
                                 baseline.get_detail(first.events[0].key) is not None)
-                        except BaseException as error:
+                        except Exception as error:
                             baseline_box["error"] = error
                         finally:
                             baseline.close()
@@ -231,7 +237,8 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                             root,
                             lambda: "Page 1 of {}".format(expected_page_count) in
                             app.historical_page_label.cget("text"),
-                            7200, "2.16-million capacity query first page")
+                            7200, "{}-event capacity query first page".format(
+                                manifest["event_count"]))
 
                     visible_status = app.historical_query_status.cget("text")
                     self.assertIn(str(expected_count), visible_status)
@@ -259,6 +266,79 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                                 app._historical_query_result.index_metrics.source_bytes_read,
                         },
                     })
+
+                    # Verify representative pages through the exact disk-backed result
+                    # published by the actual App query. The raw-reader hashes above are
+                    # independent; this comparison proves page identity without asking Tk
+                    # to synchronously read or format an entire result set.
+                    app_query_result = app._historical_query_result
+                    self.assertIsNotNone(app_query_result)
+                    app_pages_box = {}
+                    page_numbers = (1, (app_query_result.page_count + 1) // 2,
+                                    app_query_result.page_count)
+
+                    def read_app_result_pages():
+                        try:
+                            for page_number in page_numbers:
+                                page = app_query_result.get_page(page_number)
+                                app_pages_box[page_number] = {
+                                    "count": len(page.events),
+                                    "identity_sha256": hashlib.sha256(
+                                        "\n".join(event.key for event in page.events).encode(
+                                            "utf-8")).hexdigest(),
+                                }
+                        except Exception as error:
+                            app_pages_box["error"] = error
+
+                    app_page_worker = threading.Thread(
+                        target=read_app_result_pages, name="H8AppResultPages", daemon=True)
+                    app_page_worker.start()
+                    self._pump_until(root, lambda: not app_page_worker.is_alive(), 60,
+                                     "App-result first/middle/last page checks")
+                    app_page_worker.join(timeout=1)
+                    if "error" in app_pages_box:
+                        raise app_pages_box["error"]
+                    expected_page_hashes = baseline_box["page_identity_sha256"]
+                    self.assertEqual(set(app_pages_box), set(page_numbers))
+                    for page_number in page_numbers:
+                        expected_count = min(
+                            100, max(0, app_query_result.total_count -
+                                     (page_number - 1) * 100))
+                        self.assertEqual(app_pages_box[page_number]["count"], expected_count)
+                        self.assertEqual(app_pages_box[page_number]["identity_sha256"],
+                                         expected_page_hashes[page_number])
+                    report["app_result_page_checks"] = {
+                        "pages": {str(page_number): app_pages_box[page_number]
+                                  for page_number in page_numbers},
+                        "matched_independent_raw_reader": True,
+                        "page_size": app_query_result.page_size,
+                        "worker_joined": not app_page_worker.is_alive(),
+                    }
+
+                    # Exercise the real Tk arrow path as well, and verify that its
+                    # visible records are exactly page two before returning to page one.
+                    self._click_widget(root, app.historical_next_button)
+                    self._pump_until(
+                        root,
+                        lambda: "Page 2 of {}".format(expected_page_count) in
+                        app.historical_page_label.cget("text"),
+                        30, "visible Tk next-page navigation")
+                    self.assertEqual(app.historical_event_list.size(), 100)
+                    visible_second_page_keys = [
+                        event.key for event in app._historical_event_records]
+                    expected_second_page = app_query_result.get_page(2)
+                    self.assertEqual(visible_second_page_keys,
+                                     [event.key for event in expected_second_page.events])
+                    report["visible_second_page_rows"] = app.historical_event_list.size()
+                    report["visible_second_page_identity_sha256"] = hashlib.sha256(
+                        "\n".join(visible_second_page_keys).encode("utf-8")).hexdigest()
+                    self._click_widget(root, app.historical_previous_button)
+                    self._pump_until(
+                        root,
+                        lambda: "Page 1 of {}".format(expected_page_count) in
+                        app.historical_page_label.cget("text"),
+                        30, "visible Tk previous-page navigation")
+
                     app.historical_event_list.see(0)
                     root.update()
                     detail_before_selection = app.historical_event_detail.get("1.0", "end")
