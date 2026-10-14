@@ -7940,6 +7940,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
             finally:
                 app._close_historical_event_window()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {
+                    "complete", "failed"})
+                self.assertEqual(app.rounds.close_status().status, "complete",
+                                 app.rounds.close_status())
                 app.hotkey.close()
                 root.destroy()
 
