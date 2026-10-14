@@ -234,7 +234,10 @@ class HistoricalEventQueryResult:
             ).fetchone()
         finally:
             connection.close()
-        return _event_from_json(row[0]) if row is not None else None
+        if row is None:
+            return None
+        event = _event_from_json(row[0])
+        return event if _source_version_is_current(event) else None
 
     def get_diagnostic_page(self, page_number: int) -> HistoricalEventQueryPage:
         """Read one bounded page of source/date anomalies from the frozen snapshot."""
@@ -268,7 +271,10 @@ class HistoricalEventQueryResult:
                 "ORDER BY diagnostic_ordinal LIMIT 1", (event_key,)).fetchone()
         finally:
             connection.close()
-        return _event_from_json(row[0]) if row is not None else None
+        if row is None:
+            return None
+        event = _event_from_json(row[0])
+        return event if _source_version_is_current(event) else None
 
     def close(self) -> None:
         """Release this query's temporary snapshot; safe to call more than once."""
@@ -305,7 +311,10 @@ def _summary_from_json(value: str) -> HistoricalEventSummary:
 
 
 def _event_from_json(value: str) -> HistoricalEvent:
-    return HistoricalEvent(**json.loads(value))
+    record = json.loads(value)
+    if record.get("source_version") is not None:
+        record["source_version"] = tuple(record["source_version"])
+    return HistoricalEvent(**record)
 
 
 def _event_summary_json(event: HistoricalEvent) -> str:
@@ -329,8 +338,19 @@ def _event_json(event: HistoricalEvent) -> str:
         "diagnostic": event.diagnostic, "detail": event.detail,
         "raw_record": event.raw_record, "station": event.station,
         "platform": event.platform, "unrecognized": event.unrecognized,
-        "source_order": event.source_order,
+        "source_order": event.source_order, "source_path": event.source_path,
+        "source_version": event.source_version,
     }, ensure_ascii=False, separators=(",", ":"))
+
+
+def _source_version_is_current(event: HistoricalEvent) -> bool:
+    """Reject detail from a source path that was removed or replaced since capture."""
+    if event.source_path is None or event.source_version is None:
+        return True
+    try:
+        return _history_source_signature(Path(event.source_path)) == tuple(event.source_version)
+    except OSError:
+        return False
 
 
 @dataclass(frozen=True)

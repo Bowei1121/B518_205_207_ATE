@@ -106,6 +106,44 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 fresh_service_result.close()
                 fresh_service.shutdown()
 
+    def test_official_app_event_cleanup_keeps_snapshot_but_not_unloaded_detail(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            first = store.record("app.hotkey.unavailable", {}, "first raw diagnostic")
+            second = store.record("app.profile.save_failed", {"reason": "disk"},
+                                  "second raw diagnostic")
+            self.assertTrue(store.flush())
+            source_before = store.path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 14), date(2026, 10, 14))
+            result = query_historical_events(
+                root / "sessions", store.path, date_range, index_path=index_path)
+            try:
+                page = result.get_page(1)
+                keys = {event.key for event in page.events}
+                self.assertEqual(keys, {"app:{}".format(first.event_id),
+                                        "app:{}".format(second.event_id)})
+                previously_loaded = result.get_detail("app:{}".format(first.event_id))
+                self.assertEqual(previously_loaded.raw_record["diagnostic"],
+                                 "first raw diagnostic")
+
+                cleanup = store.cleanup_expired(
+                    now + timedelta(seconds=1), root)
+
+                self.assertEqual(cleanup.status, "complete", cleanup)
+                self.assertEqual(result.total_count, 2)
+                self.assertEqual({event.key for event in result.get_page(1).events}, keys)
+                self.assertEqual(previously_loaded.raw_record["diagnostic"],
+                                 "first raw diagnostic")
+                self.assertIsNone(result.get_detail("app:{}".format(second.event_id)))
+                self.assertNotEqual(store.path.read_bytes(), source_before)
+                self.assertEqual(store.records, ())
+            finally:
+                result.close()
+                store.stop()
+
     def test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

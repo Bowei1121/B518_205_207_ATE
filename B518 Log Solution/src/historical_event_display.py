@@ -6,7 +6,7 @@ import json
 import os
 import stat
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -32,6 +32,8 @@ class HistoricalEvent:
     platform: str = ""
     unrecognized: bool = False
     source_order: int = 0
+    source_path: Optional[str] = None
+    source_version: Optional[Tuple[int, int, int, int, int]] = None
 
 
 @dataclass(frozen=True)
@@ -72,60 +74,70 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
             if audit_path.is_file():
                 if source_observer is not None:
                     source_observer(audit_path)
+                source_version = _path_version(audit_path)
                 try:
                     header, audit_events = iter_round_audit_events(
                         audit_path, read_observer=read_observer)
                 except Exception as error:
-                    yield _read_error("round", audit_path, str(error))
+                    yield from _with_source_locator(
+                        _read_error("round", audit_path, str(error)),
+                        audit_path, source_version)
                     continue
                 round_id = header["round_id"]
                 station = header.get("station", "")
                 platform = header.get("config", {}).get("platform", "")
                 try:
                     for event in audit_events:
-                        yield HistoricalEvent(
+                        yield from _with_source_locator(HistoricalEvent(
                             "round:{}:{}".format(round_id, event["sequence"]), "round",
                             event["observed_at"], event["message"], event["kind"], round_id,
                             event["sequence"], event.get("localized_message"),
                             _diagnostic(event), event.get("detail", {}), event,
                             station, platform,
-                        )
+                        ), audit_path, source_version)
                 except Exception as error:
-                    yield _read_error("round", audit_path, str(error))
+                    yield from _with_source_locator(
+                        _read_error("round", audit_path, str(error)),
+                        audit_path, source_version)
                     continue
                 if not header.get("audit_complete", False):
-                    yield HistoricalEvent(
+                    yield from _with_source_locator(HistoricalEvent(
                         "warning:round:{}".format(round_id), "read_warning", "",
                         "Audit records report an incomplete save", round_id=round_id,
                         station=station, platform=platform,
                         raw_record={"audit_path": str(audit_path),
                                     "reason": "audit_complete is false"},
-                    )
+                    ), audit_path, source_version)
             elif legacy_path.is_file():
                 if source_observer is not None:
                     source_observer(legacy_path)
-                yield from _read_legacy_session_events(
-                    legacy_path, read_observer=read_observer)
+                source_version = _path_version(legacy_path)
+                yield from _with_source_locators(
+                    _read_legacy_session_events(legacy_path, read_observer=read_observer),
+                    legacy_path, source_version)
 
     if app_event_path is not None and Path(app_event_path).exists():
         path = Path(app_event_path)
         if source_observer is not None:
             source_observer(path)
+        source_version = _path_version(path)
         try:
             app_events = iter_app_event_store_events(path, read_observer=read_observer)
         except Exception as error:
-            yield _read_error("app", path, str(error))
+            yield from _with_source_locator(
+                _read_error("app", path, str(error)), path, source_version)
         else:
             try:
                 for event in app_events:
-                    yield HistoricalEvent(
+                    yield from _with_source_locator(HistoricalEvent(
                         "app:{}".format(event["event_id"]), "app", event["occurred_at"],
                         event["message"], event["kind"], None, event["sequence"],
                         event.get("localized_message"), event.get("diagnostic", ""),
                         event.get("localized_message", {}).get("parameters", {}), event,
-                    )
+                    ), path, source_version)
             except Exception as error:
-                yield _read_error("app", path, str(error))
+                yield from _with_source_locator(
+                    _read_error("app", path, str(error)), path, source_version)
 
 
 def iter_historical_event_sources(session_root: Path,
@@ -187,6 +199,16 @@ def _stat_version(details: os.stat_result):
             details.st_mtime_ns, details.st_ctime_ns)
 
 
+def _with_source_locator(event: HistoricalEvent, path: Path, version):
+    """Bind captured record details to the exact source file entry that supplied them."""
+    yield replace(event, source_path=str(path), source_version=version)
+
+
+def _with_source_locators(events, path: Path, version):
+    for event in events:
+        yield from _with_source_locator(event, path, version)
+
+
 def _source_key(kind: str, path: Path) -> str:
     return "{}:{}".format(kind, path.resolve())
 
@@ -194,46 +216,55 @@ def _source_key(kind: str, path: Path) -> str:
 def iter_historical_source_events(source: HistoricalEventSource, read_observer=None):
     """Read one discovered source with its existing strict reader and diagnostics."""
     path = Path(source.path)
+    source_version = _path_version(path)
     if source.kind == "round-audit":
         try:
             header, events = iter_round_audit_events(path, read_observer=read_observer)
         except Exception as error:
-            yield _read_error("round", path, str(error))
+            yield from _with_source_locator(
+                _read_error("round", path, str(error)), path, source_version)
             return
         round_id = header["round_id"]
         station = header.get("station", "")
         platform = header.get("config", {}).get("platform", "")
         try:
             for event in events:
-                yield HistoricalEvent(
+                yield from _with_source_locator(HistoricalEvent(
                     "round:{}:{}".format(round_id, event["sequence"]), "round",
                     event["observed_at"], event["message"], event["kind"], round_id,
                     event["sequence"], event.get("localized_message"), _diagnostic(event),
-                    event.get("detail", {}), event, station, platform)
+                    event.get("detail", {}), event, station, platform),
+                    path, source_version)
         except Exception as error:
-            yield _read_error("round", path, str(error))
+            yield from _with_source_locator(
+                _read_error("round", path, str(error)), path, source_version)
             return
         if not header.get("audit_complete", False):
-            yield HistoricalEvent(
+            yield from _with_source_locator(HistoricalEvent(
                 "warning:round:{}".format(round_id), "read_warning", "",
                 "Audit records report an incomplete save", round_id=round_id,
                 station=station, platform=platform,
-                raw_record={"audit_path": str(path), "reason": "audit_complete is false"})
+                raw_record={"audit_path": str(path), "reason": "audit_complete is false"}),
+                path, source_version)
         return
     if source.kind == "legacy":
-        yield from _read_legacy_session_events(path, read_observer=read_observer)
+        yield from _with_source_locators(
+            _read_legacy_session_events(path, read_observer=read_observer),
+            path, source_version)
         return
     if source.kind == "app":
         try:
             app_events = iter_app_event_store_events(path, read_observer=read_observer)
             for event in app_events:
-                yield HistoricalEvent(
+                yield from _with_source_locator(HistoricalEvent(
                     "app:{}".format(event["event_id"]), "app", event["occurred_at"],
                     event["message"], event["kind"], None, event["sequence"],
                     event.get("localized_message"), event.get("diagnostic", ""),
-                    event.get("localized_message", {}).get("parameters", {}), event)
+                    event.get("localized_message", {}).get("parameters", {}), event),
+                    path, source_version)
         except Exception as error:
-            yield _read_error("app", path, str(error))
+            yield from _with_source_locator(
+                _read_error("app", path, str(error)), path, source_version)
         return
     raise ValueError("unsupported historical event source kind")
 
