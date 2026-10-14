@@ -8216,10 +8216,28 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
                 self.assertEqual(str(app.historical_previous_button.cget("state")), "normal")
+                app.historical_next_button.focus_force()
+                app.historical_next_button.event_generate("<KeyPress-space>")
+                app.historical_next_button.event_generate("<KeyRelease-space>")
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 3)
+                self.assertEqual(str(app.historical_next_button.cget("state")), "disabled")
+                app.historical_next_button.event_generate("<KeyPress-space>")
+                app.historical_next_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertEqual(app._historical_query_page_number, 3)
+                app.historical_previous_button.focus_force()
+                app.historical_previous_button.event_generate("<KeyPress-space>")
+                app.historical_previous_button.event_generate("<KeyRelease-space>")
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
                 app.historical_previous_button.focus_force()
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
+                self.assertEqual(str(app.historical_previous_button.cget("state")), "disabled")
+                app.historical_previous_button.event_generate("<KeyPress-space>")
+                app.historical_previous_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertEqual(app._historical_query_page_number, 1)
                 self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
             finally:
                 app._close_historical_event_window()
@@ -8379,7 +8397,46 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(moved_source.read_bytes(), source_bytes)
                 self.assertEqual(app.historical_event_refresh_button.cget("text"),
                                  "🔍 " + app._t("app.settings.history.search"))
+
+                os.replace(moved_source, audit.audit_path)
+                query_entered = threading.Event()
+                release_query = threading.Event()
+                original_query = query_historical_events
+
+                def gated_query(sessions, app_path, date_range, **kwargs):
+                    query_entered.set()
+                    if not release_query.wait(10):
+                        raise RuntimeError("controlled H7 query gate timed out")
+                    return original_query(sessions, app_path, date_range, **kwargs)
+
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=gated_query):
+                    app.historical_start_var.set("2099-01-01")
+                    app.historical_end_var.set("2099-01-01")
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.assertTrue(query_entered.wait(2))
+                    in_flight_generation = app._historical_query_generation
+                    self.assertIsNotNone(in_flight_generation)
+                    self.assertIs(app._historical_query_result, original_result)
+                    self.assertEqual(app._historical_query_page_number, 2)
+                    self.select_language_from_menu(app, root, ENGLISH)
+                    self.assertEqual(app._historical_query_generation, in_flight_generation)
+                    self.assertIs(app._historical_query_result, original_result)
+                    self.assertEqual(str(app.historical_event_cancel_button.cget("state")),
+                                     "normal")
+                    release_query.set()
+                    self.wait_for_ui(root, lambda: app._historical_query_result is not
+                                     original_result and
+                                     app._historical_query_generation is None)
+                    self.assertEqual(app._historical_query_result.date_range.start.isoformat(),
+                                     "2099-01-01")
+                    self.assertEqual(app._historical_query_result.total_count, 0)
+                    self.assertIn("No events were found in this date range.",
+                                  app.historical_query_status.cget("text"))
+                self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
             finally:
+                if "release_query" in locals():
+                    release_query.set()
                 if moved_source.exists():
                     os.replace(moved_source, audit.audit_path)
                 app._close_historical_event_window()
