@@ -7875,9 +7875,34 @@ class LogSolutionUiTests(unittest.TestCase):
                               {event.key for event in app._historical_event_records})
                 self.assertIn("app:{}".format(second.event_id),
                               {event.key for event in app._historical_event_records})
+                fixed_keys_before_save = {event.key for event in app._historical_event_records}
+                fixed_count_before_save = result.total_count
                 index_path = root_path / "historical-event-query-index.sqlite3"
                 index_before_cleanup = index_path.read_bytes()
                 self.assertEqual(app.app_events.path.read_bytes(), source_before_query)
+
+                # A public, successful save after submission must not mutate the
+                # displayed fixed set; only the normal Search path refreshes it.
+                event_clock[0] += timedelta(seconds=1)
+                added = app.app_events.record(
+                    "app.profile.save_failed", {"reason": "saved after query"},
+                    "newly saved detail")
+                self.assertTrue(app.app_events.flush())
+                self.assertEqual(result.total_count, fixed_count_before_save)
+                self.assertEqual({event.key for event in app._historical_event_records},
+                                 fixed_keys_before_save)
+                self.assertNotIn("app:{}".format(added.event_id),
+                                 {event.key for event in app._historical_event_records})
+
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not result and
+                                 app._historical_query_generation is None)
+                result = app._historical_query_result
+                self.assertEqual(result.total_count, fixed_count_before_save + 1)
+                self.assertIn("app:{}".format(added.event_id),
+                              {event.key for event in app._historical_event_records})
+                source_before_query = app.app_events.path.read_bytes()
+                index_before_cleanup = index_path.read_bytes()
 
                 first_index = next(index for index, event in enumerate(
                     app._historical_event_records)
@@ -7905,9 +7930,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._historical_event_records)
                     if event.key == "app:{}".format(second.event_id))
                 self.click_tk_listbox_row(root, app.historical_event_list, second_index)
-                self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
-                self.assertIn("Data is no longer available; requery.",
-                              app.historical_event_detail.get("1.0", "end"))
+                self.wait_for_ui(root, lambda: "not loaded original diagnostic" in
+                                 app.historical_event_detail.get("1.0", "end"))
                 self.assertEqual(app._historical_event_selected_key,
                                  "app:{}".format(second.event_id))
 
@@ -7918,7 +7942,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app._historical_event_selected_key,
                                  "app:{}".format(second.event_id))
-                self.assertIn("資料已不可取得，請重新查詢。",
+                self.assertIn("not loaded original diagnostic",
                               app.historical_event_detail.get("1.0", "end"))
 
                 english_index = next(
@@ -7928,7 +7952,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app._historical_event_selected_key,
                                  "app:{}".format(second.event_id))
-                self.assertIn("Data is no longer available; requery.",
+                self.assertIn("not loaded original diagnostic",
                               app.historical_event_detail.get("1.0", "end"))
 
                 self.click_tk_widget(root, app.historical_event_refresh_button)

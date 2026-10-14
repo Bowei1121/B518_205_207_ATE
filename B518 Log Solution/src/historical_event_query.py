@@ -236,8 +236,11 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        event = _event_from_json(row[0])
-        return event if _source_version_is_current(event) else None
+        # H3's owned temporary snapshot contains the complete original record.
+        # Once captured there, it is acquired content and remains readable even
+        # if retention removes or replaces the backing source. Never reopen the
+        # current path here: it may now identify a different event version.
+        return _event_from_json(row[0])
 
     def get_diagnostic_page(self, page_number: int) -> HistoricalEventQueryPage:
         """Read one bounded page of source/date anomalies from the frozen snapshot."""
@@ -273,8 +276,8 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        event = _event_from_json(row[0])
-        return event if _source_version_is_current(event) else None
+        # Diagnostic detail is also frozen in the query-owned snapshot.
+        return _event_from_json(row[0])
 
     def close(self) -> None:
         """Release this query's temporary snapshot; safe to call more than once."""
@@ -341,16 +344,6 @@ def _event_json(event: HistoricalEvent) -> str:
         "source_order": event.source_order, "source_path": event.source_path,
         "source_version": event.source_version,
     }, ensure_ascii=False, separators=(",", ":"))
-
-
-def _source_version_is_current(event: HistoricalEvent) -> bool:
-    """Reject detail from a source path that was removed or replaced since capture."""
-    if event.source_path is None or event.source_version is None:
-        return True
-    try:
-        return _history_source_signature(Path(event.source_path)) == tuple(event.source_version)
-    except OSError:
-        return False
 
 
 @dataclass(frozen=True)

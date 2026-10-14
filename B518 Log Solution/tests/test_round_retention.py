@@ -157,7 +157,7 @@ class RoundRetentionTests(unittest.TestCase):
             restored_result = restored.retention_cleanup_summaries()[-1].results[0]
             self.assertEqual(restored_result.reason_message, deleted_reason)
 
-    def test_official_round_cleanup_does_not_pin_history_snapshot_or_retain_indexed_detail(self):
+    def test_official_round_cleanup_does_not_pin_source_and_keeps_captured_detail(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
@@ -206,7 +206,11 @@ class RoundRetentionTests(unittest.TestCase):
             self.assertEqual(tuple(item.key for item in result.get_page(1).events),
                              tuple(item.key for item in summaries))
             self.assertEqual(loaded.key, summaries[0].key)
-            self.assertIsNone(result.get_detail(not_loaded_key))
+            retained = result.get_detail(not_loaded_key)
+            self.assertIsNotNone(retained)
+            self.assertEqual(retained.key, not_loaded_key)
+            self.assertEqual(Path(retained.source_path).name, source_path.name)
+            self.assertEqual(retained.round_id, archive.round_id)
             self.assertEqual(index_path.read_bytes(), index_before_cleanup)
 
             fresh_query = query_historical_events(

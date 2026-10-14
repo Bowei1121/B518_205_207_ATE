@@ -107,7 +107,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 fresh_service_result.close()
                 fresh_service.shutdown()
 
-    def test_official_app_event_cleanup_keeps_snapshot_but_not_unloaded_detail(self):
+    def test_official_app_event_cleanup_keeps_all_captured_snapshot_details(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             now = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
@@ -138,7 +138,9 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual({event.key for event in result.get_page(1).events}, keys)
                 self.assertEqual(previously_loaded.raw_record["diagnostic"],
                                  "first raw diagnostic")
-                self.assertIsNone(result.get_detail("app:{}".format(second.event_id)))
+                retained = result.get_detail("app:{}".format(second.event_id))
+                self.assertEqual(retained.raw_record["diagnostic"],
+                                 "second raw diagnostic")
                 self.assertNotEqual(store.path.read_bytes(), source_before)
                 self.assertEqual(store.records, ())
             finally:
@@ -185,10 +187,12 @@ class HistoricalEventQueryTests(unittest.TestCase):
                             time.sleep(0.01)
 
                 self.assertIsNotNone(completion)
-                self.assertFalse(completion.succeeded)
-                self.assertIsNone(completion.event)
+                self.assertTrue(completion.succeeded)
+                self.assertEqual(completion.event.raw_record["diagnostic"],
+                                 "detail removed mid-read")
                 self.assertIsNone(completion.error)
-                self.assertIsNone(result.get_detail("app:{}".format(event.event_id)))
+                self.assertEqual(result.get_detail("app:{}".format(event.event_id)).raw_record[
+                    "diagnostic"], "detail removed mid-read")
             finally:
                 release.set()
                 detail_service.shutdown()
@@ -237,7 +241,9 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(result.total_count, 1)
                 self.assertEqual([item.key for item in result.get_page(1).events],
                                  ["app:{}".format(original.event_id)])
-                self.assertIsNone(result.get_detail("app:{}".format(original.event_id)))
+                self.assertEqual(result.get_detail(
+                    "app:{}".format(original.event_id)).raw_record["diagnostic"],
+                    "saved before query")
                 refreshed = query_historical_events(
                     root / "sessions", store.path, date_range, index_path=index_path)
                 try:
@@ -1004,7 +1010,10 @@ class HistoricalEventQueryTests(unittest.TestCase):
 
                 self.assertEqual(frozen.get_page(1).events, old_page)
                 self.assertEqual(frozen.total_count, 2)
-                self.assertIsNone(frozen.get_detail("app:{}".format(second.event_id)))
+                retained = frozen.get_detail("app:{}".format(second.event_id))
+                self.assertEqual(retained.raw_record["diagnostic"],
+                                 "old unselected detail")
+                self.assertNotIn("new replacement detail", str(retained.raw_record))
                 self.assertIn(b"new replacement detail", replacement_bytes)
                 self.assertEqual(journal_path.read_bytes(), replacement_bytes)
             finally:
