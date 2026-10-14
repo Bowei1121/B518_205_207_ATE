@@ -7945,7 +7945,7 @@ class LogSolutionUiTests(unittest.TestCase):
             audit_path.write_bytes(b"invalid audit fixture\\n")
             legacy_path = session_root / "legacy-round" / "events.log"
             legacy_path.parent.mkdir(parents=True)
-            legacy_path.write_bytes(b"\\xff\\xfe\\xfd")
+            legacy_path.write_bytes(bytes((0xff, 0xfe, 0xfd)))
 
             root = tk.Tk()
             root.deiconify()
@@ -7990,7 +7990,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("3 source issues", status)
                 self.assertIn("0 records without a usable date", status)
                 self.assertEqual(audit_path.read_bytes(), b"invalid audit fixture\\n")
-                self.assertEqual(legacy_path.read_bytes(), b"\\xff\\xfe\\xfd")
+                self.assertEqual(legacy_path.read_bytes(), bytes((0xff, 0xfe, 0xfd)))
                 self.assertEqual(app_path.read_bytes(), app_source_corrupt)
 
                 self.click_tk_listbox_row(root, app.historical_event_list, 0)

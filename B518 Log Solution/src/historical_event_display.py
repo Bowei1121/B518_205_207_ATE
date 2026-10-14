@@ -317,33 +317,36 @@ def _read_legacy_session_events(path: Path, read_observer=None):
         yield _read_error("legacy_session", path, str(error))
         return
     with handle:
-        for index, line in enumerate(handle, 1):
-            if read_observer is not None:
-                read_observer(len(line.encode("utf-8")))
-            try:
-                raw = json.loads(line)
-                if not isinstance(raw, dict) or not isinstance(raw.get("message"), str):
-                    raise ValueError("事件欄位格式不正確")
-                timestamp = raw.get("timestamp", "")
-                if not isinstance(timestamp, str):
-                    raise ValueError("事件時間格式不正確")
-            except (json.JSONDecodeError, ValueError) as error:
-                yield _read_error(
-                    "legacy_session", path, "第 {} 行：{}".format(index, error),
-                    view_key="line:{}".format(index), source_order=index,
-                    raw_record={"path": str(path), "line_number": index,
-                                "raw_line": line, "reason": str(error)},
+        try:
+            for index, line in enumerate(handle, 1):
+                if read_observer is not None:
+                    read_observer(len(line.encode("utf-8")))
+                try:
+                    raw = json.loads(line)
+                    if not isinstance(raw, dict) or not isinstance(raw.get("message"), str):
+                        raise ValueError("事件欄位格式不正確")
+                    timestamp = raw.get("timestamp", "")
+                    if not isinstance(timestamp, str):
+                        raise ValueError("事件時間格式不正確")
+                except (json.JSONDecodeError, ValueError) as error:
+                    yield _read_error(
+                        "legacy_session", path, "第 {} 行：{}".format(index, error),
+                        view_key="line:{}".format(index), source_order=index,
+                        raw_record={"path": str(path), "line_number": index,
+                                    "raw_line": line, "reason": str(error)},
+                    )
+                    continue
+                # Legacy Session events.log did not carry a stable kind. Do not infer an ID from prose.
+                localized = raw.get("localized_message")
+                yield HistoricalEvent(
+                    "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
+                    raw["message"], "", raw.get("round_id"),
+                    raw.get("sequence") if type(raw.get("sequence")) is int else None,
+                    localized if isinstance(localized, dict) else None,
+                    _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
                 )
-                continue
-            # Legacy Session events.log did not carry a stable kind. Do not infer an ID from prose.
-            localized = raw.get("localized_message")
-            yield HistoricalEvent(
-                "legacy:{}:{}".format(path.parent.name, index), "legacy_session", timestamp,
-                raw["message"], "", raw.get("round_id"),
-                raw.get("sequence") if type(raw.get("sequence")) is int else None,
-                localized if isinstance(localized, dict) else None,
-                _diagnostic(raw), raw.get("detail", {}), raw, source_order=index,
-            )
+        except (OSError, UnicodeError) as error:
+            yield _read_error("legacy_session", path, str(error))
 
 
 def _read_error(source: str, path: Path, reason: str, view_key: str = "",

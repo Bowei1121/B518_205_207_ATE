@@ -599,7 +599,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
             audit_path.write_bytes(b"not-json\\n")
             legacy_path = sessions / "legacy-round" / "events.log"
             legacy_path.parent.mkdir(parents=True)
-            legacy_path.write_bytes(b"\\xff\\xfe\\xfd")
+            legacy_path.write_bytes(bytes((0xff, 0xfe, 0xfd)))
             app_path = root / "app-events.json"
             app_path.write_bytes(b"not-json\\n")
             source_bytes = {path: path.read_bytes()
@@ -636,6 +636,28 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(fallback.diagnostic_count, 3)
             finally:
                 fallback.close()
+
+    def test_unreadable_legacy_events_log_alone_is_a_source_issue(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy_path = root / "sessions" / "legacy-round" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(bytes((0xff, 0xfe, 0xfd)))
+            before = legacy_path.read_bytes()
+
+            result = query_historical_events(
+                root / "sessions", None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            try:
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.source_issue_count, 1)
+                self.assertEqual(result.unclassified_count, 0)
+                detail = result.get_diagnostic_detail(result.get_diagnostic_page(1).events[0].key)
+                self.assertEqual(detail.raw_record["path"], str(legacy_path))
+                self.assertIn("utf-8", detail.message)
+                self.assertEqual(legacy_path.read_bytes(), before)
+            finally:
+                result.close()
 
     def test_mixed_sources_publish_normal_events_with_lazy_source_diagnostic(self):
         with tempfile.TemporaryDirectory() as temporary:
