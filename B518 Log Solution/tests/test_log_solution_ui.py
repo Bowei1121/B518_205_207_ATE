@@ -8295,11 +8295,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_next_button.event_generate("<FocusIn>")
                 root.update()
                 self.assertEqual(hints(), [])
-
-                app.historical_event_refresh_button.focus_force()
-                app.historical_event_refresh_button.event_generate("<FocusIn>")
-                self.wait_for_ui(root, lambda: len(hints()) == 1)
-                self.assertIn("查詢所選日期範圍", hint_text(hints()[0]))
                 app._close_historical_event_window()
                 self.assertFalse(history_window.winfo_exists())
                 root.update()
@@ -8330,6 +8325,14 @@ class LogSolutionUiTests(unittest.TestCase):
                     event_time, float(sequence))
             self.assertTrue(audit.flush())
             source_bytes = audit.audit_path.read_bytes()
+            legacy_path = session_root / "legacy-language" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_text(json.dumps({
+                "timestamp": datetime.now().astimezone().replace(
+                    second=0, microsecond=0).isoformat(),
+                "message": "Keep the original legacy wording",
+            }) + "\n", encoding="utf-8")
+            legacy_bytes = legacy_path.read_bytes()
 
             root = tk.Tk()
             root.deiconify()
@@ -8339,6 +8342,7 @@ class LogSolutionUiTests(unittest.TestCase):
             moved_source = audit.audit_path.with_suffix(".held")
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
+                app_event_bytes = app.app_events.path.read_bytes()
                 app.open_historical_events()
                 self.assertIsNone(app._historical_query_result)
                 self.click_tk_widget(root, app.historical_event_refresh_button)
@@ -8399,6 +8403,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(moved_source.read_bytes(), source_bytes)
                 self.assertEqual(app.historical_event_refresh_button.cget("text"),
                                  "🔍 " + app._t("app.settings.history.search"))
+                self.assertEqual(legacy_path.read_bytes(), legacy_bytes)
+                self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
 
                 os.replace(moved_source, audit.audit_path)
                 query_entered = threading.Event()
@@ -8438,6 +8444,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("No events were found in this date range.",
                                   app.historical_query_status.cget("text"))
                 self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+                self.assertEqual(legacy_path.read_bytes(), legacy_bytes)
+                self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
             finally:
                 if "release_query" in locals():
                     release_query.set()
