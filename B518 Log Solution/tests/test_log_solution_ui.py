@@ -7932,6 +7932,92 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_failed_query_reason_and_all_unreadable_sources(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            audit_path = session_root / "audit-round" / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            audit_path.write_bytes(b"invalid audit fixture\\n")
+            legacy_path = session_root / "legacy-round" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(b"\\xff\\xfe\\xfd")
+
+            root = tk.Tk()
+            root.deiconify()
+            app_path = root_path / "app-events.json"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=app_path)
+            app_source_original = None
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app_source_original = app_path.read_bytes()
+                app.open_historical_events()
+                app.historical_start_var.set("2026-10-13")
+                app.historical_end_var.set("2026-10-13")
+
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=RuntimeError("controlled source read failure")):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_status_key ==
+                                     "app.settings.history.query_failed")
+                self.assertIsNone(app._historical_query_result)
+                failed_text = app.historical_query_status.cget("text")
+                self.assertIn("controlled source read failure", failed_text)
+                self.assertNotIn("previous results are kept", failed_text)
+
+                # This isolated fixture simulates a corrupt App journal while the
+                # real App is open; restore its original bytes before shutdown.
+                app_path.write_bytes(b"invalid App journal fixture\\n")
+                app_source_corrupt = app_path.read_bytes()
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None and
+                                 app._historical_query_generation is None)
+
+                result = app._historical_query_result
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.source_issue_count, 3)
+                self.assertEqual(result.unclassified_count, 0)
+                self.assertEqual(result.diagnostic_count, 3)
+                status = app.historical_query_status.cget("text")
+                self.assertIn("History may be incomplete", status)
+                self.assertNotIn("No events were found", status)
+                self.assertIn("3 source issues", status)
+                self.assertIn("0 records without a usable date", status)
+                self.assertEqual(audit_path.read_bytes(), b"invalid audit fixture\\n")
+                self.assertEqual(legacy_path.read_bytes(), b"\\xff\\xfe\\xfd")
+                self.assertEqual(app_path.read_bytes(), app_source_corrupt)
+
+                self.click_tk_listbox_row(root, app.historical_event_list, 0)
+                self.wait_for_ui(root, lambda: app._historical_showing_diagnostics and
+                                 len(app._historical_event_records) == 3)
+                diagnostic_summaries = tuple(app._historical_event_records)
+                detailed_records = []
+                for index, summary in enumerate(diagnostic_summaries):
+                    self.click_tk_listbox_row(root, app.historical_event_list, index + 1)
+                    self.wait_for_ui(
+                        root, lambda expected=summary.key:
+                        app._historical_event_selected_key == expected and
+                        app._historical_event_selected_detail is not None)
+                    detailed_records.append(app._historical_event_selected_detail)
+                details_by_path = {
+                    str(detail.raw_record.get("path", detail.raw_record.get("source_path"))):
+                    detail for detail in detailed_records}
+                for path in (audit_path, legacy_path, app_path):
+                    self.assertIn(str(path), details_by_path)
+                self.assertIn("Expecting value", details_by_path[str(audit_path)].message)
+            finally:
+                if app_source_original is not None and app_path.exists():
+                    app_path.write_bytes(app_source_original)
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
     @staticmethod
     def click_tk_widget(root, widget):
         root.update_idletasks()

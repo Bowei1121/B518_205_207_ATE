@@ -765,7 +765,8 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                     (diagnostic_count, event.key, _event_summary_json(event),
                      _event_json(event)))
             if occurred_at is None:
-                unclassified_count += 1
+                if not source_issue:
+                    unclassified_count += 1
                 if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
                     diagnostics.append(event)
                 continue
@@ -1125,7 +1126,8 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             source_filter = ""
             source_params = ()
         unclassified_count = connection.execute(
-            "SELECT COUNT(*) FROM history_events WHERE {}time_kind=2".format(source_filter),
+            "SELECT COUNT(*) FROM history_events WHERE {}time_kind=2 AND source NOT IN "
+            "('read_warning', 'read_error')".format(source_filter),
             source_params).fetchone()[0]
         source_issue_count = connection.execute(
             "SELECT COUNT(*) FROM history_events WHERE {}source IN "
@@ -1143,7 +1145,6 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
                              (diagnostic_count, row[0], row[1], row[2]))
             if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
                 diagnostics.append(_event_from_json(row[2]))
-        unclassified_count += len(transient_errors)
         source_issue_count += len(transient_errors)
         for event in transient_errors:
             diagnostic_count += 1

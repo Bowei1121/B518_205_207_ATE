@@ -590,6 +590,53 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 recovered.close()
 
+    def test_each_corrupt_history_source_is_reported_by_the_public_query(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit_path = sessions / "audit-round" / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            audit_path.write_bytes(b"not-json\\n")
+            legacy_path = sessions / "legacy-round" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_bytes(b"\\xff\\xfe\\xfd")
+            app_path = root / "app-events.json"
+            app_path.write_bytes(b"not-json\\n")
+            source_bytes = {path: path.read_bytes()
+                            for path in (audit_path, legacy_path, app_path)}
+
+            result = query_historical_events(
+                sessions, app_path,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)),
+                index_path=root / "history-index.sqlite3")
+            try:
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.source_issue_count, 3)
+                self.assertEqual(result.unclassified_count, 0)
+                self.assertEqual(result.diagnostic_count, 3)
+                details = [result.get_diagnostic_detail(summary.key)
+                           for summary in result.get_diagnostic_page(1).events]
+                details_by_path = {
+                    str(detail.raw_record.get("path", detail.raw_record.get("source_path"))):
+                    detail for detail in details}
+                for path in (audit_path, legacy_path, app_path):
+                    self.assertIn(str(path), details_by_path)
+                    self.assertEqual(path.read_bytes(), source_bytes[path])
+                    self.assertIn(str(path), str(details_by_path[str(path)].raw_record))
+            finally:
+                result.close()
+
+            fallback = query_historical_events(
+                sessions, app_path,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            try:
+                self.assertEqual(fallback.total_count, 0)
+                self.assertEqual(fallback.source_issue_count, 3)
+                self.assertEqual(fallback.unclassified_count, 0)
+                self.assertEqual(fallback.diagnostic_count, 3)
+            finally:
+                fallback.close()
+
     def test_mixed_sources_publish_normal_events_with_lazy_source_diagnostic(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
