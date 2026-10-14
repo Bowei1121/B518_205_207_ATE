@@ -858,6 +858,113 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 result.close()
 
+    def test_indexed_query_marks_source_created_during_scan_unconfirmed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "history-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            reader_started, release_reader = threading.Event(), threading.Event()
+            real_reader = historical_event_query.iter_historical_source_events
+
+            def blocked_reader(source, read_observer=None):
+                reader_started.set()
+                if not release_reader.wait(5):
+                    raise RuntimeError("controlled source scan gate timed out")
+                yield from real_reader(source, read_observer=read_observer)
+
+            service = HistoricalEventQueryService(sessions, None, index_path=index_path)
+            try:
+                with unittest.mock.patch.object(
+                        historical_event_query, "iter_historical_source_events",
+                        blocked_reader):
+                    generation = service.submit(date_range)
+                    self.assertTrue(reader_started.wait(3))
+                    added = RoundAuditStore(
+                        sessions, "round-added", "FCT",
+                        "2026-10-13T00:00:00+08:00", 0.0)
+                    added.append_event(
+                        AuditEvent(1, "round_ready", "added during query", None),
+                        "2026-10-13T09:00:00+08:00", 1.0)
+                    self.assertTrue(added.flush())
+                    release_reader.set()
+                    deadline = time.monotonic() + 5
+                    completion = None
+                    while completion is None and time.monotonic() < deadline:
+                        completion = service.take_result(generation)
+                        if completion is None:
+                            time.sleep(0.01)
+                self.assertTrue(completion.succeeded, completion.error)
+                result = completion.result
+                self.assertEqual(result.total_count, 1)
+                self.assertEqual(result.source_issue_count, 1)
+                self.assertEqual(result.diagnostic_count, 1)
+                warning = result.get_diagnostic_detail(
+                    result.get_diagnostic_page(1).events[0].key)
+                self.assertEqual(warning.source, "read_warning")
+                self.assertIn("changed", warning.message.lower())
+                self.assertIn(str(added.audit_path), str(warning.raw_record))
+                self.assertTrue(added.audit_path.exists())
+                result.close()
+            finally:
+                release_reader.set()
+                service.shutdown()
+
+            recovered = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(recovered.total_count, 2)
+                self.assertEqual(recovered.source_issue_count, 0)
+            finally:
+                recovered.close()
+
+    def test_fixed_result_rejects_detail_after_official_same_path_journal_replace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            journal_path = root / "app-events.json"
+            event_time = [datetime(2026, 10, 13, 8, 0, tzinfo=timezone.utc)]
+            store = AppEventStore(journal_path, clock=lambda: event_time[0])
+            first = store.record("app.hotkey.unavailable", {}, "original first detail")
+            second = store.record("app.profile.save_failed", {"reason": "old"},
+                                  "old unselected detail")
+            self.assertTrue(store.flush())
+            index_path = root / "history-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            frozen = query_historical_events(sessions, journal_path, date_range,
+                                             index_path=index_path)
+            try:
+                old_page = frozen.get_page(1).events
+                self.assertEqual(frozen.total_count, 2)
+                loaded = frozen.get_detail("app:{}".format(first.event_id))
+                self.assertEqual(loaded.raw_record["diagnostic"], "original first detail")
+                event_time[0] += timedelta(seconds=1)
+                new = store.record("app.profile.save_failed", {"reason": "new"},
+                                   "new replacement detail")
+                self.assertTrue(store.flush())
+                replacement_bytes = journal_path.read_bytes()
+
+                self.assertEqual(frozen.get_page(1).events, old_page)
+                self.assertEqual(frozen.total_count, 2)
+                self.assertIsNone(frozen.get_detail("app:{}".format(second.event_id)))
+                self.assertIn(b"new replacement detail", replacement_bytes)
+                self.assertEqual(journal_path.read_bytes(), replacement_bytes)
+            finally:
+                frozen.close()
+
+            refreshed = query_historical_events(sessions, journal_path, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(refreshed.total_count, 3)
+                self.assertIn("app:{}".format(new.event_id),
+                              {event.key for event in refreshed.get_page(1).events})
+            finally:
+                refreshed.close()
+
     def test_unreadable_legacy_events_log_alone_is_a_source_issue(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

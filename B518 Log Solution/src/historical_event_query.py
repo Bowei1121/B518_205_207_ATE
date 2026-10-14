@@ -1004,6 +1004,21 @@ def _query_historical_events_with_index(session_root: Path,
                         raise
                     unavailable_keys.add(source.key)
                     transient_errors.append(_history_read_error(source, str(error)))
+            confirmed_sources = tuple(iter_historical_event_sources(
+                session_root, app_event_path))
+            confirmed_by_key = {source.key: source for source in confirmed_sources}
+            if current_keys != set(confirmed_by_key):
+                changed_keys = current_keys.symmetric_difference(confirmed_by_key)
+                for source_key in sorted(changed_keys):
+                    source = next((item for item in sources if item.key == source_key),
+                                  confirmed_by_key.get(source_key))
+                    source_path = (str(source.path) if source is not None else
+                                   str(session_root))
+                    reason = "Historical source set changed while query was running"
+                    transient_errors.append(HistoricalEvent(
+                        "warning:source-boundary:{}".format(source_key), "read_warning", "",
+                        reason, diagnostic=reason,
+                        raw_record={"source_path": source_path, "reason": reason}))
             _raise_if_query_cancelled(cancellation_event)
             connection.commit()
             snapshot_staging.commit()
