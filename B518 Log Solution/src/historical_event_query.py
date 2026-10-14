@@ -1012,6 +1012,13 @@ def _query_historical_events_with_index(session_root: Path,
                 for source_key in sorted(changed_keys):
                     source = next((item for item in sources if item.key == source_key),
                                   confirmed_by_key.get(source_key))
+                    if source_key not in confirmed_by_key:
+                        connection.execute(
+                            "DELETE FROM history_events WHERE source_key=?", (source_key,))
+                        connection.execute(
+                            "DELETE FROM history_sources WHERE source_key=?", (source_key,))
+                    if source_key in unavailable_keys:
+                        continue
                     source_path = (str(source.path) if source is not None else
                                    str(session_root))
                     reason = "Historical source set changed while query was running"
