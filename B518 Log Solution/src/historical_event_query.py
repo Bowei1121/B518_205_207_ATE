@@ -164,7 +164,8 @@ class HistoricalEventQueryResult:
                  unclassified_count: int, source_issue_count: int,
                  diagnostics: Tuple[HistoricalEvent, ...], store_path: Path,
                  page_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
-                 index_metrics: Optional[HistoricalEventIndexMetrics] = None):
+                 index_metrics: Optional[HistoricalEventIndexMetrics] = None,
+                 index_degraded: bool = False, index_issue: str = ""):
         self.date_range = date_range
         self.total_count = total_count
         self.unclassified_count = unclassified_count
@@ -173,6 +174,8 @@ class HistoricalEventQueryResult:
         self._store_path = Path(store_path)
         self.page_size = page_size
         self.index_metrics = index_metrics or HistoricalEventIndexMetrics()
+        self.index_degraded = index_degraded
+        self.index_issue = index_issue
         self._first_page = ()
         self._closed = False
         self._finalizer = weakref.finalize(self, _remove_snapshot, self._store_path)
@@ -634,9 +637,18 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         raise ValueError("limit must be a positive integer")
     page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
     if index_path is not None:
-        return _query_historical_events_with_index(
-            Path(session_root), Path(app_event_path) if app_event_path else None,
-            date_range, page_size, Path(index_path), cancellation_event)
+        try:
+            return _query_historical_events_with_index(
+                Path(session_root), Path(app_event_path) if app_event_path else None,
+                date_range, page_size, Path(index_path), cancellation_event)
+        except (OSError, sqlite3.Error) as error:
+            _raise_if_query_cancelled(cancellation_event)
+            result = query_historical_events(
+                session_root, app_event_path, date_range, page_size,
+                cancellation_event=cancellation_event)
+            result.index_degraded = True
+            result.index_issue = str(error)
+            return result
     descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
     os.close(descriptor)
     store_path = Path(raw_path)

@@ -453,6 +453,41 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 query_historical_events(sessions, None, date_range,
                                         index_path=sessions / "historical-index.sqlite3")
             self.assertEqual(audit.audit_path.read_bytes(), source_before)
+
+    def test_unavailable_index_falls_back_to_original_sources_and_retries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            # A directory at the index path is a real SQLite open failure. It is
+            # removable after the first query, which models repair and public retry.
+            index_path.mkdir()
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            degraded = query_historical_events(sessions, None, date_range,
+                                               index_path=index_path)
+            try:
+                self.assertEqual(degraded.total_count, 1)
+                self.assertTrue(degraded.index_degraded)
+                self.assertEqual(degraded.events[0].key, "round:round-1:1")
+                self.assertTrue(index_path.is_dir())
+                self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                degraded.close()
+
+            index_path.rmdir()
+            recovered = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertFalse(recovered.index_degraded)
+                self.assertEqual(recovered.total_count, 1)
+                self.assertTrue(index_path.is_file())
+                self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                recovered.close()
             self.assertFalse((sessions / "historical-index.sqlite3").exists())
 
     def test_persistent_query_result_stays_fixed_until_a_new_query(self):

@@ -3065,6 +3065,8 @@ class B518LogSolutionApp:
                 "app.settings.history.previous_result_range",
                 start=result.date_range.start.isoformat(),
                 end=result.date_range.end.isoformat())
+        if result is not None and result.index_degraded:
+            text += " " + self._t("app.settings.history.index_degraded")
         self.historical_query_status.configure(text=text)
 
     def _refresh_historical_event_window(self) -> None:
