@@ -8214,6 +8214,20 @@ class LogSolutionUiTests(unittest.TestCase):
                         self.assertIsNotNone(focused, "Tab navigation lost keyboard focus")
                     self.fail("Tab navigation did not reach {}".format(target))
 
+                def visible_hint_text():
+                    pending = list(root.winfo_children())
+                    while pending:
+                        child = pending.pop()
+                        if (isinstance(child, tk.Toplevel) and
+                                child is not app.historical_event_window and
+                                child.winfo_exists()):
+                            labels = [item.cget("text") for item in child.winfo_children()
+                                      if isinstance(item, (tk.Label, ttk.Label))]
+                            if labels:
+                                return " ".join(labels)
+                        pending.extend(child.winfo_children())
+                    return None
+
                 focus_next_with_tab(app.historical_event_refresh_button)
                 app.historical_event_refresh_button.event_generate("<KeyPress-space>")
                 app.historical_event_refresh_button.event_generate("<KeyRelease-space>")
@@ -8226,6 +8240,8 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.historical_event_refresh_button.cget("text"))
 
                 focus_next_with_tab(app.historical_next_button)
+                self.wait_for_ui(root, lambda: visible_hint_text() is not None)
+                self.assertEqual(visible_hint_text(), "Show the next results page")
                 app.historical_next_button.event_generate("<KeyPress-space>")
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -8238,7 +8254,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 root.update()
                 self.assertEqual(app._historical_query_page_number, 3)
+                self.assertIsNone(visible_hint_text())
                 focus_next_with_tab(app.historical_previous_button)
+                self.wait_for_ui(root, lambda: visible_hint_text() is not None)
+                self.assertEqual(visible_hint_text(), "Show the previous results page")
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
