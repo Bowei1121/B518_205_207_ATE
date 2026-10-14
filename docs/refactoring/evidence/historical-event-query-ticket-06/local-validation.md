@@ -96,3 +96,16 @@ Final Standards/Spec parallel re-review of the complete diff from the unchanged 
 | Official retention does not pin source, deleted index source removed on requery, fresh reader/summary/ledger intact | `test_official_round_cleanup_does_not_pin_source_and_keeps_captured_detail`; App official cleanup tests; existing complete `test_round_retention` suite |
 | H4 incremental capability and snapshot resources remain | `test_source_addition_replacement_move_deletion_and_app_rewrite_refresh_incrementally`; `test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source`; `test_query_snapshot_pages_all_events_and_loads_detail_only_on_request`; `test_closing_snapshot_during_page_open_never_recreates_temporary_database` and the service lifecycle tests |
 | Actual widget read/selection/language/Search and normal complete close | `test_real_tk_fixed_history_coexists_with_official_app_event_cleanup`; existing true-Tk H1/H2/H3/H4/H5 and close tests; `test_closed_source_app_scenario_releases_interpreter_before_worker_gc` |
+
+## Final integration and mainline revalidation — 2026-10-14
+
+Before integration, direct queries to both existing push destinations returned mainline `bbc219c4e690fc51e76dd33bd8437b8f19628c26` and H6 `592310ee51d813111b2f02297a4a6756e97ce0ac`. Both mainline refs were also fetched safely. The target checkout was switched to `B518-Log-Solution` and confirmed clean at that latest mainline SHA. `git merge --ff-only HistoricalEventQuery/ticket-06` then integrated H6 at **`592310ee51d813111b2f02297a4a6756e97ce0ac`**; this is a fast-forward result, **no merge commit** was created.
+
+- Final source/test SHA: `897f6f2d7551daf66220a8340e4430dda0e852e4`.
+- Pre-integration delivery documentation SHA / fast-forward result: `592310ee51d813111b2f02297a4a6756e97ce0ac`.
+- Fixed Standards/Spec comparison base remains `bbc219c4e690fc51e76dd33bd8437b8f19628c26`, with no unresolved issue after the final code/test and applicability re-reviews. No code/test was changed after those reviews.
+- Runtime reconfirmed with a real window: `/Library/Frameworks/Python.framework/Versions/3.8/bin/python3`, 3.8.10, Tcl 8.6.8, Tk 8.6.8, windowing system `aqua`.
+- Mainline command from the confirmed Python directory: `B518_TK_TESTS=1 PYTHONFAULTHANDLER=1 PYTHONPATH=src python3 scripts/run_tests.py`.
+- Mainline result at `592310e`: **461 tests / 138.609 seconds / OK / exit 0 / no skips**, complete log `logs/python38-mainline-full.log`. `git diff --check` passed. No configured type-check engine exists.
+
+This closes the required local/mainline validation gate. Final post-validation documentation push, direct destination queries and normal H6-only branch/comparison-worktree cleanup are recorded in the next closeout note after completion. The actual project checkout remains in place on `B518-Log-Solution`; it is not a disposable H6-created worktree.

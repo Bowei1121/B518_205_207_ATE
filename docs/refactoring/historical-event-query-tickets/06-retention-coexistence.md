@@ -28,6 +28,8 @@
 
 H6 的來源定位版本、查詢快照詳細資料、公開 App／輪次正式清理共存及 fallback 掃描來源競態已實作，七項驗收與重新驗收證據見 [H6 local validation](../evidence/historical-event-query-ticket-06/local-validation.md)。本機整合、主線完整重驗、遠端同步與安全清理以 evidence 的最後 addendum 為準；不代表父規格完成或工廠驗收完成。
 
+本機已正常快轉合併至 `B518-Log-Solution`，整合 SHA `592310ee51d813111b2f02297a4a6756e97ce0ac`，無 merge commit。合併後同一預設 Python 3.8.10/Tk 8.6.8 完整套件再通過 461 tests / 138.609 sec / exit 0 / no skips；最後文件推送、直接遠端同步及清理依 evidence closeout 記錄。
+
 ### 已取得內容與提示條件的適用前提
 
 2026-10-14 使用者明確釐清：「可信暫存內容算已取得，來源清理後仍可讀」。H3 在發布任何有效固定列之前，已把該列的完整原始 `event_json`（身分、原文、詳細、診斷與來源定位）存入查詢所屬的可靠磁碟暫存；「按需詳細」指點選後才讀取／反序列化／呈現快照，不表示尚未捕捉原始內容。因此未點選列在正式清理後仍屬已取得內容，不應改顯示不可取得。

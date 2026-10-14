@@ -63,3 +63,5 @@ H5 必要驗收已完成，固定基準 Standards／Spec 審查無阻擋；Pytho
 ### H6 implementation status — 2026-10-14
 
 H6 已接入來源版本定位、查詢固定快照詳細資料、正式 App journal／輪次清理期間保持固定查詢集合，以及來源讀取期間變更的未確認提示；來源刪除後重新查詢會移除持久索引中的舊來源。依使用者釐清，可信 H3 暫存的完整原始 JSON 視為已取得，清理／同路徑替換後仍能讀取舊內容，不回讀或冒充新版本。聚焦查詢／輪次測試 80 tests 通過；先前的完整 Tk native abort 已定位到既有 M10 fault-injection traceback 的測試收尾循環，固定基準也重現。測試主執行緒 cleanup 修正及 subprocess red/green 回歸後，最終 Python 3.8.10/Tk 8.6.8 完整含 Tk 套件 461 tests / 139.240 sec / exit 0 / no skips，Standards/Spec 固定基準複審無阻擋。七項驗收、主線重驗、同步及清理結果記於 [H6 local validation](../evidence/historical-event-query-ticket-06/local-validation.md)。H7/H8、父規格與工廠驗收仍另追蹤。
+
+本機 H6 已快轉整合至 `B518-Log-Solution` 的 `592310ee51d813111b2f02297a4a6756e97ce0ac`（無 merge commit），合併後同一 Python 3.8.10/Tk 8.6.8 主線完整套件 461 tests / 138.609 sec / exit 0 / no skips；同步與清理見 H6 evidence closeout。
