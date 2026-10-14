@@ -819,6 +819,45 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 fallback.close()
 
+    def test_fallback_scan_excludes_source_replaced_during_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            replacement = RoundAuditStore(
+                root / "replacement", "round-1", "FCT",
+                "2026-10-13T00:00:00+08:00", 0.0)
+            replacement.append_event(
+                AuditEvent(1, "round_ready", "new source version", None),
+                "2026-10-13T09:00:00+08:00", 1.0)
+            self.assertTrue(replacement.flush())
+            replacement_bytes = replacement.audit_path.read_bytes()
+            real_reader = historical_event_query.iter_historical_events
+
+            def replace_after_read(*args, **kwargs):
+                events = list(real_reader(*args, **kwargs))
+                os.replace(str(replacement.audit_path), str(audit.audit_path))
+                return iter(events)
+
+            with unittest.mock.patch(
+                    "historical_event_query.iter_historical_events",
+                    side_effect=replace_after_read):
+                result = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)))
+            try:
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.source_issue_count, 1)
+                self.assertEqual(result.diagnostic_count, 1)
+                anomaly = result.get_diagnostic_detail(
+                    result.get_diagnostic_page(1).events[0].key)
+                self.assertEqual(anomaly.source, "read_warning")
+                self.assertIn("changed", anomaly.message.lower())
+                self.assertEqual(anomaly.raw_record["path"], str(audit.audit_path))
+                self.assertEqual(audit.audit_path.read_bytes(), replacement_bytes)
+            finally:
+                result.close()
+
     def test_unreadable_legacy_events_log_alone_is_a_source_issue(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -744,9 +744,15 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     diagnostics = []
     fallback_source_count = [0]
     fallback_bytes_read = [0]
+    fallback_source_versions = {}
 
-    def observe_source(_path):
+    def observe_source(path):
         fallback_source_count[0] += 1
+        path = Path(path)
+        try:
+            fallback_source_versions[str(path)] = _history_source_signature(path)
+        except OSError:
+            fallback_source_versions[str(path)] = None
 
     def observe_bytes(count):
         fallback_bytes_read[0] += count
@@ -759,13 +765,14 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             "event_key TEXT NOT NULL, local_wall_order INTEGER NOT NULL, "
             "aware_rank INTEGER NOT NULL, epoch REAL, stable_identity TEXT NOT NULL, "
             "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
-            "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)"
+            "source_path TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)"
         )
         connection.execute(
             "CREATE INDEX event_key_lookup ON matching_events(event_key)")
         connection.execute(
             "CREATE TABLE diagnostic_events (diagnostic_ordinal INTEGER PRIMARY KEY, "
-            "event_key TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
+            "event_key TEXT NOT NULL, source_path TEXT NOT NULL, "
+            "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
         connection.execute("CREATE INDEX diagnostic_event_key ON diagnostic_events(event_key)")
 
         _raise_if_query_cancelled(cancellation_event)
@@ -781,8 +788,9 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             if source_issue or occurred_at is None:
                 diagnostic_count += 1
                 connection.execute(
-                    "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
-                    (diagnostic_count, event.key, _event_summary_json(event),
+                    "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
+                    (diagnostic_count, event.key, event.source_path or "",
+                     _event_summary_json(event),
                      _event_json(event)))
             if occurred_at is None:
                 if not source_issue:
@@ -801,11 +809,40 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             sequence = event.sequence if type(event.sequence) is int else event.source_order
             stable_identity = event.round_id or event.key
             connection.execute(
-                "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (event.key, local_wall_order, 0 if epoch is not None else 1, epoch,
                  stable_identity, sequence, event.source_order,
+                 event.source_path or "",
                  _event_summary_json(event), _event_json(event)))
             total_count += 1
+
+        for source_path, captured_version in fallback_source_versions.items():
+            try:
+                current_version = _history_source_signature(Path(source_path))
+            except OSError:
+                current_version = None
+            if captured_version == current_version:
+                continue
+            removed_events = connection.execute(
+                "DELETE FROM matching_events WHERE source_path=?", (source_path,))
+            total_count -= removed_events.rowcount
+            removed_diagnostics = connection.execute(
+                "DELETE FROM diagnostic_events WHERE source_path=?", (source_path,))
+            diagnostic_count -= removed_diagnostics.rowcount
+            source_issue_count += 1
+            diagnostic_count += 1
+            warning = HistoricalEvent(
+                "warning:changed:{}".format(source_path), "read_warning", "",
+                "Historical source changed while being read",
+                diagnostic="Source version could not be confirmed",
+                raw_record={"path": source_path,
+                            "reason": "Historical source changed while being read"})
+            connection.execute(
+                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
+                (diagnostic_count, warning.key, source_path,
+                 _event_summary_json(warning), _event_json(warning)))
+            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                diagnostics.append(warning)
 
         _raise_if_query_cancelled(cancellation_event)
         connection.execute("CREATE INDEX event_order_lookup ON matching_events("
