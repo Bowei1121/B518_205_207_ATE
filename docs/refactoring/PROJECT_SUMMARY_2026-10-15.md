@@ -21,6 +21,6 @@
 ## Git 同步及收尾
 
 - Git root 共用 metadata 的遠端：`origin` 指向 Gitea `10.64.76.34:3000/8362/B518-205_207_ATE.git`，並額外 push 到 GitHub `Bowei1121/B518_205_207_ATE.git`；另有 `github` fetch/push remote。主線程式提交 `bd94a22a7d654d70c4a64ce2212b3bcdf83fa518` 以 fast-forward 同步兩端，H8 分支保留至最終文件提交及直接核對後才正常清理。最終目的地 SHA 與查詢時間記於 H8 local validation。
-- H8 已 fast-forward 合併至主線，主線合併後完整含 Tk 套件 467 tests / 1,092.897 seconds / exit 0 / no skips。接下來完成最終驗收文件提交、推送與兩遠端直接查詢，再正常刪除 H8 本地／遠端票分支；其他 worktree、stash 及既存修改維持原狀，細節見 H8 local validation。
+- H8 已 fast-forward 合併至主線，主線合併後完整含 Tk 套件 467 tests / 1,092.897 seconds / exit 0 / no skips。驗收文件已提交並推送；Gitea 與 GitHub 均直接確認主線同步，H8 本地／遠端票分支已正常刪除且查無殘留。其他 worktree、stash 及既存修改維持原狀，細節見 H8 local validation。
 
 交付詳情：[H8 local validation](evidence/historical-event-query-ticket-08/local-validation.md)。H8 不改保存／清理／監控／裁決政策、不操作正式來源資料，不宣稱現場驗收完成。
