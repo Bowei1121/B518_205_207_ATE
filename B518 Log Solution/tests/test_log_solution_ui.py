@@ -5865,10 +5865,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 warning_index = len(app._historical_event_records)
                 self.assertEqual(app.historical_event_list.size(), warning_index + 1)
                 click_history_row(warning_index)
+                self.wait_for_ui(root, lambda: app._historical_showing_diagnostics and
+                                 len(app._historical_event_records) == 1)
+                click_history_row(1)
                 warning_detail = app.historical_event_detail.get("1.0", "end")
                 self.assertIn("not-json legacy evidence", warning_detail)
-                self.assertEqual(app._historical_event_selected_key,
-                                 "__query_diagnostics__")
+                self.assertIn("error:legacy_session:",
+                              app._historical_event_selected_key)
+                click_history_row(0)
+                self.wait_for_ui(root, lambda: not app._historical_showing_diagnostics and
+                                 app._historical_page_request_id is None and
+                                 len(app._historical_event_records) == 100)
                 first_page_records = app._historical_event_records
                 self.click_tk_widget(root, app.historical_next_button)
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)

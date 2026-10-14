@@ -553,6 +553,84 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 result.close()
 
+    def test_corrupt_audit_is_not_repaired_or_reported_as_confirmed_empty(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            audit_bytes = audit.audit_path.read_bytes()
+            audit.audit_path.write_bytes(b"corrupted audit fixture\n")
+            corrupt_bytes = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            result = query_historical_events(sessions, None, date_range,
+                                             index_path=index_path)
+            try:
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.source_issue_count, 1)
+                self.assertEqual(result.diagnostic_count, 1)
+                diagnostic = result.get_diagnostic_detail(
+                    result.get_diagnostic_page(1).events[0].key)
+                self.assertIn(str(audit.audit_path), str(diagnostic.raw_record))
+                self.assertEqual(audit.audit_path.read_bytes(), corrupt_bytes)
+            finally:
+                result.close()
+
+            # Restore the fixture explicitly, then use the public query again.
+            audit.audit_path.write_bytes(audit_bytes)
+            recovered = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(recovered.total_count, 1)
+                self.assertEqual(recovered.source_issue_count, 0)
+                self.assertEqual(recovered.get_page(1).events[0].key,
+                                 "round:round-1:1")
+            finally:
+                recovered.close()
+
+    def test_mixed_sources_publish_normal_events_with_lazy_source_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            audit_before = audit.audit_path.read_bytes()
+            app_path = root / "app-events.json"
+            app_path.write_text("not-json\n", encoding="utf-8")
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            partial = query_historical_events(sessions, app_path, date_range,
+                                              index_path=index_path)
+            try:
+                self.assertEqual(partial.total_count, 1)
+                self.assertEqual(partial.source_issue_count, 1)
+                self.assertEqual(partial.diagnostic_count, 1)
+                diagnostic_key = partial.get_diagnostic_page(1).events[0].key
+                detail = partial.get_diagnostic_detail(diagnostic_key)
+                self.assertEqual(detail.source, "read_error")
+                self.assertIn(str(app_path), str(detail.raw_record))
+                self.assertEqual(audit.audit_path.read_bytes(), audit_before)
+            finally:
+                partial.close()
+
+            app_path.unlink()
+            app_store = AppEventStore(
+                app_path, clock=lambda: datetime(2026, 10, 13, 1, tzinfo=timezone.utc))
+            app_store.record("app.startup.started", {})
+            self.assertTrue(app_store.flush())
+            recovered = query_historical_events(sessions, app_path, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(recovered.total_count, 2)
+                self.assertEqual(recovered.source_issue_count, 0)
+                self.assertEqual(recovered.index_metrics.parsed_source_count, 1)
+                self.assertEqual(recovered.index_metrics.reused_source_count, 1)
+            finally:
+                recovered.close()
+
     def test_unknown_date_diagnostics_are_paged_and_details_are_selected_lazily(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
