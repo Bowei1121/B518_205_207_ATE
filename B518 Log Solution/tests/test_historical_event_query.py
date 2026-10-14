@@ -659,6 +659,54 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 result.close()
 
+    def test_indexed_partial_legacy_read_matches_raw_prefix_without_caching_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy_path = root / "sessions" / "legacy-round" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            lines = [json.dumps({
+                "timestamp": "2026-10-13T08:00:00+08:00",
+                "message": "legacy event {} {}".format(index, "x" * 80),
+            }) + chr(10) for index in range(200)]
+            readable_prefix = "".join(lines).encode("utf-8")
+            legacy_path.write_bytes(readable_prefix + bytes((0xff,)))
+            index_path = root / "history-index.sqlite3"
+            day = HistoricalEventDateRange(date(2026, 10, 12), date(2026, 10, 13))
+
+            raw = query_historical_events(root / "sessions", None, day)
+            try:
+                expected = tuple(summary.key for page in range(1, raw.page_count + 1)
+                                 for summary in raw.get_page(page).events)
+                self.assertGreater(raw.total_count, 0)
+                self.assertLess(raw.total_count, 200)
+                self.assertEqual(raw.source_issue_count, 1)
+            finally:
+                raw.close()
+
+            indexed = query_historical_events(root / "sessions", None, day,
+                                              index_path=index_path)
+            try:
+                actual = tuple(summary.key for page in range(1, indexed.page_count + 1)
+                               for summary in indexed.get_page(page).events)
+                self.assertEqual(actual, expected)
+                self.assertEqual(indexed.source_issue_count, 1)
+                with sqlite3.connect(str(index_path)) as connection:
+                    self.assertEqual(connection.execute(
+                        "SELECT COUNT(*) FROM history_sources WHERE source_path=?",
+                        (str(legacy_path.resolve()),)).fetchone()[0], 0)
+            finally:
+                indexed.close()
+
+            legacy_path.write_bytes(readable_prefix)
+            recovered = query_historical_events(root / "sessions", None, day,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(recovered.total_count, 200)
+                self.assertEqual(recovered.source_issue_count, 0)
+                self.assertEqual(recovered.index_metrics.parsed_source_count, 1)
+            finally:
+                recovered.close()
+
     def test_mixed_sources_publish_normal_events_with_lazy_source_diagnostic(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

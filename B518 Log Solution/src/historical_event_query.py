@@ -822,6 +822,7 @@ def _query_historical_events_with_index(session_root: Path,
     os.close(descriptor)
     snapshot_path = Path(raw_path)
     connection = None
+    snapshot_staging = None
     parsed_sources = 0
     reused_sources = 0
     source_bytes_read = 0
@@ -834,6 +835,14 @@ def _query_historical_events_with_index(session_root: Path,
             _validate_history_index_path(index_path, session_root, sources)
             index_path.parent.mkdir(parents=True, exist_ok=True)
             connection, rebuilt_index = _open_history_index(index_path)
+            snapshot_staging = sqlite3.connect(str(snapshot_path))
+            snapshot_staging.execute(
+                "CREATE TABLE partial_events ("
+                "source_key TEXT NOT NULL, source_ordinal INTEGER NOT NULL, "
+                "event_key TEXT NOT NULL, occurred_at TEXT NOT NULL, time_kind INTEGER NOT NULL, "
+                "aware_epoch REAL, naive_order INTEGER, stable_identity TEXT NOT NULL, "
+                "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
+                "source TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
             _raise_if_query_cancelled(cancellation_event)
             current_keys = {source.key for source in sources}
             connection.execute("BEGIN IMMEDIATE")
@@ -871,9 +880,11 @@ def _query_historical_events_with_index(session_root: Path,
                 connection.execute(
                     "INSERT INTO history_sources VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
                     (source.key, str(Path(source.path).resolve())) + signature)
+                snapshot_staging.execute("BEGIN")
                 read_count = [0]
                 source_events = 0
                 read_error = None
+                confirmed_signature = None
 
                 def observe_read(count):
                     read_count[0] += count
@@ -894,12 +905,17 @@ def _query_historical_events_with_index(session_root: Path,
                         sequence = (event.sequence if type(event.sequence) is int
                                     else event.source_order)
                         stable_identity = event.round_id or event.key
+                        event_row = (
+                            source.key, ordinal, event.key, event.occurred_at, time_kind,
+                            aware_epoch, naive_order, stable_identity, sequence,
+                            event.source_order, event.source,
+                            _event_summary_json(event), _event_json(event))
                         connection.execute(
                             "INSERT INTO history_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                            (source.key, ordinal, event.key, event.occurred_at, time_kind,
-                             aware_epoch, naive_order, stable_identity, sequence,
-                             event.source_order, event.source,
-                             _event_summary_json(event), _event_json(event)))
+                            event_row)
+                        snapshot_staging.execute(
+                            "INSERT INTO partial_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            event_row)
                         source_events += 1
                     confirmed_signature = _history_source_signature(source.path)
                     source_version_checks += 1
@@ -912,11 +928,20 @@ def _query_historical_events_with_index(session_root: Path,
                         "UPDATE history_sources SET event_count=? WHERE source_key=?",
                         (source_events, source.key))
                     connection.execute("RELEASE refresh_source")
+                    snapshot_staging.execute(
+                        "DELETE FROM partial_events WHERE source_key=?", (source.key,))
+                    snapshot_staging.commit()
                     parsed_sources += 1
                     source_bytes_read += read_count[0]
                 except Exception as error:
                     connection.execute("ROLLBACK TO refresh_source")
                     connection.execute("RELEASE refresh_source")
+                    if read_error is not None and confirmed_signature == signature:
+                        # Keep only this query's verified readable prefix. It stays
+                        # outside the durable index so the failed source is retryable.
+                        snapshot_staging.commit()
+                    else:
+                        snapshot_staging.rollback()
                     source_bytes_read += read_count[0]
                     if cancellation_event is not None and cancellation_event.is_set():
                         raise
@@ -924,6 +949,9 @@ def _query_historical_events_with_index(session_root: Path,
                     transient_errors.append(_history_read_error(source, str(error)))
             _raise_if_query_cancelled(cancellation_event)
             connection.commit()
+            snapshot_staging.commit()
+            snapshot_staging.close()
+            snapshot_staging = None
 
             snapshot = _create_indexed_query_snapshot(
                 connection, snapshot_path, date_range, page_size, unavailable_keys,
@@ -937,6 +965,8 @@ def _query_historical_events_with_index(session_root: Path,
                 snapshot.index_issue = "The historical query index was rebuilt."
             return snapshot
     except Exception:
+        if snapshot_staging is not None:
+            snapshot_staging.close()
         if connection is not None:
             connection.rollback()
             connection.close()
@@ -1145,6 +1175,41 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
                              (diagnostic_count, row[0], row[1], row[2]))
             if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
                 diagnostics.append(_event_from_json(row[2]))
+        partial_rows = snapshot.execute(
+            "SELECT event_key, occurred_at, time_kind, aware_epoch, naive_order, "
+            "stable_identity, sequence_number, source_order, source, summary_json, event_json "
+            "FROM partial_events ORDER BY source_key, source_ordinal")
+        for row in partial_rows:
+            _raise_if_query_cancelled(cancellation_event)
+            (event_key, value, _time_kind, _aware_epoch, _naive_order,
+             stable_identity, sequence, source_order, source, summary_json, event_json) = row
+            event = _event_from_json(event_json)
+            source_issue = source in {"read_error", "read_warning"}
+            if source_issue:
+                source_issue_count += 1
+            parsed = _parse_occurred_at(value, date_range._local_timezone)
+            if source_issue or parsed is None:
+                diagnostic_count += 1
+                snapshot.execute("INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                                 (diagnostic_count, event_key, summary_json, event_json))
+                if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                    diagnostics.append(event)
+            if parsed is None:
+                if not source_issue:
+                    unclassified_count += 1
+                continue
+            parsed_value, epoch, local_wall_order = parsed
+            if epoch is None:
+                in_range = date_range.start <= parsed_value.date() <= date_range.end
+            else:
+                in_range = date_range._start_epoch <= epoch < date_range._end_epoch
+            if in_range:
+                snapshot.execute(
+                    "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event_key, local_wall_order, 0 if epoch is not None else 1, epoch,
+                     stable_identity, sequence, source_order, summary_json, event_json))
+                total_count += 1
+        snapshot.execute("DROP TABLE partial_events")
         source_issue_count += len(transient_errors)
         for event in transient_errors:
             diagnostic_count += 1
