@@ -21,6 +21,10 @@
 
 逐項證據及 runtime 限制見 [H5 local validation](../evidence/historical-event-query-ticket-05/local-validation.md)。勾選只代表本票程式與必要桌面驗收，不代表 H6–H8、父規格、正式部署或工廠驗收完成。
 
+## Completion — 2026-10-14
+
+H5 已以 fast-forward 合併至 `B518-Log-Solution`（合併 SHA `7ef1c3e5ceb69dea91a7fb0afb1dd4b8f6a2336f`），合併後完整含 Tk 套件通過；最終同步與分支清理證據見上方驗收紀錄。本票不宣稱 H6–H8 或父規格 #37 完整交付。
+
 ## Blocked by
 
 - [#39：重新查詢、取消與視窗生命週期](https://github.com/Bowei1121/B518_205_207_ATE/issues/39)
