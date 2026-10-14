@@ -1,6 +1,7 @@
 """Source-App acceptance at the real Tk, shared-round and disk boundaries."""
 import os
 import json
+import gc
 import time
 import tkinter as tk
 import unittest
@@ -38,6 +39,12 @@ def widgets(parent):
 
 @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1", "requires desktop Tk")
 class M10SourceIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        # Fault-injection tracebacks can retain closed widgets in cycles. Once
+        # each scenario's local variables are gone, collect those cycles on the
+        # Tk thread before a later writer can trigger background collection.
+        self.addCleanup(gc.collect)
+
     def pump(self, root, predicate, timeout=20):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
