@@ -844,6 +844,25 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
                 diagnostics.append(warning)
 
+        captured_source_paths = set(fallback_source_versions)
+        confirmed_source_paths = {
+            str(Path(source.path)) for source in
+            iter_historical_event_sources(session_root, app_event_path)}
+        for source_path in sorted(confirmed_source_paths - captured_source_paths):
+            source_issue_count += 1
+            diagnostic_count += 1
+            reason = "Historical source appeared while query was running"
+            warning = HistoricalEvent(
+                "warning:source-added:{}".format(source_path), "read_warning", "",
+                reason, diagnostic=reason,
+                raw_record={"path": source_path, "reason": reason})
+            connection.execute(
+                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
+                (diagnostic_count, warning.key, source_path,
+                 _event_summary_json(warning), _event_json(warning)))
+            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                diagnostics.append(warning)
+
         _raise_if_query_cancelled(cancellation_event)
         connection.execute("CREATE INDEX event_order_lookup ON matching_events("
                            "local_wall_order DESC, aware_rank ASC, epoch DESC, "

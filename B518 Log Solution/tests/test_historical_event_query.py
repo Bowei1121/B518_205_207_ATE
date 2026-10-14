@@ -858,6 +858,60 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 result.close()
 
+    def test_fallback_query_marks_new_source_appearing_after_discovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            scan_finished, release_scan = threading.Event(), threading.Event()
+            real_reader = historical_event_query.iter_historical_events
+            results, failures = [], []
+
+            def pause_after_discovery(*args, **kwargs):
+                events = tuple(real_reader(*args, **kwargs))
+                scan_finished.set()
+                if not release_scan.wait(5):
+                    raise RuntimeError("controlled fallback scan gate timed out")
+                yield from events
+
+            def query():
+                try:
+                    results.append(query_historical_events(sessions, None, date_range))
+                except Exception as error:
+                    failures.append(error)
+
+            with unittest.mock.patch.object(
+                    historical_event_query, "iter_historical_events",
+                    side_effect=pause_after_discovery):
+                worker = threading.Thread(target=query, name="H6FallbackQueryTest")
+                worker.start()
+                try:
+                    self.assertTrue(scan_finished.wait(3))
+                    added = RoundAuditStore(
+                        sessions, "round-added", "FCT",
+                        "2026-10-13T00:00:00+08:00", 0.0)
+                    added.append_event(
+                        AuditEvent(1, "round_ready", "added during fallback", None),
+                        "2026-10-13T09:00:00+08:00", 1.0)
+                    self.assertTrue(added.flush())
+                finally:
+                    release_scan.set()
+                    worker.join(5)
+                self.assertFalse(worker.is_alive())
+            self.assertEqual(failures, [])
+            result = results[0]
+            try:
+                self.assertEqual(result.total_count, 1)
+                self.assertEqual(result.source_issue_count, 1)
+                warning = result.get_diagnostic_detail(
+                    result.get_diagnostic_page(1).events[0].key)
+                self.assertEqual(warning.source, "read_warning")
+                self.assertIn(str(added.audit_path), str(warning.raw_record))
+            finally:
+                result.close()
+
     def test_indexed_query_marks_source_created_during_scan_unconfirmed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
