@@ -7940,13 +7940,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
             finally:
                 app._close_historical_event_window()
-                app.rounds.request_close()
-                self.wait_for(lambda: app.rounds.close_status().status in {
-                    "complete", "failed"})
-                self.assertEqual(app.rounds.close_status().status, "complete",
-                                 app.rounds.close_status())
-                app.hotkey.close()
-                root.destroy()
+                app.close()
+                try:
+                    self.wait_for_ui(root, lambda: not root.winfo_exists() or
+                                     app.rounds.close_status().status in {
+                                         "complete", "failed"})
+                    self.assertEqual(app.rounds.close_status().status, "complete",
+                                     app.rounds.close_status())
+                finally:
+                    if root.winfo_exists():
+                        app.rounds.request_close()
+                        app.hotkey.close()
+                        root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
