@@ -2,18 +2,18 @@
 
 import argparse
 import copy
-import glob
 import hashlib
 import json
+import os
 import platform
 import resource
+import statistics
 import subprocess
 import sys
 import tempfile
 import threading
 import time as monotonic_time
 import tracemalloc
-import os
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -23,6 +23,15 @@ _APP_EVENT_RECORD_VERSION = 1
 _EVENTS_PER_ROUND = 1000
 _DATE_SPAN_DAYS = 120
 _QUERY_WINDOW_DAYS = 90
+
+
+def _physical_memory_bytes():
+    if "SC_PHYS_PAGES" not in getattr(os, "sysconf_names", {}):
+        return None
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError):
+        return None
 
 
 def _json_line(payload):
@@ -285,7 +294,9 @@ def generate_fixture(root, event_count, as_of):
         "sessions_path": str(sessions),
         "app_event_path": str(app_path),
         "runtime": {"python": sys.version, "executable": sys.executable,
-                    "platform": platform.platform(), "machine": platform.machine()},
+                    "platform": platform.platform(), "machine": platform.machine(),
+                    "logical_cpu_count": os.cpu_count(),
+                    "physical_memory_bytes": _physical_memory_bytes()},
     }
     manifest_path = root / "fixture-manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2,
@@ -401,7 +412,7 @@ def _sample_command(arguments):
         "scenario": arguments.scenario,
         "run": arguments.run_number,
         "command": arguments.command_text,
-        "started_at_local": datetime.now().astimezone().isoformat(),
+        "measurement_recorded_at_local": datetime.now().astimezone().isoformat(),
         "query_seconds": completed_at - started,
         "identity_digest_seconds": digest_seconds,
         "first_middle_last_page_latencies": page_latencies,
@@ -600,6 +611,31 @@ def _benchmark_command(arguments):
         source_hashes_after[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
     if source_hashes_after != manifest["source_sha256"]:
         raise AssertionError("capacity query changed or failed to restore source bytes")
+    scenario_samples = {
+        "initial_index_build": initial_samples,
+        "normal_requery_fresh_process": [sample for sample in measured
+                                          if sample["scenario"] == "reuse"],
+        "single_source_change": change_results,
+        "index_degradation": degraded_samples,
+        "normal_page_navigation": page_samples,
+    }
+    metrics_to_summarize = (
+        "query_seconds", "source_bytes_read_by_reader", "parsed_source_count",
+        "reused_source_count", "source_version_check_count", "process_peak_rss_bytes",
+        "python_peak_tracemalloc_bytes", "index_bytes_after_query",
+        "query_snapshot_bytes", "identity_digest_seconds",
+    )
+    summaries = {}
+    for scenario, samples in scenario_samples.items():
+        summaries[scenario] = {}
+        for metric in metrics_to_summarize:
+            values = [sample[metric] for sample in samples]
+            summaries[scenario][metric] = {
+                "samples": values,
+                "median": statistics.median(values),
+                "minimum": min(values),
+                "maximum": max(values),
+            }
     report = {
         "format_version": 1,
         "fixture_manifest": str(root / "fixture-manifest.json"),
@@ -608,14 +644,8 @@ def _benchmark_command(arguments):
         "fixture_source_bytes": manifest["source_bytes_total"],
         "raw_file_baseline_sha256": baseline_digest,
         "raw_file_baseline_count": baseline["total_count"],
-        "scenario_runs": {
-            "initial_index_build": initial_samples,
-            "normal_requery_fresh_process": [sample for sample in measured
-                                               if sample["scenario"] == "reuse"],
-            "single_source_change": change_results,
-            "index_degradation": degraded_samples,
-            "normal_page_navigation": page_samples,
-        },
+        "scenario_runs": scenario_samples,
+        "scenario_summaries": summaries,
         "unmeasured_setup_and_restore_samples": [sample for sample in measured
                                                    if sample["scenario"] in (
                                                        "raw-file-baseline",
@@ -631,7 +661,9 @@ def _benchmark_command(arguments):
             "Tk event-loop interval is measured separately by the interactive desktop acceptance",
         ],
         "runtime": {"python": sys.version, "executable": sys.executable,
-                    "platform": platform.platform(), "machine": platform.machine()},
+                    "platform": platform.platform(), "machine": platform.machine(),
+                    "logical_cpu_count": os.cpu_count(),
+                    "physical_memory_bytes": _physical_memory_bytes()},
     }
     (output / "benchmark-report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
