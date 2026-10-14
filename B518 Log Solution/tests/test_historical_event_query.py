@@ -144,6 +144,64 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 result.close()
                 store.stop()
 
+    def test_formal_app_save_stays_out_of_fixed_result_until_requery_without_flush(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            original = store.record("app.hotkey.unavailable", {}, "saved before query")
+            self.assertTrue(store.flush())
+            original_bytes = store.path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 14), date(2026, 10, 14))
+            result = query_historical_events(
+                root / "sessions", store.path, date_range, index_path=index_path)
+            entered, release = threading.Event(), threading.Event()
+            from app_event_store import _atomic_replace
+
+            def blocked_save(path, content):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("controlled save gate timed out")
+                return _atomic_replace(path, content)
+
+            try:
+                with unittest.mock.patch("app_event_store._atomic_replace",
+                                         side_effect=blocked_save):
+                    pending = store.record("app.profile.save_failed", {"reason": "late"},
+                                           "saved after query")
+                    self.assertTrue(entered.wait(2))
+                    self.assertEqual(store.path.read_bytes(), original_bytes)
+                    self.assertGreater(store.status().pending_count, 0)
+
+                    self.assertEqual(result.total_count, 1)
+                    self.assertEqual([item.key for item in result.get_page(1).events],
+                                     ["app:{}".format(original.event_id)])
+                    self.assertTrue(entered.is_set())
+                    self.assertEqual(store.path.read_bytes(), original_bytes)
+
+                    release.set()
+                    self.assertTrue(store.flush())
+
+                self.assertEqual(result.total_count, 1)
+                self.assertEqual([item.key for item in result.get_page(1).events],
+                                 ["app:{}".format(original.event_id)])
+                self.assertIsNone(result.get_detail("app:{}".format(original.event_id)))
+                refreshed = query_historical_events(
+                    root / "sessions", store.path, date_range, index_path=index_path)
+                try:
+                    self.assertEqual(refreshed.total_count, 2)
+                    self.assertEqual({item.key for item in refreshed.get_page(1).events}, {
+                        "app:{}".format(original.event_id),
+                        "app:{}".format(pending.event_id),
+                    })
+                finally:
+                    refreshed.close()
+            finally:
+                release.set()
+                result.close()
+                store.stop()
+
     def test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -357,6 +415,41 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(rebuilt.index_metrics.reused_source_count, 0)
                 self.assertTrue(rebuilt.index_degraded)
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                rebuilt.close()
+
+    def test_pre_h6_index_without_source_versions_is_rebuilt_before_detail_reuse(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+            initial = query_historical_events(
+                sessions, None, date_range, index_path=index_path)
+            event_key = initial.get_page(1).events[0].key
+            initial.close()
+            with sqlite3.connect(str(index_path)) as connection:
+                row = connection.execute(
+                    "SELECT source_key, source_ordinal, event_json FROM history_events"
+                ).fetchone()
+                payload = json.loads(row[2])
+                payload.pop("source_path", None)
+                payload.pop("source_version", None)
+                connection.execute(
+                    "UPDATE history_events SET event_json=? WHERE source_key=? AND source_ordinal=?",
+                    (json.dumps(payload), row[0], row[1]))
+                connection.execute("PRAGMA user_version=1")
+
+            rebuilt = query_historical_events(
+                sessions, None, date_range, index_path=index_path)
+            try:
+                self.assertTrue(rebuilt.index_degraded)
+                self.assertEqual(rebuilt.index_metrics.parsed_source_count, 1)
+                detail = rebuilt.get_detail(event_key)
+                self.assertIsNotNone(detail)
+                self.assertEqual(Path(detail.source_path), audit.audit_path)
+                self.assertIsNotNone(detail.source_version)
             finally:
                 rebuilt.close()
 
@@ -586,7 +679,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(result.total_count, 1)
                 self.assertEqual(result.index_metrics.parsed_source_count, 1)
                 with sqlite3.connect(str(index_path)) as connection:
-                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
             finally:
                 result.close()

@@ -16,6 +16,7 @@ import round_retention
 import app_event_store
 from round_archival import read_round_archive, write_round_archive
 from app_event_store import AppEventStore, read_app_event_store
+from historical_event_query import HistoricalEventDateRange, query_historical_events
 
 
 class CompleteMonitor(BaseMonitor):
@@ -155,6 +156,74 @@ class RoundRetentionTests(unittest.TestCase):
                 retention_ledger_path=root / "round-retention-ledger.json")
             restored_result = restored.retention_cleanup_summaries()[-1].results[0]
             self.assertEqual(restored_result.reason_message, deleted_reason)
+
+    def test_official_round_cleanup_does_not_pin_history_snapshot_or_retain_indexed_detail(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = [datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc)]
+            archiver, round_id = self.make_archived_round(root, now)
+            archive = archiver.archive_status(round_id)
+            self.addCleanup(archiver.request_close)
+            session_root = root / "sessions"
+            index_path = root / "historical-event-query-index.sqlite3"
+            ledger_path = root / "round-retention-ledger.json"
+            coordinator = RoundCoordinator(
+                audit_root=session_root, wall_clock=lambda: now[0],
+                retention_ledger_path=ledger_path)
+            self.addCleanup(coordinator.request_close)
+            source_path = next(item.path for item in archive.components
+                               if item.name == "audit.jsonl")
+            source_before_query = source_path.read_bytes()
+            result = query_historical_events(
+                session_root, None,
+                HistoricalEventDateRange(datetime(2026, 10, 7).date(),
+                                         datetime(2026, 10, 7).date()),
+                index_path=index_path)
+            self.addCleanup(result.close)
+            self.assertEqual(source_path.read_bytes(), source_before_query)
+            summaries = result.get_page(1).events
+            self.assertGreaterEqual(len(summaries), 2)
+            loaded = result.get_detail(summaries[0].key)
+            self.assertIsNotNone(loaded)
+            not_loaded_key = summaries[-1].key
+            self.assertNotEqual(not_loaded_key, summaries[0].key)
+            index_before_cleanup = index_path.read_bytes()
+
+            now[0] = datetime.fromisoformat(archive.archived_at) + timedelta(days=366)
+            coordinator.request_retention_cleanup(365, "manual")
+            self.wait_until(lambda: coordinator.retention_cleanup_status().status in {
+                "complete", "failed"})
+
+            status = coordinator.retention_cleanup_status()
+            self.assertEqual(status.status, "complete", status)
+            self.assertFalse(source_path.exists())
+            self.assertEqual(result.total_count, len(summaries))
+            self.assertEqual(tuple(item.key for item in result.get_page(1).events),
+                             tuple(item.key for item in summaries))
+            self.assertEqual(loaded.key, summaries[0].key)
+            self.assertIsNone(result.get_detail(not_loaded_key))
+            self.assertEqual(index_path.read_bytes(), index_before_cleanup)
+
+            fresh_query = query_historical_events(
+                session_root, None,
+                HistoricalEventDateRange(datetime(2026, 10, 7).date(),
+                                         datetime(2026, 10, 7).date()),
+                index_path=index_path)
+            try:
+                self.assertEqual(fresh_query.total_count, 0)
+                self.assertEqual(fresh_query.index_metrics.parsed_source_count, 0)
+                self.assertEqual(fresh_query.index_metrics.reused_source_count, 0)
+                fresh_reader = RoundCoordinator(
+                    audit_root=session_root,
+                    wall_clock=lambda: now[0],
+                    retention_ledger_path=ledger_path)
+                summary = fresh_reader.retention_cleanup_summaries()[-1]
+                self.assertEqual(summary.status, "complete")
+                self.assertEqual(summary.deleted_round_ids, (round_id,))
+                self.assertEqual(summary.retention_days, 365)
+                self.assertNotEqual(index_path.read_bytes(), index_before_cleanup)
+            finally:
+                fresh_query.close()
 
     def test_existing_cleanup_schedule_prunes_expired_app_events_and_persists_summary(self):
         with tempfile.TemporaryDirectory() as temporary:

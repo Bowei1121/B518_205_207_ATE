@@ -7840,6 +7840,111 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_fixed_history_coexists_with_official_app_event_cleanup(self):
+        old_event_time = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
+        event_clock = [old_event_time]
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=root_path / "sessions",
+                app_event_path=root_path / "app-events.json",
+                app_event_clock=lambda: event_clock[0])
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                first = app.app_events.record(
+                    "app.hotkey.unavailable", {}, "loaded original diagnostic")
+                second = app.app_events.record(
+                    "app.profile.save_failed", {"reason": "old device"},
+                    "not loaded original diagnostic")
+                self.assertTrue(app.app_events.flush())
+                source_before_query = app.app_events.path.read_bytes()
+
+                app.open_historical_events()
+                app.historical_start_var.set("2026-09-01")
+                app.historical_end_var.set("2026-09-01")
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None and
+                                 app._historical_query_generation is None)
+                result = app._historical_query_result
+                self.assertIn("app:{}".format(first.event_id),
+                              {event.key for event in app._historical_event_records})
+                self.assertIn("app:{}".format(second.event_id),
+                              {event.key for event in app._historical_event_records})
+                index_path = root_path / "historical-event-query-index.sqlite3"
+                index_before_cleanup = index_path.read_bytes()
+                self.assertEqual(app.app_events.path.read_bytes(), source_before_query)
+
+                first_index = next(index for index, event in enumerate(
+                    app._historical_event_records)
+                    if event.key == "app:{}".format(first.event_id))
+                self.click_tk_listbox_row(root, app.historical_event_list, first_index)
+                self.wait_for_ui(root, lambda: "loaded original diagnostic" in
+                                 app.historical_event_detail.get("1.0", "end"))
+
+                # This invokes the registered App journal retention path while the
+                # fixed query window and its temporary snapshot remain open.
+                event_clock[0] = datetime.now(timezone.utc)
+                app.rounds.request_retention_cleanup(30, "app-startup")
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                    "complete", "failed"})
+                cleanup = app.rounds.retention_cleanup_status()
+                self.assertEqual(cleanup.status, "complete", cleanup)
+                self.assertTrue(app.app_events.status().complete)
+                self.assertNotEqual(app.app_events.path.read_bytes(), source_before_query)
+                self.assertEqual(index_path.read_bytes(), index_before_cleanup)
+                self.assertEqual(result.total_count, len(app._historical_event_records))
+                self.assertIn("loaded original diagnostic",
+                              app.historical_event_detail.get("1.0", "end"))
+
+                second_index = next(index for index, event in enumerate(
+                    app._historical_event_records)
+                    if event.key == "app:{}".format(second.event_id))
+                self.click_tk_listbox_row(root, app.historical_event_list, second_index)
+                self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
+                self.assertIn("Data is no longer available; requery.",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(app._historical_event_selected_key,
+                                 "app:{}".format(second.event_id))
+
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app._historical_event_selected_key,
+                                 "app:{}".format(second.event_id))
+                self.assertIn("資料已不可取得，請重新查詢。",
+                              app.historical_event_detail.get("1.0", "end"))
+
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update()
+                self.assertEqual(app._historical_event_selected_key,
+                                 "app:{}".format(second.event_id))
+                self.assertIn("Data is no longer available; requery.",
+                              app.historical_event_detail.get("1.0", "end"))
+
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not result and
+                                 app._historical_query_generation is None)
+                self.assertEqual(app._historical_query_result.total_count, 0)
+                self.assertEqual(app._historical_query_result.page_count, 0)
+                self.assertNotEqual(index_path.read_bytes(), index_before_cleanup)
+                self.assertEqual(app.rounds.retention_cleanup_status().status, "complete")
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_history_degraded_index_and_paged_unknown_date_diagnostics(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \

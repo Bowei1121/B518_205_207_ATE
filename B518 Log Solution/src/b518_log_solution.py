@@ -3427,9 +3427,13 @@ class B518LogSolutionApp:
             self._render_historical_event_detail(completion.event)
         else:
             self._historical_event_selected_detail = None
-            self._historical_event_detail_status_key = "app.settings.history.detail_unavailable"
+            unavailable_key = (
+                "app.settings.history.source_no_longer_available"
+                if completion is not None and completion.error is None else
+                "app.settings.history.detail_unavailable")
+            self._historical_event_detail_status_key = unavailable_key
             self._set_historical_event_detail(
-                self._t("app.settings.history.detail_unavailable"))
+                self._t(unavailable_key))
 
     def _render_historical_event_detail(self, event: HistoricalEvent) -> None:
         presentation = render_historical_event(event, self.current_language)
