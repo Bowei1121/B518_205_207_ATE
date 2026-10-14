@@ -6,7 +6,7 @@ from pathlib import Path
 
 from historical_event_display import iter_historical_event_sources
 from historical_event_query import HistoricalEventDateRange, query_historical_events
-from historical_event_capacity import generate_fixture
+from historical_event_capacity import generate_fixture, _run_sample_process
 
 
 class HistoricalEventCapacityFixtureTests(unittest.TestCase):
@@ -51,6 +51,36 @@ class HistoricalEventCapacityFixtureTests(unittest.TestCase):
                 path = root / relative_path
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),
                                  expected_digest)
+
+    def test_isolated_public_service_sample_measures_reuse_and_degradation(self):
+        with tempfile.TemporaryDirectory(prefix="b518-capacity-sample-") as temporary:
+            root = Path(temporary)
+            fixture = root / "fixture"
+            manifest = generate_fixture(fixture, 603, date(2026, 10, 14))
+            script = Path(__file__).resolve().parents[1] / "scripts" / \
+                "historical_event_capacity.py"
+            index_path = root / "query-index.sqlite3"
+            initial = _run_sample_process(
+                script, fixture, index_path, "initial", 1, "full", 60)
+            self.assertEqual(initial["total_count"],
+                             manifest["expected_in_range_event_count"])
+            self.assertEqual(initial["parsed_source_count"], manifest["source_count"])
+            self.assertFalse(initial["index_degraded"])
+
+            reused = _run_sample_process(
+                script, fixture, index_path, "reuse", 1, "full", 60)
+            self.assertEqual(reused["identity_sha256"], initial["identity_sha256"])
+            self.assertEqual(reused["parsed_source_count"], 0)
+            self.assertEqual(reused["reused_source_count"], manifest["source_count"])
+            self.assertTrue(reused["snapshot_removed"])
+
+            index_path.write_bytes(b"controlled corrupt index")
+            degraded = _run_sample_process(
+                script, fixture, index_path, "degraded", 1, "full", 60)
+            self.assertTrue(degraded["index_degraded"])
+            self.assertEqual(degraded["identity_sha256"], initial["identity_sha256"])
+            self.assertEqual(degraded["parsed_source_count"], manifest["source_count"])
+            self.assertTrue(degraded["snapshot_removed"])
 
 
 if __name__ == "__main__":

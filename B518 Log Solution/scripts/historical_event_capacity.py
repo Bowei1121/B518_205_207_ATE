@@ -1,10 +1,19 @@
 """Build reproducible mixed-source fixtures for historical-event capacity checks."""
 
 import argparse
+import copy
+import glob
 import hashlib
 import json
 import platform
+import resource
+import subprocess
 import sys
+import tempfile
+import threading
+import time as monotonic_time
+import tracemalloc
+import os
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -57,7 +66,7 @@ def _write_audit_source(sessions, source_number, first_ordinal, event_count, as_
         "schema_version": _AUDIT_SCHEMA_VERSION,
         "round_id": round_id,
         "station": "FCT",
-        "accepted_start_at": "2026-10-14T00:00:00+08:00",
+        "accepted_start_at": _event_time(as_of, 0),
         "accepted_start_monotonic": 0.0,
         "config": {"platform": "capacity-fixture"},
         "time_contract": {
@@ -289,6 +298,351 @@ def _prepare_command(arguments):
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+def _key_digest(result, pages=None):
+    digest = hashlib.sha256()
+    if pages is None:
+        pages = range(1, result.page_count + 1)
+    count = 0
+    for page_number in pages:
+        page = result.get_page(page_number)
+        if len(page.events) > 100:
+            raise AssertionError("query returned a page larger than 100 events")
+        for event in page.events:
+            digest.update(event.key.encode("utf-8"))
+            digest.update(b"\n")
+            count += 1
+    return count, digest.hexdigest()
+
+
+def _index_size(index_path):
+    total = 0
+    for candidate in (index_path, Path(str(index_path) + "-wal"),
+                      Path(str(index_path) + "-shm")):
+        try:
+            total += candidate.stat().st_size
+        except FileNotFoundError:
+            pass
+    return total
+
+
+def _sample_command(arguments):
+    # Import after the CLI starts so this script remains usable via PYTHONPATH=src:scripts.
+    from historical_event_query import (HistoricalEventDateRange,
+                                        HistoricalEventQueryService)
+
+    root = arguments.root.resolve()
+    manifest = json.loads((root / "fixture-manifest.json").read_text(encoding="utf-8"))
+    date_range = HistoricalEventDateRange(
+        date.fromisoformat(manifest["range_start"]),
+        date.fromisoformat(manifest["range_end"]))
+    index_path = arguments.index.resolve()
+    snapshot_glob = Path(tempfile.gettempdir()).glob("b518-history-query-*.sqlite3")
+    before_snapshots = {path: path.stat().st_size for path in snapshot_glob}
+    tracemalloc.start()
+    service = HistoricalEventQueryService(
+        Path(manifest["sessions_path"]), Path(manifest["app_event_path"]),
+        index_path=None if arguments.no_index else index_path)
+    started = monotonic_time.perf_counter()
+    generation = service.submit(date_range)
+    deadline = monotonic_time.monotonic() + arguments.timeout
+    completion = None
+    while monotonic_time.monotonic() < deadline:
+        completion = service.take_result(generation)
+        if completion is not None:
+            break
+        monotonic_time.sleep(0.01)
+    completed_at = monotonic_time.perf_counter()
+    if completion is None:
+        service.cancel(generation)
+        service.shutdown()
+        tracemalloc.stop()
+        raise TimeoutError("public historical query did not complete")
+    if not completion.succeeded:
+        service.shutdown()
+        tracemalloc.stop()
+        raise completion.error
+    result = completion.result
+    key_started = monotonic_time.perf_counter()
+    if arguments.digest == "full":
+        verified_count, identity_sha256 = _key_digest(result)
+    elif arguments.digest == "anchors":
+        selected_pages = sorted(set((1, max(1, (result.page_count + 1) // 2),
+                                     max(1, result.page_count))))
+        verified_count, identity_sha256 = _key_digest(result, selected_pages)
+    else:
+        verified_count, identity_sha256 = 0, ""
+    digest_seconds = monotonic_time.perf_counter() - key_started
+    detail_seconds = 0.0
+    detail_size = 0
+    page_latencies = []
+    if arguments.scenario == "page" and result.page_count:
+        for page_number in sorted(set((1, max(1, (result.page_count + 1) // 2),
+                                       result.page_count))):
+            page_started = monotonic_time.perf_counter()
+            result.get_page(page_number)
+            page_latencies.append({"page_number": page_number,
+                                   "seconds": monotonic_time.perf_counter() -
+                                   page_started})
+    if result.total_count:
+        first = result.get_page(1)
+        detail_started = monotonic_time.perf_counter()
+        detail = result.get_detail(first.events[0].key)
+        detail_seconds = monotonic_time.perf_counter() - detail_started
+        if detail is None:
+            raise AssertionError("selected first-page event has no detail")
+        detail_size = len(detail.message.encode("utf-8"))
+    snapshots_during_query = {
+        path: path.stat().st_size
+        for path in Path(tempfile.gettempdir()).glob("b518-history-query-*.sqlite3")
+        if path not in before_snapshots
+    }
+    metrics = result.index_metrics
+    sample = {
+        "scenario": arguments.scenario,
+        "run": arguments.run_number,
+        "command": arguments.command_text,
+        "started_at_local": datetime.now().astimezone().isoformat(),
+        "query_seconds": completed_at - started,
+        "identity_digest_seconds": digest_seconds,
+        "first_middle_last_page_latencies": page_latencies,
+        "selected_detail_seconds": detail_seconds,
+        "selected_detail_json_bytes": detail_size,
+        "total_count": result.total_count,
+        "page_size": result.page_size,
+        "page_count": result.page_count,
+        "verified_event_count": verified_count,
+        "identity_sha256": identity_sha256,
+        "index_degraded": result.index_degraded,
+        "index_issue": result.index_issue,
+        "parsed_source_count": metrics.parsed_source_count,
+        "reused_source_count": metrics.reused_source_count,
+        "source_bytes_read_by_reader": metrics.source_bytes_read,
+        "source_version_check_count": metrics.source_version_check_count,
+        "index_bytes_after_query": _index_size(index_path),
+        "query_snapshot_bytes": sum(snapshots_during_query.values()),
+        "python_peak_tracemalloc_bytes": tracemalloc.get_traced_memory()[1],
+        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "worker_threads_at_result": sorted(
+            thread.name for thread in threading.enumerate()
+            if thread.name == "HistoricalEventDateQuery"),
+        "detail_materialized_count": 1 if result.total_count else 0,
+        "os_cache_condition": "uncontrolled; no claim of cold disk",
+    }
+    result.close()
+    service.shutdown()
+    # The worker publishes completion before it exits; wait on public worker liveness only
+    # through process-wide thread inventory, with a bounded drain window.
+    drain_deadline = monotonic_time.monotonic() + 5
+    while (any(thread.name == "HistoricalEventDateQuery"
+               for thread in threading.enumerate()) and
+           monotonic_time.monotonic() < drain_deadline):
+        monotonic_time.sleep(0.01)
+    sample["worker_threads_after_cleanup"] = sorted(
+        thread.name for thread in threading.enumerate()
+        if thread.name == "HistoricalEventDateQuery")
+    after_snapshots = set(Path(tempfile.gettempdir()).glob("b518-history-query-*.sqlite3"))
+    sample["snapshot_removed"] = not (
+        after_snapshots - set(before_snapshots))
+    sample["elapsed_seconds_including_verification"] = (
+        monotonic_time.perf_counter() - started)
+    tracemalloc.stop()
+    if sample["worker_threads_after_cleanup"] or not sample["snapshot_removed"]:
+        raise AssertionError("query worker or temporary snapshot was not reclaimed")
+    if arguments.scenario == "degraded" and not result.index_degraded:
+        raise AssertionError("corrupt index did not report safe degradation")
+    if arguments.scenario in ("reuse", "page") and metrics.parsed_source_count:
+        raise AssertionError("normal indexed query unexpectedly parsed source files")
+    if arguments.scenario == "single-source-change" and metrics.parsed_source_count != 1:
+        raise AssertionError("single-source update reparsed an unexpected source count")
+    print(json.dumps(sample, ensure_ascii=False, sort_keys=True))
+
+
+def _append_audit_event(source_path, as_of):
+    original = source_path.read_bytes()
+    lines = original.splitlines()
+    last_event = json.loads(lines[-1].decode("utf-8"))
+    event = copy.deepcopy(last_event)
+    event["sequence"] += 1
+    event["message"] = "Synthetic single-source capacity append"
+    event["observed_at"] = datetime.combine(
+        as_of, time(12, 34, 56), timezone(timedelta(hours=8))).isoformat()
+    event["elapsed_seconds"] += 1.0
+    event["detail"] = {"raw_diagnostic": "Single-source append diagnostic"}
+    with source_path.open("ab") as handle:
+        handle.write(_json_line(event))
+    return original
+
+
+def _run_sample_process(script, root, index_path, scenario, run_number,
+                        digest, timeout, no_index=False):
+    command = [sys.executable, str(script), "sample", "--root", str(root),
+               "--index", str(index_path), "--scenario", scenario,
+               "--run-number", str(run_number), "--digest", digest,
+               "--timeout", str(timeout)]
+    if no_index:
+        command.append("--no-index")
+    environment = dict(os.environ)
+    existing_path = environment.get("PYTHONPATH", "")
+    script_root = str(script.parent.parent / "src") + os.pathsep + str(script.parent)
+    environment["PYTHONPATH"] = (script_root + os.pathsep + existing_path
+                                 if existing_path else script_root)
+    started_at = datetime.now().astimezone().isoformat()
+    completed = subprocess.run(command, cwd=str(script.parent.parent), env=environment,
+                               text=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=timeout + 60)
+    ended_at = datetime.now().astimezone().isoformat()
+    if completed.returncode:
+        raise RuntimeError("capacity sample failed: {}\n{}".format(
+            " ".join(command), completed.stderr))
+    sample = json.loads(completed.stdout)
+    sample.update({"process_started_at_local": started_at,
+                   "process_ended_at_local": ended_at,
+                   "process_exit_code": completed.returncode,
+                   "full_command": command,
+                   "stderr": completed.stderr})
+    return sample
+
+
+def _benchmark_command(arguments):
+    root = arguments.root.resolve()
+    output = arguments.output.resolve()
+    manifest = json.loads((root / "fixture-manifest.json").read_text(encoding="utf-8"))
+    if output.exists() and any(output.iterdir()):
+        raise FileExistsError("benchmark output must be empty: {}".format(output))
+    output.mkdir(parents=True, exist_ok=True)
+    script = Path(__file__).resolve()
+    measured = []
+
+    def record(label, index_path, number, digest="full", no_index=False):
+        sample = _run_sample_process(
+            script, root, index_path, label, number, digest,
+            arguments.timeout, no_index=no_index)
+        measured.append(sample)
+        with (output / "raw-measurements.jsonl").open(
+                "a", encoding="utf-8") as measurements:
+            measurements.write(json.dumps(sample, ensure_ascii=False,
+                                          sort_keys=True) + "\n")
+        return sample
+
+    baseline = record("raw-file-baseline", output / "no-index.sqlite3", 1,
+                      no_index=True)
+    expected_count = manifest["expected_in_range_event_count"]
+    if baseline["total_count"] != expected_count:
+        raise AssertionError("raw-file baseline disagrees with fixture manifest")
+
+    initial_samples = []
+    for run_number in range(1, 4):
+        index_path = output / "initial-{}.sqlite3".format(run_number)
+        sample = record("initial", index_path, run_number)
+        if sample["index_degraded"] or sample["total_count"] != expected_count:
+            raise AssertionError("initial index build returned an invalid result")
+        initial_samples.append(sample)
+    baseline_digest = baseline["identity_sha256"]
+    if any(sample["identity_sha256"] != baseline_digest
+           for sample in initial_samples):
+        raise AssertionError("initial index result differs from safe raw-file baseline")
+
+    reusable_index = output / "initial-3.sqlite3"
+    for run_number in range(1, 4):
+        sample = record("reuse", reusable_index, run_number)
+        if (sample["identity_sha256"] != baseline_digest or
+                sample["parsed_source_count"] != 0):
+            raise AssertionError("normal requery failed identity or incremental-cost check")
+
+    source_candidates = sorted((root / "sessions").glob("*/audit.jsonl"))
+    if not source_candidates:
+        raise AssertionError("fixture has no audit source for mutation measurement")
+    changed_source = source_candidates[0]
+    original = changed_source.read_bytes()
+    change_results = []
+    try:
+        for run_number in range(1, 4):
+            changed_source.write_bytes(original)
+            _append_audit_event(changed_source, date.fromisoformat(manifest["range_end"]))
+            changed_baseline = record(
+                "single-source-raw-baseline", output / "changed-no-index.sqlite3",
+                run_number, no_index=True)
+            sample = record("single-source-change", reusable_index, run_number)
+            if (sample["total_count"] != changed_baseline["total_count"] or
+                    sample["identity_sha256"] != changed_baseline["identity_sha256"] or
+                    sample["parsed_source_count"] != 1):
+                raise AssertionError("single-source update failed identity/cost check")
+            change_results.append(sample)
+            changed_source.write_bytes(original)
+            # Refresh only the changed source's recorded signature for the same baseline.
+            restored = record("restore-index-state", reusable_index, run_number,
+                              digest="none")
+            if restored["parsed_source_count"] != 1:
+                raise AssertionError("fixture reset did not restore the index signature")
+    finally:
+        changed_source.write_bytes(original)
+
+    degraded_samples = []
+    for run_number in range(1, 4):
+        reusable_index.write_bytes("H8 controlled corrupt index run {}".format(
+            run_number).encode("ascii"))
+        sample = record("degraded", reusable_index, run_number)
+        if (not sample["index_degraded"] or
+                sample["identity_sha256"] != baseline_digest):
+            raise AssertionError("degraded raw-file fallback differs from baseline")
+        degraded_samples.append(sample)
+
+    page_samples = []
+    for run_number in range(1, 4):
+        sample = record("page", reusable_index, run_number, digest="anchors")
+        if sample["parsed_source_count"] != 0:
+            raise AssertionError("page navigation reparsed the source files")
+        page_samples.append(sample)
+
+    source_hashes_after = {}
+    for relative_path in manifest["source_sha256"]:
+        path = root / relative_path
+        source_hashes_after[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if source_hashes_after != manifest["source_sha256"]:
+        raise AssertionError("capacity query changed or failed to restore source bytes")
+    report = {
+        "format_version": 1,
+        "fixture_manifest": str(root / "fixture-manifest.json"),
+        "fixture_event_count": manifest["event_count"],
+        "fixture_source_count": manifest["source_count"],
+        "fixture_source_bytes": manifest["source_bytes_total"],
+        "raw_file_baseline_sha256": baseline_digest,
+        "raw_file_baseline_count": baseline["total_count"],
+        "scenario_runs": {
+            "initial_index_build": initial_samples,
+            "normal_requery_fresh_process": [sample for sample in measured
+                                               if sample["scenario"] == "reuse"],
+            "single_source_change": change_results,
+            "index_degradation": degraded_samples,
+            "normal_page_navigation": page_samples,
+        },
+        "unmeasured_setup_and_restore_samples": [sample for sample in measured
+                                                   if sample["scenario"] in (
+                                                       "raw-file-baseline",
+                                                       "single-source-raw-baseline",
+                                                       "restore-index-state")],
+        "source_hashes_after": source_hashes_after,
+        "sources_unchanged_after_measurements": True,
+        "os_disk_cache_controlled": False,
+        "measurement_limits": [
+            "reader source bytes are logical bytes read by the parser; physical device I/O is not isolated",
+            "Darwin ru_maxrss is process peak RSS; tracemalloc excludes some native allocations",
+            "OS file cache was not flushed or controlled; initial means absent index, not cold disk",
+            "Tk event-loop interval is measured separately by the interactive desktop acceptance",
+        ],
+        "runtime": {"python": sys.version, "executable": sys.executable,
+                    "platform": platform.platform(), "machine": platform.machine()},
+    }
+    (output / "benchmark-report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
+    print(json.dumps({"output": str(output / "benchmark-report.json"),
+                      "runs_by_scenario": {
+                          key: len(value) for key, value in report["scenario_runs"].items()},
+                      "raw_file_baseline_sha256": baseline_digest},
+                     ensure_ascii=False, sort_keys=True))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command")
@@ -297,6 +651,28 @@ def main(argv=None):
     prepare.add_argument("--events", type=int, required=True)
     prepare.add_argument("--as-of", type=date.fromisoformat, required=True)
     prepare.set_defaults(run=_prepare_command)
+    sample = subparsers.add_parser("sample", help="run one isolated query measurement")
+    sample.add_argument("--root", type=Path, required=True)
+    sample.add_argument("--index", type=Path, required=True)
+    sample.add_argument("--scenario", choices=("initial", "reuse", "single-source-change",
+                                                  "degraded", "page", "raw-file-baseline",
+                                                  "single-source-raw-baseline",
+                                                  "restore-index-state"), required=True)
+    sample.add_argument("--run-number", type=int, required=True)
+    sample.add_argument("--digest", choices=("full", "anchors", "none"),
+                        default="full")
+    sample.add_argument("--timeout", type=float, default=3600)
+    sample.add_argument("--command-text", default="")
+    sample.add_argument("--no-index", action="store_true")
+    sample.set_defaults(run=_sample_command)
+    benchmark = subparsers.add_parser(
+        "benchmark", help="run the five three-sample capacity scenarios")
+    benchmark.add_argument("--root", type=Path, required=True,
+                           help="existing prepared fixture root")
+    benchmark.add_argument("--output", type=Path, required=True,
+                           help="empty directory for raw measurements and report")
+    benchmark.add_argument("--timeout", type=float, default=7200)
+    benchmark.set_defaults(run=_benchmark_command)
     arguments = parser.parse_args(argv)
     if not hasattr(arguments, "run"):
         parser.error("choose a command")
