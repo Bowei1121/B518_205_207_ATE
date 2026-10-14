@@ -8200,7 +8200,21 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNone(app._historical_query_generation)
                 self.assertIsNone(app._historical_query_result)
 
-                app.historical_event_refresh_button.focus_force()
+                app.historical_start_entry.focus_force()
+
+                def focus_next_with_tab(target):
+                    focused = app.historical_start_entry.winfo_toplevel().focus_get()
+                    for _ in range(50):
+                        if focused is target:
+                            return
+                        focused.event_generate("<KeyPress-Tab>")
+                        focused.event_generate("<KeyRelease-Tab>")
+                        root.update()
+                        focused = app.historical_start_entry.winfo_toplevel().focus_get()
+                        self.assertIsNotNone(focused, "Tab navigation lost keyboard focus")
+                    self.fail("Tab navigation did not reach {}".format(target))
+
+                focus_next_with_tab(app.historical_event_refresh_button)
                 app.historical_event_refresh_button.event_generate("<KeyPress-space>")
                 app.historical_event_refresh_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_result is not None)
@@ -8211,12 +8225,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(app._t("app.settings.history.search"),
                               app.historical_event_refresh_button.cget("text"))
 
-                app.historical_next_button.focus_force()
+                focus_next_with_tab(app.historical_next_button)
                 app.historical_next_button.event_generate("<KeyPress-space>")
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
                 self.assertEqual(str(app.historical_previous_button.cget("state")), "normal")
-                app.historical_next_button.focus_force()
                 app.historical_next_button.event_generate("<KeyPress-space>")
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 3)
@@ -8225,11 +8238,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 root.update()
                 self.assertEqual(app._historical_query_page_number, 3)
-                app.historical_previous_button.focus_force()
+                focus_next_with_tab(app.historical_previous_button)
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
-                app.historical_previous_button.focus_force()
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
