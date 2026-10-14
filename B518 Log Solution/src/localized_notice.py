@@ -111,7 +111,21 @@ def show_notice(title, message, *, parent, text_provider, register_refresh,
         acknowledge.configure(text=button_text)
 
     unregister = register_refresh(receiver_name or title, refresh, window.winfo_exists)
+
+    def restore_modal_focus(event=None):
+        if event is not None and event.widget is not window:
+            return
+        try:
+            if not window.winfo_exists() or not window.winfo_viewable():
+                return
+            if parent.grab_current() is not window:
+                window.grab_set()
+            acknowledge.focus_force()
+        except tk.TclError:
+            return
+
     window.protocol("WM_DELETE_WINDOW", window.destroy)
+    window.bind("<Map>", restore_modal_focus, add="+")
     window.bind("<Return>", lambda _event: acknowledge.invoke())
     window.bind("<Escape>", lambda _event: window.destroy())
     try:

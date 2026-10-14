@@ -322,6 +322,9 @@ class LogSolutionUiTests(unittest.TestCase):
             root.update()
             original_focus = root.focus_get()
             observations = []
+            second_escape_kept_notice = []
+            reopened_modal_restored = []
+            reopened_button_focused = []
 
             def find_notice():
                 for child in root.winfo_children():
@@ -347,6 +350,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.current_language = TRADITIONAL_CHINESE
                 def hide_refresh_show_and_close():
                     notice = find_notice()
+                    if notice is None:
+                        observations.append(("missing-notice", None))
+                        return
                     identity = str(notice)
                     notice.withdraw()
                     app.current_language = ENGLISH
@@ -355,15 +361,32 @@ class LogSolutionUiTests(unittest.TestCase):
                     notice.deiconify()
                     root.update()
                     observations.append((identity == str(notice), notice.title()))
-                    notice.event_generate("<Escape>")
+                    reopened_modal_restored.append(root.grab_current() is notice)
+                    acknowledge = next(widget for widget in notice.winfo_children()
+                                       if isinstance(widget, ttk.Button))
+                    reopened_button_focused.append(root.focus_get() is acknowledge)
+                    acknowledge.event_generate("<Escape>")
+                    second_escape_kept_notice.append(bool(notice.winfo_exists()))
+                    if notice.winfo_exists():
+                        notice.destroy()
+
+                def close_notice_if_escape_did_not():
+                    notice = find_notice()
+                    if notice is not None:
+                        observations.append(("escape-timeout", notice.title()))
+                        notice.destroy()
 
                 root.after(100, hide_refresh_show_and_close)
+                root.after(2000, close_notice_if_escape_did_not)
                 app._show_notice("language.save_failed_title", "language.save_failed",
                                  {"reason": "reopened notice"})
                 root.update()
                 self.assertIsNone(find_notice())
                 self.assertIsNone(root.grab_current())
                 self.assertEqual(len(app._language_refresh_failures), 0)
+                self.assertEqual(reopened_modal_restored, [True])
+                self.assertEqual(reopened_button_focused, [True])
+                self.assertEqual(second_escape_kept_notice, [False])
                 self.assertEqual(observations,
                                  [(True, True), (True, "Language Preference Not Saved")])
             finally:
