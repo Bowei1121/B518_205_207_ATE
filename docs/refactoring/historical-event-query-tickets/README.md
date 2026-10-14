@@ -2,7 +2,7 @@
 
 使用者已核可H1–H8的粒度與依賴。父規格為 [GitHub #37](https://github.com/Bowei1121/B518_205_207_ATE/issues/37)，父議題未修改或關閉。
 
-所有開發票標記 ready-for-agent，GitHub 使用原生 blocked-by 關係；只有阻擋票已完成的票才可開始。H1 已完成，H2 正在依其已完成的前票基準交付；H3 尚可依 H1 開始。
+所有開發票標記 ready-for-agent，GitHub 使用原生 blocked-by 關係；只有阻擋票已完成的票才可開始。H1–H3 已完成並納入基準；H4 依 H3 開始交付。README 初始狀態曾記錄 H2 進行中及 H3 可由 H1 開始，現已過時，Git ancestry 與各票最終驗收證據顯示 H3 開始前 H2 已合併。
 
 | 票 | GitHub | 本機文件 | 阻擋 |
 | --- | --- | --- | --- |
@@ -49,3 +49,7 @@ H2 已完成查詢世代隔離、協作取消、最新待處理請求合併與�
 ### H3 delivery status — 2026-10-13
 
 H3 extends H1's first page into a fixed query snapshot paged in batches of at most 100. The history window exposes pure left/right controls and page information. Compact summaries are retained for listing while original event payloads live in a temporary SQLite snapshot; pages are read by range, and full detail is loaded only for the selected event. Snapshot resources are released when replaced or when the app-owned query service shuts down. Real Tk navigation, mixed-source identity/order, fixed source boundary, selected-detail loading, source-byte preservation, memory observations, and cleanup are documented in [H3 local validation](../evidence/historical-event-query-ticket-03/local-validation.md). H4's persistent/restart-reusable index and cross-query incremental cost, H5–H8, full parent delivery, and factory acceptance are outside this delivery.
+
+### H4 delivery status — 2026-10-14
+
+H4 connects a versioned SQLite derivative index to the public historical-query service and the actual App. It records source identity/version and query event fields, validates versions around reads, reuses unchanged sources across newly created services, and refreshes changed sources while preserving the H3 fixed page/detail snapshot contract. Three-run source-reader byte counts, parsing, elapsed time, memory and SQLite sizes on a generated 450-event fixture, real Tk interaction, runtime differences, and remaining scope are in [H4 local validation](../evidence/historical-event-query-ticket-04/local-validation.md). The complete Python 3.11.7/Tk 8.6.12 suite and fixed-base Standards/Spec review passed; merge and direct remote synchronization will be added after those steps. Reader byte counts are parser input counts, not OS-level disk I/O measurements. H5–H8, parent spec #37, capacity and factory acceptance are not claimed.
