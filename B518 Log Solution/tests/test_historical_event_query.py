@@ -317,6 +317,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                                  expected_keys)
                 self.assertEqual(rebuilt.index_metrics.parsed_source_count, 1)
                 self.assertEqual(rebuilt.index_metrics.reused_source_count, 0)
+                self.assertTrue(rebuilt.index_degraded)
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
             finally:
                 rebuilt.close()
@@ -472,6 +473,8 @@ class HistoricalEventQueryTests(unittest.TestCase):
             try:
                 self.assertEqual(degraded.total_count, 1)
                 self.assertTrue(degraded.index_degraded)
+                self.assertEqual(degraded.index_metrics.parsed_source_count, 1)
+                self.assertGreater(degraded.index_metrics.source_bytes_read, 0)
                 self.assertEqual(degraded.events[0].key, "round:round-1:1")
                 self.assertTrue(index_path.is_dir())
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
@@ -488,7 +491,102 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
             finally:
                 recovered.close()
-            self.assertFalse((sessions / "historical-index.sqlite3").exists())
+
+    def test_read_only_index_falls_back_without_changing_its_permissions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            initial = query_historical_events(sessions, None, date_range,
+                                              index_path=index_path)
+            initial.close()
+            audit.append_event(AuditEvent(2, "round_ready", "new source event", None),
+                               "2026-10-13T08:01:00+08:00", 2.0)
+            self.assertTrue(audit.flush())
+            source_before = audit.audit_path.read_bytes()
+            index_path.chmod(0o400)
+            try:
+                degraded = query_historical_events(sessions, None, date_range,
+                                                   index_path=index_path)
+                try:
+                    self.assertTrue(degraded.index_degraded)
+                    self.assertEqual(degraded.total_count, 2)
+                    self.assertEqual(index_path.stat().st_mode & 0o777, 0o400)
+                    self.assertEqual(audit.audit_path.read_bytes(), source_before)
+                finally:
+                    degraded.close()
+            finally:
+                index_path.chmod(0o600)
+
+            recovered = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertFalse(recovered.index_degraded)
+                self.assertEqual(recovered.index_metrics.parsed_source_count, 1)
+            finally:
+                recovered.close()
+
+    def test_corrupt_index_is_rejected_rebuilt_and_reported_without_source_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            index_path.write_bytes(b"corrupt derivative index")
+
+            result = query_historical_events(
+                sessions, None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)),
+                index_path=index_path)
+            try:
+                self.assertTrue(result.index_degraded)
+                self.assertEqual(result.total_count, 1)
+                self.assertEqual(result.index_metrics.parsed_source_count, 1)
+                with sqlite3.connect(str(index_path)) as connection:
+                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+                self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                result.close()
+
+    def test_unknown_date_diagnostics_are_paged_and_details_are_selected_lazily(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy_dir = root / "sessions" / "round-legacy"
+            legacy_dir.mkdir(parents=True)
+            legacy_path = legacy_dir / "events.log"
+            raw_lines = []
+            for index in range(23):
+                raw_lines.append(json.dumps({
+                    "timestamp": "unknown-date-{}".format(index),
+                    "message": "legacy event {}".format(index),
+                    "detail": {"raw_diagnostic": "original diagnostic {}".format(index)},
+                }) + "\n")
+            legacy_path.write_text("".join(raw_lines), encoding="utf-8")
+            result = query_historical_events(
+                root / "sessions", None,
+                HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)),
+                limit=7, index_path=root / "history-index.sqlite3")
+            try:
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.unclassified_count, 23)
+                self.assertEqual(result.diagnostic_count, 23)
+                self.assertLessEqual(len(result.diagnostics), 20)
+                first_page = result.get_diagnostic_page(1)
+                second_page = result.get_diagnostic_page(2)
+                self.assertEqual(len(first_page.events), 7)
+                self.assertEqual(len(second_page.events), 7)
+                selected = first_page.events[3]
+                detail = result.get_diagnostic_detail(selected.key)
+                self.assertEqual(detail.key, selected.key)
+                self.assertIn("original diagnostic", detail.diagnostic)
+                self.assertEqual(legacy_path.read_text(encoding="utf-8"), "".join(raw_lines))
+            finally:
+                result.close()
 
     def test_persistent_query_result_stays_fixed_until_a_new_query(self):
         with tempfile.TemporaryDirectory() as temporary:

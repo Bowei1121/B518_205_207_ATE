@@ -7831,6 +7831,100 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_degraded_index_and_paged_unknown_date_diagnostics(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            legacy_path = session_root / "legacy" / "events.log"
+            legacy_path.parent.mkdir(parents=True)
+            raw_lines = [(json.dumps({
+                "timestamp": "unknown-date-{}".format(index),
+                "message": "legacy anomaly {}".format(index),
+                "detail": {"raw_diagnostic": "source diagnostic {}".format(index)},
+            }) + "\n") for index in range(105)]
+            legacy_path.write_text("".join(raw_lines), encoding="utf-8")
+            legacy_before = legacy_path.read_bytes()
+            index_path = root_path / "historical-event-query-index.sqlite3"
+            index_path.mkdir()
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app_bytes = app.app_events.path.read_bytes()
+                app.open_historical_events()
+                app.historical_start_var.set("2020-01-01")
+                app.historical_end_var.set("2020-01-01")
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None and
+                                 app._historical_query_generation is None)
+
+                result = app._historical_query_result
+                self.assertEqual(result.total_count, 0)
+                self.assertEqual(result.unclassified_count, 105)
+                self.assertEqual(result.diagnostic_count, 105)
+                self.assertTrue(result.index_degraded)
+                self.assertIn("history acceleration data is temporarily unavailable",
+                              app.historical_query_status.cget("text"))
+                self.assertIn("History may be incomplete",
+                              app.historical_query_status.cget("text"))
+                self.assertTrue(index_path.is_dir())
+                self.assertEqual(legacy_path.read_bytes(), legacy_before)
+                self.assertEqual(app.app_events.path.read_bytes(), app_bytes)
+
+                # Open the warning entry with an actual Tk listbox click; diagnostic
+                # rows are fetched in pages and their source text is loaded on select.
+                self.click_tk_listbox_row(root, app.historical_event_list, 0)
+                self.wait_for_ui(root, lambda: app._historical_showing_diagnostics and
+                                 len(app._historical_event_records) == 100)
+                self.click_tk_widget(root, app.historical_next_button)
+                self.wait_for_ui(root, lambda: app._historical_diagnostic_page_number == 2)
+                self.assertEqual(len(app._historical_event_records), 5)
+                self.click_tk_listbox_row(root, app.historical_event_list, 1)
+                self.wait_for_ui(root, lambda: "source diagnostic" in
+                                 app.historical_event_detail.get("1.0", "end"))
+                detail_text = app.historical_event_detail.get("1.0", "end")
+                self.assertIn('"timestamp": "unknown-date-', detail_text)
+                selected_diagnostic = app._historical_event_selected_key
+                chinese_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "繁體中文")
+                app.language_menu.invoke(chinese_index)
+                root.update()
+                self.assertEqual(app._historical_event_selected_key, selected_diagnostic)
+                self.assertIn("source diagnostic",
+                              app.historical_event_detail.get("1.0", "end"))
+                self.assertIn("查詢加速資料暫時不可用，這次可能較慢",
+                              app.historical_query_status.cget("text"))
+                english_index = next(
+                    index for index in range(app.language_menu.index("end") + 1)
+                    if app.language_menu.entrycget(index, "label") == "English")
+                app.language_menu.invoke(english_index)
+                root.update()
+
+                # Repair the derivative path and retry through the same visible query.
+                index_path.rmdir()
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not result and
+                                 app._historical_query_generation is None)
+                self.assertFalse(app._historical_query_result.index_degraded)
+                self.assertTrue(index_path.is_file())
+                self.assertNotIn("history acceleration data is temporarily unavailable",
+                                 app.historical_query_status.cget("text"))
+                self.assertEqual(legacy_path.read_bytes(), legacy_before)
+                self.assertEqual(app.app_events.path.read_bytes(), app_bytes)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
     @staticmethod
     def click_tk_widget(root, widget):
         root.update_idletasks()

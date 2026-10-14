@@ -165,7 +165,8 @@ class HistoricalEventQueryResult:
                  diagnostics: Tuple[HistoricalEvent, ...], store_path: Path,
                  page_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
                  index_metrics: Optional[HistoricalEventIndexMetrics] = None,
-                 index_degraded: bool = False, index_issue: str = ""):
+                 index_degraded: bool = False, index_issue: str = "",
+                 diagnostic_count: Optional[int] = None):
         self.date_range = date_range
         self.total_count = total_count
         self.unclassified_count = unclassified_count
@@ -176,6 +177,8 @@ class HistoricalEventQueryResult:
         self.index_metrics = index_metrics or HistoricalEventIndexMetrics()
         self.index_degraded = index_degraded
         self.index_issue = index_issue
+        self.diagnostic_count = (len(diagnostics) if diagnostic_count is None
+                                 else diagnostic_count)
         self._first_page = ()
         self._closed = False
         self._finalizer = weakref.finalize(self, _remove_snapshot, self._store_path)
@@ -229,6 +232,40 @@ class HistoricalEventQueryResult:
                 "SELECT event_json FROM matching_events WHERE event_key = ?",
                 (event_key,),
             ).fetchone()
+        finally:
+            connection.close()
+        return _event_from_json(row[0]) if row is not None else None
+
+    def get_diagnostic_page(self, page_number: int) -> HistoricalEventQueryPage:
+        """Read one bounded page of source/date anomalies from the frozen snapshot."""
+        if type(page_number) is not int or page_number < 1:
+            raise ValueError("page_number must be a positive integer")
+        self._ensure_open()
+        page_count = ((self.diagnostic_count + self.page_size - 1) // self.page_size)
+        if page_number > page_count:
+            raise IndexError("diagnostic page is outside this query snapshot")
+        connection = self._connect_snapshot_readonly()
+        try:
+            rows = connection.execute(
+                "SELECT summary_json FROM diagnostic_events ORDER BY diagnostic_ordinal "
+                "LIMIT ? OFFSET ?", (self.page_size, (page_number - 1) * self.page_size)
+            ).fetchall()
+        finally:
+            connection.close()
+        return HistoricalEventQueryPage(
+            self.date_range, page_number, self.page_size, self.diagnostic_count,
+            tuple(_summary_from_json(row[0]) for row in rows))
+
+    def get_diagnostic_detail(self, event_key: str) -> Optional[HistoricalEvent]:
+        """Load one source anomaly's raw record only after the user selects it."""
+        if not isinstance(event_key, str) or not event_key:
+            raise ValueError("event_key must be a non-empty string")
+        self._ensure_open()
+        connection = self._connect_snapshot_readonly()
+        try:
+            row = connection.execute(
+                "SELECT event_json FROM diagnostic_events WHERE event_key=? "
+                "ORDER BY diagnostic_ordinal LIMIT 1", (event_key,)).fetchone()
         finally:
             connection.close()
         return _event_from_json(row[0]) if row is not None else None
@@ -312,6 +349,8 @@ class _HistoricalEventDetailRequest:
     result: HistoricalEventQueryResult
     event_key: Optional[str]
     page_number: Optional[int] = None
+    diagnostic_key: Optional[str] = None
+    diagnostic_page_number: Optional[int] = None
     cancellation_event: threading.Event = field(default_factory=threading.Event)
 
 
@@ -338,8 +377,22 @@ class HistoricalEventDetailService:
             raise ValueError("page_number must be a positive integer")
         return self._submit(result, None, page_number)
 
+    def submit_diagnostic(self, result: HistoricalEventQueryResult,
+                          event_key: str) -> int:
+        if not isinstance(event_key, str) or not event_key:
+            raise ValueError("event_key must be a non-empty string")
+        return self._submit(result, None, None, diagnostic_key=event_key)
+
+    def submit_diagnostic_page(self, result: HistoricalEventQueryResult,
+                               page_number: int) -> int:
+        if type(page_number) is not int or page_number < 1:
+            raise ValueError("page_number must be a positive integer")
+        return self._submit(result, None, None,
+                            diagnostic_page_number=page_number)
+
     def _submit(self, result: HistoricalEventQueryResult, event_key: Optional[str],
-                page_number: Optional[int]) -> int:
+                page_number: Optional[int], diagnostic_key: Optional[str] = None,
+                diagnostic_page_number: Optional[int] = None) -> int:
         if not isinstance(result, HistoricalEventQueryResult):
             raise TypeError("result must be a HistoricalEventQueryResult")
         with self._condition:
@@ -347,7 +400,8 @@ class HistoricalEventDetailService:
                 raise RuntimeError("historical detail service is closed")
             self._next_request_id += 1
             request = _HistoricalEventDetailRequest(
-                self._next_request_id, result, event_key, page_number)
+                self._next_request_id, result, event_key, page_number,
+                diagnostic_key, diagnostic_page_number)
             self._invalidate_work_locked()
             self._pending = request
             self._latest_request_id = request.request_id
@@ -416,6 +470,16 @@ class HistoricalEventDetailService:
                     page = request.result.get_page(request.page_number)
                     completion = HistoricalEventDetailCompletion(
                         request.request_id, None, True, page=page)
+                elif request.diagnostic_page_number is not None:
+                    page = request.result.get_diagnostic_page(
+                        request.diagnostic_page_number)
+                    completion = HistoricalEventDetailCompletion(
+                        request.request_id, None, True, page=page)
+                elif request.diagnostic_key is not None:
+                    event = request.result.get_diagnostic_detail(request.diagnostic_key)
+                    completion = HistoricalEventDetailCompletion(
+                        request.request_id, request.diagnostic_key,
+                        event is not None, event=event)
                 else:
                     event = request.result.get_detail(request.event_key)
                     completion = HistoricalEventDetailCompletion(
@@ -656,7 +720,16 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     total_count = 0
     unclassified_count = 0
     source_issue_count = 0
+    diagnostic_count = 0
     diagnostics = []
+    fallback_source_count = [0]
+    fallback_bytes_read = [0]
+
+    def observe_source(_path):
+        fallback_source_count[0] += 1
+
+    def observe_bytes(count):
+        fallback_bytes_read[0] += count
     try:
         connection = sqlite3.connect(str(store_path))
         connection.execute("PRAGMA journal_mode=OFF")
@@ -670,14 +743,27 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         )
         connection.execute(
             "CREATE INDEX event_key_lookup ON matching_events(event_key)")
+        connection.execute(
+            "CREATE TABLE diagnostic_events (diagnostic_ordinal INTEGER PRIMARY KEY, "
+            "event_key TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
+        connection.execute("CREATE INDEX diagnostic_event_key ON diagnostic_events(event_key)")
 
         _raise_if_query_cancelled(cancellation_event)
-        for event in iter_historical_events(session_root, app_event_path):
+        for event in iter_historical_events(
+                session_root, app_event_path, read_observer=observe_bytes,
+                source_observer=observe_source):
             _raise_if_query_cancelled(cancellation_event)
-            if event.source in {"read_error", "read_warning"}:
+            source_issue = event.source in {"read_error", "read_warning"}
+            if source_issue:
                 source_issue_count += 1
             occurred_at = _parse_occurred_at(
                 event.occurred_at, date_range._local_timezone)
+            if source_issue or occurred_at is None:
+                diagnostic_count += 1
+                connection.execute(
+                    "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                    (diagnostic_count, event.key, _event_summary_json(event),
+                     _event_json(event)))
             if occurred_at is None:
                 unclassified_count += 1
                 if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
@@ -710,7 +796,11 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         connection = None
         result = HistoricalEventQueryResult(
             date_range, total_count, unclassified_count, source_issue_count,
-            tuple(diagnostics), store_path, page_size)
+            tuple(diagnostics), store_path, page_size,
+            HistoricalEventIndexMetrics(
+                parsed_source_count=fallback_source_count[0],
+                source_bytes_read=fallback_bytes_read[0]),
+            diagnostic_count=diagnostic_count)
         result._first_page = result.get_page(1).events
         return result
     except Exception:
@@ -742,7 +832,7 @@ def _query_historical_events_with_index(session_root: Path,
             sources = tuple(iter_historical_event_sources(session_root, app_event_path))
             _validate_history_index_path(index_path, session_root, sources)
             index_path.parent.mkdir(parents=True, exist_ok=True)
-            connection = _open_history_index(index_path)
+            connection, rebuilt_index = _open_history_index(index_path)
             _raise_if_query_cancelled(cancellation_event)
             current_keys = {source.key for source in sources}
             connection.execute("BEGIN IMMEDIATE")
@@ -841,6 +931,9 @@ def _query_historical_events_with_index(session_root: Path,
                     source_version_checks))
             connection.close()
             connection = None
+            if rebuilt_index:
+                snapshot.index_degraded = True
+                snapshot.index_issue = "The historical query index was rebuilt."
             return snapshot
     except Exception:
         if connection is not None:
@@ -926,11 +1019,10 @@ def _open_history_index(index_path: Path):
         return database
 
     if not index_path.exists():
-        return create_database()
+        return create_database(), False
     database = None
     try:
         database = sqlite3.connect(str(index_path), timeout=30.0)
-        os.chmod(str(index_path), 0o600)
         database.execute("PRAGMA synchronous=FULL")
         database.execute("PRAGMA foreign_keys=ON")
         version = database.execute("PRAGMA user_version").fetchone()[0]
@@ -949,7 +1041,7 @@ def _open_history_index(index_path: Path):
                 "source_order", "source", "summary_json", "event_json"}.issubset(
                     event_columns):
             raise sqlite3.DatabaseError("unsupported historical event index version")
-        return database
+        return database, False
     except sqlite3.DatabaseError as error:
         if database is not None:
             database.close()
@@ -961,7 +1053,7 @@ def _open_history_index(index_path: Path):
         index_path.unlink(missing_ok=True)
         for suffix in ("-journal", "-wal", "-shm"):
             Path(str(index_path) + suffix).unlink(missing_ok=True)
-        return create_database()
+        return create_database(), True
 
 
 def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path: Path,
@@ -979,6 +1071,10 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
             "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
         snapshot.execute("CREATE INDEX event_key_lookup ON matching_events(event_key)")
+        snapshot.execute(
+            "CREATE TABLE diagnostic_events (diagnostic_ordinal INTEGER PRIMARY KEY, "
+            "event_key TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
+        snapshot.execute("CREATE INDEX diagnostic_event_key ON diagnostic_events(event_key)")
         start_naive = _naive_wall_order(datetime.combine(date_range.start, datetime_time.min))
         end_naive = _naive_wall_order(
             datetime.combine(date_range.end + timedelta(days=1), datetime_time.min))
@@ -1035,14 +1131,27 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             "SELECT COUNT(*) FROM history_events WHERE {}source IN "
             "('read_warning', 'read_error')".format(source_filter),
             source_params).fetchone()[0]
-        diagnostics = [
-            _event_from_json(row[0]) for row in connection.execute(
-                "SELECT event_json FROM history_events WHERE {}time_kind=2 "
-                "ORDER BY source_key, source_ordinal LIMIT ?".format(source_filter),
-                source_params + (_DIAGNOSTIC_SAMPLE_LIMIT,))]
+        diagnostic_rows = connection.execute(
+            "SELECT event_key, summary_json, event_json FROM history_events WHERE {}"
+            "(time_kind=2 OR source IN ('read_warning', 'read_error')) "
+            "ORDER BY source_key, source_ordinal".format(source_filter), source_params)
+        diagnostic_count = 0
+        diagnostics = []
+        for row in diagnostic_rows:
+            diagnostic_count += 1
+            snapshot.execute("INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                             (diagnostic_count, row[0], row[1], row[2]))
+            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                diagnostics.append(_event_from_json(row[2]))
         unclassified_count += len(transient_errors)
         source_issue_count += len(transient_errors)
-        diagnostics.extend(transient_errors[:max(0, _DIAGNOSTIC_SAMPLE_LIMIT - len(diagnostics))])
+        for event in transient_errors:
+            diagnostic_count += 1
+            snapshot.execute("INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                             (diagnostic_count, event.key, _event_summary_json(event),
+                              _event_json(event)))
+            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
+                diagnostics.append(event)
         snapshot.execute("CREATE INDEX event_order_lookup ON matching_events("
                          "local_wall_order DESC, aware_rank ASC, epoch DESC, "
                          "stable_identity ASC, sequence_number ASC, event_key ASC, "
@@ -1051,7 +1160,8 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
         snapshot.close()
         result = HistoricalEventQueryResult(
             date_range, total_count, unclassified_count, source_issue_count,
-            tuple(diagnostics), snapshot_path, page_size, index_metrics)
+            tuple(diagnostics), snapshot_path, page_size, index_metrics,
+            diagnostic_count=diagnostic_count)
         result._first_page = result.get_page(1).events
         return result
     except Exception:

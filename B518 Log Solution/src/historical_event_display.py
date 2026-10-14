@@ -56,7 +56,8 @@ def read_historical_events(session_root: Path, app_event_path: Optional[Path] = 
     return tuple(sorted(iter_historical_events(session_root, app_event_path), key=_event_sort_key))
 
 
-def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = None):
+def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = None,
+                          read_observer=None, source_observer=None):
     """Yield disk history source by source without retaining a combined history collection."""
     root = Path(session_root)
     if root.exists():
@@ -69,8 +70,11 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
             audit_path = directory / "audit.jsonl"
             legacy_path = directory / "events.log"
             if audit_path.is_file():
+                if source_observer is not None:
+                    source_observer(audit_path)
                 try:
-                    header, audit_events = iter_round_audit_events(audit_path)
+                    header, audit_events = iter_round_audit_events(
+                        audit_path, read_observer=read_observer)
                 except Exception as error:
                     yield _read_error("round", audit_path, str(error))
                     continue
@@ -98,12 +102,17 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
                                     "reason": "audit_complete is false"},
                     )
             elif legacy_path.is_file():
-                yield from _read_legacy_session_events(legacy_path)
+                if source_observer is not None:
+                    source_observer(legacy_path)
+                yield from _read_legacy_session_events(
+                    legacy_path, read_observer=read_observer)
 
     if app_event_path is not None and Path(app_event_path).exists():
         path = Path(app_event_path)
+        if source_observer is not None:
+            source_observer(path)
         try:
-            app_events = iter_app_event_store_events(path)
+            app_events = iter_app_event_store_events(path, read_observer=read_observer)
         except Exception as error:
             yield _read_error("app", path, str(error))
         else:
