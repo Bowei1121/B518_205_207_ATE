@@ -8193,6 +8193,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertIsNone(app._historical_query_generation)
                 self.assertIsNone(app._historical_query_result)
+                app.historical_event_list.focus_force()
+                app.historical_event_list.event_generate("<KeyPress-Return>")
+                app.historical_event_list.event_generate("<KeyRelease-Return>")
+                root.update()
+                self.assertIsNone(app._historical_query_generation)
+                self.assertIsNone(app._historical_query_result)
 
                 app.historical_event_refresh_button.focus_force()
                 app.historical_event_refresh_button.event_generate("<KeyPress-space>")
@@ -8215,6 +8221,71 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
                 self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_hover_hint_updates_language_and_closes_with_window(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     app_event_path=Path(temporary) / "app-events.json")
+
+            history_window = None
+
+            def hints():
+                def descendants(widget):
+                    found = []
+                    for child in widget.winfo_children():
+                        found.append(child)
+                        found.extend(descendants(child))
+                    return found
+                return [child for child in descendants(root)
+                        if isinstance(child, tk.Toplevel) and child is not root and
+                        child is not history_window and child.winfo_exists()]
+
+            def hint_text(window):
+                return [child.cget("text") for child in window.winfo_children()
+                        if isinstance(child, (tk.Label, ttk.Label))]
+
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                history_window = app.historical_event_window
+                app.historical_event_refresh_button.event_generate(
+                    "<Motion>", x=max(2, app.historical_event_refresh_button.winfo_width() // 2),
+                    y=max(2, app.historical_event_refresh_button.winfo_height() // 2),
+                    warp=True)
+                app.historical_event_refresh_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: len(hints()) == 1)
+                hint = hints()[0]
+                self.assertIn("Search the selected date range", hint_text(hint))
+
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                self.assertIn("查詢所選日期範圍", hint_text(hint))
+                self.assertEqual(app._historical_query_result, None)
+                self.assertIs(app.historical_event_window, history_window)
+
+                app.historical_event_refresh_button.event_generate("<Leave>")
+                self.wait_for_ui(root, lambda: len(hints()) == 0)
+                app.historical_next_button.event_generate("<FocusIn>")
+                root.update()
+                self.assertEqual(hints(), [])
+
+                app.historical_event_refresh_button.focus_force()
+                app.historical_event_refresh_button.event_generate("<FocusIn>")
+                self.wait_for_ui(root, lambda: len(hints()) == 1)
+                self.assertIn("查詢所選日期範圍", hint_text(hints()[0]))
+                app._close_historical_event_window()
+                self.assertFalse(history_window.winfo_exists())
+                root.update()
+                self.assertEqual(hints(), [])
             finally:
                 app._close_historical_event_window()
                 app.hotkey.close()

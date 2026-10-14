@@ -99,6 +99,125 @@ def sn_font_size(_sn: str, _column_width: int = 188) -> int:
     return MAIN_FONT_SIZE
 
 
+class _HistoricalEventControlHint:
+    """Show a localized, non-focusing hint for a history action button."""
+
+    def __init__(self, widget: ttk.Button, text_provider):
+        self._widget = widget
+        self._text_provider = text_provider
+        self._after_id = None
+        self._window = None
+        self._label = None
+        self._bindings = []
+        for sequence, callback in (
+                ("<Enter>", self._schedule), ("<FocusIn>", self._schedule),
+                ("<Leave>", self._hide), ("<FocusOut>", self._hide)):
+            binding_id = widget.bind(sequence, callback, add="+")
+            self._bindings.append((sequence, binding_id))
+        self._destroy_binding = widget.bind("<Destroy>", self._on_destroy, add="+")
+
+    def refresh(self) -> None:
+        widget = self._widget
+        if widget is None:
+            return
+        try:
+            if widget.instate(["disabled"]):
+                self._hide()
+            elif self._label is not None and self._label.winfo_exists():
+                self._label.configure(text=self._text_provider())
+        except tk.TclError:
+            self._hide()
+
+    def close(self) -> None:
+        self._hide()
+        widget = self._widget
+        if widget is None:
+            return
+        for sequence, binding_id in self._bindings:
+            if binding_id:
+                try:
+                    widget.unbind(sequence, binding_id)
+                except tk.TclError:
+                    pass
+        if self._destroy_binding:
+            try:
+                widget.unbind("<Destroy>", self._destroy_binding)
+            except tk.TclError:
+                pass
+        self._bindings.clear()
+        self._widget = None
+
+    def _schedule(self, _event=None) -> None:
+        widget = self._widget
+        if widget is None:
+            return
+        try:
+            if not widget.winfo_exists() or widget.instate(["disabled"]):
+                self._hide()
+                return
+            self._cancel_after()
+            self._after_id = widget.after(450, self._show)
+        except tk.TclError:
+            self._hide()
+
+    def _show(self) -> None:
+        self._after_id = None
+        widget = self._widget
+        if widget is None:
+            return
+        try:
+            if not widget.winfo_exists() or widget.instate(["disabled"]):
+                return
+            if self._window is not None and self._window.winfo_exists():
+                self._label.configure(text=self._text_provider())
+                return
+            window = tk.Toplevel(widget)
+            window.overrideredirect(True)
+            label = tk.Label(
+                window, text=self._text_provider(), anchor="w", justify="left",
+                background="#fffbe6", foreground=TEXT_COLOUR, borderwidth=1,
+                relief="solid", padx=6, pady=3, wraplength=320)
+            label.pack()
+            window.update_idletasks()
+            x = widget.winfo_rootx()
+            y = widget.winfo_rooty() + widget.winfo_height() + 3
+            if y + window.winfo_reqheight() > widget.winfo_screenheight():
+                y = widget.winfo_rooty() - window.winfo_reqheight() - 3
+            x = min(max(2, x), max(2, widget.winfo_screenwidth() -
+                                   window.winfo_reqwidth() - 2))
+            window.geometry("+{}+{}".format(x, max(2, y)))
+            self._window = window
+            self._label = label
+        except tk.TclError:
+            self._hide()
+
+    def _hide(self, _event=None) -> None:
+        self._cancel_after()
+        window = self._window
+        self._window = None
+        self._label = None
+        if window is not None:
+            try:
+                if window.winfo_exists():
+                    window.destroy()
+            except tk.TclError:
+                pass
+
+    def _cancel_after(self) -> None:
+        widget = self._widget
+        after_id = self._after_id
+        self._after_id = None
+        if widget is not None and after_id is not None:
+            try:
+                widget.after_cancel(after_id)
+            except tk.TclError:
+                pass
+
+    def _on_destroy(self, event) -> None:
+        if event.widget is self._widget:
+            self.close()
+
+
 class B518LogSolutionApp:
     def __init__(self, root: tk.Tk, hotkey_factory=create_global_hotkey,
                  session_root: Optional[Path] = None, app_event_path: Optional[Path] = None,
@@ -190,6 +309,7 @@ class B518LogSolutionApp:
         self.historical_end_entry = None
         self.historical_date_error = None
         self.historical_query_status = None
+        self._historical_control_hints = ()
         self._historical_event_records: tuple[HistoricalEventSummary, ...] = ()
         self._historical_event_selected_key: Optional[str] = None
         self._historical_event_selected_detail: Optional[HistoricalEvent] = None
@@ -2890,7 +3010,17 @@ class B518LogSolutionApp:
             controls, text=self._t("app.settings.history.cancel_query"),
             command=self._cancel_historical_event_query, state="disabled")
         self.historical_event_cancel_button.pack(side="right")
-        window.bind("<Return>", self._submit_historical_event_query, add="+")
+        self._historical_control_hints = (
+            _HistoricalEventControlHint(
+                self.historical_event_refresh_button,
+                lambda: self._t("app.settings.history.search_hint")),
+            _HistoricalEventControlHint(
+                self.historical_previous_button,
+                lambda: self._t("app.settings.history.previous_page_hint")),
+            _HistoricalEventControlHint(
+                self.historical_next_button,
+                lambda: self._t("app.settings.history.next_page_hint")),
+        )
         self._refresh_historical_event_window()
         window.protocol("WM_DELETE_WINDOW", self._close_historical_event_window)
         window.bind("<Destroy>", self._on_historical_event_destroy, add="+")
@@ -3140,6 +3270,8 @@ class B518LogSolutionApp:
             text=self._t("app.settings.history.cancel_query"))
         self.historical_event_refresh_button.configure(
             text="🔍 {}".format(self._t("app.settings.history.search")))
+        for hint in self._historical_control_hints:
+            hint.refresh()
         self.historical_range_label.configure(text=self._t("app.settings.history.range"))
         self.historical_start_label.configure(text=self._t("app.settings.history.start"))
         self.historical_end_label.configure(text=self._t("app.settings.history.end"))
@@ -3478,6 +3610,9 @@ class B518LogSolutionApp:
         self._unregister_historical_event_language_receiver = None
         if unregister is not None:
             unregister()
+        for hint in self._historical_control_hints:
+            hint.close()
+        self._historical_control_hints = ()
         if self._historical_restore_after_id is not None:
             self._cancel_ui_timer(self._historical_restore_after_id)
             self._historical_restore_after_id = None
