@@ -171,6 +171,8 @@ class RoundRetentionTests(unittest.TestCase):
                 audit_root=session_root, wall_clock=lambda: now[0],
                 retention_ledger_path=ledger_path)
             self.addCleanup(coordinator.request_close)
+            ledger_before_query = (ledger_path.read_bytes()
+                                   if ledger_path.exists() else None)
             source_path = next(item.path for item in archive.components
                                if item.name == "audit.jsonl")
             source_before_query = source_path.read_bytes()
@@ -181,6 +183,9 @@ class RoundRetentionTests(unittest.TestCase):
                 index_path=index_path)
             self.addCleanup(result.close)
             self.assertEqual(source_path.read_bytes(), source_before_query)
+            self.assertEqual(ledger_path.exists(), ledger_before_query is not None)
+            if ledger_before_query is not None:
+                self.assertEqual(ledger_path.read_bytes(), ledger_before_query)
             summaries = result.get_page(1).events
             self.assertGreaterEqual(len(summaries), 2)
             loaded = result.get_detail(summaries[0].key)

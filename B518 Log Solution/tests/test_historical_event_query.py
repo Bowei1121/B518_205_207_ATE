@@ -15,6 +15,7 @@ from audit_records import AuditEvent, RoundAuditStore
 from app_event_store import AppEventStore
 from historical_event_query import (HistoricalEventDateError, HistoricalEventDateRange,
                                     HistoricalEventQueryResult,
+                                    HistoricalEventDetailService,
                                     HistoricalEventQueryService,
                                     parse_historical_event_date_range,
                                     query_historical_events,
@@ -141,6 +142,56 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertNotEqual(store.path.read_bytes(), source_before)
                 self.assertEqual(store.records, ())
             finally:
+                result.close()
+                store.stop()
+
+    def test_official_cleanup_completes_while_selected_detail_read_is_in_flight(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
+            store = AppEventStore(root / "app-events.json", clock=lambda: now)
+            event = store.record("app.hotkey.unavailable", {}, "detail removed mid-read")
+            self.assertTrue(store.flush())
+            result = query_historical_events(
+                root / "sessions", store.path,
+                HistoricalEventDateRange(date(2026, 10, 14), date(2026, 10, 14)),
+                index_path=root / "historical-event-query-index.sqlite3")
+            detail_service = HistoricalEventDetailService()
+            entered, release = threading.Event(), threading.Event()
+            original_get_detail = HistoricalEventQueryResult.get_detail
+
+            def hold_public_detail(query_result, event_key):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("controlled detail read gate timed out")
+                return original_get_detail(query_result, event_key)
+
+            try:
+                with unittest.mock.patch.object(HistoricalEventQueryResult, "get_detail",
+                                                 hold_public_detail):
+                    request_id = detail_service.submit(
+                        result, "app:{}".format(event.event_id))
+                    self.assertTrue(entered.wait(2))
+                    cleanup = store.cleanup_expired(now + timedelta(seconds=1), root)
+                    self.assertEqual(cleanup.status, "complete", cleanup)
+                    self.assertEqual(store.records, ())
+                    self.assertTrue(detail_service.is_pending(request_id))
+                    release.set()
+                    completion = None
+                    deadline = time.monotonic() + 3
+                    while completion is None and time.monotonic() < deadline:
+                        completion = detail_service.take_result(request_id)
+                        if completion is None:
+                            time.sleep(0.01)
+
+                self.assertIsNotNone(completion)
+                self.assertFalse(completion.succeeded)
+                self.assertIsNone(completion.event)
+                self.assertIsNone(completion.error)
+                self.assertIsNone(result.get_detail("app:{}".format(event.event_id)))
+            finally:
+                release.set()
+                detail_service.shutdown()
                 result.close()
                 store.stop()
 
