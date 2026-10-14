@@ -8387,6 +8387,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIs(app._historical_event_selected_detail, selected_detail)
                 self.assertIn("開始日期無效", app.historical_date_error.cget("text"))
                 self.assertNotEqual(app.historical_date_error.cget("text"), english_validation)
+                self.assertIn("第 2／3 頁", app.historical_page_label.cget("text"))
+                self.assertIn("共找到", app.historical_query_status.cget("text"))
                 self.assertIn(raw_detail[:40], app.historical_event_detail.get("1.0", "end"))
                 self.assertEqual(detail_top, app.historical_event_detail.index("@0,0"))
                 restored_list_top = app.historical_event_list.index("@0,0")
@@ -8422,6 +8424,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.select_language_from_menu(app, root, ENGLISH)
                     self.assertEqual(app._historical_query_generation, in_flight_generation)
                     self.assertIs(app._historical_query_result, original_result)
+                    self.assertIn("Searching saved history",
+                                  app.historical_query_status.cget("text"))
                     self.assertEqual(str(app.historical_event_cancel_button.cget("state")),
                                      "normal")
                     release_query.set()
