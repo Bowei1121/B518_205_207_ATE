@@ -2882,7 +2882,8 @@ class B518LogSolutionApp:
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
         self.historical_event_refresh_button = ttk.Button(
-            controls, text="🔍", width=4, takefocus=True,
+            controls, text="🔍 {}".format(self._t("app.settings.history.search")),
+            width=20, takefocus=True,
             command=self._reload_historical_events)
         self.historical_event_refresh_button.pack(side="right", padx=(6, 0))
         self.historical_event_cancel_button = ttk.Button(
@@ -3137,6 +3138,8 @@ class B518LogSolutionApp:
                 state="normal" if self._historical_query_page_number < page_count else "disabled")
         self.historical_event_cancel_button.configure(
             text=self._t("app.settings.history.cancel_query"))
+        self.historical_event_refresh_button.configure(
+            text="🔍 {}".format(self._t("app.settings.history.search")))
         self.historical_range_label.configure(text=self._t("app.settings.history.range"))
         self.historical_start_label.configure(text=self._t("app.settings.history.start"))
         self.historical_end_label.configure(text=self._t("app.settings.history.end"))

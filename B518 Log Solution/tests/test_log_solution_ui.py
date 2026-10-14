@@ -8157,6 +8157,69 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped(self):
+        from audit_records import AuditEvent, RoundAuditStore
+
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            audit = RoundAuditStore(
+                session_root, "keyboard-history", "FCT", "2026-10-14T00:00:00+08:00", 0.0)
+            event_time = datetime.now().astimezone().replace(microsecond=0).isoformat()
+            for sequence in range(1, 206):
+                audit.append_event(AuditEvent(
+                    sequence, "round_ready", "saved keyboard event", None),
+                    event_time, float(sequence))
+            self.assertTrue(audit.flush())
+            source_bytes = audit.audit_path.read_bytes()
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+
+                # Enter in a date field edits/submits no work; Search must be activated directly.
+                app.historical_start_entry.focus_force()
+                app.historical_start_entry.event_generate("<KeyPress-Return>")
+                app.historical_start_entry.event_generate("<KeyRelease-Return>")
+                root.update()
+                self.assertIsNone(app._historical_query_generation)
+                self.assertIsNone(app._historical_query_result)
+
+                app.historical_event_refresh_button.focus_force()
+                app.historical_event_refresh_button.event_generate("<KeyPress-space>")
+                app.historical_event_refresh_button.event_generate("<KeyRelease-space>")
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                self.assertGreater(app._historical_query_result.total_count, 200)
+                self.assertEqual(app.historical_previous_button.cget("text"), "←")
+                self.assertEqual(app.historical_next_button.cget("text"), "→")
+                self.assertEqual(str(app.historical_previous_button.cget("state")), "disabled")
+                self.assertIn(app._t("app.settings.history.search"),
+                              app.historical_event_refresh_button.cget("text"))
+
+                app.historical_next_button.focus_force()
+                app.historical_next_button.event_generate("<KeyPress-space>")
+                app.historical_next_button.event_generate("<KeyRelease-space>")
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                self.assertEqual(str(app.historical_previous_button.cget("state")), "normal")
+                app.historical_previous_button.focus_force()
+                app.historical_previous_button.event_generate("<KeyPress-space>")
+                app.historical_previous_button.event_generate("<KeyRelease-space>")
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
+                self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
     @staticmethod
     def click_tk_widget(root, widget):
         root.update_idletasks()
