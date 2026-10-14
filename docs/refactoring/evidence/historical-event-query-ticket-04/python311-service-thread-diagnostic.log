@@ -1,0 +1,9 @@
+test_persistent_index_is_reused_by_a_new_query_service (test_historical_event_query.HistoricalEventQueryTests.test_persistent_index_is_reused_by_a_new_query_service) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.083s
+
+OK
+background after test: [('round-audit-round-1', True)]
+background after settle: []
+Tk root: ok

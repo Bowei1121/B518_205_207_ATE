@@ -1,0 +1,65 @@
+test_audit_records (unittest.loader._FailedTest.test_audit_records) ... ERROR
+test_app_event_store (unittest.loader._FailedTest.test_app_event_store) ... ERROR
+test_historical_event_display (unittest.loader._FailedTest.test_historical_event_display) ... ERROR
+test_historical_event_query (unittest.loader._FailedTest.test_historical_event_query) ... ERROR
+test_log_solution_ui (unittest.loader._FailedTest.test_log_solution_ui) ... ERROR
+
+======================================================================
+ERROR: test_audit_records (unittest.loader._FailedTest.test_audit_records)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_audit_records
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_audit_records'
+
+
+======================================================================
+ERROR: test_app_event_store (unittest.loader._FailedTest.test_app_event_store)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_app_event_store
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_app_event_store'
+
+
+======================================================================
+ERROR: test_historical_event_display (unittest.loader._FailedTest.test_historical_event_display)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_historical_event_display
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_historical_event_display'
+
+
+======================================================================
+ERROR: test_historical_event_query (unittest.loader._FailedTest.test_historical_event_query)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_historical_event_query
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_historical_event_query'
+
+
+======================================================================
+ERROR: test_log_solution_ui (unittest.loader._FailedTest.test_log_solution_ui)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_log_solution_ui
+Traceback (most recent call last):
+  File "/opt/anaconda3/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_log_solution_ui'
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+FAILED (errors=5)

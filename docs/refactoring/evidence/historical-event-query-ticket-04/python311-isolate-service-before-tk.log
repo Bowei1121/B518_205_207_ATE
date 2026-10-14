@@ -1,0 +1,59 @@
+test_persistent_index_is_reused_by_a_new_query_service (test_historical_event_query.HistoricalEventQueryTests.test_persistent_index_is_reused_by_a_new_query_service) ... ok
+2026-10-14 09:12:43.512 python3[85278:15176407] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-14 09:12:43.512 python3[85278:15176386] Error received in message reply handler: Connection invalid
+2026-10-14 09:12:43.542 python3[85278:15176386] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+*** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Invalid parameter not satisfying: aString != nil'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x00007ff811be4e6a __exceptionPreprocess + 242
+	1   libobjc.A.dylib                     0x00007ff8116af24b objc_exception_throw + 62
+	2   Foundation                          0x00007ff812d7a87a -[NSCalendarDate initWithCoder:] + 0
+	3   AppKit                              0x00007ff8155cc7a5 -[NSMenuItem initWithTitle:action:keyEquivalent:] + 385
+	4   libtk8.6.dylib                      0x0000000102e326e7 +[NSMenuItem(TKUtils) itemWithSubmenu:] + 71
+	5   libtk8.6.dylib                      0x0000000102e2e431 -[TKApplication(TKMenu) tkSetMainMenu:] + 257
+	6   libtk8.6.dylib                      0x0000000102e2fb7b TkpSetMainMenubar + 171
+	7   libtk8.6.dylib                      0x0000000102d8f1f6 TkSetWindowMenuBar + 1254
+	8   libtk8.6.dylib                      0x0000000102d87392 ConfigureFrame + 290
+	9   libtk8.6.dylib                      0x0000000102d86ed5 FrameWidgetObjCmd + 597
+	10  libtcl8.6.dylib                     0x0000000102ee4c02 Tcl_EvalObjv + 354
+	11  libtcl8.6.dylib                     0x0000000102ee653d TclEvalEx + 2989
+	12  libtcl8.6.dylib                     0x0000000102ee598a Tcl_EvalEx + 26
+	13  libtk8.6.dylib                      0x0000000102d5781a Tk_CreateConsoleWindow + 810
+	14  libtk8.6.dylib                      0x0000000102e2ac89 TkpInit + 617
+	15  libtk8.6.dylib                      0x0000000102d7e7d0 Initialize + 2656
+	16  _tkinter.cpython-311-darwin.so      0x000000010230c70b Tcl_AppInit + 91
+	17  _tkinter.cpython-311-darwin.so      0x000000010230c3f9 Tkapp_New + 585
+	18  _tkinter.cpython-311-darwin.so      0x000000010230c19e _tkinter_create_impl + 222
+	19  _tkinter.cpython-311-darwin.so      0x000000010230bda6 _tkinter_create + 182
+	20  python3.11                          0x00000001013898c5 cfunction_vectorcall_FASTCALL + 101
+	21  python3.11                          0x000000010147cd1f _PyEval_EvalFrameDefault + 237855
+	22  python3.11                          0x0000000101323419 _PyFunction_Vectorcall + 505
+	23  python3.11                          0x00000001013b8118 slot_tp_init + 312
+	24  python3.11                          0x00000001013acfea type_call + 122
+	25  python3.11                          0x000000010147d0ce _PyEval_EvalFrameDefault + 238798
+	26  python3.11                          0x0000000101323419 _PyFunction_Vectorcall + 505
+	27  python3.11                          0x0000000101328c1f method_vectorcall + 207
+	28  python3.11                          0x0000000101483984 _PyEval_EvalFrameDefault + 265604
+	29  python3.11                          0x0000000101323419 _PyFunction_Vectorcall + 505
+	30  python3.11                          0x000000010132588c _PyObject_Call_Prepend + 172
+	31  python3.11                          0x00000001013b68a1 slot_tp_call + 97
+	32  python3.11                          0x000000010147d0ce _PyEval_EvalFrameDefault + 238798
+	33  python3.11                          0x0000000101323419 _PyFunction_Vectorcall + 505
+	34  python3.11                          0x0000000101328c1f method_vectorcall + 207
+	35  python3.11                          0x0000000101483984 _PyEval_EvalFrameDefault + 265604
+	36  python3.11                          0x0000000101323419 _PyFunction_Vectorcall + 505
+	37  python3.11                          0x000000010132588c _PyObject_Call_Prepend + 172
+	38  python3.11                          0x00000001013b68a1 slot_tp_call + 97
+	39  python3.11                          0x000000010147d0ce _PyEval_EvalFrameDefault + 238798
+	40  python3.11                          0x0000000101440601 _PyEval_Vector + 497
+	41  python3.11                          0x00000001014ee5e8 run_mod + 296
+	42  python3.11                          0x00000001014ee375 pyrun_file + 133
+	43  python3.11                          0x00000001014ede43 _PyRun_SimpleFileObject + 275
+	44  python3.11                          0x00000001014ed7ef _PyRun_AnyFileObject + 143
+	45  python3.11                          0x000000010151282b pymain_run_file_obj + 267
+	46  python3.11                          0x0000000101512315 pymain_run_file + 85
+	47  python3.11                          0x0000000101511cb2 Py_RunMain + 2018
+	48  python3.11                          0x00000001012b0478 main + 56
+	49  dyld                                0x00007ff8116e7530 start + 3056
+)
+libc++abi: terminating due to uncaught exception of type NSException

@@ -16,10 +16,11 @@
 - 可重現三來源／450 事件／五頁 fixture：首次建立三次 source bytes 各 523,329，完整解析 3 源；新服務重啟重用與未變更查詢各三次皆 source bytes 0、解析 0／重用 3；單源改變三次讀取約 175–177 KB，只解析 1／重用 2；翻頁／選取詳細三次 source bytes 0。完整耗時、tracemalloc 峰值、索引／快照大小、雜湊與限制見 [H4 local validation](evidence/historical-event-query-ticket-04/local-validation.md) 及同目錄 `benchmark.py`。小型工程 fixture 不代表 H8 容量或工廠速度。
 - 正確 Python 目錄、桌面 runtime `/opt/anaconda3/bin/python3` Python 3.11.7／Aqua Tk 8.6.12 執行 `B518_TK_TESTS=1 PYTHONPATH=src python3 scripts/run_tests.py` 通過 439 tests／168.128 秒／exit 0，無 Tk skip。預設 Python 3.8.10/Tk 8.6 的桌面完整套件出現 `Tcl_AsyncDelete` exit 134，固定 review base 的隔離 worktree 同樣重現；因此不宣稱 Python 3.8 suite 通過，日誌與環境限制均保留。repo 沒有型別檢查設定，不宣稱 typecheck。
 - 固定基準雙軸 review 均通過，沒有阻擋：Standards 未找到 documented-standard／ADR 違規；Spec 確認 H4 分配有覆蓋。非阻擋建議為版本 tuple 重複可考慮集中，以及 bytes 觀測是 reader 交付 parser 的 UTF-8 bytes、非 OS 級物理磁碟 I/O；詳細限制與完整審查摘要已寫入 H4 驗收證據。磁碟保存 event JSON 是為固定 H3 詳細資料快照，列表記憶體仍為精簡摘要，選取才讀詳細。
-- 已更新 H4 ticket、票總覽與父規格 H4 coverage；新增本日摘要、成本 benchmark 及測試日誌。最後文件提交、合併前遠端直查、主線合併後完整驗證、全部 push 目的地直查、票分支／本票 worktree 清理仍待完成，未越過合併門檻。
+- 合併前直接查兩遠端後，乾淨本機 `B518-Log-Solution` 於 `e13f54d539797147d0b66840e1aa26e94c34d9b8` fast-forward（無 merge commit）。兩次 post-merge Python 3.11.7 全套均在首次歷史 UI 類別 Tk 建窗時以 AppKit `NSMenuItem`／`Tk_CreateConsoleWindow` uncaught `NSException` exit 134 中止；完整 runtime／stack log 已保存。固定基準同 runtime 全套則完成 429 tests，但有一項 H3 測試的固定日期資料 `StopIteration`；基準同組 86 tests 含 Tk 通過。H4 版本全套在 merge 前曾通過 439 tests，H4 對應 query+Tk 組合後 Tk setup 仍中止；該 runtime 互動原因未釐清。故本機已整合，但主線未推送、未清理 ticket branch/worktree；不宣稱 post-merge 驗收完成。詳見 H4 local validation。
+- 已更新 H4 ticket、票總覽與父規格 H4 coverage；新增本日摘要、成本 benchmark 及測試日誌。文件尚有本次失敗證據待提交推送；全部 push destination 最後 SHA、分支／本票 worktree cleanup 未完成，受 post-merge Tk 阻擋。
 
 ## 範圍界線與下一步
 
 H4 不包含 H5 完整錯誤提示／降級／恢復介面、H6 完整固定結果與正式保存／清理競態整合、H7 完整 icon／提示／鍵盤／即時雙語、H8 5 萬及 216 萬筆容量／全規格收尾。未改監控、裁決、警報確認、產品放行、保存格式、期限、封存、清理、KVM、journal 技術、語言偏好或原始診斷；未宣稱父規格、工廠驗收或正式部署完成。
 
-後續依序：完成固定 base `bbcfc1...` 的 Standards／Spec 平行 review；修正阻擋並重跑受影響驗證；提交及推送文件；重新確認主線與全部遠端 SHA；只有全部驗收通過才安全快轉合併至 `B518-Log-Solution`，主線再跑完整含 Tk 套件並推送；逐一直接查詢 GitHub/Gitea；遠端一致後才正常刪除本票分支和乾淨專用 worktree，最後切回主線。不得觸碰其他票分支、stash、worktree 或前置修改。
+後續先調查可重現的 post-merge Aqua Tk 啟動 abort，必要時在真正桌面 session 修復／重驗；不得以單次成功掩蓋失敗。完整主線 suite 通過後，才提交／推送失敗與最終驗收文件、直接查詢所有遠端、推送主線，再確認 SHA 一致後刪除本票分支與專用 worktree並留在主線。不得觸碰其他票分支、stash、worktree 或前置修改。

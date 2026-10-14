@@ -1,0 +1,9 @@
+test_unsupported_index_version_is_rebuilt_from_unchanged_sources (test_historical_event_query.HistoricalEventQueryTests.test_unsupported_index_version_is_rebuilt_from_unchanged_sources) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.382s
+
+OK
+background after test: []
+background after settle: []
+Tk root: ok

@@ -1,0 +1,235 @@
+test_atlas_instrument_serials_and_fixture_ids_are_collected (test_anonymize_baseline_samples.AnonymizedSamplePreparationTests.test_atlas_instrument_serials_and_fixture_ids_are_collected) ... ok
+test_identifier_redaction_is_case_insensitive (test_anonymize_baseline_samples.AnonymizedSamplePreparationTests.test_identifier_redaction_is_case_insensitive) ... ok
+test_output_inside_source_tree_is_rejected_before_any_write (test_anonymize_baseline_samples.AnonymizedSamplePreparationTests.test_output_inside_source_tree_is_rejected_before_any_write) ... ok
+test_app_event_is_one_versioned_bilingual_record_without_round_identity (test_app_event_store.AppEventStoreTests.test_app_event_is_one_versioned_bilingual_record_without_round_identity) ... ok
+test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability (test_app_event_store.AppEventStoreTests.test_directory_fsync_failure_keeps_event_pending_until_retry_confirms_durability) ... ok
+test_directory_relative_create_preserves_private_read_write_mode (test_app_event_store.AppEventStoreTests.test_directory_relative_create_preserves_private_read_write_mode) ... ok
+test_failed_write_keeps_same_event_for_ordered_retry_and_disk_rebuild (test_app_event_store.AppEventStoreTests.test_failed_write_keeps_same_event_for_ordered_retry_and_disk_rebuild) ... ok
+test_initialization_failure_retains_diagnostic_and_recovers_after_directory_repair (test_app_event_store.AppEventStoreTests.test_initialization_failure_retains_diagnostic_and_recovers_after_directory_repair) ... ok
+test_journal_symlink_installed_after_initial_pin_is_reported_as_path_change (test_app_event_store.AppEventStoreTests.test_journal_symlink_installed_after_initial_pin_is_reported_as_path_change) ... ok
+test_public_revision_changes_when_events_are_captured_not_when_pending_drains (test_app_event_store.AppEventStoreTests.test_public_revision_changes_when_events_are_captured_not_when_pending_drains) ... ok
+test_reader_rejects_invalid_or_timezone_naive_event_time (test_app_event_store.AppEventStoreTests.test_reader_rejects_invalid_or_timezone_naive_event_time) ... ok
+test_reader_rejects_unknown_version_and_round_linkage (test_app_event_store.AppEventStoreTests.test_reader_rejects_unknown_version_and_round_linkage) ... ok
+test_replace_that_succeeds_then_reports_failure_is_not_duplicated_on_retry (test_app_event_store.AppEventStoreTests.test_replace_that_succeeds_then_reports_failure_is_not_duplicated_on_retry) ... ok
+test_retention_ancestor_swap_before_managed_root_pin_cannot_reach_external_journal (test_app_event_store.AppEventStoreTests.test_retention_ancestor_swap_before_managed_root_pin_cannot_reach_external_journal) ... ok
+test_retention_deadline_is_inclusive_and_preserves_event_just_before_cutoff (test_app_event_store.AppEventStoreTests.test_retention_deadline_is_inclusive_and_preserves_event_just_before_cutoff) ... ok
+test_retention_keeps_corrupt_or_unknown_journal_bytes (test_app_event_store.AppEventStoreTests.test_retention_keeps_corrupt_or_unknown_journal_bytes) ... ok
+test_retention_parent_swap_cannot_redirect_replace_outside_managed_directory (test_app_event_store.AppEventStoreTests.test_retention_parent_swap_cannot_redirect_replace_outside_managed_directory) ... ok
+test_retention_refuses_event_journal_symlink_to_external_file (test_app_event_store.AppEventStoreTests.test_retention_refuses_event_journal_symlink_to_external_file) ... ok
+test_retention_rejects_preexisting_symlink_in_managed_root_ancestor (test_app_event_store.AppEventStoreTests.test_retention_rejects_preexisting_symlink_in_managed_root_ancestor) ... ok
+test_retention_removes_only_expired_events_and_preserves_live_identity_and_sequence (test_app_event_store.AppEventStoreTests.test_retention_removes_only_expired_events_and_preserves_live_identity_and_sequence) ... ok
+test_retention_retry_resyncs_directory_after_replace_succeeded_but_fsync_failed (test_app_event_store.AppEventStoreTests.test_retention_retry_resyncs_directory_after_replace_succeeded_but_fsync_failed) ... ok
+test_retention_unknown_journal_version_is_reported_without_rewriting_bytes (test_app_event_store.AppEventStoreTests.test_retention_unknown_journal_version_is_reported_without_rewriting_bytes) ... ok
+test_retention_uses_absolute_instant_for_deadline_comparison (test_app_event_store.AppEventStoreTests.test_retention_uses_absolute_instant_for_deadline_comparison) ... ok
+test_retention_with_no_journal_reports_a_bilingual_no_events_reason (test_app_event_store.AppEventStoreTests.test_retention_with_no_journal_reports_a_bilingual_no_events_reason) ... ok
+test_streaming_reader_handles_large_detail_values_across_chunk_boundaries (test_app_event_store.AppEventStoreTests.test_streaming_reader_handles_large_detail_values_across_chunk_boundaries) ... ok
+test_streaming_reader_rejects_a_bad_tail_before_returning_any_events (test_app_event_store.AppEventStoreTests.test_streaming_reader_rejects_a_bad_tail_before_returning_any_events) ... ok
+test_streaming_reader_validates_then_keeps_the_open_journal_snapshot (test_app_event_store.AppEventStoreTests.test_streaming_reader_validates_then_keeps_the_open_journal_snapshot) ... ok
+test_archive_result_is_used_only_after_its_file_signature_is_stable (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_archive_result_is_used_only_after_its_file_signature_is_stable) ... ok
+test_atlas_active_identity_change_fails_without_confirmed_round_evidence (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_atlas_active_identity_change_fails_without_confirmed_round_evidence) ... ok
+test_atlas_same_active_slot_and_trusted_sn_capture_changed_final_as_common_conflict (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_atlas_same_active_slot_and_trusted_sn_capture_changed_final_as_common_conflict) ... ok
+test_first_trusted_identity_is_locked_and_unknown_identity_change_fails_slot (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_first_trusted_identity_is_locked_and_unknown_identity_change_fails_slot) ... ok
+test_startup_snapshot_ignores_old_active_data_and_reports_source_prepared (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_startup_snapshot_ignores_old_active_data_and_reports_source_prepared) ... ok
+test_unchanged_record_in_existing_active_directory_is_still_active (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_unchanged_record_in_existing_active_directory_is_still_active) ... ok
+test_unreadable_identity_keeps_the_atlas_sn_failure_result (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_unreadable_identity_keeps_the_atlas_sn_failure_result) ... ok
+test_unseen_slot_is_not_inferred_from_three_second_source_disappearance (test_atlas_source_adapter.AtlasSourceAdapterRoundTests.test_unseen_slot_is_not_inferred_from_three_second_source_disappearance) ... ok
+test_append_completed_before_error_report_is_not_duplicated_on_retry (test_audit_records.RoundAuditRecordTests.test_append_completed_before_error_report_is_not_duplicated_on_retry) ... ok
+test_atlas_adapter_and_profile_mapping_are_persisted_through_shared_round (test_audit_records.RoundAuditRecordTests.test_atlas_adapter_and_profile_mapping_are_persisted_through_shared_round) ... ok
+test_atomic_legacy_result_update_keeps_previous_complete_file_on_failure (test_audit_records.RoundAuditRecordTests.test_atomic_legacy_result_update_keeps_previous_complete_file_on_failure) ... ok
+test_audit_events_arriving_during_retry_are_drained_before_complete (test_audit_records.RoundAuditRecordTests.test_audit_events_arriving_during_retry_are_drained_before_complete) ... ok
+test_audit_session_path_association_failure_is_retried_through_coordinator (test_audit_records.RoundAuditRecordTests.test_audit_session_path_association_failure_is_retried_through_coordinator) ... ok
+test_audit_store_initialization_failure_is_retained_and_rebuilt_after_retry (test_audit_records.RoundAuditRecordTests.test_audit_store_initialization_failure_is_retained_and_rebuilt_after_retry) ... ok
+test_audit_write_failure_is_visible_but_does_not_block_product_release (test_audit_records.RoundAuditRecordTests.test_audit_write_failure_is_visible_but_does_not_block_product_release) ... ok
+test_b482_adapter_source_batch_is_reconstructable_from_common_round (test_audit_records.RoundAuditRecordTests.test_b482_adapter_source_batch_is_reconstructable_from_common_round) ... ok
+test_background_disk_failure_is_visible_without_blocking_release (test_audit_records.RoundAuditRecordTests.test_background_disk_failure_is_visible_without_blocking_release) ... ok
+test_completed_round_audit_writers_exit_after_idle_period (test_audit_records.RoundAuditRecordTests.test_completed_round_audit_writers_exit_after_idle_period) ... ok
+test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order (test_audit_records.RoundAuditRecordTests.test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order) ... ok
+test_conflict_candidate_choice_and_release_are_reconstructable (test_audit_records.RoundAuditRecordTests.test_conflict_candidate_choice_and_release_are_reconstructable) ... ok
+test_conflict_resolution_after_manual_stop_and_idle_exit_is_reconstructable (test_audit_records.RoundAuditRecordTests.test_conflict_resolution_after_manual_stop_and_idle_exit_is_reconstructable) ... ok
+test_monitor_startup_failure_is_not_mislabeled_as_persistence_failure (test_audit_records.RoundAuditRecordTests.test_monitor_startup_failure_is_not_mislabeled_as_persistence_failure) ... ok
+test_normal_round_can_be_rebuilt_from_a_fresh_disk_reader (test_audit_records.RoundAuditRecordTests.test_normal_round_can_be_rebuilt_from_a_fresh_disk_reader) ... ok
+test_parallel_round_events_keep_a_deterministic_persistent_order (test_audit_records.RoundAuditRecordTests.test_parallel_round_events_keep_a_deterministic_persistent_order) ... ok
+test_partial_audit_append_is_repaired_without_overwriting_valid_records (test_audit_records.RoundAuditRecordTests.test_partial_audit_append_is_repaired_without_overwriting_valid_records) ... ok
+test_reader_rejects_incomplete_result_event_instead_of_rebuilding_silently (test_audit_records.RoundAuditRecordTests.test_reader_rejects_incomplete_result_event_instead_of_rebuilding_silently) ... ok
+test_reader_rejects_truncated_or_corrupt_records (test_audit_records.RoundAuditRecordTests.test_reader_rejects_truncated_or_corrupt_records) ... ok
+test_reader_reports_malformed_record_shapes_and_invalid_utf8 (test_audit_records.RoundAuditRecordTests.test_reader_reports_malformed_record_shapes_and_invalid_utf8) ... ok
+test_round_alarm_can_be_acknowledged_after_idle_writer_exits (test_audit_records.RoundAuditRecordTests.test_round_alarm_can_be_acknowledged_after_idle_writer_exits) ... ok
+test_round_deadline_alarm_and_release_have_independent_durable_events (test_audit_records.RoundAuditRecordTests.test_round_deadline_alarm_and_release_have_independent_durable_events) ... ok
+test_rswmt_final_only_adapter_is_recorded_without_inventing_activity (test_audit_records.RoundAuditRecordTests.test_rswmt_final_only_adapter_is_recorded_without_inventing_activity) ... ok
+test_session_attachment_waits_for_the_destination_path_lock (test_audit_records.RoundAuditRecordTests.test_session_attachment_waits_for_the_destination_path_lock) ... ok
+test_session_writes_are_queued_off_the_calling_thread (test_audit_records.RoundAuditRecordTests.test_session_writes_are_queued_off_the_calling_thread) ... ok
+test_shared_round_result_is_one_versioned_bilingual_audit_event (test_audit_records.RoundAuditRecordTests.test_shared_round_result_is_one_versioned_bilingual_audit_event) ... ok
+test_source_preparation_deadline_is_written_before_delayed_adapter_returns (test_audit_records.RoundAuditRecordTests.test_source_preparation_deadline_is_written_before_delayed_adapter_returns) ... ok
+test_synchronous_audit_enqueue_failure_preserves_order_after_recovery (test_audit_records.RoundAuditRecordTests.test_synchronous_audit_enqueue_failure_preserves_order_after_recovery) ... ok
+test_transient_audit_append_failure_retries_original_record_from_public_coordinator (test_audit_records.RoundAuditRecordTests.test_transient_audit_append_failure_retries_original_record_from_public_coordinator) ... ok
+test_caseinfo_content_present_at_round_start_is_ignored_until_new_line_is_appended (test_b482_source_adapter.B482SourceAdapterRoundTests.test_caseinfo_content_present_at_round_start_is_ignored_until_new_line_is_appended) ... ok
+test_empty_sn_failed_testdata_result_remains_fail_and_keeps_batch_evidence (test_b482_source_adapter.B482SourceAdapterRoundTests.test_empty_sn_failed_testdata_result_remains_fail_and_keeps_batch_evidence) ... ok
+test_empty_sn_passed_testdata_result_fails_product (test_b482_source_adapter.B482SourceAdapterRoundTests.test_empty_sn_passed_testdata_result_fails_product) ... ok
+test_round_event_exposes_caseinfo_source_time_and_second_snread_action (test_b482_source_adapter.B482SourceAdapterRoundTests.test_round_event_exposes_caseinfo_source_time_and_second_snread_action) ... ok
+test_round_waits_for_partial_caseinfo_record_then_reports_activity (test_b482_source_adapter.B482SourceAdapterRoundTests.test_round_waits_for_partial_caseinfo_record_then_reports_activity) ... ok
+test_testdata_present_at_round_start_is_not_used_as_this_round_result (test_b482_source_adapter.B482SourceAdapterRoundTests.test_testdata_present_at_round_start_is_not_used_as_this_round_result) ... ok
+test_testdata_threads_keep_their_established_round_positions (test_b482_source_adapter.B482SourceAdapterRoundTests.test_testdata_threads_keep_their_established_round_positions) ... ok
+test_exact_producer_prefix_preserves_unmodified_diagnostic (test_cleanup_reasons.CleanupReasonPresentationTests.test_exact_producer_prefix_preserves_unmodified_diagnostic) ... ok
+test_incomplete_required_parameter_and_empty_legacy_diagnostic_are_not_guessed (test_cleanup_reasons.CleanupReasonPresentationTests.test_incomplete_required_parameter_and_empty_legacy_diagnostic_are_not_guessed) ... ok
+test_legacy_translation_requires_exact_contract_match (test_cleanup_reasons.CleanupReasonPresentationTests.test_legacy_translation_requires_exact_contract_match) ... ok
+test_malformed_new_reason_preserves_full_original_record_without_leaking_id (test_cleanup_reasons.CleanupReasonPresentationTests.test_malformed_new_reason_preserves_full_original_record_without_leaking_id) ... ok
+test_missing_or_incompatible_resource_falls_back_to_captured_english (test_cleanup_reasons.CleanupReasonPresentationTests.test_missing_or_incompatible_resource_falls_back_to_captured_english) ... ok
+test_missing_selected_language_resource_falls_back_to_captured_english (test_cleanup_reasons.CleanupReasonPresentationTests.test_missing_selected_language_resource_falls_back_to_captured_english) ... ok
+test_new_reason_is_captured_once_and_rendered_from_current_catalog (test_cleanup_reasons.CleanupReasonPresentationTests.test_new_reason_is_captured_once_and_rendered_from_current_catalog) ... ok
+test_unknown_legacy_reason_has_localized_outer_message_and_verbatim_detail (test_cleanup_reasons.CleanupReasonPresentationTests.test_unknown_legacy_reason_has_localized_outer_message_and_verbatim_detail) ... ok
+test_valid_record_with_unknown_identifier_uses_localized_unknown_fallback (test_cleanup_reasons.CleanupReasonPresentationTests.test_valid_record_with_unknown_identifier_uses_localized_unknown_fallback) ... ok
+test_b482_caseinfo_logical_slot_uses_profile_mapping (test_configured_monitor.ConfiguredMonitorTests.test_b482_caseinfo_logical_slot_uses_profile_mapping) ... ok
+test_capacity_fixtures_publish_mapped_positions_through_shared_round (test_configured_monitor.ConfiguredMonitorTests.test_capacity_fixtures_publish_mapped_positions_through_shared_round) ... ok
+test_out_of_order_native_positions_map_to_configured_displays_in_round (test_configured_monitor.ConfiguredMonitorTests.test_out_of_order_native_positions_map_to_configured_displays_in_round) ... ok
+test_profile_mapping_is_visible_through_round_snapshot_and_events (test_configured_monitor.ConfiguredMonitorTests.test_profile_mapping_is_visible_through_round_snapshot_and_events) ... ok
+test_warning_for_unmapped_source_is_kept_without_claiming_a_display_slot (test_configured_monitor.ConfiguredMonitorTests.test_warning_for_unmapped_source_is_kept_without_claiming_a_display_slot) ... ok
+test_bad_legacy_lines_have_distinct_view_keys (test_historical_event_display.HistoricalEventDisplayTests.test_bad_legacy_lines_have_distinct_view_keys) ... ok
+test_equal_timestamp_round_events_keep_numeric_audit_sequence_order (test_historical_event_display.HistoricalEventDisplayTests.test_equal_timestamp_round_events_keep_numeric_audit_sequence_order) ... ok
+test_legacy_b482_and_rswmt_events_require_platform_and_producer_contract (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_b482_and_rswmt_events_require_platform_and_producer_contract) ... ok
+test_legacy_platform_event_requires_platform_and_producer_contract (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_platform_event_requires_platform_and_producer_contract) ... ok
+test_legacy_platform_translation_rejects_malformed_station_and_status_types (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_platform_translation_rejects_malformed_station_and_status_types) ... ok
+test_legacy_platform_warning_with_non_path_source_stays_readable (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_platform_warning_with_non_path_source_stays_readable) ... ok
+test_legacy_result_requires_real_position_and_status_instead_of_filling_values (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_result_requires_real_position_and_status_instead_of_filling_values) ... ok
+test_legacy_session_without_machine_kind_is_kept_as_original (test_historical_event_display.HistoricalEventDisplayTests.test_legacy_session_without_machine_kind_is_kept_as_original) ... ok
+test_list_message_does_not_format_full_detail_until_record_is_selected (test_historical_event_display.HistoricalEventDisplayTests.test_list_message_does_not_format_full_detail_until_record_is_selected) ... ok
+test_mixed_timezone_offsets_sort_by_instant_and_legacy_sequence_types_stay_safe (test_historical_event_display.HistoricalEventDisplayTests.test_mixed_timezone_offsets_sort_by_instant_and_legacy_sequence_types_stay_safe) ... ok
+test_new_app_event_uses_current_resource_and_keeps_saved_english_and_diagnostic (test_historical_event_display.HistoricalEventDisplayTests.test_new_app_event_uses_current_resource_and_keeps_saved_english_and_diagnostic) ... ok
+test_positioned_legacy_timeout_rejects_malformed_status_type (test_historical_event_display.HistoricalEventDisplayTests.test_positioned_legacy_timeout_rejects_malformed_status_type) ... ok
+test_query_iterator_streams_validated_disk_sources_instead_of_bulk_readers (test_historical_event_display.HistoricalEventDisplayTests.test_query_iterator_streams_validated_disk_sources_instead_of_bulk_readers) ... ok
+test_reads_mixed_rounds_and_translates_only_whitelisted_legacy_contract (test_historical_event_display.HistoricalEventDisplayTests.test_reads_mixed_rounds_and_translates_only_whitelisted_legacy_contract) ... ok
+test_resource_updates_change_only_display_and_missing_or_unsupported_resources_fall_back (test_historical_event_display.HistoricalEventDisplayTests.test_resource_updates_change_only_display_and_missing_or_unsupported_resources_fall_back) ... ok
+test_cancelled_partial_index_refresh_is_rolled_back_before_retry (test_historical_event_query.HistoricalEventQueryTests.test_cancelled_partial_index_refresh_is_rolled_back_before_retry) ... ok
+test_closing_snapshot_during_page_open_never_recreates_temporary_database (test_historical_event_query.HistoricalEventQueryTests.test_closing_snapshot_during_page_open_never_recreates_temporary_database) ... ok
+test_custom_range_crossing_month_and_year_keeps_both_calendar_days (test_historical_event_query.HistoricalEventQueryTests.test_custom_range_crossing_month_and_year_keeps_both_calendar_days) ... ok
+test_date_input_rejects_missing_invalid_and_reversed_ranges (test_historical_event_query.HistoricalEventQueryTests.test_date_input_rejects_missing_invalid_and_reversed_ranges) ... ok
+test_detail_service_coalesces_selection_and_discards_late_detail (test_historical_event_query.HistoricalEventQueryTests.test_detail_service_coalesces_selection_and_discards_late_detail) ... ok
+test_empty_single_day_and_mixed_sources_keep_existing_source_precedence (test_historical_event_query.HistoricalEventQueryTests.test_empty_single_day_and_mixed_sources_keep_existing_source_precedence) ... ok
+test_equal_instants_use_round_identity_then_numeric_sequence (test_historical_event_query.HistoricalEventQueryTests.test_equal_instants_use_round_identity_then_numeric_sequence) ... ok
+test_exactly_one_hundred_events_stay_on_one_full_page (test_historical_event_query.HistoricalEventQueryTests.test_exactly_one_hundred_events_stay_on_one_full_page) ... ok
+test_local_calendar_day_boundaries_follow_dst_length (test_historical_event_query.HistoricalEventQueryTests.test_local_calendar_day_boundaries_follow_dst_length) ... ok
+test_naive_fall_back_wall_time_is_not_assigned_an_absolute_fold (test_historical_event_query.HistoricalEventQueryTests.test_naive_fall_back_wall_time_is_not_assigned_an_absolute_fold) ... ok
+test_new_audit_source_supersedes_indexed_legacy_events_log (test_historical_event_query.HistoricalEventQueryTests.test_new_audit_source_supersedes_indexed_legacy_events_log) ... ok
+test_offset_and_local_wall_times_use_inclusive_local_calendar_dates (test_historical_event_query.HistoricalEventQueryTests.test_offset_and_local_wall_times_use_inclusive_local_calendar_dates) ... ok
+test_page_reads_run_off_ui_and_latest_page_replaces_blocked_request (test_historical_event_query.HistoricalEventQueryTests.test_page_reads_run_off_ui_and_latest_page_replaces_blocked_request) ... ok
+test_persistent_index_is_reused_by_a_new_query_service (test_historical_event_query.HistoricalEventQueryTests.test_persistent_index_is_reused_by_a_new_query_service) ... ok
+test_persistent_index_path_cannot_overwrite_or_live_inside_sources (test_historical_event_query.HistoricalEventQueryTests.test_persistent_index_path_cannot_overwrite_or_live_inside_sources) ... ok
+test_persistent_query_result_stays_fixed_until_a_new_query (test_historical_event_query.HistoricalEventQueryTests.test_persistent_query_result_stays_fixed_until_a_new_query) ... ok
+test_public_query_returns_latest_hundred_in_stable_order (test_historical_event_query.HistoricalEventQueryTests.test_public_query_returns_latest_hundred_in_stable_order) ... ok
+test_query_service_coalesces_pending_work_and_only_publishes_latest_result (test_historical_event_query.HistoricalEventQueryTests.test_query_service_coalesces_pending_work_and_only_publishes_latest_result) ... ok
+test_query_snapshot_pages_all_events_and_loads_detail_only_on_request (test_historical_event_query.HistoricalEventQueryTests.test_query_snapshot_pages_all_events_and_loads_detail_only_on_request) ... ok
+test_query_uses_timezone_captured_when_date_range_was_submitted (test_historical_event_query.HistoricalEventQueryTests.test_query_uses_timezone_captured_when_date_range_was_submitted) ... ok
+test_reused_index_reinterprets_offset_events_in_each_submitted_local_timezone (test_historical_event_query.HistoricalEventQueryTests.test_reused_index_reinterprets_offset_events_in_each_submitted_local_timezone) ... ok
+test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source (test_historical_event_query.HistoricalEventQueryTests.test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source) ... ok
+test_single_result_is_returned_without_claiming_a_later_page (test_historical_event_query.HistoricalEventQueryTests.test_single_result_is_returned_without_claiming_a_later_page) ... ok
+test_source_addition_replacement_move_deletion_and_app_rewrite_refresh_incrementally (test_historical_event_query.HistoricalEventQueryTests.test_source_addition_replacement_move_deletion_and_app_rewrite_refresh_incrementally) ... ok
+test_source_append_before_version_confirmation_is_not_indexed_as_reliable (test_historical_event_query.HistoricalEventQueryTests.test_source_append_before_version_confirmation_is_not_indexed_as_reliable) ... ok
+test_unreadable_source_is_counted_separately_from_an_empty_date_range (test_historical_event_query.HistoricalEventQueryTests.test_unreadable_source_is_counted_separately_from_an_empty_date_range) ... ok
+test_unsupported_index_version_is_rebuilt_from_unchanged_sources (test_historical_event_query.HistoricalEventQueryTests.test_unsupported_index_version_is_rebuilt_from_unchanged_sources) ... ok
+test_four_fixed_black_white_patterns_are_unique_and_decodable (test_kvm_display_contract.KvmDisplayContractTests.test_four_fixed_black_white_patterns_are_unique_and_decodable) ... ok
+test_locator_and_two_row_geometry_keep_marker_separate_from_result_cells (test_kvm_display_contract.KvmDisplayContractTests.test_locator_and_two_row_geometry_keep_marker_separate_from_result_cells) ... ok
+test_low_contrast_missing_or_unknown_marker_is_not_recognized (test_kvm_display_contract.KvmDisplayContractTests.test_low_contrast_missing_or_unknown_marker_is_not_recognized) ... ok
+test_pending_confirmation_cannot_be_hidden_by_a_released_snapshot (test_kvm_display_contract.KvmDisplayContractTests.test_pending_confirmation_cannot_be_hidden_by_a_released_snapshot) ... ok
+test_pending_confirmations_take_priority_over_collection_state (test_kvm_display_contract.KvmDisplayContractTests.test_pending_confirmations_take_priority_over_collection_state) ... ok
+test_round_snapshot_maps_to_four_machine_readable_states (test_kvm_display_contract.KvmDisplayContractTests.test_round_snapshot_maps_to_four_machine_readable_states) ... ok
+test_wrong_or_unknown_locator_orientation_never_classifies_a_marker (test_kvm_display_contract.KvmDisplayContractTests.test_wrong_or_unknown_locator_orientation_never_classifies_a_marker) ... ok
+test_conflict_and_alarm_copy_has_complete_shared_bilingual_resources (test_language_catalog.LanguageCatalogTests.test_conflict_and_alarm_copy_has_complete_shared_bilingual_resources) ... ok
+test_main_message_translates_with_named_parameters (test_language_catalog.LanguageCatalogTests.test_main_message_translates_with_named_parameters) ... ok
+test_missing_translation_falls_back_to_english (test_language_catalog.LanguageCatalogTests.test_missing_translation_falls_back_to_english) ... ok
+test_shared_round_and_conflict_terms_use_the_approved_glossary (test_language_catalog.LanguageCatalogTests.test_shared_round_and_conflict_terms_use_the_approved_glossary) ... ok
+test_slotless_round_events_never_invent_slot_zero (test_language_catalog.LanguageCatalogTests.test_slotless_round_events_never_invent_slot_zero) ... ok
+test_unknown_language_uses_english_and_release_catalog_is_complete (test_language_catalog.LanguageCatalogTests.test_unknown_language_uses_english_and_release_catalog_is_complete) ... ok
+test_active_batch_leaves_unseen_slots_waiting_for_shared_start_deadline (test_log_monitoring.LogMonitoringTests.test_active_batch_leaves_unseen_slots_waiting_for_shared_start_deadline) ... ok
+test_active_csv_from_before_monitor_start_is_ignored_until_changed (test_log_monitoring.LogMonitoringTests.test_active_csv_from_before_monitor_start_is_ignored_until_changed) ... ok
+test_archive_timestamp_accepts_one_and_two_digit_hour (test_log_monitoring.LogMonitoringTests.test_archive_timestamp_accepts_one_and_two_digit_hour) ... ok
+test_atlas_and_b482_producers_capture_platform_message_ids (test_log_monitoring.LogMonitoringTests.test_atlas_and_b482_producers_capture_platform_message_ids) ... ok
+test_atlas_csv_parse_failure_is_reported_without_changing_source_result_policy (test_log_monitoring.LogMonitoringTests.test_atlas_csv_parse_failure_is_reported_without_changing_source_result_policy) ... ok
+test_atlas_csv_read_failure_is_a_bilingual_app_event_with_raw_diagnostic (test_log_monitoring.LogMonitoringTests.test_atlas_csv_read_failure_is_a_bilingual_app_event_with_raw_diagnostic) ... ok
+test_b482_adapter_exposes_exact_batch_identity_for_common_round (test_log_monitoring.LogMonitoringTests.test_b482_adapter_exposes_exact_batch_identity_for_common_round) ... ok
+test_b482_batch_mismatch_producer_captures_localized_slot_and_diagnostic (test_log_monitoring.LogMonitoringTests.test_b482_batch_mismatch_producer_captures_localized_slot_and_diagnostic) ... ok
+test_b482_file_signature_failure_is_reported_as_bilingual_source_error (test_log_monitoring.LogMonitoringTests.test_b482_file_signature_failure_is_reported_as_bilingual_source_error) ... ok
+test_bt_caseinfo_buffers_partial_production_record (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_buffers_partial_production_record) ... ok
+test_bt_caseinfo_ignores_invalid_and_expired_production_sn (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_ignores_invalid_and_expired_production_sn) ... ok
+test_bt_caseinfo_parses_production_csv_records_for_all_threads (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_parses_production_csv_records_for_all_threads) ... ok
+test_bt_caseinfo_production_closefixture_reports_completing (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_production_closefixture_reports_completing) ... ok
+test_bt_caseinfo_reports_testing_before_final_csv (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_reports_testing_before_final_csv) ... ok
+test_bt_caseinfo_uses_second_snread_action_to_identify_barcode (test_log_monitoring.LogMonitoringTests.test_bt_caseinfo_uses_second_snread_action_to_identify_barcode) ... ok
+test_bt_locks_batch_and_empty_failed_csv_is_fail (test_log_monitoring.LogMonitoringTests.test_bt_locks_batch_and_empty_failed_csv_is_fail) ... ok
+test_fct_latches_active_sn_then_reads_unit_archive (test_log_monitoring.LogMonitoringTests.test_fct_latches_active_sn_then_reads_unit_archive) ... ok
+test_fct_never_treats_number_sofo_as_serial_number (test_log_monitoring.LogMonitoringTests.test_fct_never_treats_number_sofo_as_serial_number) ... ok
+test_legacy_session_adapter_keeps_its_existing_event_call_shape (test_log_monitoring.LogMonitoringTests.test_legacy_session_adapter_keeps_its_existing_event_call_shape) ... ok
+test_log_solution_never_imports_control_dependencies (test_log_monitoring.LogMonitoringTests.test_log_solution_never_imports_control_dependencies) ... ok
+test_platform_message_is_captured_before_session_persistence (test_log_monitoring.LogMonitoringTests.test_platform_message_is_captured_before_session_persistence) ... ok
+test_session_adapter_with_keyword_extension_receives_identity_as_keywords (test_log_monitoring.LogMonitoringTests.test_session_adapter_with_keyword_extension_receives_identity_as_keywords) ... ok
+test_session_background_failure_retains_work_until_retry (test_log_monitoring.LogMonitoringTests.test_session_background_failure_retains_work_until_retry) ... ok
+test_session_event_keeps_one_immutable_bilingual_record (test_log_monitoring.LogMonitoringTests.test_session_event_keeps_one_immutable_bilingual_record) ... ok
+test_session_flush_waits_for_writes_added_during_repeated_retry (test_log_monitoring.LogMonitoringTests.test_session_flush_waits_for_writes_added_during_repeated_retry) ... ok
+test_session_initialization_failure_is_recoverable_after_location_repair (test_log_monitoring.LogMonitoringTests.test_session_initialization_failure_is_recoverable_after_location_repair) ... ok
+test_session_retry_failure_keeps_original_ahead_of_later_retained_writes (test_log_monitoring.LogMonitoringTests.test_session_retry_failure_keeps_original_ahead_of_later_retained_writes) ... ok
+test_session_retry_from_failure_callback_keeps_a_worker_for_retained_write (test_log_monitoring.LogMonitoringTests.test_session_retry_from_failure_callback_keeps_a_worker_for_retained_write) ... ok
+test_session_sync_failure_retains_original_event_for_nonblocking_retry (test_log_monitoring.LogMonitoringTests.test_session_sync_failure_retains_original_event_for_nonblocking_retry) ... ok
+test_station_timeout_defaults_match_the_operating_limits (test_log_monitoring.LogMonitoringTests.test_station_timeout_defaults_match_the_operating_limits) ... ok
+2026-10-14 09:10:42.020 python3[84880:15173319] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-14 09:10:42.020 python3[84880:15172694] Error received in message reply handler: Connection invalid
+2026-10-14 09:10:42.054 python3[84880:15172694] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+*** Terminating app due to uncaught exception 'NSInternalInconsistencyException', reason: 'Invalid parameter not satisfying: aString != nil'
+*** First throw call stack:
+(
+	0   CoreFoundation                      0x00007ff811be4e6a __exceptionPreprocess + 242
+	1   libobjc.A.dylib                     0x00007ff8116af24b objc_exception_throw + 62
+	2   Foundation                          0x00007ff812d7a87a -[NSCalendarDate initWithCoder:] + 0
+	3   AppKit                              0x00007ff8155cc7a5 -[NSMenuItem initWithTitle:action:keyEquivalent:] + 385
+	4   libtk8.6.dylib                      0x0000000111c6f6e7 +[NSMenuItem(TKUtils) itemWithSubmenu:] + 71
+	5   libtk8.6.dylib                      0x0000000111c6b431 -[TKApplication(TKMenu) tkSetMainMenu:] + 257
+	6   libtk8.6.dylib                      0x0000000111c6cb7b TkpSetMainMenubar + 171
+	7   libtk8.6.dylib                      0x0000000111bcc1f6 TkSetWindowMenuBar + 1254
+	8   libtk8.6.dylib                      0x0000000111bc4392 ConfigureFrame + 290
+	9   libtk8.6.dylib                      0x0000000111bc3ed5 FrameWidgetObjCmd + 597
+	10  libtcl8.6.dylib                     0x0000000111d21c02 Tcl_EvalObjv + 354
+	11  libtcl8.6.dylib                     0x0000000111d2353d TclEvalEx + 2989
+	12  libtcl8.6.dylib                     0x0000000111d2298a Tcl_EvalEx + 26
+	13  libtk8.6.dylib                      0x0000000111b9481a Tk_CreateConsoleWindow + 810
+	14  libtk8.6.dylib                      0x0000000111c67c89 TkpInit + 617
+	15  libtk8.6.dylib                      0x0000000111bbb7d0 Initialize + 2656
+	16  _tkinter.cpython-311-darwin.so      0x00000001112cd70b Tcl_AppInit + 91
+	17  _tkinter.cpython-311-darwin.so      0x00000001112cd3f9 Tkapp_New + 585
+	18  _tkinter.cpython-311-darwin.so      0x00000001112cd19e _tkinter_create_impl + 222
+	19  _tkinter.cpython-311-darwin.so      0x00000001112ccda6 _tkinter_create + 182
+	20  python3.11                          0x000000010ffc88c5 cfunction_vectorcall_FASTCALL + 101
+	21  python3.11                          0x00000001100bbd1f _PyEval_EvalFrameDefault + 237855
+	22  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	23  python3.11                          0x000000010fff7118 slot_tp_init + 312
+	24  python3.11                          0x000000010ffebfea type_call + 122
+	25  python3.11                          0x00000001100bc0ce _PyEval_EvalFrameDefault + 238798
+	26  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	27  python3.11                          0x000000010ff67c1f method_vectorcall + 207
+	28  python3.11                          0x00000001100c2984 _PyEval_EvalFrameDefault + 265604
+	29  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	30  python3.11                          0x000000010ff6488c _PyObject_Call_Prepend + 172
+	31  python3.11                          0x000000010fff58a1 slot_tp_call + 97
+	32  python3.11                          0x00000001100bc0ce _PyEval_EvalFrameDefault + 238798
+	33  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	34  python3.11                          0x000000010ff67c1f method_vectorcall + 207
+	35  python3.11                          0x00000001100c2984 _PyEval_EvalFrameDefault + 265604
+	36  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	37  python3.11                          0x000000010ff6488c _PyObject_Call_Prepend + 172
+	38  python3.11                          0x000000010fff58a1 slot_tp_call + 97
+	39  python3.11                          0x00000001100bc0ce _PyEval_EvalFrameDefault + 238798
+	40  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	41  python3.11                          0x000000010ff67c1f method_vectorcall + 207
+	42  python3.11                          0x00000001100c2984 _PyEval_EvalFrameDefault + 265604
+	43  python3.11                          0x000000010ff62419 _PyFunction_Vectorcall + 505
+	44  python3.11                          0x000000010ff6488c _PyObject_Call_Prepend + 172
+	45  python3.11                          0x000000010fff58a1 slot_tp_call + 97
+	46  python3.11                          0x00000001100bc0ce _PyEval_EvalFrameDefault + 238798
+	47  python3.11                          0x000000011007f601 _PyEval_Vector + 497
+	48  python3.11                          0x000000011012d5e8 run_mod + 296
+	49  python3.11                          0x000000011012d375 pyrun_file + 133
+	50  python3.11                          0x000000011012ce43 _PyRun_SimpleFileObject + 275
+	51  python3.11                          0x000000011012c7ef _PyRun_AnyFileObject + 143
+	52  python3.11                          0x000000011015182b pymain_run_file_obj + 267
+	53  python3.11                          0x0000000110151315 pymain_run_file + 85
+	54  python3.11                          0x0000000110150cb2 Py_RunMain + 2018
+	55  python3.11                          0x000000010feef478 main + 56
+	56  dyld                                0x00007ff8116e7530 start + 3056
+)
+libc++abi: terminating due to uncaught exception of type NSException
