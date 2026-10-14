@@ -1,0 +1,6 @@
+test_real_app_query_remains_responsive_and_matches_disk_baseline (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 20.737s
+
+OK

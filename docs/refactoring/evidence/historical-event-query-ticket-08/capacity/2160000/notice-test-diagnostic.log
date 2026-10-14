@@ -1,0 +1,21 @@
+test_notice_escape_hidden_reopen_and_current_language_lifecycle (test_log_solution_ui.LogSolutionUiTests) ... FAIL
+
+======================================================================
+FAIL: test_notice_escape_hidden_reopen_and_current_language_lifecycle (test_log_solution_ui.LogSolutionUiTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/tests/test_log_solution_ui.py", line 381, in test_notice_escape_hidden_reopen_and_current_language_lifecycle
+    self.assertEqual(second_escape_kept_notice, [False])
+AssertionError: Lists differ: [True] != [False]
+
+First differing element 0:
+True
+False
+
+- [True]
++ [False]
+
+----------------------------------------------------------------------
+Ran 1 test in 1.048s
+
+FAILED (failures=1)
