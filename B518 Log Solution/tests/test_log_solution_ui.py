@@ -8291,6 +8291,102 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail(self):
+        from audit_records import AuditEvent, RoundAuditStore
+
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            audit = RoundAuditStore(
+                session_root, "language-history", "FCT", "2026-10-14T00:00:00+08:00", 0.0)
+            event_time = datetime.now().astimezone().replace(microsecond=0).isoformat()
+            raw_detail = "Keep original historical diagnostic — " * 500
+            for sequence in range(1, 206):
+                audit.append_event(AuditEvent(
+                    sequence, "round_ready", "saved language event", None,
+                    detail={"raw_diagnostic": raw_detail if sequence == 103 else ""}),
+                    event_time, float(sequence))
+            self.assertTrue(audit.flush())
+            source_bytes = audit.audit_path.read_bytes()
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=root_path / "app-events.json")
+            moved_source = audit.audit_path.with_suffix(".held")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                self.assertIsNone(app._historical_query_result)
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.wait_for_ui(root, lambda: app._historical_query_result is not None and
+                                 app._historical_query_generation is None)
+                original_result = app._historical_query_result
+                original_range = original_result.date_range
+                self.assertGreater(original_result.page_count, 2)
+
+                self.click_tk_widget(root, app.historical_next_button)
+                self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
+                selected_index = next(index for index, item in enumerate(
+                    app._historical_event_records) if item.sequence == 103)
+                self.click_tk_listbox_row(root, app.historical_event_list, selected_index)
+                self.wait_for_ui(root, lambda: raw_detail[:40] in
+                                 app.historical_event_detail.get("1.0", "end"))
+                selected_key = app._historical_event_selected_key
+                selected_detail = app._historical_event_selected_detail
+                app.historical_event_detail.yview_moveto(0.4)
+                app.historical_event_list.yview_moveto(0.35)
+                root.update()
+                detail_top = app.historical_event_detail.index("@0,0")
+                list_top_index = app.historical_event_list.index("@0,0")
+                list_top_key = app._historical_event_records[list_top_index].key
+
+                app.historical_start_var.set("not-a-date")
+                app.historical_end_var.set("2026-")
+                self.click_tk_widget(root, app.historical_event_refresh_button)
+                self.assertEqual(app._historical_date_error_key,
+                                 "app.settings.history.validation.start_invalid")
+                self.assertEqual(app.historical_start_var.get(), "not-a-date")
+                self.assertIsNone(app._historical_query_generation)
+                english_validation = app.historical_date_error.cget("text")
+                self.assertIn("valid start date", english_validation)
+
+                os.replace(audit.audit_path, moved_source)
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                root.update()
+                self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
+                self.assertIs(app._historical_query_result, original_result)
+                self.assertEqual(app._historical_query_result.date_range, original_range)
+                self.assertEqual(app._historical_query_page_number, 2)
+                self.assertEqual(app.historical_start_var.get(), "not-a-date")
+                self.assertEqual(app.historical_end_var.get(), "2026-")
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+                self.assertIs(app._historical_event_selected_detail, selected_detail)
+                self.assertIn("開始日期無效", app.historical_date_error.cget("text"))
+                self.assertNotEqual(app.historical_date_error.cget("text"), english_validation)
+                self.assertIn(raw_detail[:40], app.historical_event_detail.get("1.0", "end"))
+                self.assertEqual(detail_top, app.historical_event_detail.index("@0,0"))
+                restored_list_top = app.historical_event_list.index("@0,0")
+                self.assertEqual(app._historical_event_records[restored_list_top].key,
+                                 list_top_key)
+                self.assertIsNone(app._historical_query_generation)
+                self.assertFalse(audit.audit_path.exists())
+                self.assertEqual(moved_source.read_bytes(), source_bytes)
+                self.assertEqual(app.historical_event_refresh_button.cget("text"),
+                                 "🔍 " + app._t("app.settings.history.search"))
+            finally:
+                if moved_source.exists():
+                    os.replace(moved_source, audit.audit_path)
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+            self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
+
     @staticmethod
     def click_tk_widget(root, widget):
         root.update_idletasks()

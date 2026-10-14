@@ -3275,6 +3275,9 @@ class B518LogSolutionApp:
         self.historical_range_label.configure(text=self._t("app.settings.history.range"))
         self.historical_start_label.configure(text=self._t("app.settings.history.start"))
         self.historical_end_label.configure(text=self._t("app.settings.history.end"))
+        self.historical_date_error.configure(
+            text=self._t(self._historical_date_error_key)
+            if self._historical_date_error_key else "")
         self._updating_historical_controls = True
         try:
             self.historical_range_choice.configure(values=self._historical_range_mode_labels())
