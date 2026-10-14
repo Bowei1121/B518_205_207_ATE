@@ -478,7 +478,7 @@ def read_round_audit(path: Path) -> dict:
                         for event in events)}
 
 
-def iter_round_audit_events(path: Path):
+def iter_round_audit_events(path: Path, read_observer=None):
     """Validate an audit file in bounded memory and return its events as a stream."""
     path = Path(path)
     try:
@@ -488,6 +488,8 @@ def iter_round_audit_events(path: Path):
     try:
         before = os.fstat(handle.fileno())
         header_line = handle.readline()
+        if read_observer is not None:
+            read_observer(len(header_line.encode("utf-8")))
         if not header_line:
             raise AuditRecordError("輪次紀錄是空檔")
         try:
@@ -509,6 +511,8 @@ def iter_round_audit_events(path: Path):
         event_count = 0
         audit_complete = True
         for line in handle:
+            if read_observer is not None:
+                read_observer(len(line.encode("utf-8")))
             try:
                 event = json.loads(line)
             except (json.JSONDecodeError, UnicodeDecodeError) as error:
@@ -558,6 +562,8 @@ def iter_round_audit_events(path: Path):
     def events():
         try:
             for line in handle:
+                if read_observer is not None:
+                    read_observer(len(line.encode("utf-8")))
                 yield json.loads(line)
             after = os.fstat(handle.fileno())
             if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=

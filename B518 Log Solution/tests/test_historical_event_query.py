@@ -1,6 +1,8 @@
 import tempfile
 import os
+import json
 import sqlite3
+import shutil
 import threading
 import time
 import unittest
@@ -58,6 +60,429 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual(result.events[0].key, "round:round-1:101")
             self.assertEqual(result.events[-1].key, "round:round-1:2")
             self.assertEqual(audit.audit_path.read_bytes(), before)
+
+    def test_persistent_index_is_reused_by_a_new_query_service(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            first = query_historical_events(sessions, None, date_range,
+                                            index_path=index_path)
+            try:
+                expected_keys = tuple(row.key for row in first.get_page(1).events)
+                self.assertEqual(first.total_count, 1)
+                self.assertEqual(first.index_metrics.parsed_source_count, 1)
+                self.assertGreater(first.index_metrics.source_bytes_read, 0)
+            finally:
+                first.close()
+
+            fresh_service = HistoricalEventQueryService(
+                sessions, None, index_path=index_path)
+            generation = fresh_service.submit(date_range)
+            deadline = time.monotonic() + 5
+            completion = None
+            while completion is None and time.monotonic() < deadline:
+                completion = fresh_service.take_result(generation)
+                if completion is None:
+                    time.sleep(0.01)
+            self.assertIsNotNone(completion)
+            self.assertTrue(completion.succeeded, completion.error)
+            fresh_service_result = completion.result
+            try:
+                self.assertEqual(
+                    tuple(row.key for row in fresh_service_result.get_page(1).events),
+                    expected_keys)
+                self.assertEqual(fresh_service_result.index_metrics.parsed_source_count, 0)
+                self.assertEqual(fresh_service_result.index_metrics.reused_source_count, 1)
+                self.assertEqual(fresh_service_result.index_metrics.source_bytes_read, 0)
+                self.assertTrue(index_path.is_file())
+                self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                fresh_service_result.close()
+                fresh_service.shutdown()
+
+    def test_same_size_content_change_with_restored_mtime_refreshes_only_changed_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audits = []
+            for round_id, message in (("round-a", "first"), ("round-b", "steady")):
+                audit = RoundAuditStore(
+                    sessions, round_id, "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+                audit.append_event(AuditEvent(1, "round_ready", message, None),
+                                   "2026-10-13T08:00:00+08:00", 1.0)
+                self.assertTrue(audit.flush())
+                audits.append(audit)
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            initial = query_historical_events(sessions, None, date_range,
+                                              index_path=index_path)
+            self.assertEqual(initial.total_count, 2)
+            initial.close()
+
+            changed_path = audits[0].audit_path
+            unchanged_source_bytes = audits[1].audit_path.read_bytes()
+            original_stat = changed_path.stat()
+            original_bytes = changed_path.read_bytes()
+            changed_bytes = original_bytes.replace(b'"first"', b'"other"')
+            self.assertEqual(len(changed_bytes), len(original_bytes))
+            changed_path.write_bytes(changed_bytes)
+            os.utime(changed_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+            refreshed = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(refreshed.total_count, 2)
+                self.assertEqual(refreshed.index_metrics.parsed_source_count, 1)
+                self.assertEqual(refreshed.index_metrics.reused_source_count, 1)
+                self.assertGreater(refreshed.index_metrics.source_bytes_read, 0)
+                rows = refreshed.get_page(1).events
+                self.assertIn("other", [row.message for row in rows])
+                self.assertEqual(audits[1].audit_path.read_bytes(), unchanged_source_bytes)
+            finally:
+                refreshed.close()
+
+    def test_source_addition_replacement_move_deletion_and_app_rewrite_refresh_incrementally(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            app_path = root / "app-events.json"
+            app_store = AppEventStore(
+                app_path, clock=lambda: datetime(2026, 10, 13, 1, tzinfo=timezone.utc))
+            app_store.record("app.startup.started", {})
+            self.assertTrue(app_store.flush())
+            first_audit = RoundAuditStore(
+                sessions, "round-a", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            first_audit.append_event(AuditEvent(1, "round_ready", "original", None),
+                                     "2026-10-13T08:00:00+08:00", 1.0)
+            self.assertTrue(first_audit.flush())
+            index_path = root / "historical-event-query-index.sqlite3"
+            day = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+
+            initial = query_historical_events(sessions, app_path, day, index_path=index_path)
+            try:
+                self.assertEqual(initial.total_count, 2)
+                self.assertEqual(initial.index_metrics.parsed_source_count, 2)
+            finally:
+                initial.close()
+
+            replacement_root = root / "replacement"
+            replacement = RoundAuditStore(
+                replacement_root, "round-a", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            replacement.append_event(AuditEvent(1, "round_ready", "replaced", None),
+                                     "2026-10-13T08:00:00+08:00", 1.0)
+            self.assertTrue(replacement.flush())
+            os.replace(str(replacement.audit_path), str(first_audit.audit_path))
+            replaced = query_historical_events(sessions, app_path, day, index_path=index_path)
+            try:
+                self.assertEqual(replaced.total_count, 2)
+                self.assertEqual(replaced.index_metrics.parsed_source_count, 1)
+                self.assertEqual(replaced.index_metrics.reused_source_count, 1)
+                self.assertIn("replaced", [row.message for row in replaced.get_page(1).events])
+            finally:
+                replaced.close()
+
+            moved_directory = sessions / "moved-round"
+            os.replace(str(first_audit.audit_path.parent), str(moved_directory))
+            moved = query_historical_events(sessions, app_path, day, index_path=index_path)
+            try:
+                self.assertEqual(moved.total_count, 2)
+                self.assertEqual(moved.index_metrics.parsed_source_count, 1)
+                self.assertEqual(moved.index_metrics.reused_source_count, 1)
+            finally:
+                moved.close()
+
+            second_audit = RoundAuditStore(
+                sessions, "round-b", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            second_audit.append_event(AuditEvent(1, "round_ready", "added", None),
+                                      "2026-10-13T09:00:00+08:00", 1.0)
+            self.assertTrue(second_audit.flush())
+            added = query_historical_events(sessions, app_path, day, index_path=index_path)
+            try:
+                self.assertEqual(added.total_count, 3)
+                self.assertEqual(added.index_metrics.parsed_source_count, 1)
+                self.assertEqual(added.index_metrics.reused_source_count, 2)
+            finally:
+                added.close()
+
+            before_app_change = app_path.stat().st_ino
+            app_store.record("app.startup.started", {})
+            self.assertTrue(app_store.flush())
+            self.assertNotEqual(app_path.stat().st_ino, before_app_change)
+            app_changed = query_historical_events(sessions, app_path, day,
+                                                 index_path=index_path)
+            try:
+                self.assertEqual(app_changed.total_count, 4)
+                self.assertEqual(app_changed.index_metrics.parsed_source_count, 1)
+                self.assertEqual(app_changed.index_metrics.reused_source_count, 2)
+            finally:
+                app_changed.close()
+                app_store.stop()
+
+            shutil.rmtree(moved_directory)
+            deleted = query_historical_events(sessions, app_path, day, index_path=index_path)
+            try:
+                self.assertEqual(deleted.total_count, 3)
+                self.assertEqual(deleted.index_metrics.parsed_source_count, 0)
+                self.assertEqual(deleted.index_metrics.reused_source_count, 2)
+            finally:
+                deleted.close()
+
+    def test_source_append_before_version_confirmation_is_not_indexed_as_reliable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            original_reader = historical_event_query.iter_historical_source_events
+            scan_finished = threading.Event()
+            allow_confirmation = threading.Event()
+            results = []
+            failures = []
+
+            def paused_after_source_read(source, read_observer=None):
+                yield from original_reader(source, read_observer=read_observer)
+                if not scan_finished.is_set():
+                    scan_finished.set()
+                    if not allow_confirmation.wait(5):
+                        raise RuntimeError("source-version confirmation gate timed out")
+
+            def run_query():
+                try:
+                    results.append(query_historical_events(
+                        sessions, None, date_range, index_path=index_path))
+                except BaseException as error:
+                    failures.append(error)
+
+            with unittest.mock.patch.object(
+                    historical_event_query, "iter_historical_source_events",
+                    side_effect=paused_after_source_read):
+                worker = threading.Thread(target=run_query)
+                worker.start()
+                self.assertTrue(scan_finished.wait(5))
+                audit.append_event(
+                    AuditEvent(2, "round_ready", "arrived during scan", None),
+                    "2026-10-13T09:00:00+08:00", 2.0)
+                self.assertTrue(audit.flush())
+                allow_confirmation.set()
+                worker.join(5)
+
+            self.assertFalse(worker.is_alive())
+            self.assertFalse(failures, failures)
+            unstable = results.pop()
+            try:
+                self.assertEqual(unstable.total_count, 0)
+                self.assertEqual(unstable.source_issue_count, 1)
+                self.assertTrue(unstable.diagnostics)
+            finally:
+                unstable.close()
+
+            recovered = query_historical_events(sessions, None, date_range,
+                                                index_path=index_path)
+            try:
+                self.assertEqual(recovered.total_count, 2)
+                self.assertEqual(recovered.index_metrics.parsed_source_count, 1)
+                self.assertEqual([item.sequence for item in recovered.get_page(1).events], [2, 1])
+            finally:
+                recovered.close()
+
+    def test_unsupported_index_version_is_rebuilt_from_unchanged_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            initial = query_historical_events(sessions, None, date_range,
+                                              index_path=index_path)
+            expected_keys = tuple(row.key for row in initial.get_page(1).events)
+            initial.close()
+            with sqlite3.connect(str(index_path)) as connection:
+                connection.execute("PRAGMA user_version=999")
+
+            rebuilt = query_historical_events(sessions, None, date_range,
+                                              index_path=index_path)
+            try:
+                self.assertEqual(tuple(row.key for row in rebuilt.get_page(1).events),
+                                 expected_keys)
+                self.assertEqual(rebuilt.index_metrics.parsed_source_count, 1)
+                self.assertEqual(rebuilt.index_metrics.reused_source_count, 0)
+                self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            finally:
+                rebuilt.close()
+
+    def test_cancelled_partial_index_refresh_is_rolled_back_before_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(
+                sessions, ["2026-10-13T08:00:00+08:00", "2026-10-13T08:01:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            cancellation = threading.Event()
+            original_reader = historical_event_query.iter_historical_source_events
+
+            def cancel_after_first_event(source, read_observer=None):
+                for event in original_reader(source, read_observer=read_observer):
+                    yield event
+                    cancellation.set()
+
+            with unittest.mock.patch.object(
+                    historical_event_query, "iter_historical_source_events",
+                    side_effect=cancel_after_first_event):
+                with self.assertRaisesRegex(RuntimeError, "cancelled"):
+                    query_historical_events(sessions, None, date_range,
+                                            cancellation_event=cancellation,
+                                            index_path=index_path)
+
+            retried = query_historical_events(sessions, None, date_range,
+                                              index_path=index_path)
+            try:
+                self.assertEqual(retried.total_count, 2)
+                self.assertEqual(retried.index_metrics.parsed_source_count, 1)
+            finally:
+                retried.close()
+
+    def test_reused_index_reinterprets_offset_events_in_each_submitted_local_timezone(self):
+        if not hasattr(time, "tzset"):
+            self.skipTest("requires process-local timezone control")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_audit(sessions, ["2026-01-02T02:00:00+00:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            previous_tz = os.environ.get("TZ")
+            try:
+                os.environ["TZ"] = "America/New_York"
+                time.tzset()
+                new_york = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 1, 1), date(2026, 1, 1)),
+                    index_path=index_path)
+                try:
+                    self.assertEqual(new_york.total_count, 1)
+                    expected_key = new_york.get_page(1).events[0].key
+                finally:
+                    new_york.close()
+
+                os.environ["TZ"] = "Asia/Tokyo"
+                time.tzset()
+                tokyo = query_historical_events(
+                    sessions, None,
+                    HistoricalEventDateRange(date(2026, 1, 2), date(2026, 1, 2)),
+                    index_path=index_path)
+                try:
+                    self.assertEqual(tokyo.total_count, 1)
+                    self.assertEqual(tokyo.get_page(1).events[0].key, expected_key)
+                    self.assertEqual(tokyo.index_metrics.parsed_source_count, 0)
+                    self.assertEqual(tokyo.index_metrics.reused_source_count, 1)
+                finally:
+                    tokyo.close()
+            finally:
+                if previous_tz is None:
+                    os.environ.pop("TZ", None)
+                else:
+                    os.environ["TZ"] = previous_tz
+                time.tzset()
+
+    def test_new_audit_source_supersedes_indexed_legacy_events_log(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            legacy_dir = sessions / "round-legacy"
+            legacy_dir.mkdir(parents=True)
+            legacy_path = legacy_dir / "events.log"
+            legacy_path.write_text(json.dumps({
+                "timestamp": "2026-10-13T08:00:00+08:00",
+                "message": "legacy message",
+                "round_id": "round-legacy",
+                "sequence": 1,
+            }) + "\n", encoding="utf-8")
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            legacy_result = query_historical_events(sessions, None, date_range,
+                                                    index_path=index_path)
+            try:
+                self.assertEqual(legacy_result.total_count, 1)
+                self.assertEqual(legacy_result.get_page(1).events[0].source, "legacy_session")
+            finally:
+                legacy_result.close()
+
+            audit = RoundAuditStore(
+                sessions, "round-legacy", "FCT", "2026-10-13T00:00:00+08:00", 0.0)
+            audit.append_event(AuditEvent(1, "round_ready", "audit message", None),
+                               "2026-10-13T08:00:01+08:00", 1.0)
+            self.assertTrue(audit.flush())
+            audit_result = query_historical_events(sessions, None, date_range,
+                                                   index_path=index_path)
+            try:
+                self.assertEqual(audit_result.total_count, 1)
+                self.assertEqual(audit_result.get_page(1).events[0].source, "round")
+                self.assertEqual(audit_result.get_page(1).events[0].message, "audit message")
+                self.assertEqual(audit_result.index_metrics.parsed_source_count, 1)
+                self.assertEqual(audit_result.index_metrics.reused_source_count, 0)
+                self.assertTrue(legacy_path.is_file())
+            finally:
+                audit_result.close()
+
+    def test_persistent_index_path_cannot_overwrite_or_live_inside_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            source_before = audit.audit_path.read_bytes()
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+
+            with self.assertRaises(ValueError):
+                query_historical_events(sessions, None, date_range,
+                                        index_path=audit.audit_path)
+            with self.assertRaises(ValueError):
+                query_historical_events(sessions, None, date_range,
+                                        index_path=sessions / "historical-index.sqlite3")
+            self.assertEqual(audit.audit_path.read_bytes(), source_before)
+            self.assertFalse((sessions / "historical-index.sqlite3").exists())
+
+    def test_persistent_query_result_stays_fixed_until_a_new_query(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            date_range = HistoricalEventDateRange(date(2026, 10, 13),
+                                                  date(2026, 10, 13))
+            active = query_historical_events(sessions, None, date_range,
+                                             index_path=index_path)
+            try:
+                original_keys = tuple(row.key for row in active.get_page(1).events)
+                audit.append_event(AuditEvent(2, "round_ready", "later", None),
+                                   "2026-10-13T09:00:00+08:00", 2.0)
+                self.assertTrue(audit.flush())
+                self.assertEqual(active.total_count, 1)
+                self.assertEqual(tuple(row.key for row in active.get_page(1).events),
+                                 original_keys)
+                refreshed = query_historical_events(sessions, None, date_range,
+                                                    index_path=index_path)
+                try:
+                    self.assertEqual(refreshed.total_count, 2)
+                    self.assertEqual(refreshed.index_metrics.parsed_source_count, 1)
+                    self.assertEqual(refreshed.get_page(1).events[0].sequence, 2)
+                finally:
+                    refreshed.close()
+            finally:
+                active.close()
 
     def test_query_snapshot_pages_all_events_and_loads_detail_only_on_request(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -469,6 +894,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
         time.tzset()
         try:
             with tempfile.TemporaryDirectory() as temporary:
+                index_path = Path(temporary) / "historical-event-query-index.sqlite3"
                 spring_sessions = Path(temporary) / "spring"
                 spring = self._write_audit(spring_sessions, [
                     "2026-03-08T05:00:00+00:00", # local midnight
@@ -477,7 +903,8 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 ])
                 spring_result = query_historical_events(
                     spring_sessions, None,
-                    HistoricalEventDateRange(date(2026, 3, 8), date(2026, 3, 8)))
+                    HistoricalEventDateRange(date(2026, 3, 8), date(2026, 3, 8)),
+                    index_path=index_path)
                 self.assertEqual([event.sequence for event in spring_result.events], [2, 1])
                 self.assertEqual(
                     HistoricalEventDateRange(date(2026, 3, 8), date(2026, 3, 8))._end_epoch
@@ -494,13 +921,15 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 ])
                 fall_result = query_historical_events(
                     fall_sessions, None,
-                    HistoricalEventDateRange(date(2026, 11, 1), date(2026, 11, 1)))
+                    HistoricalEventDateRange(date(2026, 11, 1), date(2026, 11, 1)),
+                    index_path=index_path)
                 self.assertEqual([event.sequence for event in fall_result.events], [2, 1])
                 self.assertEqual(
                     HistoricalEventDateRange(date(2026, 11, 1), date(2026, 11, 1))._end_epoch
                     - HistoricalEventDateRange(date(2026, 11, 1), date(2026, 11, 1))._start_epoch,
                     25 * 60 * 60,
                 )
+                self.assertEqual(fall_result.index_metrics.parsed_source_count, 1)
         finally:
             if original_tz is None:
                 os.environ.pop("TZ", None)

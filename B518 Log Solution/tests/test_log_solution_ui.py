@@ -33,6 +33,7 @@ from monitoring_round import (
 )
 import audit_records
 import app_event_store
+import historical_event_query
 import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
@@ -5791,7 +5792,9 @@ class LogSolutionUiTests(unittest.TestCase):
 
             root = tk.Tk()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
-                                     session_root=session_root, app_event_path=app_path)
+                                     session_root=session_root, app_event_path=app_path,
+                                     app_event_clock=lambda: datetime(
+                                         2026, 10, 9, 2, 3, 4, tzinfo=timezone.utc))
 
             def click_history_row(index):
                 app.historical_event_list.see(index)
@@ -5847,6 +5850,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update_idletasks()
                 self.assertTrue(app.historical_event_window.winfo_exists())
                 self.assertEqual(app._historical_query_result.total_count, expected_total)
+                index_path = root_path / "historical-event-query-index.sqlite3"
+                self.assertTrue(index_path.is_file())
+                self.assertEqual(app._historical_query_result.index_metrics.parsed_source_count, 3)
+                self.assertEqual(app._historical_query_result.index_metrics.reused_source_count, 0)
                 self.assertLessEqual(len(app._historical_event_records), 100)
                 self.assertEqual(len(app._historical_event_records), 100)
                 self.assertEqual(app.historical_event_list.size(), 101)
@@ -5873,6 +5880,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 1)
                 self.assertEqual(app._historical_event_records[0].key,
                                  first_page_records[0].key)
+                first_result = app._historical_query_result
+                app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
+                app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
+                root.update()
+                self.wait_for_ui(root, lambda: app._historical_query_result is not first_result)
+                self.assertEqual(app._historical_query_result.total_count, expected_total)
+                self.assertEqual(app._historical_query_result.index_metrics.parsed_source_count, 0)
+                self.assertEqual(app._historical_query_result.index_metrics.reused_source_count, 3)
+                self.assertEqual(audit_path.read_bytes(), audit_before)
+                self.assertEqual(legacy_path.read_bytes(), legacy_before)
+                self.assertEqual(app_path.read_bytes(), app_events_before)
                 previous_records = app._historical_event_records
                 previous_result = app._historical_query_result
                 app.historical_start_var.set("2026-02-30")
@@ -5903,15 +5921,25 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.historical_start_var.get(), "%Y-%m-%d").date()
                 submitted_end = datetime.strptime(
                     app.historical_end_var.get(), "%Y-%m-%d").date()
+                late_audit = RoundAuditStore(
+                    session_root, "round-added-during-index-test", "FCT",
+                    "2026-10-09T00:00:00+00:00", 0.0)
+                late_audit.append_event(
+                    AuditEvent(1, "round_ready", "added while index was idle", None),
+                    "2026-10-09T08:00:00+00:00", 1.0)
+                self.assertTrue(late_audit.flush())
 
-                def controlled_slow_read(*args, **kwargs):
-                    read_entered.set()
-                    if not release_read.wait(20):
-                        raise RuntimeError("controlled history read timed out")
-                    return query_historical_events(*args, **kwargs)
+                original_source_reader = historical_event_query.iter_historical_source_events
 
-                with patch("b518_log_solution.query_historical_events",
-                           side_effect=controlled_slow_read):
+                def controlled_index_scan(source, read_observer=None):
+                    yield from original_source_reader(source, read_observer=read_observer)
+                    if not read_entered.is_set():
+                        read_entered.set()
+                        if not release_read.wait(20):
+                            raise RuntimeError("controlled history index gate timed out")
+
+                with patch.object(historical_event_query, "iter_historical_source_events",
+                                  side_effect=controlled_index_scan):
                     app.historical_event_refresh_button.event_generate("<ButtonPress-1>")
                     app.historical_event_refresh_button.event_generate("<ButtonRelease-1>")
                     root.update()
@@ -5930,6 +5958,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         lambda: app._historical_query_result is not None and
                         app._historical_query_result.date_range.start == submitted_start)
                 self.assertEqual(app._historical_query_result.date_range.end, submitted_end)
+                expected_total += 1
                 previous_success = app._historical_query_result
                 app.historical_start_var.set("2026-01-01")
                 app.historical_end_var.set(today.isoformat())
@@ -6113,7 +6142,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
 
-            def controlled_query(sessions, event_path, date_range, cancellation_event=None):
+            def controlled_query(sessions, event_path, date_range, cancellation_event=None,
+                                 index_path=None):
                 query_dates.append(date_range.start)
                 gate = gates.get(date_range.start)
                 finished[date_range.start] = threading.Event()
@@ -6126,7 +6156,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         if date_range.start == date(2026, 1, 1):
                             raise RuntimeError("obsolete request failed after replacement")
                     return original_query(sessions, event_path, date_range,
-                                          cancellation_event=cancellation_event)
+                                          cancellation_event=cancellation_event,
+                                          index_path=index_path)
                 finally:
                     finished[date_range.start].set()
 
@@ -6140,14 +6171,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 initial_cancel_finished = threading.Event()
 
                 def controlled_initial_cancel(sessions, event_path, date_range,
-                                              cancellation_event=None):
+                                              cancellation_event=None, index_path=None):
                     initial_cancel_entered.set()
                     try:
                         if not initial_cancel_release.wait(10):
                             raise RuntimeError("initial cancellation gate timed out")
                         return original_query(
                             sessions, event_path, date_range,
-                            cancellation_event=cancellation_event)
+                            cancellation_event=cancellation_event,
+                            index_path=index_path)
                     finally:
                         initial_cancel_finished.set()
 

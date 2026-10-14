@@ -121,7 +121,8 @@ class B518LogSolutionApp:
         self._historical_query_service = HistoricalEventQueryService(
             self.session_root, getattr(self.app_events, "path", None),
             query_function=lambda sessions, app_path, date_range, **kwargs:
-            query_historical_events(sessions, app_path, date_range, **kwargs))
+            query_historical_events(sessions, app_path, date_range, **kwargs),
+            index_path=self.session_root.parent / "historical-event-query-index.sqlite3")
         self._historical_detail_service = HistoricalEventDetailService()
         self._closing_ui = False
         self._close_window = None

@@ -273,8 +273,9 @@ def read_app_event_store(path: Path) -> dict:
 class _JsonStreamReader:
     """Incrementally decode JSON values without retaining the full source file."""
 
-    def __init__(self, handle):
+    def __init__(self, handle, read_observer=None):
         self.handle = handle
+        self.read_observer = read_observer
         self.decoder = json.JSONDecoder()
         self.buffer = ""
         self.position = 0
@@ -288,6 +289,8 @@ class _JsonStreamReader:
         if not chunk:
             self.eof = True
             return False
+        if self.read_observer is not None:
+            self.read_observer(len(chunk.encode("utf-8")))
         self.buffer += chunk
         return True
 
@@ -332,9 +335,9 @@ class _JsonStreamReader:
                 return decoded
 
 
-def _iter_app_event_payload(handle, metadata):
+def _iter_app_event_payload(handle, metadata, read_observer=None):
     """Parse the top-level store while yielding one event object at a time."""
-    reader = _JsonStreamReader(handle)
+    reader = _JsonStreamReader(handle, read_observer=read_observer)
     top_level_keys = set()
     has_events = False
     reader.take("{")
@@ -373,7 +376,7 @@ def _iter_app_event_payload(handle, metadata):
         raise ValueError("App 事件紀錄含有多餘資料")
 
 
-def iter_app_event_store_events(path: Path):
+def iter_app_event_store_events(path: Path, read_observer=None):
     """Validate an App event store, then stream its events from the same open file.
 
     Validation is a first bounded-memory pass. The returned iterator is a second
@@ -425,7 +428,8 @@ def iter_app_event_store_events(path: Path):
 
     try:
         metadata = {}
-        for event in _iter_app_event_payload(handle, metadata):
+        for event in _iter_app_event_payload(handle, metadata,
+                                             read_observer=read_observer):
             validate_event(event)
         after = os.fstat(handle.fileno())
         if not _same_file_entry(before, after):
@@ -487,7 +491,8 @@ def iter_app_event_store_events(path: Path):
     def iter_second_pass():
         try:
             metadata = {}
-            yield from _iter_app_event_payload(handle, metadata)
+            yield from _iter_app_event_payload(handle, metadata,
+                                               read_observer=read_observer)
             after = os.fstat(handle.fileno())
             if not _same_file_entry(before, after):
                 raise _AppEventCleanupError(

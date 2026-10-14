@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +39,15 @@ class HistoricalEventPresentation:
     message: str
     detail: str
     unrecognized: bool = False
+
+
+@dataclass(frozen=True)
+class HistoricalEventSource:
+    """One precedence-resolved source file used by history queries."""
+
+    key: str
+    kind: str
+    path: Path
 
 
 def read_historical_events(session_root: Path, app_event_path: Optional[Path] = None
@@ -106,6 +117,116 @@ def iter_historical_events(session_root: Path, app_event_path: Optional[Path] = 
                     )
             except Exception as error:
                 yield _read_error("app", path, str(error))
+
+
+def iter_historical_event_sources(session_root: Path,
+                                  app_event_path: Optional[Path] = None):
+    """Discover read-only files after applying audit-over-legacy source priority."""
+    root = Path(session_root)
+    root_before = _path_version(root)
+    directory_versions = {}
+    if root_before is not None:
+        directories = []
+        for path in root.iterdir():
+            try:
+                details = path.stat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISDIR(details.st_mode):
+                directories.append(path)
+                directory_versions[path] = _stat_version(details)
+        for directory in sorted(directories):
+            audit_path = directory / "audit.jsonl"
+            legacy_path = directory / "events.log"
+            if _is_regular_file(audit_path):
+                yield HistoricalEventSource(_source_key("round-audit", audit_path),
+                                            "round-audit", audit_path)
+            elif _is_regular_file(legacy_path):
+                yield HistoricalEventSource(_source_key("legacy", legacy_path),
+                                            "legacy", legacy_path)
+        if (_path_version(root) != root_before or any(
+                _path_version(path) != version for path, version in directory_versions.items())):
+            raise OSError("Historical source list changed during discovery")
+    elif _path_version(root) is not None:
+        raise OSError("Historical source directory appeared during discovery")
+    if app_event_path is not None:
+        path = Path(app_event_path)
+        if _is_regular_file(path):
+            yield HistoricalEventSource(_source_key("app", path), "app", path)
+
+
+def _is_regular_file(path: Path) -> bool:
+    try:
+        details = path.stat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(details.st_mode):
+        raise OSError("Historical source is not a regular file: {}".format(path))
+    return True
+
+
+def _path_version(path: Path):
+    try:
+        details = path.stat()
+    except FileNotFoundError:
+        return None
+    return _stat_version(details)
+
+
+def _stat_version(details: os.stat_result):
+    return (details.st_dev, details.st_ino, details.st_size,
+            details.st_mtime_ns, details.st_ctime_ns)
+
+
+def _source_key(kind: str, path: Path) -> str:
+    return "{}:{}".format(kind, path.resolve())
+
+
+def iter_historical_source_events(source: HistoricalEventSource, read_observer=None):
+    """Read one discovered source with its existing strict reader and diagnostics."""
+    path = Path(source.path)
+    if source.kind == "round-audit":
+        try:
+            header, events = iter_round_audit_events(path, read_observer=read_observer)
+        except Exception as error:
+            yield _read_error("round", path, str(error))
+            return
+        round_id = header["round_id"]
+        station = header.get("station", "")
+        platform = header.get("config", {}).get("platform", "")
+        try:
+            for event in events:
+                yield HistoricalEvent(
+                    "round:{}:{}".format(round_id, event["sequence"]), "round",
+                    event["observed_at"], event["message"], event["kind"], round_id,
+                    event["sequence"], event.get("localized_message"), _diagnostic(event),
+                    event.get("detail", {}), event, station, platform)
+        except Exception as error:
+            yield _read_error("round", path, str(error))
+            return
+        if not header.get("audit_complete", False):
+            yield HistoricalEvent(
+                "warning:round:{}".format(round_id), "read_warning", "",
+                "Audit records report an incomplete save", round_id=round_id,
+                station=station, platform=platform,
+                raw_record={"audit_path": str(path), "reason": "audit_complete is false"})
+        return
+    if source.kind == "legacy":
+        yield from _read_legacy_session_events(path, read_observer=read_observer)
+        return
+    if source.kind == "app":
+        try:
+            app_events = iter_app_event_store_events(path, read_observer=read_observer)
+            for event in app_events:
+                yield HistoricalEvent(
+                    "app:{}".format(event["event_id"]), "app", event["occurred_at"],
+                    event["message"], event["kind"], None, event["sequence"],
+                    event.get("localized_message"), event.get("diagnostic", ""),
+                    event.get("localized_message", {}).get("parameters", {}), event)
+        except Exception as error:
+            yield _read_error("app", path, str(error))
+        return
+    raise ValueError("unsupported historical event source kind")
 
 
 def _event_sort_key(event: HistoricalEvent):
@@ -180,7 +301,7 @@ def _render_captured_message(localized: dict, saved_message: str, language: str)
         return fallback
 
 
-def _read_legacy_session_events(path: Path):
+def _read_legacy_session_events(path: Path, read_observer=None):
     try:
         handle = path.open("r", encoding="utf-8")
     except (OSError, UnicodeError) as error:
@@ -188,6 +309,8 @@ def _read_legacy_session_events(path: Path):
         return
     with handle:
         for index, line in enumerate(handle, 1):
+            if read_observer is not None:
+                read_observer(len(line.encode("utf-8")))
             try:
                 raw = json.loads(line)
                 if not isinstance(raw, dict) or not isinstance(raw.get("message"), str):

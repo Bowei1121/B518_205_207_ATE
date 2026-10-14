@@ -10,16 +10,30 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from historical_event_display import (HistoricalEvent, iter_historical_events,
+from historical_event_display import (HistoricalEvent, HistoricalEventSource,
+                                      iter_historical_event_sources,
+                                      iter_historical_events,
+                                      iter_historical_source_events,
                                       legacy_historical_event_message_record)
 
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
 _DIAGNOSTIC_SAMPLE_LIMIT = 20
+_HISTORY_INDEX_VERSION = 1
+_HISTORY_INDEX_APPLICATION_ID = 0x42353138
+_HISTORY_INDEX_LOCK = threading.RLock()
+
+
+@dataclass(frozen=True)
+class HistoricalEventIndexMetrics:
+    parsed_source_count: int = 0
+    reused_source_count: int = 0
+    source_bytes_read: int = 0
+    source_version_check_count: int = 0
 
 
 class _LocalTimezoneSnapshot:
@@ -149,7 +163,8 @@ class HistoricalEventQueryResult:
     def __init__(self, date_range: HistoricalEventDateRange, total_count: int,
                  unclassified_count: int, source_issue_count: int,
                  diagnostics: Tuple[HistoricalEvent, ...], store_path: Path,
-                 page_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE):
+                 page_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
+                 index_metrics: Optional[HistoricalEventIndexMetrics] = None):
         self.date_range = date_range
         self.total_count = total_count
         self.unclassified_count = unclassified_count
@@ -157,6 +172,7 @@ class HistoricalEventQueryResult:
         self.diagnostics = diagnostics
         self._store_path = Path(store_path)
         self.page_size = page_size
+        self.index_metrics = index_metrics or HistoricalEventIndexMetrics()
         self._first_page = ()
         self._closed = False
         self._finalizer = weakref.finalize(self, _remove_snapshot, self._store_path)
@@ -441,10 +457,12 @@ class HistoricalEventQueryService:
     """
 
     def __init__(self, session_root: Path, app_event_path: Optional[Path],
-                 query_function: Optional[Callable] = None):
+                 query_function: Optional[Callable] = None,
+                 index_path: Optional[Path] = None):
         self._session_root = Path(session_root)
         self._app_event_path = Path(app_event_path) if app_event_path else None
         self._query_function = query_function or query_historical_events
+        self._index_path = Path(index_path) if index_path is not None else None
         self._condition = threading.Condition()
         self._next_generation = 0
         self._latest_generation = None
@@ -542,9 +560,11 @@ class HistoricalEventQueryService:
                 self._active = request
 
             try:
-                result = self._query_function(
-                    self._session_root, self._app_event_path, request.date_range,
-                    cancellation_event=request.cancellation_event)
+                query_options = {"cancellation_event": request.cancellation_event}
+                if self._index_path is not None:
+                    query_options["index_path"] = self._index_path
+                result = self._query_function(self._session_root, self._app_event_path,
+                                              request.date_range, **query_options)
                 completion = HistoricalEventQueryCompletion(
                     request.generation, request.date_range, True, result=result)
             except Exception as error:
@@ -600,7 +620,8 @@ def recent_historical_event_date_range(today: date, days: int = 90) -> Historica
 def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                             date_range: HistoricalEventDateRange,
                             limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
-                            cancellation_event: Optional[threading.Event] = None
+                            cancellation_event: Optional[threading.Event] = None,
+                            index_path: Optional[Path] = None
                             ) -> HistoricalEventQueryResult:
     """Freeze matching source events into a temporary, disk-backed query snapshot.
 
@@ -612,6 +633,10 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
     page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
+    if index_path is not None:
+        return _query_historical_events_with_index(
+            Path(session_root), Path(app_event_path) if app_event_path else None,
+            date_range, page_size, Path(index_path), cancellation_event)
     descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
     os.close(descriptor)
     store_path = Path(raw_path)
@@ -681,6 +706,351 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             connection.close()
         _remove_snapshot(store_path)
         raise
+
+
+def _query_historical_events_with_index(session_root: Path,
+                                        app_event_path: Optional[Path],
+                                        date_range: HistoricalEventDateRange,
+                                        page_size: int, index_path: Path,
+                                        cancellation_event: Optional[threading.Event]
+                                        ) -> HistoricalEventQueryResult:
+    index_path = index_path.expanduser().absolute()
+    descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
+    os.close(descriptor)
+    snapshot_path = Path(raw_path)
+    connection = None
+    parsed_sources = 0
+    reused_sources = 0
+    source_bytes_read = 0
+    source_version_checks = 0
+    unavailable_keys = set()
+    transient_errors = []
+    try:
+        with _HISTORY_INDEX_LOCK:
+            sources = tuple(iter_historical_event_sources(session_root, app_event_path))
+            _validate_history_index_path(index_path, session_root, sources)
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            connection = _open_history_index(index_path)
+            _raise_if_query_cancelled(cancellation_event)
+            current_keys = {source.key for source in sources}
+            connection.execute("BEGIN IMMEDIATE")
+            stale_keys = [row[0] for row in connection.execute(
+                "SELECT source_key FROM history_sources") if row[0] not in current_keys]
+            for stale_key in stale_keys:
+                connection.execute("DELETE FROM history_events WHERE source_key=?",
+                                   (stale_key,))
+                connection.execute("DELETE FROM history_sources WHERE source_key=?",
+                                   (stale_key,))
+            for source in sources:
+                _raise_if_query_cancelled(cancellation_event)
+                try:
+                    source_version_checks += 1
+                    signature = _history_source_signature(source.path)
+                except OSError as error:
+                    unavailable_keys.add(source.key)
+                    transient_errors.append(_history_read_error(source, str(error)))
+                    continue
+                cached = connection.execute(
+                    "SELECT source_path, device, inode, byte_size, modified_ns, changed_ns, "
+                    "event_count FROM history_sources WHERE source_key=?", (source.key,)
+                ).fetchone()
+                if cached is not None:
+                    if (cached[0] == str(Path(source.path).resolve()) and
+                            tuple(cached[1:6]) == signature):
+                        reused_sources += 1
+                        continue
+
+                connection.execute("SAVEPOINT refresh_source")
+                connection.execute("DELETE FROM history_events WHERE source_key=?",
+                                   (source.key,))
+                connection.execute("DELETE FROM history_sources WHERE source_key=?",
+                                   (source.key,))
+                connection.execute(
+                    "INSERT INTO history_sources VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+                    (source.key, str(Path(source.path).resolve())) + signature)
+                read_count = [0]
+                source_events = 0
+                read_error = None
+
+                def observe_read(count):
+                    read_count[0] += count
+
+                try:
+                    for ordinal, event in enumerate(iter_historical_source_events(
+                            source, read_observer=observe_read), 1):
+                        _raise_if_query_cancelled(cancellation_event)
+                        if event.source == "read_error":
+                            line_diagnostic = (source.kind == "legacy" and
+                                               isinstance(event.raw_record, dict) and
+                                               "line_number" in event.raw_record)
+                            if not line_diagnostic:
+                                read_error = event
+                                continue
+                        time_kind, aware_epoch, naive_order = _history_event_time(
+                            event.occurred_at)
+                        sequence = (event.sequence if type(event.sequence) is int
+                                    else event.source_order)
+                        stable_identity = event.round_id or event.key
+                        connection.execute(
+                            "INSERT INTO history_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (source.key, ordinal, event.key, event.occurred_at, time_kind,
+                             aware_epoch, naive_order, stable_identity, sequence,
+                             event.source_order, event.source,
+                             _event_summary_json(event), _event_json(event)))
+                        source_events += 1
+                    confirmed_signature = _history_source_signature(source.path)
+                    source_version_checks += 1
+                    if confirmed_signature != signature:
+                        raise OSError("Historical source changed while it was being indexed: {}".format(
+                            source.path))
+                    if read_error is not None:
+                        raise OSError(read_error.message)
+                    connection.execute(
+                        "UPDATE history_sources SET event_count=? WHERE source_key=?",
+                        (source_events, source.key))
+                    connection.execute("RELEASE refresh_source")
+                    parsed_sources += 1
+                    source_bytes_read += read_count[0]
+                except Exception as error:
+                    connection.execute("ROLLBACK TO refresh_source")
+                    connection.execute("RELEASE refresh_source")
+                    source_bytes_read += read_count[0]
+                    if cancellation_event is not None and cancellation_event.is_set():
+                        raise
+                    unavailable_keys.add(source.key)
+                    transient_errors.append(_history_read_error(source, str(error)))
+            _raise_if_query_cancelled(cancellation_event)
+            connection.commit()
+
+            snapshot = _create_indexed_query_snapshot(
+                connection, snapshot_path, date_range, page_size, unavailable_keys,
+                transient_errors, cancellation_event, HistoricalEventIndexMetrics(
+                    parsed_sources, reused_sources, source_bytes_read,
+                    source_version_checks))
+            connection.close()
+            connection = None
+            return snapshot
+    except Exception:
+        if connection is not None:
+            connection.rollback()
+            connection.close()
+        _remove_snapshot(snapshot_path)
+        raise
+
+
+def _validate_history_index_path(index_path: Path, session_root: Path,
+                                 sources: Tuple[HistoricalEventSource, ...]) -> None:
+    if index_path.is_symlink():
+        raise ValueError("Historical event index path cannot be a symbolic link")
+    index_real_path = index_path.resolve()
+    source_paths = {Path(source.path).resolve() for source in sources}
+    if index_real_path in source_paths:
+        raise ValueError("Historical event index cannot replace a source file")
+    root = Path(session_root).resolve()
+    try:
+        if os.path.commonpath((str(root), str(index_real_path))) == str(root):
+            raise ValueError("Historical event index must remain outside session sources")
+    except ValueError as error:
+        if str(error) == "Historical event index must remain outside session sources":
+            raise
+
+
+def _history_source_signature(path: Path) -> Tuple[int, int, int, int, int]:
+    details = Path(path).stat()
+    return (details.st_dev, details.st_ino, details.st_size,
+            details.st_mtime_ns, details.st_ctime_ns)
+
+
+def _history_event_time(value: str):
+    if not value:
+        return 2, None, None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            naive_order = ((parsed.toordinal() * 86400 + parsed.hour * 3600 +
+                            parsed.minute * 60 + parsed.second) * 1000000 +
+                           parsed.microsecond)
+            return 1, None, naive_order
+        return 0, parsed.timestamp(), None
+    except (TypeError, ValueError, OverflowError, OSError):
+        return 2, None, None
+
+
+def _history_read_error(source: HistoricalEventSource, reason: str) -> HistoricalEvent:
+    source_name = "app" if source.kind == "app" else "round"
+    return HistoricalEvent("error:{}:{}".format(source_name, source.path), "read_error", "",
+                           reason, diagnostic=reason,
+                           raw_record={"source_path": str(source.path)})
+
+
+def _open_history_index(index_path: Path):
+    def create_database():
+        database = sqlite3.connect(str(index_path), timeout=30.0)
+        os.chmod(str(index_path), 0o600)
+        database.execute("PRAGMA journal_mode=DELETE")
+        database.execute("PRAGMA synchronous=FULL")
+        database.execute("PRAGMA foreign_keys=ON")
+        database.execute("PRAGMA application_id={}".format(_HISTORY_INDEX_APPLICATION_ID))
+        database.execute("PRAGMA user_version={}".format(_HISTORY_INDEX_VERSION))
+        database.executescript(
+            "CREATE TABLE history_sources ("
+            "source_key TEXT PRIMARY KEY, source_path TEXT NOT NULL, device INTEGER NOT NULL, "
+            "inode INTEGER NOT NULL, byte_size INTEGER NOT NULL, modified_ns INTEGER NOT NULL, "
+            "changed_ns INTEGER NOT NULL, event_count INTEGER NOT NULL);"
+            "CREATE TABLE history_events ("
+            "source_key TEXT NOT NULL, source_ordinal INTEGER NOT NULL, event_key TEXT NOT NULL, "
+            "occurred_at TEXT NOT NULL, time_kind INTEGER NOT NULL, aware_epoch REAL, "
+            "naive_order INTEGER, stable_identity TEXT NOT NULL, sequence_number INTEGER NOT NULL, "
+            "source_order INTEGER NOT NULL, source TEXT NOT NULL, summary_json TEXT NOT NULL, "
+            "event_json TEXT NOT NULL, PRIMARY KEY(source_key, source_ordinal), "
+            "FOREIGN KEY(source_key) REFERENCES history_sources(source_key) ON DELETE CASCADE);"
+            "CREATE INDEX history_aware_time ON history_events(time_kind, aware_epoch);"
+            "CREATE INDEX history_naive_time ON history_events(time_kind, naive_order);"
+            "CREATE INDEX history_event_identity ON history_events(event_key);"
+            "CREATE INDEX history_unclassified ON history_events("
+            "time_kind, source_key, source_ordinal);"
+            "CREATE INDEX history_source_issues ON history_events(source, source_key);")
+        database.commit()
+        return database
+
+    if not index_path.exists():
+        return create_database()
+    database = None
+    try:
+        database = sqlite3.connect(str(index_path), timeout=30.0)
+        os.chmod(str(index_path), 0o600)
+        database.execute("PRAGMA synchronous=FULL")
+        database.execute("PRAGMA foreign_keys=ON")
+        version = database.execute("PRAGMA user_version").fetchone()[0]
+        application_id = database.execute("PRAGMA application_id").fetchone()[0]
+        if (version != _HISTORY_INDEX_VERSION or
+                application_id != _HISTORY_INDEX_APPLICATION_ID):
+            raise sqlite3.DatabaseError("unsupported historical event index version")
+        source_columns = {row[1] for row in database.execute(
+            "PRAGMA table_info(history_sources)")}
+        event_columns = {row[1] for row in database.execute(
+            "PRAGMA table_info(history_events)")}
+        if not {"source_key", "source_path", "device", "inode", "byte_size", "modified_ns",
+                "changed_ns", "event_count"}.issubset(source_columns) or not {
+                "source_key", "source_ordinal", "event_key", "occurred_at", "time_kind",
+                "aware_epoch", "naive_order", "stable_identity", "sequence_number",
+                "source_order", "source", "summary_json", "event_json"}.issubset(
+                    event_columns):
+            raise sqlite3.DatabaseError("unsupported historical event index version")
+        return database
+    except sqlite3.DatabaseError as error:
+        if database is not None:
+            database.close()
+        error_text = str(error).lower()
+        if not any(marker in error_text for marker in (
+                "unsupported historical event index version", "file is not a database",
+                "database disk image is malformed", "no such table")):
+            raise
+        index_path.unlink(missing_ok=True)
+        for suffix in ("-journal", "-wal", "-shm"):
+            Path(str(index_path) + suffix).unlink(missing_ok=True)
+        return create_database()
+
+
+def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path: Path,
+                                   date_range: HistoricalEventDateRange, page_size: int,
+                                   unavailable_keys, transient_errors,
+                                   cancellation_event, index_metrics):
+    snapshot = sqlite3.connect(str(snapshot_path))
+    try:
+        snapshot.execute("PRAGMA journal_mode=OFF")
+        snapshot.execute("PRAGMA synchronous=OFF")
+        snapshot.execute(
+            "CREATE TABLE matching_events ("
+            "event_key TEXT NOT NULL, local_wall_order INTEGER NOT NULL, "
+            "aware_rank INTEGER NOT NULL, epoch REAL, stable_identity TEXT NOT NULL, "
+            "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
+            "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
+        snapshot.execute("CREATE INDEX event_key_lookup ON matching_events(event_key)")
+        start_naive = _naive_wall_order(datetime.combine(date_range.start, datetime_time.min))
+        end_naive = _naive_wall_order(
+            datetime.combine(date_range.end + timedelta(days=1), datetime_time.min))
+        sql = ("SELECT event_key, occurred_at, time_kind, aware_epoch, naive_order, "
+               "stable_identity, sequence_number, source_order, summary_json, event_json "
+               "FROM history_events WHERE ")
+        parameters = []
+        if unavailable_keys:
+            sql += "source_key NOT IN ({}) AND ".format(
+                ",".join("?" for _ in unavailable_keys))
+            parameters.extend(sorted(unavailable_keys))
+        sql += ("((time_kind=0 AND aware_epoch>=? AND aware_epoch<?) OR "
+                "(time_kind=1 AND naive_order>=? AND naive_order<?)) ")
+        parameters.extend((date_range._start_epoch, date_range._end_epoch,
+                           start_naive, end_naive))
+
+        total_count = 0
+        cursor = connection.execute(sql, parameters)
+        while True:
+            _raise_if_query_cancelled(cancellation_event)
+            rows = cursor.fetchmany(HISTORICAL_EVENT_QUERY_PAGE_SIZE)
+            if not rows:
+                break
+            for row in rows:
+                event_key, value, time_kind, aware_epoch, naive_order, stable_identity, \
+                    sequence, source_order, summary_json, event_json = row
+                parsed = _parse_occurred_at(value, date_range._local_timezone)
+                if parsed is None:
+                    continue
+                parsed_value, epoch, local_wall_order = parsed
+                if epoch is None:
+                    in_range = date_range.start <= parsed_value.date() <= date_range.end
+                else:
+                    in_range = date_range._start_epoch <= epoch < date_range._end_epoch
+                if not in_range:
+                    continue
+                snapshot.execute(
+                    "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event_key, local_wall_order, 0 if epoch is not None else 1, epoch,
+                     stable_identity, sequence, source_order, summary_json, event_json))
+                total_count += 1
+
+        if unavailable_keys:
+            placeholders = ",".join("?" for _ in unavailable_keys)
+            source_filter = "source_key NOT IN ({}) AND ".format(placeholders)
+            source_params = tuple(sorted(unavailable_keys))
+        else:
+            source_filter = ""
+            source_params = ()
+        unclassified_count = connection.execute(
+            "SELECT COUNT(*) FROM history_events WHERE {}time_kind=2".format(source_filter),
+            source_params).fetchone()[0]
+        source_issue_count = connection.execute(
+            "SELECT COUNT(*) FROM history_events WHERE {}source IN "
+            "('read_warning', 'read_error')".format(source_filter),
+            source_params).fetchone()[0]
+        diagnostics = [
+            _event_from_json(row[0]) for row in connection.execute(
+                "SELECT event_json FROM history_events WHERE {}time_kind=2 "
+                "ORDER BY source_key, source_ordinal LIMIT ?".format(source_filter),
+                source_params + (_DIAGNOSTIC_SAMPLE_LIMIT,))]
+        unclassified_count += len(transient_errors)
+        source_issue_count += len(transient_errors)
+        diagnostics.extend(transient_errors[:max(0, _DIAGNOSTIC_SAMPLE_LIMIT - len(diagnostics))])
+        snapshot.execute("CREATE INDEX event_order_lookup ON matching_events("
+                         "local_wall_order DESC, aware_rank ASC, epoch DESC, "
+                         "stable_identity ASC, sequence_number ASC, event_key ASC, "
+                         "source_order ASC)")
+        snapshot.commit()
+        snapshot.close()
+        result = HistoricalEventQueryResult(
+            date_range, total_count, unclassified_count, source_issue_count,
+            tuple(diagnostics), snapshot_path, page_size, index_metrics)
+        result._first_page = result.get_page(1).events
+        return result
+    except Exception:
+        snapshot.close()
+        _remove_snapshot(snapshot_path)
+        raise
+
+
+def _naive_wall_order(value: datetime) -> int:
+    return ((value.toordinal() * 86400 + value.hour * 3600 + value.minute * 60 +
+             value.second) * 1000000 + value.microsecond)
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:
