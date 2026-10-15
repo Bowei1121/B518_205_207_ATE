@@ -28,7 +28,7 @@
 | #53 | QP6 | pending | pending | blocked by #52 |
 | #54 | HM1 | `codex/hm1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | integrated at `a429138`; closed after acceptance |
 | #55 | HM2 | `codex/hm2-20261015` | `53ccf8577440d1b04e4da2403a6bbe9f30fa68e6` | integrated at `c80ddb8`; closed after acceptance |
-| #56 | HM3 | `codex/hm3-20261015` | `0a877eb8dbb97e60fdf7e6309080019f06de69d2` | in progress |
-| #57 | HM4 | pending | pending | serialized after #56 |
+| #56 | HM3 | `codex/hm3-20261015` | `0a877eb8dbb97e60fdf7e6309080019f06de69d2` | integrated at `b513c78`; closed after acceptance |
+| #57 | HM4 | `codex/hm4-20261015` | `b513c78981159ac1fbfbd67c797ddfcf93ab5080` | in progress |
 | #58 | HM5 | pending | pending | serialized after #57 |
 | #59 | HM6 | pending | pending | serialized after #58 |
