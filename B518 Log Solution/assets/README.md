@@ -1,7 +1,9 @@
-# Company logo asset
+# 公司 Logo 資產
 
-Place the approved company logo PNG here with the exact filename:
+本目錄已納入使用者提供的公司 Logo，供 App 既有載入路徑使用：
 
 `foxlink_logo.png`
 
-The Log Solution dashboard loads this asset automatically at launch. Keep a transparent or white background and a compact horizontal layout so it fits the top identity area.
+來源為使用者提供的 `logo_foxlink_b.png`，複製為上述檔名，原始像素與內容不變。Git 僅針對此部署檔名排除 PNG 忽略規則。
+
+目前 App 啟動時會讀取此資產；HMI 訪談要求後續置於第一排設定圖示右側並等比例顯示，具體版面尚未實作。此資產納入不代表 HMI 改版或正式打包驗收已完成。

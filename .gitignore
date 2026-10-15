@@ -7,6 +7,7 @@ dist-*/
 *.zip
 *.jpg
 *.png
+!B518 Log Solution/assets/foxlink_logo.png
 !B518 ATE MVP Demo/Manual/assets/**/*.png
 
 # Local build outputs — never commit these
