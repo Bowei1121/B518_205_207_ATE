@@ -3574,10 +3574,12 @@ class B518LogSolutionApp:
             self._historical_query_status_parameters = {
                 "reason": str(completion.error)}
             self._refresh_historical_query_status()
+            self._refresh_historical_event_window()
         else:
             self._historical_query_status_key = "app.settings.history.query_cancelled"
             self._historical_query_status_parameters = {}
             self._refresh_historical_query_status()
+            self._refresh_historical_event_window()
 
     def _refresh_historical_query_status(self) -> None:
         if self.historical_query_status is None:
