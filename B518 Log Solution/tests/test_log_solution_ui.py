@@ -8633,6 +8633,144 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_qp3_cached_pages_detail_language_and_cancelled_requery(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            sessions = root_path / "sessions"
+            round_id = "qp3-priority-ui"
+            audit_path = sessions / round_id / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            today = datetime.now().astimezone().date()
+            occurred_at = datetime.combine(
+                today, datetime.min.time(), datetime.now().astimezone().tzinfo).isoformat()
+            records = [{
+                "record_type": "round", "schema_version": 1,
+                "round_id": round_id, "station": "FCT", "config": {},
+                "time_contract": {},
+            }]
+            for sequence in range(1, 802):
+                records.append({
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": round_id, "sequence": sequence,
+                    "kind": "round_ready", "message": "QP3 event {}".format(sequence),
+                    "observed_at": occurred_at, "elapsed_seconds": float(sequence),
+                    "display_position": None,
+                    "detail": {"raw_diagnostic": "QP3 detail {}".format(sequence)},
+                })
+            audit_path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            source_bytes = audit_path.read_bytes()
+            entered_read, release_read = threading.Event(), threading.Event()
+            read_offsets = []
+            original_read = HistoricalEventQueryResult._read_unprepared_summaries
+
+            def gated_read(result, offset, limit):
+                read_offsets.append(offset)
+                if offset == 500:
+                    entered_read.set()
+                    if not release_read.wait(20):
+                        raise RuntimeError("controlled QP3 background-read gate timed out")
+                return original_read(result, offset, limit)
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=sessions,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app_event_bytes = app.app_events.path.read_bytes()
+                app.open_historical_events()
+                with patch.object(HistoricalEventQueryResult,
+                                  "_read_unprepared_summaries", gated_read):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                    self.assertTrue(entered_read.wait(2))
+                    result = app._historical_query_result
+                    self.assertGreaterEqual(result.total_count, 801)
+                    self.assertGreaterEqual(result.page_count, 9)
+                    self.assertEqual(len(result.initial_events), 500)
+                    self.assertFalse(result.preparation_complete)
+                    self.assertLessEqual(result.cached_summary_count, 500)
+
+                    # The initially prepared page cache remains usable while the
+                    # slow ordinal-range read is held in the background.
+                    for expected_page in range(2, 6):
+                        self.click_tk_widget(root, app.historical_next_button)
+                        self.wait_for_ui(
+                            root, lambda page=expected_page:
+                            app._historical_query_page_number == page)
+                        self.assertEqual(len(app._historical_event_records), 100)
+                    selected_index = next(
+                        index for index, event in enumerate(app._historical_event_records)
+                        if event.source == "round")
+                    selected = app._historical_event_records[selected_index]
+                    self.click_tk_listbox_row(
+                        root, app.historical_event_list, selected_index)
+                    self.wait_for_ui(
+                        root, lambda: app._historical_event_detail_request_id is None and
+                        "QP3 detail {}".format(selected.sequence) in
+                        app.historical_event_detail.get("1.0", "end"))
+                    selected_key = app._historical_event_selected_key
+
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
+                    self.assertEqual(app._historical_query_page_number, 5)
+                    self.assertEqual(app._historical_event_selected_key, selected_key)
+                    self.assertIn("QP3 detail {}".format(selected.sequence),
+                                  app.historical_event_detail.get("1.0", "end"))
+                    self.assertLessEqual(result.cached_summary_count, 500)
+
+                    self.click_tk_widget(root, app.historical_next_button)
+                    self.wait_for_ui(root, lambda: app._historical_requested_page_number == 6)
+                    self.assertEqual(app._historical_query_page_number, 5)
+                    release_read.set()
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 6)
+                    self.wait_for_ui(root, lambda: result.preparation_complete)
+                    self.assertIn(500, read_offsets)
+                    self.assertLessEqual(result.cached_summary_count, 500)
+                    self.assertEqual(audit_path.read_bytes(), source_bytes)
+                    self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
+
+                    # Requery through the visible Search button, then cancel it
+                    # through the visible Cancel button while its source read is gated.
+                    previous_result = app._historical_query_result
+                    query_entered, release_query = threading.Event(), threading.Event()
+                    query_function = app._historical_query_service._query_function
+
+                    def gated_query(*args, **kwargs):
+                        query_entered.set()
+                        if not release_query.wait(20):
+                            raise RuntimeError("controlled QP3 requery gate timed out")
+                        return query_function(*args, **kwargs)
+
+                    app._historical_query_service._query_function = gated_query
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, query_entered.is_set)
+                    self.assertIs(app._historical_query_result, previous_result)
+                    self.click_tk_widget(root, app.historical_event_cancel_button)
+                    self.assertIsNone(app._historical_query_generation)
+                    self.assertIs(app._historical_query_result, previous_result)
+                    release_query.set()
+                    self.wait_for_ui(
+                        root, lambda: app._historical_query_service._worker is None)
+                    root.update()
+                    self.assertIs(app._historical_query_result, previous_result)
+                    self.assertEqual(audit_path.read_bytes(), source_bytes)
+                    self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
+                    release_query.clear()
+            finally:
+                release_read.set()
+                if "release_query" in locals():
+                    release_query.set()
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_reads_five_pages_while_remaining_batches_are_paused(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \

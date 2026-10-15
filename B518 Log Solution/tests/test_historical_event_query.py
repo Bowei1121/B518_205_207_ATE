@@ -363,6 +363,112 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     result.close()
                 service.shutdown()
 
+    def test_requested_page_preempts_sequential_preparation_and_cache_stays_at_500(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-priority-cache",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat()
+                 for sequence in range(1, 751)])
+            entered_first_background_page = threading.Event()
+            release_first_background_page = threading.Event()
+            entered_detail_read = threading.Event()
+            release_detail_read = threading.Event()
+            read_offsets = []
+            read_batch_sizes = []
+            original_read = HistoricalEventQueryResult._read_unprepared_summaries
+            original_event_from_json = historical_event_query._event_from_json
+
+            def gated_read(result, offset, limit):
+                if offset >= 500:
+                    read_offsets.append(offset)
+                    read_batch_sizes.append(limit)
+                    if len(read_offsets) == 1:
+                        entered_first_background_page.set()
+                        if not release_first_background_page.wait(5):
+                            raise RuntimeError("preparation gate timed out")
+                return original_read(result, offset, limit)
+
+            def gated_event_from_json(value):
+                entered_detail_read.set()
+                if not release_detail_read.wait(5):
+                    raise RuntimeError("detail gate timed out")
+                return original_event_from_json(value)
+
+            queries = HistoricalEventQueryService(
+                sessions, None, index_path=root / "history-index.sqlite3")
+            pages = HistoricalEventDetailService()
+            result = None
+            try:
+                with unittest.mock.patch.object(
+                        HistoricalEventQueryResult, "_read_unprepared_summaries",
+                        side_effect=gated_read, autospec=True), \
+                        unittest.mock.patch.object(
+                        historical_event_query, "_event_from_json",
+                        side_effect=gated_event_from_json):
+                    generation = queries.submit(HistoricalEventDateRange(
+                        date(2026, 10, 13), date(2026, 10, 13)))
+                    initial = None
+                    deadline = time.monotonic() + 10
+                    while initial is None and time.monotonic() < deadline:
+                        initial = queries.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    result = initial.result
+                    self.assertEqual(result.cached_summary_count, 500)
+                    self.assertEqual(len(result.initial_events), 500)
+                    self.assertTrue(entered_first_background_page.wait(5))
+
+                    detail_thread = threading.Thread(
+                        target=result.get_detail,
+                        args=(result.get_page(1).events[0].key,))
+                    detail_thread.start()
+                    self.assertTrue(entered_detail_read.wait(5))
+                    request_id = pages.submit_page(result, 8)
+                    release_first_background_page.set()
+                    time.sleep(0.03)
+                    self.assertEqual(read_offsets, [500])
+                    release_detail_read.set()
+                    completion = None
+                    deadline = time.monotonic() + 10
+                    while completion is None and time.monotonic() < deadline:
+                        completion = pages.take_result(request_id)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                    self.assertTrue(completion.succeeded, completion.error)
+                    self.assertEqual(completion.page.page_number, 8)
+                    self.assertEqual(read_offsets[:3], [500, 700, 600])
+                    prepared = None
+                    deadline = time.monotonic() + 10
+                    while prepared is None and time.monotonic() < deadline:
+                        prepared = queries.take_result(generation)
+                        if prepared is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(prepared)
+                    self.assertTrue(prepared.succeeded, prepared.error)
+                    self.assertLessEqual(result.cached_summary_count, 500)
+                    self.assertEqual(len(result.get_page(8).events), 50)
+                    self.assertLessEqual(result.cached_summary_count, 500)
+                    self.assertEqual(result.get_page(8).events[0].sequence, 50)
+                    self.assertEqual(result.get_page(1).events[0].sequence, 750)
+                    for _ in range(3):
+                        for page_number in (1, 8, 2, 7, 3, 6, 4, 5):
+                            result.get_page(page_number)
+                            self.assertLessEqual(result.cached_summary_count, 500)
+                    self.assertLessEqual(result.cached_summary_count, 500)
+                    self.assertTrue(all(size <= 100 for size in read_batch_sizes))
+            finally:
+                release_first_background_page.set()
+                release_detail_read.set()
+                pages.shutdown()
+                if result is not None:
+                    result.close()
+                queries.shutdown()
+
     def test_fallback_keeps_published_snapshot_after_later_batch_failure_or_cancel(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
