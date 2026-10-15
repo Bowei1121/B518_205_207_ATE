@@ -365,6 +365,7 @@ class B518LogSolutionApp:
         self.kvm_result_blocks: Dict[int, tk.Label] = {}
         self._rendered_marker_state: Optional[MarkerState] = None
         self.company_logo: Optional[tk.PhotoImage] = None
+        self.company_logo_slot: Optional[tk.Frame] = None
         self.event_lines: list[str] = []
         self._event_records: list[tuple[str, object, Optional[str]]] = []
         self._app_event_ids = set()
@@ -1329,11 +1330,11 @@ class B518LogSolutionApp:
                 self.company_logo = tk.PhotoImage(file=str(COMPANY_LOGO_PATH))
             except tk.TclError:
                 self.company_logo = None
-        logo_slot = tk.Frame(parent, background=LIGHT_BACKGROUND, width=137, height=35)
-        logo_slot.pack(side="left")
-        logo_slot.pack_propagate(False)
+        self.company_logo_slot = tk.Frame(parent, background=LIGHT_BACKGROUND, width=137, height=35)
+        self.company_logo_slot.pack(side="left")
+        self.company_logo_slot.pack_propagate(False)
         if self.company_logo:
-            tk.Label(logo_slot, image=self.company_logo, background=LIGHT_BACKGROUND,
+            tk.Label(self.company_logo_slot, image=self.company_logo, background=LIGHT_BACKGROUND,
                      borderwidth=0).pack(fill="both", expand=True)
 
     @staticmethod

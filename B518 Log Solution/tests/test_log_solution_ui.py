@@ -208,6 +208,82 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.review_count.cget("text"), "0")
                 self.assertEqual(str(app.review_button["state"]), "disabled")
 
+                tooltip_expectations = (
+                    (app.settings_button, app._toolbar_hints[0], "Settings"),
+                    (app.language_button, app._toolbar_hints[1],
+                     "Select language (current: English)"),
+                    (app.round_alarm_button, app._toolbar_hints[2], "Round Alarm"),
+                    (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
+                )
+                for widget, hint, expected in tooltip_expectations:
+                    widget.event_generate("<Enter>")
+                    deadline = time.monotonic() + 1
+                    while hint.window is None and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+                    self.assertIsNotNone(hint.window, expected)
+                    self.assertEqual(hint.window.winfo_children()[0].cget("text"), expected)
+                    widget.event_generate("<Leave>")
+                    root.update()
+
+                settings_hint = app._toolbar_hints[0]
+                app.settings_button.focus_force()
+                root.update()
+                deadline = time.monotonic() + 1
+                while settings_hint.window is None and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.01)
+                self.assertIsNotNone(settings_hint.window)
+                self.assertEqual(settings_hint.window.winfo_children()[0].cget("text"), "Settings")
+                settings_hint._hide()
+
+                app.language_button.focus_force()
+                root.update()
+                for key in ("<space>", "<Return>", "<Down>"):
+                    self.assertTrue(app.language_button.bind(key), key)
+
+                app.settings_button.focus_force()
+                root.update()
+                app.settings_button.event_generate("<KeyPress-space>")
+                app.settings_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertIsNotNone(app.settings_window)
+                self.assertEqual(app.settings_window.title(), "B518 Log Solution Settings")
+                app._close_settings()
+
+                app.review_button.configure(state="normal")
+                app.review_button.event_generate(
+                    "<ButtonPress-1>", x=app.review_button.winfo_width() // 2,
+                    y=app.review_button.winfo_height() // 2)
+                app.review_button.event_generate(
+                    "<ButtonRelease-1>", x=app.review_button.winfo_width() // 2,
+                    y=app.review_button.winfo_height() // 2)
+                root.update()
+                self.assertIsNotNone(app.conflict_window)
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                app.conflict_window.destroy()
+
+                alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
+                                        acknowledged_at=None, created_at="2026-10-15T12:00:00")
+                alarm_snapshot = SimpleNamespace(
+                    round_alarm=alarm, round_alarm_ready=True, round_id=alarm.round_id,
+                    pending_conflicts=(), source_preparation_pending=False,
+                    state=SimpleNamespace(value="IDLE"),
+                    completion_reason=None,
+                )
+                with patch.object(app.rounds, "snapshot", return_value=alarm_snapshot):
+                    app.round_alarm_button.configure(state="normal")
+                    app.round_alarm_button.event_generate(
+                        "<ButtonPress-1>", x=app.round_alarm_button.winfo_width() // 2,
+                        y=app.round_alarm_button.winfo_height() // 2)
+                    app.round_alarm_button.event_generate(
+                        "<ButtonRelease-1>", x=app.round_alarm_button.winfo_width() // 2,
+                        y=app.round_alarm_button.winfo_height() // 2)
+                    root.update()
+                    self.assertIsNotNone(app.round_alarm_window)
+                    self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
+                    app.round_alarm_window.destroy()
+
                 conflicts = tuple(SimpleNamespace() for _ in range(20))
                 snapshot = SimpleNamespace(
                     pending_conflicts=conflicts, round_alarm=None,
@@ -238,6 +314,81 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
                 app.hotkey.close()
                 root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hm1_logo_normal_missing_and_corrupt_keep_fixed_slot_without_dialog(self):
+        with TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            missing_logo = temporary_path / "missing.png"
+            corrupt_logo = temporary_path / "corrupt.png"
+            corrupt_logo.write_bytes(b"not a PNG")
+            normal_logo = Path(__file__).resolve().parents[1] / "assets" / "foxlink_logo.png"
+            expected_bounds = None
+
+            for state, logo_path in (("normal", normal_logo),
+                                     ("missing", missing_logo),
+                                     ("corrupt", corrupt_logo)):
+                with self.subTest(state=state), \
+                        patch("b518_log_solution.PREFS_PATH",
+                              temporary_path / "preferences.json"), \
+                        patch("b518_log_solution.COMPANY_LOGO_PATH", logo_path):
+                    root = tk.Tk()
+                    root.deiconify()
+                    app = B518LogSolutionApp(
+                        root, hotkey_factory=FakeHotkey,
+                        session_root=temporary_path / (state + "-sessions"),
+                        app_event_path=temporary_path / (state + "-events.json"),
+                    )
+                    try:
+                        root.update_idletasks()
+                        slot_bounds = (app.company_logo_slot.winfo_x(),
+                                       app.company_logo_slot.winfo_y(),
+                                       app.company_logo_slot.winfo_width(),
+                                       app.company_logo_slot.winfo_height())
+                        toolbar_bounds = tuple(
+                            (widget.winfo_x(), widget.winfo_y(),
+                             widget.winfo_width(), widget.winfo_height())
+                            for widget in (app.settings_button, app.review_group,
+                                           app.round_alarm_button, app.language_button)
+                        )
+                        self.assertEqual(slot_bounds[2:], (137, 35))
+                        self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                        if expected_bounds is None:
+                            expected_bounds = (slot_bounds, toolbar_bounds)
+                        else:
+                            self.assertEqual((slot_bounds, toolbar_bounds), expected_bounds)
+
+                        if state == "normal":
+                            self.assertIsNotNone(app.company_logo)
+                            self.assertEqual((app.company_logo.width(), app.company_logo.height()),
+                                             (137, 35))
+                            self.assertEqual(len(app.company_logo_slot.winfo_children()), 1)
+                        else:
+                            self.assertIsNone(app.company_logo)
+                            self.assertEqual(app.company_logo_slot.winfo_children(), [])
+
+                        def descendants(widget):
+                            for child in widget.winfo_children():
+                                yield child
+                                yield from descendants(child)
+
+                        visible_text = [child.cget("text") for child in descendants(root)
+                                        if "text" in child.keys()]
+                        self.assertNotIn("B518 LOG", visible_text)
+                        deadline = time.monotonic() + 0.4
+                        while time.monotonic() < deadline:
+                            root.update()
+                            time.sleep(0.01)
+                        self.assertEqual(
+                            [child for child in root.children.values()
+                             if isinstance(child, tk.Toplevel)], [],
+                        )
+                    finally:
+                        app.rounds.request_close()
+                        self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                        app.hotkey.close()
+                        root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
