@@ -2,9 +2,9 @@
   "en": {
     "history-events": {
       "title": "Historical Events",
-      "geometry": "960x680+480+192",
+      "geometry": "960x680+251+192",
       "native_bounds": {
-        "X": 480.0,
+        "X": 251.0,
         "Y": 192.0,
         "Width": 960.0,
         "Height": 708.0
@@ -76,18 +76,18 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "history-events-en.png"
     },
     "app-diagnostics": {
       "title": "App diagnostics",
-      "geometry": "900x560+540+312",
+      "geometry": "900x560+280+262",
       "native_bounds": {
-        "X": 540.0,
-        "Y": 312.0,
+        "X": 280.0,
+        "Y": 262.0,
         "Width": 900.0,
         "Height": 588.0
       },
@@ -122,17 +122,17 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "app-diagnostics-en.png"
     },
     "history-diagnostics": {
       "title": "Historical Events",
-      "geometry": "960x680+480+192",
+      "geometry": "960x680+251+192",
       "native_bounds": {
-        "X": 480.0,
+        "X": 251.0,
         "Y": 192.0,
         "Width": 960.0,
         "Height": 708.0
@@ -174,9 +174,9 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "history-diagnostics-en.png"
     }
@@ -184,9 +184,9 @@
   "zh-TW": {
     "history-events": {
       "title": "歷史事件",
-      "geometry": "960x680+480+192",
+      "geometry": "960x680+251+192",
       "native_bounds": {
-        "X": 480.0,
+        "X": 251.0,
         "Y": 192.0,
         "Width": 960.0,
         "Height": 708.0
@@ -258,18 +258,18 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "history-events-zh-TW.png"
     },
     "app-diagnostics": {
       "title": "App 診斷",
-      "geometry": "900x560+540+312",
+      "geometry": "900x560+280+262",
       "native_bounds": {
-        "X": 540.0,
-        "Y": 312.0,
+        "X": 280.0,
+        "Y": 262.0,
         "Width": 900.0,
         "Height": 588.0
       },
@@ -304,17 +304,17 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "app-diagnostics-zh-TW.png"
     },
     "history-diagnostics": {
       "title": "歷史事件",
-      "geometry": "960x680+480+192",
+      "geometry": "960x680+251+192",
       "native_bounds": {
-        "X": 480.0,
+        "X": 251.0,
         "Y": 192.0,
         "Width": 960.0,
         "Height": 708.0
@@ -356,9 +356,9 @@
         ]
       },
       "source_sha256": {
-        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
-        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
-        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+        "round_audit": "1a09af138f11f4b19baaf17030d74f3c6fc66ac823884d85ea0ffcb00efe041d",
+        "legacy_events": "cc62a4ab0ce79660223118eaa0ca37b729a9d562f4e6044b00a60812a4c89ca0",
+        "app_events": "6ccc162a4b776e3d88073ad5b77eb1705665e4cec4f034a1c18147de712364e5"
       },
       "screenshot": "history-diagnostics-zh-TW.png"
     }
@@ -366,7 +366,7 @@
   "general_notice": {
     "en": {
       "title": "Language Preference Not Saved",
-      "geometry": "640x400+800+445",
+      "geometry": "640x400+483+465",
       "size": [
         640,
         400
@@ -386,8 +386,8 @@
         ]
       },
       "native_bounds": {
-        "X": 800.0,
-        "Y": 445.0,
+        "X": 483.0,
+        "Y": 465.0,
         "Width": 640.0,
         "Height": 428.0
       },
@@ -399,7 +399,7 @@
     },
     "zh-TW": {
       "title": "語言設定未保存",
-      "geometry": "640x400+800+445",
+      "geometry": "640x400+483+465",
       "size": [
         640,
         400
@@ -419,8 +419,8 @@
         ]
       },
       "native_bounds": {
-        "X": 800.0,
-        "Y": 445.0,
+        "X": 483.0,
+        "Y": 465.0,
         "Width": 640.0,
         "Height": 428.0
       },
@@ -434,7 +434,7 @@
   "close_progress": {
     "en": {
       "title": "Save Before Closing",
-      "geometry": "620x390+820+482",
+      "geometry": "620x390+541+482",
       "size": [
         620,
         390
@@ -472,7 +472,7 @@
         ]
       },
       "native_bounds": {
-        "X": 820.0,
+        "X": 541.0,
         "Y": 482.0,
         "Width": 620.0,
         "Height": 418.0
@@ -485,7 +485,7 @@
     },
     "zh-TW": {
       "title": "關閉前保存",
-      "geometry": "620x390+820+482",
+      "geometry": "620x390+570+482",
       "size": [
         620,
         390
@@ -523,7 +523,7 @@
         ]
       },
       "native_bounds": {
-        "X": 820.0,
+        "X": 570.0,
         "Y": 482.0,
         "Width": 620.0,
         "Height": 418.0
@@ -538,10 +538,10 @@
   "main_page_capacity12": {
     "en": {
       "title": "HM6-KVM FCT ATE Log Solution-V0.1.0",
-      "geometry": "376x795+1052+32",
+      "geometry": "376x835+1052+32",
       "size": [
         376,
-        795
+        835
       ],
       "controls": {
         "kvm": [
@@ -591,11 +591,11 @@
         "X": 1052.0,
         "Y": 32.0,
         "Width": 376.0,
-        "Height": 823.0
+        "Height": 863.0
       },
       "image_pixels": {
         "width": 752,
-        "height": 1646
+        "height": 1726
       },
       "screenshot": "main-page-capacity12-en.png"
     }
@@ -603,10 +603,10 @@
   "main_page": {
     "en": {
       "title": "B518 FCT ATE Log Solution-V0.1.0",
-      "geometry": "376x768+1052+32",
+      "geometry": "376x808+1052+32",
       "size": [
         376,
-        768
+        808
       ],
       "controls": {
         "settings": [
@@ -653,21 +653,51 @@
         ],
         "start": [
           8,
-          541,
+          504,
           360,
           36
         ],
         "monitor_state": [
           8,
-          579,
+          542,
           360,
           20
         ],
         "stop": [
           8,
-          601,
+          564,
           110,
           36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
         ],
         "kvm": [
           8,
@@ -692,20 +722,20 @@
         "X": 1052.0,
         "Y": 32.0,
         "Width": 376.0,
-        "Height": 796.0
+        "Height": 836.0
       },
       "image_pixels": {
         "width": 752,
-        "height": 1592
+        "height": 1672
       },
       "screenshot": "main-page-en.png"
     },
     "zh-TW": {
       "title": "B518 FCT ATE Log Solution-V0.1.0",
-      "geometry": "376x768+1052+32",
+      "geometry": "376x808+1052+32",
       "size": [
         376,
-        768
+        808
       ],
       "controls": {
         "settings": [
@@ -752,21 +782,51 @@
         ],
         "start": [
           8,
-          541,
+          504,
           360,
           36
         ],
         "monitor_state": [
           8,
-          579,
+          542,
           360,
           20
         ],
         "stop": [
           8,
-          601,
+          564,
           110,
           36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
         ],
         "kvm": [
           8,
@@ -791,11 +851,11 @@
         "X": 1052.0,
         "Y": 32.0,
         "Width": 376.0,
-        "Height": 796.0
+        "Height": 836.0
       },
       "image_pixels": {
         "width": 752,
-        "height": 1592
+        "height": 1672
       },
       "screenshot": "main-page-zh-TW.png"
     }
