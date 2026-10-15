@@ -1,0 +1,366 @@
+{
+  "en": {
+    "history-events": {
+      "title": "Historical Events",
+      "geometry": "960x680+106+88",
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "date_mode": [
+          136,
+          0,
+          182,
+          22
+        ],
+        "date_start": [
+          117,
+          0,
+          114,
+          22
+        ],
+        "date_end": [
+          360,
+          0,
+          114,
+          22
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ],
+        "event_list": [
+          0,
+          0,
+          453,
+          437
+        ],
+        "detail": [
+          0,
+          0,
+          443,
+          452
+        ],
+        "cancel": [
+          0,
+          0,
+          463,
+          34
+        ],
+        "search": [
+          473,
+          0,
+          463,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "history-events-en.png"
+    },
+    "app-diagnostics": {
+      "title": "App diagnostics",
+      "geometry": "900x560+135+117",
+      "native_bounds": {
+        "X": 135.0,
+        "Y": 117.0,
+        "Width": 900.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1176
+      },
+      "controls": {
+        "event_list": [
+          0,
+          0,
+          361,
+          452
+        ],
+        "detail": [
+          0,
+          0,
+          475,
+          467
+        ],
+        "retry": [
+          516,
+          0,
+          224,
+          34
+        ],
+        "close": [
+          746,
+          0,
+          134,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "app-diagnostics-en.png"
+    },
+    "history-diagnostics": {
+      "title": "Historical Events",
+      "geometry": "960x680+106+88",
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "list": [
+          0,
+          0,
+          453,
+          437
+        ],
+        "detail": [
+          0,
+          0,
+          443,
+          452
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "history-diagnostics-en.png"
+    }
+  },
+  "zh-TW": {
+    "history-events": {
+      "title": "歷史事件",
+      "geometry": "960x680+106+88",
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "date_mode": [
+          136,
+          0,
+          182,
+          22
+        ],
+        "date_start": [
+          117,
+          0,
+          114,
+          22
+        ],
+        "date_end": [
+          360,
+          0,
+          114,
+          22
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ],
+        "event_list": [
+          0,
+          0,
+          453,
+          437
+        ],
+        "detail": [
+          0,
+          0,
+          443,
+          452
+        ],
+        "cancel": [
+          0,
+          0,
+          463,
+          34
+        ],
+        "search": [
+          473,
+          0,
+          463,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "history-events-zh-TW.png"
+    },
+    "app-diagnostics": {
+      "title": "App 診斷",
+      "geometry": "900x560+135+117",
+      "native_bounds": {
+        "X": 135.0,
+        "Y": 117.0,
+        "Width": 900.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1176
+      },
+      "controls": {
+        "event_list": [
+          0,
+          0,
+          361,
+          452
+        ],
+        "detail": [
+          0,
+          0,
+          475,
+          467
+        ],
+        "retry": [
+          516,
+          0,
+          224,
+          34
+        ],
+        "close": [
+          746,
+          0,
+          134,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "app-diagnostics-zh-TW.png"
+    },
+    "history-diagnostics": {
+      "title": "歷史事件",
+      "geometry": "960x680+106+88",
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "list": [
+          0,
+          0,
+          453,
+          437
+        ],
+        "detail": [
+          0,
+          0,
+          443,
+          452
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "0d56ec7d67637a77ecbf6b8e0f4f4868aac676ed12a915912a2c19cae365b5d8",
+        "legacy_events": "6c8dcfe01f3c602de40098cc822b9ff0cf2360eb7f074bec9628f290668b8781",
+        "app_events": "85261c542e7b9852d775e643bbf7549432d379117d1d1a47fdf9982259c2dab4"
+      },
+      "screenshot": "history-diagnostics-zh-TW.png"
+    }
+  }
+}
