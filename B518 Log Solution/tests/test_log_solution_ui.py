@@ -277,6 +277,36 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn(str(app.toolbar_icons[icon]), button.cget("image"))
                     self.assertTrue(button.winfo_viewable())
 
+                footer_buttons = (
+                    app.stop_button, app.retry_save_button,
+                    app.unsaved_round_retry_button, app.archive_retry_button,
+                    app.app_diagnostics_button, app.language_refresh_retry_button,
+                )
+                footer_bounds = []
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    app._select_language(language)
+                    root.update()
+                    for button in footer_buttons:
+                        self.assertTrue(button.winfo_viewable(), button.cget("text"))
+                        self.assertGreaterEqual(button.winfo_width(), button.winfo_reqwidth(),
+                                                button.cget("text"))
+                        self.assertGreaterEqual(button.winfo_height(), button.winfo_reqheight(),
+                                                button.cget("text"))
+                        self.assertLessEqual(
+                            button.winfo_rootx() - root.winfo_rootx() + button.winfo_width(),
+                            root.winfo_width(), button.cget("text"))
+                        self.assertLessEqual(
+                            button.winfo_rooty() - root.winfo_rooty() + button.winfo_height(),
+                            root.winfo_height(), button.cget("text"))
+                    footer_bounds.append(tuple(
+                        (button.winfo_rootx() - root.winfo_rootx(),
+                         button.winfo_rooty() - root.winfo_rooty(),
+                         button.winfo_width(), button.winfo_height())
+                        for button in footer_buttons))
+                self.assertEqual(footer_bounds[0], footer_bounds[1])
+                app._select_language(ENGLISH)
+                root.update()
+
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     main_page_evidence = {}
                     for language, key in ((ENGLISH, "en"),
@@ -295,6 +325,11 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "start": app.start_button,
                                 "monitor_state": app.monitor_state,
                                 "stop": app.stop_button,
+                                "retry_save": app.retry_save_button,
+                                "retry_selected": app.unsaved_round_retry_button,
+                                "retry_archive": app.archive_retry_button,
+                                "diagnostics": app.app_diagnostics_button,
+                                "retry_text": app.language_refresh_retry_button,
                                 "kvm": app.kvm_results,
                                 "kvm_state_marker": app.kvm_state_marker,
                                 "kvm_layout_marker": app.kvm_layout_marker,
@@ -5267,10 +5302,10 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
         self.assertEqual(profiles.get("B482", "BT").capacity, 4)
         # The two profile rows and save/archive/diagnostic controls stay visible.
-        self.assertEqual(window_height(4), 674)
-        self.assertEqual(window_height(6), 768)
-        self.assertEqual(window_height(7), 815)
-        self.assertEqual(window_height(20), 795)
+        self.assertEqual(window_height(4), 761)
+        self.assertEqual(window_height(6), 808)
+        self.assertEqual(window_height(7), 808)
+        self.assertEqual(window_height(20), 835)
         self.assertEqual(visible_detail_rows(20, 500), 1)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
