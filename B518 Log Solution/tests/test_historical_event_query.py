@@ -1056,6 +1056,29 @@ class HistoricalEventQueryTests(unittest.TestCase):
             finally:
                 recovered.close()
 
+    def test_warm_query_skips_global_reclamation_while_live_snapshots_are_owned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            day = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+            retained = query_historical_events(sessions, None, day, index_path=index_path)
+            replacement = None
+            try:
+                with unittest.mock.patch.object(
+                        historical_event_query, "_reclaim_unreferenced_contents") as reclaim:
+                    replacement = query_historical_events(
+                        sessions, None, day, index_path=index_path)
+                    reclaim.assert_not_called()
+                self.assertEqual(retained.get_page(1).events[0].key,
+                                 replacement.get_page(1).events[0].key)
+                self.assertFalse(retained._closed)
+            finally:
+                if replacement is not None:
+                    replacement.close()
+                retained.close()
+
     def test_official_app_event_cleanup_keeps_all_captured_snapshot_details(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

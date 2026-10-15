@@ -674,16 +674,19 @@ def _reclaim_unreferenced_contents(connection: sqlite3.Connection) -> None:
 
 def _reclaim_abandoned_query_contents(connection: sqlite3.Connection) -> None:
     """Drop references left by a process that no longer owns its query results."""
+    abandoned_query_found = False
     for (query_id, process_id) in connection.execute(
             "SELECT query_id, process_id FROM history_queries").fetchall():
         try:
             os.kill(process_id, 0)
         except ProcessLookupError:
             connection.execute("DELETE FROM history_queries WHERE query_id=?", (query_id,))
+            abandoned_query_found = True
         except (PermissionError, OSError):
             continue
-    _reclaim_unreferenced_contents(connection)
-    connection.commit()
+    if abandoned_query_found:
+        _reclaim_unreferenced_contents(connection)
+        connection.commit()
 
 
 def _release_indexed_snapshot(snapshot_path: Path, index_path: Path, query_id: str) -> None:
@@ -1494,6 +1497,7 @@ def _query_historical_events_with_index(session_root: Path,
     source_version_checks = 0
     content_write_counts = []
     content_write_bytes = []
+    content_index_changed = False
     unavailable_keys = set()
     transient_errors = []
     try:
@@ -1515,6 +1519,7 @@ def _query_historical_events_with_index(session_root: Path,
             connection.execute("BEGIN IMMEDIATE")
             stale_keys = [row[0] for row in connection.execute(
                 "SELECT source_key FROM history_sources") if row[0] not in current_keys]
+            content_index_changed = bool(stale_keys)
             for stale_key in stale_keys:
                 connection.execute("DELETE FROM history_events WHERE source_key=?",
                                    (stale_key,))
@@ -1539,6 +1544,7 @@ def _query_historical_events_with_index(session_root: Path,
                         reused_sources += 1
                         continue
 
+                content_index_changed = True
                 connection.execute("SAVEPOINT refresh_source")
                 connection.execute("DELETE FROM history_events WHERE source_key=?",
                                    (source.key,))
@@ -1661,7 +1667,8 @@ def _query_historical_events_with_index(session_root: Path,
                     parsed_sources, reused_sources, source_bytes_read,
                     source_version_checks,
                     indexed_content_write_bytes=sum(content_write_bytes),
-                    indexed_content_write_count=sum(content_write_counts)), index_path)
+                    indexed_content_write_count=sum(content_write_counts)), index_path,
+                reclaim_unreferenced=content_index_changed)
             connection.close()
             connection = None
         if rebuilt_index:
@@ -1820,7 +1827,8 @@ def _open_history_index(index_path: Path):
 def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path: Path,
                                    date_range: HistoricalEventDateRange, page_size: int,
                                    unavailable_keys, transient_errors,
-                                   cancellation_event, index_metrics, index_path: Path):
+                                   cancellation_event, index_metrics, index_path: Path,
+                                   reclaim_unreferenced: bool = True):
     snapshot = sqlite3.connect(str(snapshot_path))
     query_id = uuid.uuid4().hex
     try:
@@ -1982,7 +1990,8 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             "SELECT ?, content_id FROM query_snapshot.matching_events "
             "UNION SELECT ?, content_id FROM query_snapshot.diagnostic_events",
             (query_id, query_id))
-        _reclaim_unreferenced_contents(connection)
+        if reclaim_unreferenced:
+            _reclaim_unreferenced_contents(connection)
         connection.commit()
         connection.execute("DETACH DATABASE query_snapshot")
         snapshot.close()
