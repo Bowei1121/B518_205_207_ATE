@@ -24,3 +24,12 @@
 - `python3 -m py_compile src/b518_log_solution.py tests/test_log_solution_ui.py`：通過。
 - `git diff --check`：通過。
 - 未執行完整測試套件、容量壓力測試或與本票無關的重度測試；未驗收實體工廠設備。
+
+## 中英真 Tk 截圖與 bounds
+
+- 擷取命令：`PATH=/opt/anaconda3/bin:$PATH B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/hm2/screenshots PYTHONPATH=src python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_settings_layout_is_stable_across_languages_and_keeps_drafts`。
+- 截圖在同一個 Tk/Aqua 測試程序內使用 Quartz `CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, window_id, kCGWindowImageBoundsIgnoreFraming)` 直接擷取設定視窗，透過 ImageIO 寫成 PNG。沒有保存整個桌面截圖；只有設定視窗影像被保留。
+- [English 設定頁](screenshots/settings-configuration-en.png) 與[繁中設定頁](screenshots/settings-configuration-zh-TW.png) 是同一 app、同一配置頁、同一草稿值與路徑狀態，只切換語言。兩張都為 1360×1176 像素；Tk geometry `680x560+164+146`，Quartz 原生 window frame `x=164, y=146, width=680, height=588`（包含 Aqua 標題列）。
+- 完整逐控件座標與表單值在 [settings-bounds.json](screenshots/settings-bounds.json)。測例逐項比較中英的 `(class, x, y, width, height)`，所有 bounds 相同；`form_values` 也逐欄相同：project `HM2-DRAFT`、machine `BT`、platform `atlas`、capacity `17`、mapping、active/final/caseinfo paths、start/test/round timeouts。
+- 這次真實截圖發現 profile 欄位曾被通用 20 字元標籤擠到只有 4px。已將 project/station/platform/capacity 標籤固定寬度調為 13；重新擷取後每個 profile Entry/Combobox 至少 90px，最窄 92px，常用路徑欄為 384px、mapping 欄為 462px。測例新增 `>=90px` 的可用寬度斷言。
+- 截圖及 bounds 為修正後版本，最終命令結果 1/1 通過。偏好與 session/app-event 路徑仍由測例 `TemporaryDirectory` 和 `PREFS_PATH` patch 隔離。

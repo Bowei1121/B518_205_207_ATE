@@ -6816,7 +6816,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 window = app.settings_window
                 window.geometry("680x560")
                 app.settings_notebook.select(app.settings_notebook.tabs()[0])
-                app.profile_editor_project.set("Unsaved bilingual draft")
+                app.profile_editor_project.set("HM2-DRAFT")
                 app.profile_editor_capacity.set("17")
                 long_path = "/deployment/" + ("long-directory/" * 12) + "final-results.csv"
                 app.profile_editor_paths["final"].set(long_path)
@@ -6848,11 +6848,97 @@ class LogSolutionUiTests(unittest.TestCase):
                     collect(window)
                     return bounds
 
+                def profile_form_values():
+                    return {
+                        "project": app.profile_editor_project.get(),
+                        "machine": app.profile_editor_machine.get(),
+                        "platform": app.profile_editor_platform.get(),
+                        "capacity": app.profile_editor_capacity.get(),
+                        "mapping": app.profile_editor_mapping.get(),
+                        "paths": {key: value.get()
+                                  for key, value in app.profile_editor_paths.items()},
+                        "timeouts": {key: value.get()
+                                     for key, value in app.profile_editor_timeouts.items()},
+                    }
+
+                evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
+                screenshot_bounds = {}
+
+                def capture_settings_language(language, filename):
+                    if not evidence_root:
+                        return
+                    import Quartz
+                    from Foundation import NSURL
+
+                    app._select_language(language)
+                    window.geometry("680x560")
+                    window.lift()
+                    window.focus_force()
+                    root.update()
+                    native_windows = Quartz.CGWindowListCopyWindowInfo(
+                        Quartz.kCGWindowListOptionOnScreenOnly,
+                        Quartz.kCGNullWindowID)
+                    native_window = next((item for item in native_windows
+                                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+                    self.assertIsNotNone(native_window,
+                                         "Settings window missing from Aqua window list")
+                    native_id = native_window[Quartz.kCGWindowNumber]
+                    captured_image = Quartz.CGWindowListCreateImage(
+                        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
+                        native_id, Quartz.kCGWindowImageBoundsIgnoreFraming)
+                    self.assertIsNotNone(captured_image,
+                                         "CGWindowListCreateImage returned no window image")
+                    output_path = Path(evidence_root) / filename
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_url = NSURL.fileURLWithPath_(str(output_path))
+                    image_destination = Quartz.CGImageDestinationCreateWithURL(
+                        output_url, "public.png", 1, None)
+                    self.assertIsNotNone(image_destination)
+                    Quartz.CGImageDestinationAddImage(image_destination, captured_image, None)
+                    self.assertTrue(Quartz.CGImageDestinationFinalize(image_destination))
+                    bounds = native_window[Quartz.kCGWindowBounds]
+                    screenshot_bounds[language] = {
+                        "window_geometry": window.geometry(),
+                        "native_window_bounds": {
+                            key: float(bounds[key]) for key in ("X", "Y", "Width", "Height")
+                        },
+                        "captured_image_pixels": {
+                            "width": Quartz.CGImageGetWidth(captured_image),
+                            "height": Quartz.CGImageGetHeight(captured_image),
+                        },
+                        "form_values": profile_form_values(),
+                        "controls": settings_control_bounds(),
+                        "screenshot": filename,
+                    }
+
+                capture_settings_language("en", "settings-configuration-en.png")
+                capture_settings_language("zh-TW", "settings-configuration-zh-TW.png")
+                if evidence_root:
+                    self.assertEqual(
+                        [item[:5] for item in screenshot_bounds["en"]["controls"]],
+                        [item[:5] for item in screenshot_bounds["zh-TW"]["controls"]])
+                    self.assertEqual(screenshot_bounds["en"]["form_values"],
+                                     screenshot_bounds["zh-TW"]["form_values"])
+                    with (Path(evidence_root) / "settings-bounds.json").open(
+                            "w", encoding="utf-8") as evidence_file:
+                        json.dump(screenshot_bounds, evidence_file, ensure_ascii=False,
+                                  indent=2)
+                        evidence_file.write("\n")
+                    app._select_language("en")
+                    root.update()
+
                 self.assertIn(app.profile_editor_machine.get(),
                               app.profile_editor_machine_choice.cget("values"))
                 self.assertNotEqual(app.profile_editor_machine.get(),
                                     station_before_mouse_selection)
                 self.assertEqual(app.style.lookup("TEntry", "fieldbackground"), "#ffffff")
+                profile_inputs = [item for item in settings_control_bounds()
+                                  if item[0] in {"TEntry", "TCombobox"}]
+                self.assertTrue(all(item[3] >= 90 for item in profile_inputs),
+                                "Profile inputs must remain usable at 680px: {}".format(
+                                    [(item[5], item[3]) for item in profile_inputs
+                                     if item[3] < 90]))
                 for index, tab in enumerate(app.settings_notebook.tabs()):
                     app.settings_notebook.select(tab)
                     root.update()
@@ -6876,7 +6962,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app.settings_notebook.select(app.settings_notebook.tabs()[0])
                 root.update()
-                self.assertEqual(app.profile_editor_project.get(), "Unsaved bilingual draft")
+                self.assertEqual(app.profile_editor_project.get(), "HM2-DRAFT")
                 self.assertEqual(app.profile_editor_capacity.get(), "17")
                 self.assertEqual(app.profile_editor_paths["final"].get(), long_path)
 

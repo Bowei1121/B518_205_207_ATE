@@ -906,6 +906,10 @@ class B518LogSolutionApp:
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widths = {
+            "app.settings.profile.project": 13,
+            "app.settings.profile.station_type": 13,
+            "app.settings.profile.platform": 13,
+            "app.settings.profile.capacity": 13,
             "app.settings.retention.days": 28,
             "app.settings.retention.cleanup.heading": 30,
         }
