@@ -1,0 +1,172 @@
+<!-- THROWAWAY HMI prototype: compare monitor status near operations vs configuration; no device or persistence access. -->
+<div id="b518-hmi-placement">
+  <style>
+    #b518-hmi-placement { --app-bg:#f3f4f6;--app-ink:#111827;--app-line:#1c2430;--app-muted:#59606d;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif; }
+    #b518-hmi-placement * { box-sizing:border-box; }
+    #b518-hmi-placement .stage { min-height:850px;display:flex;justify-content:center;padding:16px 0 24px; }
+    #b518-hmi-placement .window { width:376px;max-width:100%;background:var(--app-bg);color:var(--app-ink);border:1px solid #b5bac3;border-radius:8px;position:relative;align-self:flex-start;overflow:hidden; }
+    #b518-hmi-placement .titlebar { height:30px;display:flex;align-items:center;justify-content:center;background:#e5e7eb;font-size:11px;position:relative;white-space:nowrap; }
+    #b518-hmi-placement .dots { position:absolute;left:9px;display:flex;gap:5px; }
+    #b518-hmi-placement .dots b { width:8px;height:8px;border-radius:50%;background:#b0b5bc; }
+    #b518-hmi-placement .content { padding:8px; }
+    #b518-hmi-placement .toolbar { height:34px;display:flex;align-items:center;gap:4px; }
+    #b518-hmi-placement .toolbar .push { flex:1;min-width:0; }
+    #b518-hmi-placement button { font:inherit; color:inherit; }
+    #b518-hmi-placement .icon { height:30px;width:30px;flex:none;border:1px solid #afb6c0;border-radius:4px;background:#fafafa;display:flex;align-items:center;justify-content:center;padding:3px; }
+    #b518-hmi-placement .icon.review { width:62px;gap:3px;font-variant-numeric:tabular-nums; }
+    #b518-hmi-placement .icon.globe { width:34px; }
+    #b518-hmi-placement .icon svg { width:17px;height:17px;flex:none; }
+    #b518-hmi-placement .icon:disabled { color:#89909b;background:#e5e7eb; }
+    #b518-hmi-placement .logo { display:block;width:96px;height:auto;max-height:28px;object-fit:contain;margin-left:2px; }
+    #b518-hmi-placement .selection { height:64px;padding-top:7px;display:grid;grid-template-columns:66px minmax(0,1fr);grid-template-rows:25px 25px;gap:3px 5px;align-items:center; }
+    #b518-hmi-placement .selection.with-state { grid-template-columns:66px minmax(0,1fr) 110px; }
+    #b518-hmi-placement .selection label { font-size:12px;white-space:nowrap; }
+    #b518-hmi-placement select,#b518-hmi-placement input { min-width:0;width:100%;height:25px;border:1px solid #9ca3af;border-radius:2px;background:white;color:var(--app-ink);font:inherit;padding:1px 5px; }
+    #b518-hmi-placement .state-select { grid-column:3;grid-row:1/3;align-self:stretch;display:flex;flex-direction:column;justify-content:center;border:1px solid #111827;padding:4px 6px;gap:2px; }
+    #b518-hmi-placement .state-select small { color:var(--app-muted);font-size:11px; }
+    #b518-hmi-placement .status-text { font-size:12px;font-weight:500; }
+    #b518-hmi-placement .kvm { height:88px;position:relative;margin:2px 0 4px;width:100%; }
+    #b518-hmi-placement .kvm-label { position:absolute;left:0;top:0;font-size:10px;font-weight:500; }
+    #b518-hmi-placement .locator { width:22px;height:22px;background:#000;position:absolute;top:2px; }
+    #b518-hmi-placement .locator.left { left:82px; }
+    #b518-hmi-placement .locator.right { left:320px; }
+    #b518-hmi-placement .locator:after { content:"";position:absolute;width:8px;height:8px;left:3px;top:3px;background:#fff; }
+    #b518-hmi-placement .locator.right:after { left:11px;top:11px; }
+    #b518-hmi-placement .marker { position:absolute;left:278px;top:0;width:26px;height:26px;background:white;padding:2px;display:grid;grid-template-columns:10px 10px;grid-template-rows:10px 10px;gap:2px; }
+    #b518-hmi-placement .marker span { background:#000; }
+    #b518-hmi-placement .marker span:nth-child(even) { background:white; }
+    #b518-hmi-placement .rail { position:absolute;left:130px;top:2px;width:26px;height:14px;background:white;display:flex;gap:2px;padding:2px; }
+    #b518-hmi-placement .rail span { width:10px;height:10px;background:black; }
+    #b518-hmi-placement .kvm-cells { position:absolute;left:0;top:34px;display:grid;grid-template-columns:repeat(10,34px);grid-auto-rows:26px;row-gap:1px; }
+    #b518-hmi-placement .kvm-cells span { background:#d9d9d9;border:1px solid #333; }
+    #b518-hmi-placement .kvm-cells span:nth-child(-n+3) { background:#00ef00; }
+    #b518-hmi-placement .kvm-cells span:nth-child(4) { background:#ff0000; }
+    #b518-hmi-placement .kvm-cells span:nth-child(n+6) { background:black; }
+    #b518-hmi-placement .legend { height:58px; }
+    #b518-hmi-placement .legend-head { height:25px;display:flex;align-items:center; }
+    #b518-hmi-placement .legend-cells { display:grid;grid-template-columns:repeat(4,85px);height:30px; }
+    #b518-hmi-placement .legend-cells span { border:1px solid black;text-align:center;padding-top:4px;font-weight:500;color:black; }
+    #b518-hmi-placement .pass { background:#00ef00; }
+    #b518-hmi-placement .fail { background:#ff0000; }
+    #b518-hmi-placement .testing { background:#ffff00; }
+    #b518-hmi-placement .notest { background:#f04bf1; }
+    #b518-hmi-placement .table-head,#b518-hmi-placement .data-row { width:342px;display:grid;grid-template-columns:60px 94px 188px; }
+    #b518-hmi-placement .table-head { height:30px;align-items:center;text-align:center;font-size:12px; }
+    #b518-hmi-placement .data-row { height:46px;margin-bottom:1px; }
+    #b518-hmi-placement .data-row>span { border:1px solid black;display:flex;align-items:center;justify-content:center;min-width:0; }
+    #b518-hmi-placement .data-row .sn { justify-content:flex-start;padding:0 5px;font:12px monospace;background:var(--app-bg); }
+    #b518-hmi-placement .data-row .slot { background:var(--app-bg);font-size:12px; }
+    #b518-hmi-placement .operations { padding-top:9px; }
+    #b518-hmi-placement .monitor-strip { height:30px;border:1px solid black;display:flex;align-items:center;justify-content:space-between;padding:0 7px;margin-bottom:5px;font-size:12px; }
+    #b518-hmi-placement .monitor-strip span:first-child { color:var(--app-muted); }
+    #b518-hmi-placement .action { min-height:30px;border:1px solid #9ca3af;border-radius:3px;background:#fafafa;padding:4px 8px;white-space:nowrap;font-size:12px; }
+    #b518-hmi-placement .action:disabled { color:#8c919a;background:#e6e8eb; }
+    #b518-hmi-placement .start { width:100%;height:34px;margin-bottom:4px;font-size:13px;font-weight:500; }
+    #b518-hmi-placement .save-line { display:grid;grid-template-columns:53px 1fr 85px;align-items:center;gap:5px;height:31px;font-size:12px; }
+    #b518-hmi-placement .save-line>span { padding:0 4px; }
+    #b518-hmi-placement .round-line { display:grid;grid-template-columns:100px 1fr 77px;gap:5px;align-items:center;height:33px;font-size:11px; }
+    #b518-hmi-placement .round-line .action { font-size:11px;padding:3px 4px; }
+    #b518-hmi-placement .archive { min-height:27px;display:flex;align-items:center;font-size:11px;color:var(--app-muted); }
+    #b518-hmi-placement .footer-status { height:28px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #c8ccd3;font-size:11px; }
+    #b518-hmi-placement .footer-status button { border:0;background:transparent;text-decoration:underline;font-size:11px; }
+    #b518-hmi-placement .language-menu { position:absolute;right:8px;top:69px;z-index:5;width:155px;background:white;border:1px solid #7f8792;border-radius:4px;padding:4px;box-shadow:0 5px 12px #0002; }
+    #b518-hmi-placement .language-menu button { width:100%;display:block;border:0;background:white;text-align:left;padding:6px;font-size:13px; }
+    #b518-hmi-placement .language-menu button[aria-checked=true] { background:#e5e7eb; }
+    #b518-hmi-placement .settings-pane { position:absolute;inset:30px 0 0;background:var(--app-bg);z-index:4; padding:12px; }
+    #b518-hmi-placement .settings-head { display:flex;align-items:center;justify-content:space-between;height:35px;margin-bottom:12px;border-bottom:1px solid #b3bac4; }
+    #b518-hmi-placement .settings-head strong { font-size:15px;font-weight:500; }
+    #b518-hmi-placement .settings-tabs { display:flex;height:34px;gap:3px;border-bottom:1px solid #9ca3af;margin-bottom:18px; }
+    #b518-hmi-placement .settings-tabs button { font-size:12px;background:#e5e7eb;border:1px solid #b0b8c2;border-bottom:0;padding:5px 9px; }
+    #b518-hmi-placement .settings-tabs button:first-child { background:var(--app-bg); }
+    #b518-hmi-placement .setting-field { display:grid;grid-template-columns:150px 1fr;align-items:center;min-height:38px;gap:8px;font-size:12px; }
+    #b518-hmi-placement .readonly { border:1px solid black;padding:4px;background:var(--app-bg);font-size:12px; }
+    #b518-hmi-placement .settings-save { margin:8px 0 23px; }
+    #b518-hmi-placement .settings-heading { font-size:13px;margin:18px 0 8px; }
+    #b518-hmi-placement .message { height:24px;display:flex;align-items:center;font-size:11px;color:var(--app-muted); }
+    #b518-hmi-placement [hidden] { display:none !important; }
+    @media(max-width:390px){ #b518-hmi-placement .window{width:376px;} #b518-hmi-placement .logo{width:82px;} #b518-hmi-placement .kvm-cells{grid-template-columns:repeat(10,minmax(0,1fr));width:100%;} #b518-hmi-placement .table-head,#b518-hmi-placement .data-row{width:100%;grid-template-columns:17.5% 27.5% 55%;} #b518-hmi-placement .locator.right{left:auto;right:0;} #b518-hmi-placement .marker{left:auto;right:39px;} #b518-hmi-placement .legend-cells{grid-template-columns:repeat(4,1fr);} #b518-hmi-placement .selection.with-state{grid-template-columns:57px minmax(0,1fr) 105px;} }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="監控狀態位置比較" data-previous-label="上一個配置" data-next-label="下一個配置">
+    <section data-variant="操作區顯示狀態" aria-label="監控狀態放在開始停止附近"><div class="stage" data-layout="operations"></div></section>
+    <section data-variant="配置區顯示狀態" aria-label="監控狀態放在專案機型右側" hidden><div class="stage" data-layout="selection"></div></section>
+  </div>
+  <template id="b518-window-template">
+    <div class="window" aria-label="B518主頁配置示意，寬376像素">
+      <div class="titlebar"><span class="dots" aria-hidden="true"><b></b><b></b><b></b></span>B518 FCT ATE Log Solution-V0.1.0</div>
+      <div class="content">
+        <div class="toolbar">
+          <button class="icon cursor-interaction gear" type="button" aria-label="設定" data-tooltip="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
+          <img class="logo" src="data:image/png;base64,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" alt="Foxlink">
+          <div class="push"></div>
+          <button class="icon review cursor-interaction" type="button" aria-label="待確認3項" data-tooltip="待確認事項"><i data-lucide="triangle-alert" aria-hidden="true"></i><span class="badge-count">(3)</span></button>
+          <button class="icon bell cursor-interaction" type="button" aria-label="整輪警報" data-tooltip="整輪警報" disabled><i data-lucide="bell" aria-hidden="true"></i></button>
+          <button class="icon globe cursor-interaction" type="button" aria-label="切換語言" data-tooltip="切換語言" aria-expanded="false"><i data-lucide="globe" aria-hidden="true"></i><span style="font-size:9px" aria-hidden="true">▾</span></button>
+        </div>
+        <div class="selection">
+          <label data-text="project">專案</label><select aria-label="專案"><option>B518</option><option>B482</option></select>
+          <label data-text="machine">機型</label><select aria-label="機型"><option>FCT</option><option>DFU</option><option>BT</option></select>
+          <div class="state-select" hidden><small data-text="monitorState">監控狀態</small><span class="status-text">待確認 3 項</span></div>
+        </div>
+        <div class="kvm" aria-label="KVM固定辨識區示意">
+          <span class="kvm-label">KVM RESULT</span><span class="locator left"></span><span class="rail"><span></span><span></span></span><span class="marker"><span></span><span></span><span></span><span></span></span><span class="locator right"></span>
+          <div class="kvm-cells" aria-hidden="true"></div>
+        </div>
+        <div class="legend"><div class="legend-head" data-text="legend">KVM 狀態模板</div><div class="legend-cells"><span class="pass">PASS</span><span class="fail">FAIL</span><span class="testing">TESTING</span><span class="notest">NOTEST</span></div></div>
+        <div class="table-head"><span data-text="slot">位置</span><span data-text="result">結果</span><span>SN</span></div>
+        <div class="data-rows"></div>
+        <div class="operations">
+          <div class="monitor-strip"><span data-text="monitorState">監控狀態</span><strong class="status-text">待確認 3 項</strong></div>
+          <button class="action start cursor-interaction" type="button" data-text="start">開始監控（⌘⇧M）</button>
+          <div class="save-line"><button class="action" disabled data-text="stop">停止</button><span data-text="saved">紀錄已保存</span><button class="action" disabled data-text="retry">重試保存</button></div>
+          <div class="round-line"><span data-text="unsaved">未保存輪次 0</span><select aria-label="待保存輪次"><option>—</option></select><button class="action" disabled data-text="retrySelected">重試所選</button></div>
+          <div class="archive" data-text="archive">輪次：未完整保存 0 · 完整保存 1 · 可信封存 1</div>
+          <div class="footer-status"><span data-text="appSaved">App 事件已保存</span><button type="button" class="cursor-interaction" data-text="diagnostics">診斷</button></div>
+          <div class="message" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="language-menu" role="menu" hidden><button type="button" role="menuitemradio" data-lang="en" aria-checked="false">English</button><button type="button" role="menuitemradio" data-lang="zh" aria-checked="true">繁體中文</button></div>
+      <div class="settings-pane" hidden>
+        <div class="settings-head"><strong data-text="settings">設定</strong><button class="icon close-settings cursor-interaction" type="button" aria-label="關閉設定"><i data-lucide="x" aria-hidden="true"></i></button></div>
+        <div class="settings-tabs"><button type="button" data-text="retention">保存期限</button><button type="button" data-text="profiles">測試配置</button><button type="button" data-text="history">歷史事件</button></div>
+        <div class="setting-field"><label data-text="days">保存天數</label><input type="number" value="365" min="1" aria-label="保存天數"></div>
+        <button class="action settings-save cursor-interaction" type="button" data-text="save">保存設定</button>
+        <div class="setting-field"><span data-text="effective">目前生效天數</span><span class="readonly">365</span></div>
+        <div class="settings-heading" data-text="cleanup">最近清理摘要</div>
+        <div class="readonly" style="min-height:110px;padding:9px" data-text="cleanupDetail">尚無清理紀錄</div>
+        <div class="message" aria-live="polite"></div>
+      </div>
+    </div>
+  </template>
+  <script>
+    (function(){
+      const root=document.getElementById('b518-hmi-placement');
+      const template=root.querySelector('#b518-window-template');
+      const state={language:'zh',pending:'3'};
+      const words={zh:{project:'專案',machine:'機型',monitorState:'監控狀態',legend:'KVM 狀態模板',slot:'位置',result:'結果',start:'開始監控（⌘⇧M）',stop:'停止',saved:'紀錄已保存',retry:'重試保存',unsaved:'未保存輪次 0',retrySelected:'重試所選',archive:'輪次：未完整保存 0 · 完整保存 1 · 可信封存 1',appSaved:'App 事件已保存',diagnostics:'診斷',settings:'設定',retention:'保存期限',profiles:'測試配置',history:'歷史事件',days:'保存天數',save:'保存設定',effective:'目前生效天數',cleanup:'最近清理摘要',cleanupDetail:'尚無清理紀錄'},en:{project:'Project',machine:'Station Type',monitorState:'Monitor status',legend:'KVM Status Templates',slot:'Slot',result:'Result',start:'Start monitoring (⌘⇧M)',stop:'Stop',saved:'Records saved',retry:'Retry save',unsaved:'Unsaved rounds 0',retrySelected:'Retry selected',archive:'Rounds: unsaved 0 · saved 1 · archived 1',appSaved:'App events saved',diagnostics:'Diagnostics',settings:'Setting',retention:'Retention',profiles:'Profiles',history:'History',days:'Retention days',save:'Save settings',effective:'Effective days',cleanup:'Latest cleanup',cleanupDetail:'No cleanup records'}};
+      const windows=[];
+      root.querySelectorAll('.stage').forEach(stage=>{
+        const content=template.content.cloneNode(true);stage.appendChild(content);
+        const w=stage.querySelector('.window');windows.push(w);
+        if(stage.dataset.layout==='selection'){w.querySelector('.selection').classList.add('with-state');w.querySelector('.state-select').hidden=false;w.querySelector('.monitor-strip').style.visibility='hidden';}
+        w.querySelector('.kvm-cells').innerHTML=Array(20).fill('<span></span>').join('');
+        w.querySelector('.data-rows').innerHTML=['PASS','PASS','PASS','FAIL'].map((status,i)=>'<div class="data-row"><span class="slot">'+(i+1)+'</span><span class="'+status.toLowerCase()+'">'+status+'</span><span class="sn">B51826001500'+(i+1)+'</span></div>').join('');
+        const menu=w.querySelector('.language-menu');
+        w.querySelector('.globe').addEventListener('click',()=>{menu.hidden=!menu.hidden;w.querySelector('.globe').setAttribute('aria-expanded',String(!menu.hidden));});
+        w.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>{state.language=b.dataset.lang;render();menu.hidden=true;w.querySelector('.globe').setAttribute('aria-expanded','false');saveState();}));
+        w.querySelector('.gear').addEventListener('click',()=>{w.querySelector('.settings-pane').hidden=false;});
+        w.querySelector('.close-settings').addEventListener('click',()=>{w.querySelector('.settings-pane').hidden=true;});
+        w.querySelector('.review').addEventListener('click',()=>{w.querySelector('.operations .message').textContent=state.language==='zh'?'待確認 '+state.pending+' 項（配置示意）':state.pending+' items awaiting review (preview)';});
+        w.querySelector('.start').addEventListener('click',()=>{w.querySelector('.operations .message').textContent=state.language==='zh'?'配置示意，不會啟動設備':'Preview only; no equipment is started';});
+        w.querySelector('.settings-save').addEventListener('click',()=>{w.querySelector('.settings-pane .message').textContent=state.language==='zh'?'配置示意，沒有寫入設定':'Preview only; no settings are written';});
+        w.querySelectorAll('.selection select').forEach(s=>s.addEventListener('change',()=>{const selects=w.querySelectorAll('.selection select');w.querySelector('.titlebar').lastChild.textContent=selects[0].value+' '+selects[1].value+' ATE Log Solution-V0.1.0';}));
+      });
+      function render(){windows.forEach(w=>{w.querySelectorAll('[data-text]').forEach(e=>e.textContent=words[state.language][e.dataset.text]);const n=Number(state.pending);const label=n?(state.language==='zh'?'待確認 '+n+' 項':'Review ('+n+')'):(state.language==='zh'?'待命':'Idle');w.querySelectorAll('.status-text').forEach(e=>e.textContent=label);w.querySelector('.badge-count').textContent='('+n+')';w.querySelector('.review').disabled=n===0;w.querySelector('.review').setAttribute('aria-label',(state.language==='zh'?'待確認事項 ':'Awaiting review ')+n);w.querySelector('.review').setAttribute('data-tooltip',state.language==='zh'?'待確認事項':'Awaiting review');w.querySelector('.gear').setAttribute('data-tooltip',words[state.language].settings);w.querySelector('.globe').setAttribute('data-tooltip',state.language==='zh'?'切換語言':'Language');w.querySelector('.bell').setAttribute('data-tooltip',state.language==='zh'?'整輪警報':'Round alarm');w.querySelectorAll('[data-lang]').forEach(e=>e.setAttribute('aria-checked',String(e.dataset.lang===state.language)));});}
+      function saveState(){if(window.openai&&window.openai.setWidgetState)window.openai.setWidgetState({modelContent:{language:state.language,pending:state.pending},privateContent:null}).catch(()=>{});}
+      const saved=window.openai&&window.openai.widgetState;if(saved&&saved.modelContent){if(['zh','en'].includes(saved.modelContent.language))state.language=saved.modelContent.language;if([0,3,12].includes(Number(saved.modelContent.pending)))state.pending=String(saved.modelContent.pending);}
+      window.addEventListener('openai:set_globals',event=>{const incoming=event.detail&&event.detail.globals&&event.detail.globals.widgetState;const model=incoming&&incoming.modelContent;if(!model)return;if(['zh','en'].includes(model.language))state.language=model.language;if([0,3,12].includes(Number(model.pending)))state.pending=String(model.pending);render();});
+      render();
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:()=>{render();saveState();}});tweak.addSelect(state,'language',{label:'顯示語言',options:[{label:'繁體中文',value:'zh'},{label:'English',value:'en'}]});tweak.addSelect(state,'pending',{label:'待確認數量',options:[{label:'0',value:'0'},{label:'3',value:'3'},{label:'12',value:'12'}]});}
+      if(globalThis.lucide)lucide.createIcons({attrs:{width:17,height:17}});
+    })();
+  </script>
+</div>
