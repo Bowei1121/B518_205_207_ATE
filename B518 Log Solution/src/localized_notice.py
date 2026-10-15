@@ -76,26 +76,33 @@ class LanguageRefreshNotifications:
 
 
 def show_notice(title, message, *, parent, text_provider, register_refresh,
-                receiver_name=None):
+                receiver_name=None, background="#f3f4f6", foreground="#111827"):
     """Keep the modal acknowledgement effect while Tk continues processing events."""
     previous_focus = parent.focus_get()
     previous_grab = parent.grab_current()
     window = tk.Toplevel(parent)
     window.title(title)
     window.transient(parent)
-    window.geometry("560x280")
-    window.minsize(360, 220)
+    window.geometry("640x400")
+    window.minsize(480, 320)
+    window.grid_columnconfigure(0, weight=1)
+    window.grid_rowconfigure(0, weight=1)
     frame = ttk.Frame(window, padding=16)
-    frame.pack(fill="both", expand=True)
-    body = tk.Text(frame, wrap="word", height=8)
-    scrollbar = ttk.Scrollbar(frame, command=body.yview)
+    frame.grid(row=0, column=0, sticky="nsew")
+    frame.grid_columnconfigure(0, weight=1)
+    frame.grid_rowconfigure(0, weight=1)
+    body = tk.Text(
+        frame, wrap="word", height=8, background=background, foreground=foreground,
+        relief="solid", borderwidth=1, highlightthickness=0,
+        selectbackground="#dbeafe", selectforeground=foreground)
+    scrollbar = ttk.Scrollbar(frame, orient="vertical", command=body.yview)
     body.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side="right", fill="y")
-    body.pack(fill="both", expand=True)
+    body.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
     body.insert("1.0", message)
     body.configure(state="disabled")
     acknowledge = ttk.Button(window, command=window.destroy)
-    acknowledge.pack(pady=(0, 12))
+    acknowledge.grid(row=1, column=0, sticky="e", padx=16, pady=(0, 16))
 
     def refresh(_event=None):
         if not window.winfo_exists():
@@ -138,7 +145,7 @@ def show_notice(title, message, *, parent, text_provider, register_refresh,
                 raise
             return
         window.grab_set()
-        acknowledge.focus_set()
+        acknowledge.focus_force()
         parent.wait_window(window)
     finally:
         unregister()

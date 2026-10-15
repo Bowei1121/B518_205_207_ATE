@@ -344,7 +344,7 @@ class B518LogSolutionApp:
         self._close_window = None
         self._close_status_label = None
         self._close_language_reason_label = None
-        self._close_error_label = None
+        self._close_diagnostic_text = None
         self._close_retry_button = None
         self._close_cancel_button = None
         self._close_poll_generation = None
@@ -924,7 +924,8 @@ class B518LogSolutionApp:
         title, message, _button = text_provider()
         show_notice(title, message, parent=self.root, text_provider=text_provider,
                     register_refresh=self.register_language_receiver,
-                    receiver_name=lambda: self._t(title_id))
+                    receiver_name=lambda: self._t(title_id),
+                    background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widths = {
@@ -4209,27 +4210,56 @@ class B518LogSolutionApp:
             window = tk.Toplevel(self.root)
             self._close_window = window
             window.title(self._t("app.close.title"))
-            window.geometry("500x240")
+            window.geometry("620x390")
+            window.minsize(520, 340)
             window.resizable(False, False)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", self.cancel_close)
-            self._close_status_label = ttk.Label(window, text="正在停止來源並確認所有輪次紀錄…",
-                                                  wraplength=460, justify="left")
-            self._close_status_label.pack(fill="x", padx=18, pady=(18, 8))
+            window.grid_columnconfigure(0, weight=1)
+            window.grid_rowconfigure(0, minsize=64)
+            window.grid_rowconfigure(1, minsize=56)
+            window.grid_rowconfigure(2, weight=1)
+            status_frame = tk.Frame(window, height=64)
+            status_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(12, 4))
+            status_frame.grid_propagate(False)
+            status_frame.grid_columnconfigure(0, weight=1)
+            status_frame.grid_rowconfigure(0, weight=1)
+            self._close_status_label = ttk.Label(
+                status_frame, text="正在停止來源並確認所有輪次紀錄…",
+                wraplength=564, justify="left", anchor="w")
+            self._close_status_label.grid(row=0, column=0, sticky="nsew")
+            language_frame = tk.Frame(window, height=56)
+            language_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 4))
+            language_frame.grid_propagate(False)
+            language_frame.grid_columnconfigure(0, weight=1)
+            language_frame.grid_rowconfigure(0, weight=1)
             self._close_language_reason_label = ttk.Label(
-                window, text="", wraplength=460, justify="left")
-            self._close_language_reason_label.pack(fill="x", padx=18, pady=(0, 6))
-            self._close_error_label = ttk.Label(window, text="", wraplength=460, justify="left")
-            self._close_error_label.pack(fill="x", padx=18, pady=6)
+                language_frame, text="", wraplength=564, justify="left", anchor="w")
+            self._close_language_reason_label.grid(row=0, column=0, sticky="nsew")
+            diagnostic_frame = ttk.Frame(window)
+            diagnostic_frame.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 8))
+            diagnostic_frame.grid_columnconfigure(0, weight=1)
+            diagnostic_frame.grid_rowconfigure(0, weight=1)
+            diagnostic_scrollbar = ttk.Scrollbar(diagnostic_frame, orient="vertical")
+            self._close_diagnostic_text = tk.Text(
+                diagnostic_frame, wrap="word", state="disabled",
+                background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                selectbackground="#dbeafe", selectforeground=TEXT_COLOUR,
+                relief="solid", borderwidth=1, highlightthickness=0,
+                yscrollcommand=diagnostic_scrollbar.set)
+            self._close_diagnostic_text.grid(row=0, column=0, sticky="nsew")
+            diagnostic_scrollbar.configure(command=self._close_diagnostic_text.yview)
+            diagnostic_scrollbar.grid(row=0, column=1, sticky="ns")
             actions = ttk.Frame(window)
-            actions.pack(fill="x", padx=18, pady=(12, 16))
+            actions.grid(row=3, column=0, sticky="ew", padx=18, pady=(4, 16))
+            actions.grid_columnconfigure(0, weight=1)
             self._close_retry_button = ttk.Button(
                 actions, text=self._t("app.close.retry"), command=self.retry_close_saves,
-                                                  state="disabled")
-            self._close_retry_button.pack(side="left")
+                state="disabled", width=22)
+            self._close_retry_button.grid(row=0, column=0, sticky="w")
             self._close_cancel_button = ttk.Button(
-                actions, text=self._t("app.close.cancel"), command=self.cancel_close)
-            self._close_cancel_button.pack(side="right")
+                actions, text=self._t("app.close.cancel"), command=self.cancel_close, width=18)
+            self._close_cancel_button.grid(row=0, column=1, sticky="e")
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.deiconify()
             self._close_window.lift()
@@ -4250,8 +4280,15 @@ class B518LogSolutionApp:
         self._close_language_reason_label.configure(
             text=self._t("app.close.language_disabled") if self._closing_ui else "")
         diagnostic = status.message if status.status == "failed" else ""
-        self._close_error_label.configure(
-            text=self._t("app.close.diagnostic", reason=diagnostic) if diagnostic else "")
+        diagnostic_text = (
+            self._t("app.close.diagnostic", reason=diagnostic) if diagnostic else "")
+        if self._close_diagnostic_text:
+            top = self._close_diagnostic_text.yview()[0]
+            self._close_diagnostic_text.configure(state="normal")
+            self._close_diagnostic_text.delete("1.0", "end")
+            self._close_diagnostic_text.insert("1.0", diagnostic_text)
+            self._close_diagnostic_text.configure(state="disabled")
+            self._close_diagnostic_text.yview_moveto(top)
         if self._close_retry_button:
             self._close_retry_button.configure(text=self._t("app.close.retry"))
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")

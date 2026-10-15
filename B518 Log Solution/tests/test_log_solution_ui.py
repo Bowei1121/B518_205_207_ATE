@@ -157,6 +157,80 @@ def conflict_summary_rows(app):
     return [tuple(line.split("\t")[:3]) for line in lines]
 
 
+def capture_tk_window_evidence(window, key, language, widgets):
+    window.update_idletasks()
+    window.lift()
+    window.update_idletasks()
+
+    def relative_bounds(widget):
+        x = y = 0
+        current = widget
+        while current is not window:
+            x += current.winfo_x()
+            y += current.winfo_y()
+            current = current.master
+        return [x, y, widget.winfo_width(), widget.winfo_height()]
+
+    record = {
+        "title": window.title(),
+        "geometry": window.geometry(),
+        "size": [window.winfo_width(), window.winfo_height()],
+        "controls": {
+            name: relative_bounds(widget)
+            for name, widget in widgets.items()
+        },
+    }
+    evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
+    if not evidence_value:
+        return record
+
+    import Quartz
+    from Foundation import NSURL
+
+    native_windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    native_window = next((item for item in native_windows
+                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+    if native_window is None:
+        raise AssertionError("missing native window: {}".format(key))
+    image = Quartz.CGWindowListCreateImage(
+        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
+        native_window[Quartz.kCGWindowNumber],
+        Quartz.kCGWindowImageBoundsIgnoreFraming)
+    if image is None:
+        raise AssertionError("could not capture native window: {}".format(key))
+    output_dir = Path(evidence_value)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = "{}-{}.png".format(key, language)
+    output = output_dir / filename
+    destination = Quartz.CGImageDestinationCreateWithURL(
+        NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
+    Quartz.CGImageDestinationAddImage(destination, image, None)
+    if not Quartz.CGImageDestinationFinalize(destination):
+        raise AssertionError("could not write screenshot: {}".format(output))
+    native_bounds = native_window[Quartz.kCGWindowBounds]
+    record.update({
+        "native_bounds": {name: float(native_bounds[name])
+                          for name in ("X", "Y", "Width", "Height")},
+        "image_pixels": {"width": Quartz.CGImageGetWidth(image),
+                         "height": Quartz.CGImageGetHeight(image)},
+        "screenshot": filename,
+    })
+    return record
+
+
+def write_tk_bounds_evidence(key, value):
+    evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
+    if not evidence_value:
+        return
+    output = Path(evidence_value) / "window-bounds.json"
+    current = json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
+    current[key] = value
+    output.write_text(json.dumps(current, ensure_ascii=False, indent=2),
+                      encoding="utf-8")
+
+
 class LogSolutionUiTests(unittest.TestCase):
     def select_language_from_menu(self, app, root, language):
         if app.current_language == language:
@@ -598,6 +672,82 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertIsNone(root.grab_current())
         finally:
             root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hm5_long_notice_stays_scrollable_and_fixed_across_languages(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            captures = {}
+            callback_errors = []
+
+            def find_notice():
+                return next((child for child in root.winfo_children()
+                             if isinstance(child, tk.Toplevel)), None)
+
+            def inspect_and_switch_language():
+                notice = find_notice()
+                try:
+                    self.assertIsNotNone(notice)
+                    body = next(widget for widget in notice.winfo_children()
+                                if isinstance(widget, ttk.Frame)).winfo_children()[0]
+                    acknowledge = next(widget for widget in notice.winfo_children()
+                                       if isinstance(widget, ttk.Button))
+                    self.assertIsInstance(body, tk.Text)
+                    self.assertEqual(body.cget("background"), LIGHT_BACKGROUND)
+                    self.assertEqual(int(body.cget("borderwidth")), 1)
+                    self.assertEqual(body.cget("relief"), "solid")
+                    self.assertEqual(body.cget("state"), "disabled")
+                    self.assertIs(root.grab_current(), notice)
+                    self.assertIs(root.focus_get(), acknowledge)
+                    captures["en"] = capture_tk_window_evidence(
+                        notice, "general-notice", "en", {
+                            "body": body, "acknowledge": acknowledge,
+                        })
+                    app.current_language = TRADITIONAL_CHINESE
+                    app._language_refresh_notifications.notify()
+                    root.update()
+                    self.assertTrue(notice.winfo_exists())
+                    self.assertEqual(notice.title(), "語言設定未保存")
+                    self.assertIn("確定", acknowledge.cget("text"))
+                    self.assertIn("diagnostic line 159", body.get("1.0", "end-1c"))
+                    captures["zh-TW"] = capture_tk_window_evidence(
+                        notice, "general-notice", "zh-TW", {
+                            "body": body, "acknowledge": acknowledge,
+                        })
+                    self.assertEqual(captures["en"]["size"],
+                                     captures["zh-TW"]["size"])
+                    self.assertEqual(captures["en"]["controls"],
+                                     captures["zh-TW"]["controls"])
+                    notice.event_generate("<Escape>")
+                except Exception as error:
+                    callback_errors.append(traceback.format_exc())
+                    if notice is not None and notice.winfo_exists():
+                        notice.destroy()
+
+            try:
+                diagnostic = "\n".join(
+                    "diagnostic line {} — source failure detail".format(index)
+                    for index in range(160))
+                root.after(100, inspect_and_switch_language)
+                root.after(15000, lambda: (find_notice().destroy()
+                                          if find_notice() is not None else None))
+                app._show_notice("language.save_failed_title", "language.save_failed",
+                                 {"reason": diagnostic}, diagnostic=diagnostic)
+                self.assertFalse(callback_errors, callback_errors)
+                self.assertIsNone(find_notice())
+                self.assertIsNone(root.grab_current())
+                write_tk_bounds_evidence("general_notice", captures)
+            finally:
+                if root.winfo_exists():
+                    app.hotkey.close()
+                    root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -1298,7 +1448,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.close()
                     pump_until(lambda: app.rounds.close_status().status == "failed")
                     pump_until(lambda: "app journal unavailable" in
-                               app._close_error_label.cget("text"))
+                               app._close_diagnostic_text.get("1.0", "end-1c"))
                     self.assertIn("App 診斷", app._close_status_label.cget("text"))
                     self.assertTrue(root.winfo_exists())
                     self.assertTrue(app._close_window.winfo_exists())
@@ -7417,6 +7567,7 @@ class LogSolutionUiTests(unittest.TestCase):
             retry_blocked = [False]
             retry_entered = threading.Event()
             release_retry = threading.Event()
+            captures = {}
 
             def persistent_fault(descriptor, content):
                 if fault_enabled[0] and b"collection_stopped" in content:
@@ -7464,7 +7615,20 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(str(app.language_button["state"]), "disabled")
                     self.assertIn("Cancel closing to change language",
                                   app._close_language_reason_label.cget("text"))
-                    self.assertIn("persistent close audit fault", app._close_error_label.cget("text"))
+                    self.assertIn("persistent close audit fault",
+                                  app._close_diagnostic_text.get("1.0", "end-1c"))
+                    self.assertEqual(app._close_diagnostic_text.cget("background"),
+                                     LIGHT_BACKGROUND)
+                    self.assertEqual(int(app._close_diagnostic_text.cget("borderwidth")), 1)
+                    self.assertTrue(app._close_diagnostic_text.cget("yscrollcommand"))
+                    captures["en"] = capture_tk_window_evidence(
+                        app._close_window, "close-progress", "en", {
+                            "status": app._close_status_label,
+                            "language_reason": app._close_language_reason_label,
+                            "diagnostic": app._close_diagnostic_text,
+                            "retry": app._close_retry_button,
+                            "cancel": app._close_cancel_button,
+                        })
 
                     failed_generation = rounds.close_status().generation
                     retry_blocked[0] = True
@@ -7491,6 +7655,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("尚未完整保存", app._close_status_label.cget("text"))
                     self.assertIn("暫時無法切換語言",
                                   app._close_language_reason_label.cget("text"))
+                    captures["zh-TW"] = capture_tk_window_evidence(
+                        app._close_window, "close-progress", "zh-TW", {
+                            "status": app._close_status_label,
+                            "language_reason": app._close_language_reason_label,
+                            "diagnostic": app._close_diagnostic_text,
+                            "retry": app._close_retry_button,
+                            "cancel": app._close_cancel_button,
+                        })
+                    self.assertEqual(captures["en"]["size"],
+                                     captures["zh-TW"]["size"])
+                    self.assertEqual(captures["en"]["controls"],
+                                     captures["zh-TW"]["controls"])
+                    write_tk_bounds_evidence("close_progress", captures)
                     ui_tick = []
                     root.after(0, lambda: ui_tick.append(True))
                     root.update()
