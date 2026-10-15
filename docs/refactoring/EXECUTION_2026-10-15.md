@@ -20,13 +20,13 @@
 
 | Issue | Ticket | Branch | Fixed review base | Status |
 |---:|---|---|---|---|
-| #48 | QP1 | pending | pending | queued |
-| #49 | QP2 | pending | pending | blocked by #48 |
+| #48 | QP1 | `codex/qp1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | integrated at `94d98b1`; closed after acceptance |
+| #49 | QP2 | `codex/qp2-20261015` | `94d98b192f5521bb27faa7d61c44fd10d766b737` | in progress |
 | #50 | QP3 | pending | pending | blocked by #49 |
 | #51 | QP4 | pending | pending | blocked by #49 |
 | #52 | QP5 | pending | pending | blocked by #50, #51 |
 | #53 | QP6 | pending | pending | blocked by #52 |
-| #54 | HM1 | pending | pending | queued |
+| #54 | HM1 | `codex/hm1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | implementation and acceptance follow-ups in progress |
 | #55 | HM2 | pending | pending | serialized after #54 |
 | #56 | HM3 | pending | pending | serialized after #55 |
 | #57 | HM4 | pending | pending | serialized after #56 |
