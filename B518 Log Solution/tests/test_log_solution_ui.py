@@ -207,6 +207,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 toolbar_bounds, kvm_bounds = bounds(toolbar), bounds(kvm)
                 self.assertEqual(app.review_count.cget("text"), "0")
                 self.assertEqual(str(app.review_button["state"]), "disabled")
+                review_count_width = app.review_count.winfo_width()
+                app.review_count.configure(text="1234567")
+                root.update_idletasks()
+                review_count_font = tkfont.Font(root=root, font=app.review_count.cget("font"))
+                self.assertEqual(app.review_count.cget("text"), "1234567")
+                self.assertGreaterEqual(
+                    app.review_count.winfo_width(), review_count_font.measure("1234567"))
+                self.assertEqual(app.review_count.winfo_width(), review_count_width)
+                self.assertEqual(bounds(toolbar), toolbar_bounds)
+                self.assertEqual(bounds(kvm), kvm_bounds)
+                app.review_count.configure(text="0")
+                root.update_idletasks()
 
                 alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
                                         acknowledged_at=None, created_at="2026-10-15T12:00:00")
@@ -270,6 +282,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 settings_hint = app._toolbar_hints[0]
                 app.settings_button.focus_force()
+                app.settings_button.event_generate("<FocusIn>")
                 root.update()
                 deadline = time.monotonic() + 1
                 while settings_hint._window is None and time.monotonic() < deadline:

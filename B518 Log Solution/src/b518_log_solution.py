@@ -635,7 +635,7 @@ class B518LogSolutionApp:
         )
         self.review_button.pack(side="left")
         self.review_count = tk.Label(
-            self.review_group, text="0", width=2, anchor="center",
+            self.review_group, text="0", width=8, anchor="center",
             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
             font=("Helvetica", 10, "bold"),
         )
