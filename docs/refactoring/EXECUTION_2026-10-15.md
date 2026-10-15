@@ -27,7 +27,7 @@
 | #52 | QP5 | pending | pending | blocked by #50, #51 |
 | #53 | QP6 | pending | pending | blocked by #52 |
 | #54 | HM1 | `codex/hm1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | integrated at `a429138`; closed after acceptance |
-| #55 | HM2 | pending | pending | serialized after #54 |
+| #55 | HM2 | `codex/hm2-20261015` | `53ccf85` | in progress |
 | #56 | HM3 | pending | pending | serialized after #55 |
 | #57 | HM4 | pending | pending | serialized after #56 |
 | #58 | HM5 | pending | pending | serialized after #57 |
