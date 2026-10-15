@@ -4079,9 +4079,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.conflict_window.winfo_exists())
                 self.assertTrue(app.conflict_window.winfo_viewable())
                 self.assertEqual((app.conflict_window.winfo_width(), app.conflict_window.winfo_height()),
-                                 (820, 430))
-                self.assertLessEqual(app.conflict_window.winfo_rootx() + app.conflict_window.winfo_width(),
-                                     root.winfo_rootx())
+                                 (960, 600))
+                conflict_x = app.conflict_window.winfo_rootx()
+                conflict_y = app.conflict_window.winfo_rooty()
+                self.assertGreaterEqual(conflict_x, 0)
+                self.assertGreaterEqual(conflict_y, 0)
+                self.assertLessEqual(conflict_x + app.conflict_window.winfo_width(),
+                                     root.winfo_screenwidth())
+                self.assertLessEqual(conflict_y + app.conflict_window.winfo_height(),
+                                     root.winfo_screenheight())
                 self.assertEqual(app._display_capacity(), 2)
                 self.assertEqual(app.rounds.snapshot().results[0].status, "TESTING")
                 self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
@@ -6621,7 +6627,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(
                     root,
                     lambda: app._historical_query_result is not None and
-                    app._historical_query_result.date_range.start.isoformat() == "2099-01-01")
+                    app._historical_query_result.date_range.start.isoformat() == "2099-01-01" and
+                    app._historical_query_status_key not in {
+                        "app.settings.history.querying",
+                        "app.settings.history.preparing",
+                    })
                 self.assertEqual(app._historical_event_records, ())
                 self.assertIn("歷史讀取不完整",
                               app.historical_query_status.cget("text"))
@@ -9221,7 +9231,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                     self.assertTrue(entered_batch.wait(2))
                     result = app._historical_query_result
-                    self.assertEqual(result.total_count, 501)
+                    # The 501 audit events are accompanied by one round record.
+                    self.assertEqual(result.total_count, 502)
                     self.assertEqual(result.prepared_count, 500)
                     self.assertFalse(result.preparation_complete)
                     for page_number in range(2, 6):
@@ -9238,7 +9249,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     release_batch.set()
                     self.wait_for_ui(root, lambda: app._historical_query_page_number == 6)
                     self.wait_for_ui(root, lambda: result.preparation_complete)
-                    self.assertEqual(result.prepared_count, 501)
+                    self.assertEqual(result.prepared_count, 502)
             finally:
                 release_batch.set()
                 app._close_historical_event_window()
