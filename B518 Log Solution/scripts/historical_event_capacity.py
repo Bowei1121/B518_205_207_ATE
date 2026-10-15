@@ -8,6 +8,7 @@ import os
 import platform
 import resource
 import statistics
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -407,6 +408,23 @@ def _sample_command(arguments):
         for path in Path(tempfile.gettempdir()).glob("b518-history-query-*.sqlite3")
         if path not in before_snapshots
     }
+    query_content_json_bytes = 0
+    query_content_json_rows = 0
+    for snapshot_path in snapshots_during_query:
+        with sqlite3.connect(str(snapshot_path)) as snapshot_connection:
+            matching_columns = {row[1] for row in snapshot_connection.execute(
+                "PRAGMA table_info(matching_events)")}
+            diagnostic_columns = {row[1] for row in snapshot_connection.execute(
+                "PRAGMA table_info(diagnostic_events)")}
+            for table, columns in (("matching_events", matching_columns),
+                                   ("diagnostic_events", diagnostic_columns)):
+                if "event_json" not in columns:
+                    continue
+                count, byte_count = snapshot_connection.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(length(event_json)), 0) FROM {}".format(
+                        table)).fetchone()
+                query_content_json_rows += count
+                query_content_json_bytes += byte_count
     metrics = result.index_metrics
     sample = {
         "scenario": arguments.scenario,
@@ -429,6 +447,12 @@ def _sample_command(arguments):
         "reused_source_count": metrics.reused_source_count,
         "source_bytes_read_by_reader": metrics.source_bytes_read,
         "source_version_check_count": metrics.source_version_check_count,
+        "query_content_json_rows_copied": query_content_json_rows,
+        "query_content_json_bytes_copied": query_content_json_bytes,
+        "query_content_copy_count": getattr(metrics, "query_content_copy_count", 0),
+        "query_content_copy_bytes": getattr(metrics, "query_content_copy_bytes", 0),
+        "indexed_content_write_count": getattr(metrics, "indexed_content_write_count", 0),
+        "indexed_content_write_bytes": getattr(metrics, "indexed_content_write_bytes", 0),
         "index_bytes_after_query": _index_size(index_path),
         "query_snapshot_bytes": sum(snapshots_during_query.values()),
         "python_peak_tracemalloc_bytes": tracemalloc.get_traced_memory()[1],
