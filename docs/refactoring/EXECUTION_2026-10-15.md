@@ -31,14 +31,16 @@
 | #56 | HM3 | `codex/hm3-20261015` | `0a877eb8dbb97e60fdf7e6309080019f06de69d2` | integrated at `b513c78`; closed after acceptance |
 | #57 | HM4 | `codex/hm4-20261015` | `b513c78981159ac1fbfbd67c797ddfcf93ab5080` | integrated at `62e027f`; fixed-base dual-axis review clean; 107 related non-Tk and 2 true-Tk integration checks passed; closed after acceptance |
 | #58 | HM5 | `codex/hm5-20261015` | `eda24aae7eac0197650ea7273b17870e7bc03e2d` | integrated at `2665485`; fixed-base standards/spec review clean; 90 related integration tests + 2 true-Tk checks passed; closed after acceptance |
-| #59 | HM6 | `codex/hm6-20261015` | `c9b19934462acdda7cddd62012fc4b76b5b99fbc` | integrated at `e7e8d4c`; 18 true-Tk + 57 related + 493 full-suite cases (1 H8 fixture skip) passed; fixed-base Standards clean; Light-system desktop evidence still pending final #47 acceptance |
+| #59 | HM6 | `codex/hm6-20261015` | `c9b19934462acdda7cddd62012fc4b76b5b99fbc` | integrated at `e7e8d4c`, completed desktop acceptance and footer fix at `2e5a0ed`; Light 11 + post-fix 2 and Dark 11 true-Tk checks passed; 38 screenshots; full regression 492 passed / 1 skipped; fixed-base Standards/Spec clean; closed after acceptance |
 
 ## Final integration gate — 2026-10-15
 
-- Final integration HEAD after HM6 merge: `e7e8d4c58cf1f6835d90c56df529a1a7b1b94d0c`.
-- `scripts/run_tests.py` on the integration branch: 493 tests passed, 1 skipped because the optional H8 capacity fixture is not present. The same result passed on the HM6 ticket worktree.
-- Final review fixed point: `3517e75a794d1b9ba45c3bc17633f6b9abbfb405`. Standards review found no documented-standard violations or actionable baseline smells. Spec review found the 42 QP and 45 HMI story matrices and integration behavior covered; actual Light-system Aqua desktop evidence remains outstanding. Current host is Dark and the app-process appearance override was incompatible with this Tk build. Parent #46 can close after this gate; parent #47 and merge back to `B518-Log-Solution` remain pending the Light-system desktop check.
+- Final tested implementation HEAD: `2e5a0ed9442782d6ba6c899285651d4f72d95a1a`. Later finalization commits change documentation only.
+- `scripts/run_tests.py` on the integration branch, Aqua/Python 3.11.7/Tk 8.6: 493 tests total, **492 passed / 1 skipped**, 255.837s. The optional H8 capacity fixture is absent; no extreme capacity scenario was silently enabled. This run includes the final home recovery-action layout fix.
+- User changed the actual desktop to Light and then restored Dark. Light 11 checks, 2 post-fix main/KVM checks, and Dark 11 checks passed; 19 screenshots per appearance. Main controls are identical across both appearances and languages, and KVM coordinates match the pre-footer-fix evidence.
+- Final review fixed point remains `3517e75a794d1b9ba45c3bc17633f6b9abbfb405`. Standards: 0 findings. Spec: 0 outstanding findings; the 42 QP and 45 HMI stories have acceptance evidence. The former Light-system desktop gap is resolved. See `FINAL_REVIEW_2026-10-15.md`.
+- Parent #46 completed after its own requirement acceptance; parent #47 now meets its full acceptance gate. The integration branch is ready to fast-forward `B518-Log-Solution` and synchronize both existing remotes.
 
 ## QP6 integration note
 
-QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The five true-Tk acceptance tests also passed on the integration branch in the interactive Aqua slot (13.552s); the initial non-escalated shell attempt aborted before test setup because it lacked desktop permission. The final integration regression and fixed-base dual-axis review are recorded below; parent #46 is complete, while parent #47 awaits Light-system desktop evidence.
+QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The five true-Tk acceptance tests also passed on the integration branch in the interactive Aqua slot (13.552s); the initial non-escalated shell attempt aborted before test setup because it lacked desktop permission. Both parent specifications now have final regression and requirement acceptance evidence recorded above.

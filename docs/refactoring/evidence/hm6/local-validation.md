@@ -31,4 +31,4 @@ GitHub：#59；父規格：#47；整體 45 故事矩陣及畫面矩陣分別見 
 
 Dark 與 Light 系統桌面下，App 自有內容均使用 `clam` 淺色樣式；測例檢查 Label／Button 深色字、Entry 白底、唯讀文字 `LIGHT_BACKGROUND` 同底細框，以及一般提示、衝突、歷史、設定和主頁的實際畫面。原生標題列依系統外觀顯示。先前程序內覆寫 Aqua 的嘗試與 Tk 不相容，沒有用該嘗試代替本次實際 Light 桌面驗收。系統已由使用者還原為 Dark。
 
-既有配置 Import/Export 仍由 HM2 真 Tk 案例透過 temporary folder 操作；保存、封存、診斷、查詢與 KVM 行為沒有因布局精簡而移除。最終整合分支仍需以固定起始 SHA `3517e75a794d1b9ba45c3bc17633f6b9abbfb405` 完成雙軸審查，才可合併回 `B518-Log-Solution` 並關閉父規格 #47。工廠／實體設備驗收另列，不阻擋開發合併；不重跑無具體風險理由的 216 萬事件數小時容量流程。
+既有配置 Import/Export 仍由 HM2 真 Tk 案例透過 temporary folder 操作；保存、封存、診斷、查詢與 KVM 行為沒有因布局精簡而移除。最終整合版本 `2e5a0ed` 完整回歸493項中492通過、1項選用H8 fixture跳過；固定起始 SHA `3517e75a794d1b9ba45c3bc17633f6b9abbfb405` 的 Standards／Spec 審查均通過，詳見 `FINAL_REVIEW_2026-10-15.md`。工廠／實體設備驗收另列，不阻擋開發合併；不重跑無具體風險理由的 216 萬事件數小時容量流程。
