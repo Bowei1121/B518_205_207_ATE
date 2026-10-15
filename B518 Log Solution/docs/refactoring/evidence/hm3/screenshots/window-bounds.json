@@ -1,9 +1,9 @@
 {
   "conflict": {
     "en": {
-      "geometry": "960x600+220+60",
+      "geometry": "960x600+80+60",
       "native_bounds": {
-        "X": 220.0,
+        "X": 80.0,
         "Y": 60.0,
         "Width": 960.0,
         "Height": 628.0
@@ -169,9 +169,9 @@
       "screenshot": "conflict-review-en.png"
     },
     "zh-TW": {
-      "geometry": "960x600+220+60",
+      "geometry": "960x600+80+60",
       "native_bounds": {
-        "X": 220.0,
+        "X": 80.0,
         "Y": 60.0,
         "Width": 960.0,
         "Height": 628.0
@@ -435,7 +435,7 @@
       "screenshot": "round-alarm-zh-TW.png"
     }
   },
-  "selected_conflict_id": "79ceb395e48d4d018f3760fe0441f59e",
+  "selected_conflict_id": "247303bbd77b45b29572ccb8f9bac098",
   "selected_index": 17,
   "sash_position": 220,
   "detail_top_index": "8.0",

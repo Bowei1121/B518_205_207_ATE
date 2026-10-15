@@ -7733,6 +7733,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 collect(window)
                 return sorted(values)
 
+            def overlaps(first, second):
+                first_left, first_top = first.winfo_rootx(), first.winfo_rooty()
+                first_right = first_left + first.winfo_width()
+                first_bottom = first_top + first.winfo_height()
+                second_left, second_top = second.winfo_rootx(), second.winfo_rooty()
+                second_right = second_left + second.winfo_width()
+                second_bottom = second_top + second.winfo_height()
+                return (first_left < second_right and second_left < first_right and
+                        first_top < second_bottom and second_top < first_bottom)
+
             def capture(window, filename):
                 evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
                 if not evidence_root:
@@ -7805,6 +7815,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 conflict_window.geometry("960x600")
                 alarm_window.geometry("700x340")
                 root.update()
+                for marker in (app.kvm_state_marker, app.kvm_layout_marker,
+                               *app.kvm_result_blocks.values()):
+                    self.assertFalse(overlaps(conflict_window, marker),
+                                     "Conflict review must not cover KVM markers")
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.selection_set(17)
                 app.conflict_list.activate(17)

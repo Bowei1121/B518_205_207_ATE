@@ -1943,9 +1943,27 @@ class B518LogSolutionApp:
             window = tk.Toplevel(self.root)
             self.conflict_window = window
             self.root.update_idletasks()
-            window_x = max(self.root.winfo_rootx() - 820 - 12, 0)
-            window_y = max(self.root.winfo_rooty(), 0)
-            window.geometry("960x600+{}+{}".format(window_x, window_y))
+            window_width, window_height, window_gap = 960, 600, 12
+            root_x = self.root.winfo_rootx()
+            root_y = self.root.winfo_rooty()
+            root_width = self.root.winfo_width()
+            root_height = self.root.winfo_height()
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            left_x = root_x - window_width - window_gap
+            right_x = root_x + root_width + window_gap
+            if left_x >= 0:
+                window_x, window_y = left_x, root_y
+            elif right_x + window_width <= screen_width:
+                window_x, window_y = right_x, root_y
+            else:
+                below_y = root_y + root_height + window_gap
+                above_y = root_y - window_height - window_gap
+                window_x = max(0, min(root_x, screen_width - window_width))
+                window_y = (below_y if below_y + window_height <= screen_height
+                            else max(0, above_y))
+            window.geometry("{}x{}+{}+{}".format(
+                window_width, window_height, window_x, window_y))
             window.minsize(820, 540)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)
