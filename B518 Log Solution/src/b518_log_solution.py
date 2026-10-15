@@ -1996,8 +1996,6 @@ class B518LogSolutionApp:
         self.review_button.configure(state="normal" if conflicts else "disabled")
         if len(getattr(self, "_toolbar_hints", ())) > 3:
             self._toolbar_hints[3].refresh()
-        if len(getattr(self, "_toolbar_hints", ())) > 3:
-            self._toolbar_hints[3].refresh()
 
     def _refresh_conflict_review(self, preserve_reading: bool = False,
                                  update_main: bool = True,
