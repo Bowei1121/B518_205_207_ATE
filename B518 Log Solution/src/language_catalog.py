@@ -16,7 +16,7 @@ SUPPORTED_LANGUAGE_CODES = frozenset(code for code, _name in LANGUAGE_OPTIONS)
 
 LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
     ENGLISH: {
-        "app.title": "B518 Log Solution-V0.1.0",
+        "app.title": "ATE Log Solution-V{version}",
         "term.test_round": "Test Round",
         "term.awaiting_review": "Awaiting Review",
         "term.station_type": "Station Type",
@@ -295,6 +295,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.round_alarm": "Round Alarm",
         "main.round_alarm_pending": "Round Alarm (Awaiting Review)",
         "main.round_alarm_acknowledged": "Round Alarm (Acknowledged)",
+        "main.language": "Select language (current: {current_language})",
         "conflict.title": "Same-Round Result Conflict",
         "conflict.instructions": "Choose whether to keep the original result or accept the captured new candidate for each item. Closing this window does not make a decision.",
         "conflict.position": "Display position: {position}",
@@ -411,7 +412,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "platform.sample_json.unreadable": "Sample JSON source could not be read: {source_filename}",
     },
     TRADITIONAL_CHINESE: {
-        "app.title": "B518 Log Solution-V0.1.0",
+        "app.title": "ATE Log Solution-V{version}",
         "term.test_round": "測試輪次",
         "term.awaiting_review": "待確認",
         "term.station_type": "工站類型",
@@ -690,6 +691,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.round_alarm": "整輪警報",
         "main.round_alarm_pending": "整輪警報（待確認）",
         "main.round_alarm_acknowledged": "整輪警報已確認",
+        "main.language": "選擇語言（目前：{current_language}）",
         "conflict.title": "同輪結果衝突",
         "conflict.instructions": "請逐項選擇保留原結果或採用已捕捉的新候選；關閉視窗不會做出裁決。",
         "conflict.position": "顯示位置：{position}",

@@ -51,7 +51,13 @@ from kvm_display_contract import (
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
 PREFS_PATH = APP_ROOT / "preferences.json"
-ASSETS_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])) / "assets"
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+VERSION_PATH = RESOURCE_ROOT / "VERSION"
+try:
+    APP_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip()
+except OSError:
+    APP_VERSION = "unknown"
+ASSETS_ROOT = RESOURCE_ROOT / "assets"
 COMPANY_LOGO_PATH = ASSETS_ROOT / "foxlink_logo.png"
 LIGHT_BACKGROUND = "#f3f4f6"
 FIELD_BACKGROUND = "#ffffff"
@@ -74,6 +80,93 @@ STATUS_COLOURS = {
 }
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 20
+TOOLBAR_ICON_ROWS = {
+    "settings": (
+        "...##...##...", "..###...###..", "..###.##.###..", ".############.",
+        "##.########.##", "##.##....##.##", "...##....##...", "...##....##...",
+        "##.##....##.##", "##.########.##", ".############.", "..###.##.###..",
+        "..###...###..", "...##...##...",
+    ),
+    "review": (
+        ".......##.......", "......####......", ".....######.....", "....########....",
+        "...##########...", "..############..", ".##############.", "################",
+        "################", ".......##.......", ".......##.......", ".......##.......",
+        ".......##.......", ".......##.......", ".......##.......", ".......##.......",
+    ),
+    "alarm": (
+        ".......####.......", "......######......", ".....########.....", "....##########....",
+        "...############...", "...############...", "..##############..", "..##############..",
+        "..##############..", "..##############..", "...############...", "...############...",
+        "....##########....", ".....########......", "......######.......", "....############..",
+        "...#############..", "..##############...", ".################..", "##################",
+    ),
+    "language": (
+        ".....########.....", "...############...", "..##############..", ".################.",
+        "##################", "####...##...######", "###....##....#####", "##.....##.....####",
+        "##.....##.....####", "##.....##.....####", "###....##....#####", "####...##...######",
+        "##################", ".################.", "..##############..", "...############...",
+        ".....########.....",
+    ),
+}
+
+
+def toolbar_icon(master: tk.Misc, name: str) -> tk.PhotoImage:
+    """Build stable monochrome toolbar artwork without platform emoji fonts."""
+    rows = TOOLBAR_ICON_ROWS[name]
+    width = max(map(len, rows))
+    image = tk.PhotoImage(master=master, width=width, height=len(rows))
+    for y, row in enumerate(rows):
+        for x, pixel in enumerate(row):
+            if pixel == "#":
+                image.put(TEXT_COLOUR, (x, y))
+    return image
+
+
+class _ToolbarHint:
+    """Show the localized icon action on hover or keyboard focus."""
+
+    def __init__(self, widget: tk.Widget, text_provider):
+        self.widget = widget
+        self.text_provider = text_provider
+        self.after_id = None
+        self.window = None
+        for sequence in ("<Enter>", "<FocusIn>"):
+            widget.bind(sequence, self._schedule, add="+")
+        for sequence in ("<Leave>", "<FocusOut>"):
+            widget.bind(sequence, self._hide, add="+")
+
+    def _schedule(self, _event=None):
+        self._hide()
+        self.after_id = self.widget.after(450, self._show)
+
+    def _show(self):
+        self.after_id = None
+        try:
+            if not self.widget.winfo_exists() or not self.widget.winfo_viewable():
+                return
+            self.window = tk.Toplevel(self.widget)
+            self.window.wm_overrideredirect(True)
+            self.window.wm_geometry("+{}+{}".format(
+                self.widget.winfo_rootx(), self.widget.winfo_rooty() + self.widget.winfo_height()))
+            tk.Label(self.window, text=self.text_provider(), background="#fffbe6",
+                     foreground=TEXT_COLOUR, relief="solid", borderwidth=1,
+                     padx=5, pady=2).pack()
+        except tk.TclError:
+            self._hide()
+
+    def _hide(self, _event=None):
+        if self.after_id is not None:
+            try:
+                self.widget.after_cancel(self.after_id)
+            except tk.TclError:
+                pass
+            self.after_id = None
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except tk.TclError:
+                pass
+            self.window = None
 
 
 def visible_detail_rows(capacity: int, screen_height: int) -> int:
@@ -228,7 +321,6 @@ class B518LogSolutionApp:
         self._close_after_id = None
         self.root.bind("<Destroy>", self._on_root_destroy, add="+")
         self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
-        self.root.title("B518 Log Solution-V0.1.0")
         self.root.resizable(False, False)
         self.events: queue.Queue[RoundEvent] = queue.Queue()
         self.hotkey_events: queue.Queue[bool] = queue.Queue()
@@ -472,6 +564,11 @@ class B518LogSolutionApp:
                        foreground=[("disabled", "#777777")])
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
+        self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
+                             foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0)
+        self.style.map("Toolbar.TButton", background=[("active", "#e5e7eb"),
+                                                        ("pressed", "#d1d5db"),
+                                                        ("disabled", LIGHT_BACKGROUND)])
         self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
                                                     ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
@@ -491,27 +588,68 @@ class B518LogSolutionApp:
     def _build(self) -> None:
         body = tk.Frame(self.root, background=LIGHT_BACKGROUND, padx=8, pady=8)
         body.pack(fill="both", expand=True)
-        header = tk.Frame(body, background=LIGHT_BACKGROUND, height=34)
+        header = tk.Frame(body, background=LIGHT_BACKGROUND, height=35)
         header.pack(fill="x")
         header.pack_propagate(False)
-        ttk.Button(header, text="設定", command=self.open_settings, style="Main.TButton", width=4).pack(side="left")
-        self.settings_button = header.winfo_children()[-1]
+        self.toolbar_icons = {name: toolbar_icon(self.root, name) for name in TOOLBAR_ICON_ROWS}
+        self._toolbar_hints = []
+        self.settings_button = ttk.Button(
+            header, image=self.toolbar_icons["settings"], command=self.open_settings,
+            style="Toolbar.TButton", takefocus=True,
+        )
+        self.settings_button.pack(side="left", padx=(0, 3))
+        self._toolbar_hints.append(_ToolbarHint(self.settings_button,
+                                                 lambda: self._t("main.settings")))
         self._build_company_identity(header)
-        self.station_title = tk.Label(header, background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-                                      font=("Helvetica", MAIN_FONT_SIZE, "bold"))
-        self.station_title.pack(side="left", expand=True)
-        self.monitor_state = tk.Label(header, background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
-                                      font=("Helvetica", MAIN_FONT_SIZE, "bold"))
-        self.review_button = ttk.Button(header, text="待確認", command=self._open_conflict_review,
-                                        state="disabled")
-        self.review_button.pack(side="right", padx=(0, 10))
-        self.round_alarm_button = ttk.Button(header, text="整輪警報", command=self._open_round_alarm,
-                                             state="disabled")
-        self.round_alarm_button.pack(side="right", padx=(0, 10))
-        self.monitor_state.pack(side="right")
+        tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
+        self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
+        self.language_button = tk.Menubutton(
+            header, image=self.toolbar_icons["language"],
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            activebackground="#e5e7eb", relief="flat", borderwidth=0,
+            takefocus=True,
+        )
+        self.language_menu = tk.Menu(self.language_button, tearoff=False)
+        for language, native_name in LANGUAGE_OPTIONS:
+            self.language_menu.add_radiobutton(
+                label=native_name, variable=self.language_choice, value=language,
+                command=lambda selected=language: self._select_language(selected),
+            )
+        self.language_button.configure(menu=self.language_menu)
+        self.language_button.pack(side="right", padx=(2, 0))
+        for key in ("<space>", "<Return>", "<Down>"):
+            self.language_button.bind(key, self._post_language_menu)
+        self.language_button.bind("<Escape>", self._cancel_language_menu)
+        self._toolbar_hints.append(_ToolbarHint(
+            self.language_button, lambda: self._t(
+                "main.language", current_language=language_name(self.current_language))))
+
+        self.round_alarm_button = ttk.Button(
+            header, image=self.toolbar_icons["alarm"], command=self._open_round_alarm,
+            style="Toolbar.TButton", state="disabled", takefocus=True,
+        )
+        self.round_alarm_button.pack(side="right")
+        self._toolbar_hints.append(_ToolbarHint(
+            self.round_alarm_button, lambda: self._t(self._round_alarm_hint_id())))
+        self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
+        self.review_group.pack(side="right", padx=(2, 2))
+        self.review_button = ttk.Button(
+            self.review_group, image=self.toolbar_icons["review"], command=self._open_conflict_review,
+            style="Toolbar.TButton", state="disabled", takefocus=True,
+        )
+        self.review_button.pack(side="left")
+        self.review_count = tk.Label(
+            self.review_group, text="0", width=2, anchor="center",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            font=("Helvetica", 10, "bold"),
+        )
+        self.review_count.pack(side="left", padx=(1, 0))
+        self._toolbar_hints.append(_ToolbarHint(
+            self.review_button, lambda: self._t("main.review_count",
+                                                count=self._pending_conflict_count())))
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
-        selection.pack(fill="x", pady=(4, 3))
+        selection.pack(fill="x", pady=(3, 3))
         selection.columnconfigure(1, weight=1)
         self.project_label = ttk.Label(selection, text="專案")
         self.project_label.grid(row=0, column=0, sticky="w")
@@ -525,25 +663,6 @@ class B518LogSolutionApp:
         self.machine_choice.grid(row=1, column=1, sticky="ew", padx=(5, 12))
         self.machine_choice.bind("<<ComboboxSelected>>", self._profile_changed)
         self._refresh_machine_choices()
-        self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
-        self.language_button = tk.Menubutton(
-            selection, text="English ▾",
-            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
-            activebackground="#e5e7eb", relief="raised", borderwidth=1,
-            font=("Helvetica", 10), takefocus=True,
-        )
-        self.language_menu = tk.Menu(self.language_button, tearoff=False)
-        for language, native_name in LANGUAGE_OPTIONS:
-            self.language_menu.add_radiobutton(
-                label=native_name, variable=self.language_choice, value=language,
-                command=lambda selected=language: self._select_language(selected),
-            )
-        self.language_button.configure(menu=self.language_menu)
-        self.language_button.grid(row=0, column=2, rowspan=2, sticky="ne", padx=(3, 0))
-        for key in ("<space>", "<Return>", "<Down>"):
-            self.language_button.bind(key, self._post_language_menu)
-        self.language_button.bind("<Escape>", self._cancel_language_menu)
-
         self.kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=KVM_BAND_HEIGHT)
         self.kvm_results.pack(fill="x", pady=(2, 4))
         self.kvm_results.pack_propagate(False)
@@ -617,7 +736,10 @@ class B518LogSolutionApp:
         controls.pack(fill="x", side="bottom")
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
-        self.start_button.pack(fill="x", pady=(0, 4))
+        self.start_button.pack(fill="x", pady=(0, 2))
+        self.monitor_state = ttk.Label(controls, text="", anchor="center",
+                                       font=("Helvetica", MAIN_FONT_SIZE, "bold"))
+        self.monitor_state.pack(fill="x", pady=(0, 2))
         save_controls = ttk.Frame(controls)
         save_controls.pack(fill="x")
         self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
@@ -683,14 +805,11 @@ class B518LogSolutionApp:
         """Update existing main-page widgets without rebuilding monitoring state."""
         if not hasattr(self, "language_button"):
             return
-        self.root.title(self._t("app.title"))
-        self.language_button.configure(text="{} ▾".format(language_name(self.current_language)))
         self.language_button.configure(
             relief="sunken" if self._language_save_error else "raised")
         self._refresh_language_entry()
         self.project_label.configure(text=self._t("main.project"))
         self.machine_label.configure(text=self._t("main.machine_type"))
-        self.settings_button.configure(text=self._t("main.settings"))
         self.kvm_result_title.configure(text=self._t("main.kvm_result"))
         self.kvm_legend_title.configure(text=self._t("main.kvm_legend"))
         for message_id, widget in self.main_headings.items():
@@ -868,15 +987,11 @@ class B518LogSolutionApp:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
-        self.review_button.configure(
-            text=self._t("main.review_count", count=len(conflicts)),
-            state="normal" if conflicts else "disabled",
-        )
+        self.review_count.configure(text=str(len(conflicts)))
+        self.review_button.configure(state="normal" if conflicts else "disabled")
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
         self.round_alarm_button.configure(
-            text=self._t("main.round_alarm_pending" if alarm_pending else
-                         "main.round_alarm_acknowledged" if alarm else "main.round_alarm"),
             state="normal" if alarm_pending and snapshot.round_alarm_ready else "disabled",
         )
         if alarm_pending and conflicts:
@@ -896,8 +1011,25 @@ class B518LogSolutionApp:
             self._set_main_monitor_state("monitor.idle")
 
     def _render_station_title(self) -> None:
-        if hasattr(self, "station_title"):
-            self.station_title.configure(text=self._t("main.station_title", machine=self.station.get().upper()))
+        self._render_main_title()
+
+    def _render_main_title(self) -> None:
+        if hasattr(self, "project") and hasattr(self, "station"):
+            self.root.title("{} {} {}".format(
+                self.project.get(), self.station.get().upper(),
+                self._t("app.title", version=APP_VERSION)))
+
+    def _pending_conflict_count(self) -> int:
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        return len(snapshot.pending_conflicts) if snapshot else 0
+
+    def _round_alarm_hint_id(self) -> str:
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        alarm = snapshot.round_alarm if snapshot else None
+        if alarm is None:
+            return "main.round_alarm"
+        return ("main.round_alarm_pending" if not alarm.acknowledged_at
+                else "main.round_alarm_acknowledged")
 
     def _render_save_status(self) -> None:
         if hasattr(self, "save_status"):
@@ -1191,17 +1323,18 @@ class B518LogSolutionApp:
                               {"reason": status.error})
 
     def _build_company_identity(self, parent: tk.Widget) -> None:
-        """Show the supplied company asset when deployed, with a readable fallback."""
+        """Reserve one fixed logo slot; missing or unreadable artwork stays blank."""
         if COMPANY_LOGO_PATH.is_file():
             try:
                 self.company_logo = tk.PhotoImage(file=str(COMPANY_LOGO_PATH))
             except tk.TclError:
                 self.company_logo = None
+        logo_slot = tk.Frame(parent, background=LIGHT_BACKGROUND, width=137, height=35)
+        logo_slot.pack(side="left")
+        logo_slot.pack_propagate(False)
         if self.company_logo:
-            tk.Label(parent, image=self.company_logo, background=LIGHT_BACKGROUND).pack(side="left", padx=(8, 4))
-        else:
-            tk.Label(parent, text="B518 LOG", background=LIGHT_BACKGROUND, foreground=MUTED_TEXT_COLOUR,
-                     font=("Helvetica", 10, "bold")).pack(side="left", padx=(8, 4))
+            tk.Label(logo_slot, image=self.company_logo, background=LIGHT_BACKGROUND,
+                     borderwidth=0).pack(fill="both", expand=True)
 
     @staticmethod
     def _build_kvm_locator(parent: tk.Widget, x: int, y: int, mirrored: bool) -> None:
@@ -1857,10 +1990,8 @@ class B518LogSolutionApp:
             return
         snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
         conflicts = snapshot.pending_conflicts if snapshot else ()
-        self.review_button.configure(
-            text=self._t("main.review_count", count=len(conflicts)),
-            state="normal" if conflicts else "disabled",
-        )
+        self.review_count.configure(text=str(len(conflicts)))
+        self.review_button.configure(state="normal" if conflicts else "disabled")
 
     def _refresh_conflict_review(self, preserve_reading: bool = False,
                                  update_main: bool = True,
@@ -2233,13 +2364,10 @@ class B518LogSolutionApp:
         snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
         alarm = snapshot.round_alarm if snapshot else None
         if alarm is None:
-            self.round_alarm_button.configure(text=self._t("main.round_alarm"),
-                                              state="disabled")
+            self.round_alarm_button.configure(state="disabled")
             return
         pending = not alarm.acknowledged_at
         self.round_alarm_button.configure(
-            text=self._t("main.round_alarm_pending" if pending
-                         else "main.round_alarm_acknowledged"),
             state="normal" if pending and snapshot.round_alarm_ready else "disabled",
         )
 
