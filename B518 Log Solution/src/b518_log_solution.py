@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import inspect
 import json
 import sys
 import subprocess
@@ -47,6 +48,22 @@ from kvm_display_contract import (
     STATE_MARKER_ORIGIN, state_for_round_snapshot,
     LAYOUT_MARKER_ORIGIN, LAYOUT_MARKER_SIZE, LAYOUT_MARKER_PATTERNS,
 )
+
+
+def _invoke_historical_query_with_supported_options(sessions, app_path, date_range, **kwargs):
+    query_function = query_historical_events
+    signature_target = getattr(query_function, "side_effect", None) or query_function
+    try:
+        parameters = inspect.signature(signature_target).parameters.values()
+        supports_initial = (any(parameter.name == "publish_initial"
+                                 for parameter in parameters) or
+                            any(parameter.kind == parameter.VAR_KEYWORD
+                                for parameter in parameters))
+    except (TypeError, ValueError):
+        supports_initial = False
+    if not supports_initial:
+        kwargs.pop("publish_initial", None)
+    return query_function(sessions, app_path, date_range, **kwargs)
 
 
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
@@ -318,7 +335,8 @@ class B518LogSolutionApp:
         self._historical_query_service = HistoricalEventQueryService(
             self.session_root, getattr(self.app_events, "path", None),
             query_function=lambda sessions, app_path, date_range, **kwargs:
-            query_historical_events(sessions, app_path, date_range, **kwargs),
+            _invoke_historical_query_with_supported_options(
+                sessions, app_path, date_range, **kwargs),
             index_path=self.session_root.parent / "historical-event-query-index.sqlite3")
         self._historical_detail_service = HistoricalEventDetailService()
         self._closing_ui = False
@@ -3423,6 +3441,27 @@ class B518LogSolutionApp:
                 generation != self._historical_query_generation or
                 self.historical_event_window is not window or not window.winfo_exists()):
             return
+        initial = self._historical_query_service.take_initial_result(generation)
+        if initial is not None and initial.succeeded:
+            previous_result = self._historical_query_result
+            self._cancel_historical_event_detail()
+            self._cancel_historical_event_page()
+            self._historical_query_result = initial.result
+            self._historical_query_page_number = 1
+            self._historical_event_records = initial.result.events
+            self._historical_query_diagnostics = initial.result.diagnostics
+            self._historical_showing_diagnostics = False
+            self._historical_diagnostic_page_number = 1
+            self._historical_event_selected_key = None
+            self._historical_event_selected_detail = None
+            self._historical_event_detail_status_key = None
+            self._historical_query_status_key = "app.settings.history.preparing"
+            self._historical_query_status_parameters = {}
+            if previous_result is not None and previous_result is not initial.result:
+                previous_result.close()
+            self._refresh_historical_event_window()
+            self._schedule_historical_query_poll(window, view_generation, generation)
+            return
         completion = self._historical_query_service.take_result(generation)
         if completion is None and self._historical_query_service.is_pending(generation):
             self._schedule_historical_query_poll(window, view_generation, generation)
@@ -3431,13 +3470,25 @@ class B518LogSolutionApp:
         self._historical_query_inflight_range = None
         self.historical_event_cancel_button.configure(state="disabled")
         if completion is not None and completion.succeeded:
+            if completion.result is self._historical_query_result:
+                preparation_error = completion.result.preparation_error
+                if preparation_error is not None:
+                    self._historical_query_status_key = (
+                        "app.settings.history.preparation_failed")
+                    self._historical_query_status_parameters = {
+                        "reason": str(preparation_error)}
+                else:
+                    self._historical_query_status_key = ""
+                    self._historical_query_status_parameters = {}
+                self._refresh_historical_query_status()
+                return
             previous_result = self._historical_query_result
             self._cancel_historical_event_detail()
             self._cancel_historical_event_page()
             self._historical_query_result = completion.result
             self._historical_query_page_number = 1
-            # The query worker materializes only the bounded first-page summary;
-            # never open the snapshot database from Tk while publishing results.
+            # The query worker publishes the prepared first batch; Tk never reads
+            # the snapshot database while replacing the visible result.
             self._historical_event_records = completion.result.events
             self._historical_query_diagnostics = completion.result.diagnostics
             self._historical_showing_diagnostics = False
@@ -3451,6 +3502,13 @@ class B518LogSolutionApp:
                 previous_result.close()
             self._refresh_historical_event_window()
         elif completion is not None:
+            if completion.result is None and self._historical_query_result is not None and \
+                    self._historical_query_result.date_range == completion.date_range:
+                self._historical_query_status_key = "app.settings.history.query_failed"
+                self._historical_query_status_parameters = {
+                    "reason": str(completion.error)}
+                self._refresh_historical_query_status()
+                return
             self._historical_query_status_key = "app.settings.history.query_failed"
             self._historical_query_status_parameters = {
                 "reason": str(completion.error)}

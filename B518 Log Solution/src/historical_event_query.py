@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import sqlite3
@@ -24,6 +25,7 @@ from historical_event_display import (HistoricalEvent, HistoricalEventSource,
 
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
+HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE = 500
 _DIAGNOSTIC_SAMPLE_LIMIT = 20
 _HISTORY_INDEX_VERSION = 5
 _HISTORY_INDEX_APPLICATION_ID = 0x42353138
@@ -163,6 +165,10 @@ class HistoricalEventQueryPage:
     events: Tuple[HistoricalEventSummary, ...]
 
 
+class HistoricalEventPageNotReady(RuntimeError):
+    """Raised when a requested page has not been persisted by preparation yet."""
+
+
 class HistoricalEventQueryResult:
     """A fixed, temporary query snapshot with bounded pages and lazy detail reads."""
 
@@ -173,13 +179,16 @@ class HistoricalEventQueryResult:
                  index_metrics: Optional[HistoricalEventIndexMetrics] = None,
                  index_degraded: bool = False, index_issue: str = "",
                  diagnostic_count: Optional[int] = None,
-                 index_path: Optional[Path] = None, query_id: Optional[str] = None):
+                 index_path: Optional[Path] = None, query_id: Optional[str] = None,
+                 preparation_complete: bool = True,
+                 content_path: Optional[Path] = None):
         self.date_range = date_range
         self.total_count = total_count
         self.unclassified_count = unclassified_count
         self.source_issue_count = source_issue_count
         self.diagnostics = diagnostics
         self._store_path = Path(store_path)
+        self._content_path = Path(content_path) if content_path is not None else None
         self.page_size = page_size
         self.index_metrics = index_metrics or HistoricalEventIndexMetrics()
         self.index_degraded = index_degraded
@@ -189,19 +198,47 @@ class HistoricalEventQueryResult:
         self._index_path = Path(index_path) if index_path is not None else None
         self._query_id = query_id
         self._first_page = ()
+        self._initial_events = ()
+        self.prepared_count = total_count if preparation_complete else 0
+        self.preparation_complete = preparation_complete
+        self.preparation_error = None
+        self.total_count_ready_seconds = None
+        self.initial_batch_ready_seconds = None
+        self.preparation_complete_seconds = None
+        self._preparation_lock = threading.Lock()
+        self._prepared_condition = threading.Condition(self._preparation_lock)
         self._closed = False
         if self._index_path is not None and self._query_id is not None:
             self._finalizer = weakref.finalize(
                 self, _release_indexed_snapshot, self._store_path,
                 self._index_path, self._query_id)
         else:
-            self._finalizer = weakref.finalize(self, _remove_snapshot, self._store_path)
+            self._finalizer = weakref.finalize(
+                self, _remove_query_files, self._store_path, self._content_path)
 
     @property
     def events(self) -> Tuple[HistoricalEventSummary, ...]:
         """Compatibility view of the first bounded page."""
         self._ensure_open()
         return self._first_page
+
+    @property
+    def initial_events(self) -> Tuple[HistoricalEventSummary, ...]:
+        """The atomically prepared newest events, capped at five standard pages."""
+        self._ensure_open()
+        return self._initial_events
+
+    def _set_initial_events(self, events: Tuple[HistoricalEventSummary, ...]) -> None:
+        self._initial_events = events
+        self._first_page = events[:self.page_size]
+        self.prepared_count = self._persisted_prepared_count()
+
+    def _finish_preparation(self, error: Optional[Exception] = None) -> None:
+        with self._prepared_condition:
+            self.preparation_error = error
+            self.preparation_complete = True
+            self.prepared_count = self._persisted_prepared_count()
+            self._prepared_condition.notify_all()
 
     @property
     def page_count(self) -> int:
@@ -219,33 +256,90 @@ class HistoricalEventQueryResult:
         if not self.page_count and page_number != 1:
             raise IndexError("an empty query only has its empty first page")
         offset = (page_number - 1) * self.page_size
+        if offset < len(self._initial_events):
+            summaries = self._initial_events[offset:offset + self.page_size]
+            return HistoricalEventQueryPage(
+                self.date_range, page_number, self.page_size,
+                self.total_count, summaries)
+        connection = self._connect_snapshot_readonly()
+        try:
+            rows = connection.execute(
+                "SELECT summary_json FROM prepared_events ORDER BY ordinal "
+                "LIMIT ? OFFSET ?", (self.page_size, offset)).fetchall()
+        finally:
+            connection.close()
+        expected = min(self.page_size, max(0, self.total_count - offset))
+        if len(rows) < expected:
+            raise HistoricalEventPageNotReady(
+                "page {} is still being prepared".format(page_number))
+        summaries = tuple(_summary_from_json(row[0]) for row in rows)
+        page = HistoricalEventQueryPage(
+            self.date_range, page_number, self.page_size,
+            self.total_count, summaries)
+        return page
+
+    def _read_unprepared_summaries(self, offset: int, limit: int):
         connection = self._connect_snapshot_readonly()
         try:
             if self._index_path is None:
                 rows = connection.execute(
-                    "SELECT summary_json FROM matching_events "
-                    "ORDER BY local_wall_order DESC, aware_rank ASC, epoch DESC, "
-                    "stable_identity ASC, sequence_number ASC, event_key ASC, "
-                    "source_order ASC LIMIT ? OFFSET ?",
-                    (self.page_size, offset),
-                ).fetchall()
+                    "SELECT matching.event_key, matching.local_wall_order, matching.aware_rank, "
+                    "matching.epoch, matching.stable_identity, matching.sequence_number, "
+                    "matching.source_order, content.summary_json "
+                    "FROM matching_events AS matching JOIN fallback_content.contents AS content "
+                    "ON content.content_id=matching.content_id "
+                    "ORDER BY matching.local_wall_order DESC, matching.aware_rank ASC, "
+                    "matching.epoch DESC, matching.stable_identity ASC, "
+                    "matching.sequence_number ASC, matching.event_key ASC, "
+                    "matching.source_order ASC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
             else:
                 self._attach_content_index(connection)
                 rows = connection.execute(
-                    "SELECT content.summary_json FROM matching_events AS matching "
-                    "JOIN history_index.history_contents AS content "
+                    "SELECT matching.event_key, matching.local_wall_order, matching.aware_rank, "
+                    "matching.epoch, matching.stable_identity, matching.sequence_number, "
+                    "matching.source_order, content.summary_json "
+                    "FROM matching_events AS matching JOIN history_index.history_contents AS content "
                     "ON content.content_id=matching.content_id "
-                    "ORDER BY local_wall_order DESC, aware_rank ASC, epoch DESC, "
-                    "stable_identity ASC, sequence_number ASC, event_key ASC, "
-                    "source_order ASC LIMIT ? OFFSET ?",
-                    (self.page_size, offset),
-                ).fetchall()
+                    "ORDER BY matching.local_wall_order DESC, matching.aware_rank ASC, "
+                    "matching.epoch DESC, matching.stable_identity ASC, "
+                    "matching.sequence_number ASC, matching.event_key ASC, "
+                    "matching.source_order ASC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            return tuple((offset + index,) + tuple(row)
+                         for index, row in enumerate(rows))
         finally:
             connection.close()
-        summaries = tuple(_summary_from_json(row[0]) for row in rows)
-        return HistoricalEventQueryPage(
-            self.date_range, page_number, self.page_size,
-            self.total_count, summaries)
+
+    def _persist_prepared_rows(self, rows) -> None:
+        if not rows:
+            return
+        connection = sqlite3.connect(str(self._store_path))
+        try:
+            connection.executemany(
+                "INSERT OR IGNORE INTO prepared_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows)
+            connection.commit()
+        finally:
+            connection.close()
+        with self._prepared_condition:
+            self.prepared_count = self._persisted_prepared_count()
+            self._prepared_condition.notify_all()
+
+    def _persisted_prepared_count(self) -> int:
+        connection = self._connect_snapshot_readonly()
+        try:
+            return connection.execute("SELECT COUNT(*) FROM prepared_events").fetchone()[0]
+        finally:
+            connection.close()
+
+    def wait_for_page(self, page_number: int,
+                      cancellation_event: threading.Event) -> bool:
+        target = min(self.total_count, page_number * self.page_size)
+        with self._prepared_condition:
+            while self.prepared_count < target and not self.preparation_complete:
+                if cancellation_event.is_set() or self._closed:
+                    return False
+                self._prepared_condition.wait(timeout=0.1)
+            return self.prepared_count >= target
 
     def get_detail(self, event_key: str) -> Optional[HistoricalEvent]:
         """Load the original event only for the selected identity."""
@@ -256,7 +350,9 @@ class HistoricalEventQueryResult:
         try:
             if self._index_path is None:
                 row = connection.execute(
-                    "SELECT event_json FROM matching_events WHERE event_key = ?",
+                    "SELECT content.event_json FROM matching_events AS matching "
+                    "JOIN fallback_content.contents AS content "
+                    "ON content.content_id=matching.content_id WHERE matching.event_key = ?",
                     (event_key,),
                 ).fetchone()
             else:
@@ -271,7 +367,7 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        # Non-indexed queries keep the record in their owned snapshot; indexed
+        # Fallback queries keep the record in their owned content store; indexed
         # queries resolve its immutable content_id in the shared index, retained
         # by this query's reference until close/recovery. Never reopen the source
         # path here: it may now identify a different event version.
@@ -289,7 +385,10 @@ class HistoricalEventQueryResult:
         try:
             if self._index_path is None:
                 rows = connection.execute(
-                    "SELECT summary_json FROM diagnostic_events ORDER BY diagnostic_ordinal "
+                    "SELECT content.summary_json FROM diagnostic_events AS diagnostic "
+                    "JOIN fallback_content.contents AS content "
+                    "ON content.content_id=diagnostic.content_id "
+                    "ORDER BY diagnostic_ordinal "
                     "LIMIT ? OFFSET ?", (self.page_size, (page_number - 1) * self.page_size)
                 ).fetchall()
             else:
@@ -316,8 +415,11 @@ class HistoricalEventQueryResult:
         try:
             if self._index_path is None:
                 row = connection.execute(
-                    "SELECT event_json FROM diagnostic_events WHERE event_key=? "
-                    "ORDER BY diagnostic_ordinal LIMIT 1", (event_key,)).fetchone()
+                    "SELECT content.event_json FROM diagnostic_events AS diagnostic "
+                    "JOIN fallback_content.contents AS content "
+                    "ON content.content_id=diagnostic.content_id "
+                    "WHERE diagnostic.event_key=? ORDER BY diagnostic_ordinal LIMIT 1",
+                    (event_key,)).fetchone()
             else:
                 self._attach_content_index(connection)
                 row = connection.execute(
@@ -330,7 +432,7 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        # Non-indexed queries keep diagnostics in their owned snapshot; indexed
+        # Fallback queries keep diagnostics in their owned content store; indexed
         # queries read shared immutable content retained by this query's lease.
         return _event_from_json(row[0])
 
@@ -349,7 +451,11 @@ class HistoricalEventQueryResult:
     def _connect_snapshot_readonly(self) -> sqlite3.Connection:
         """Never recreate a snapshot if close races this read's open."""
         self._ensure_open()
-        return sqlite3.connect(self._store_path.as_uri() + "?mode=ro", uri=True)
+        connection = sqlite3.connect(self._store_path.as_uri() + "?mode=ro", uri=True)
+        if self._index_path is None:
+            connection.execute("ATTACH DATABASE ? AS fallback_content",
+                               (self._content_path.as_uri() + "?mode=ro",))
+        return connection
 
     def _attach_content_index(self, connection: sqlite3.Connection) -> None:
         if self._index_path is None:
@@ -367,6 +473,19 @@ def _remove_snapshot(path: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _remove_query_files(snapshot_path: Path, content_path: Optional[Path]) -> None:
+    _remove_snapshot(snapshot_path)
+    if content_path is not None:
+        _remove_snapshot(content_path)
+
+
+def _fallback_content_id(source_path: str, source_ordinal: int,
+                         signature: Optional[Tuple[int, int, int, int, int]],
+                         event_key: str) -> str:
+    payload = repr((source_path, source_ordinal, signature, event_key)).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _reclaim_unreferenced_contents(connection: sqlite3.Connection) -> None:
@@ -587,6 +706,10 @@ class HistoricalEventDetailService:
                 self._active = request
             try:
                 if request.page_number is not None:
+                    if not request.result.wait_for_page(
+                            request.page_number, request.cancellation_event):
+                        raise HistoricalEventPageNotReady(
+                            "page {} is still being prepared".format(request.page_number))
                     page = request.result.get_page(request.page_number)
                     completion = HistoricalEventDetailCompletion(
                         request.request_id, None, True, page=page)
@@ -657,6 +780,8 @@ class HistoricalEventQueryService:
         self._pending: Optional[_HistoricalEventQueryRequest] = None
         self._worker: Optional[threading.Thread] = None
         self._completed: Dict[int, HistoricalEventQueryCompletion] = {}
+        self._initial_results: Dict[int, HistoricalEventQueryCompletion] = {}
+        self._initial_taken = set()
         self._closed = False
 
     def submit(self, date_range: HistoricalEventDateRange) -> int:
@@ -673,9 +798,15 @@ class HistoricalEventQueryService:
                 self._pending.cancellation_event.set()
             self._pending = request
             self._latest_generation = request.generation
-            for completion in self._completed.values():
-                _discard_query_completion(completion)
+            for generation, completion in self._completed.items():
+                if generation not in self._initial_taken:
+                    _discard_query_completion(completion)
+                else:
+                    self._initial_taken.discard(generation)
             self._completed.clear()
+            for completion in self._initial_results.values():
+                _discard_query_completion(completion)
+            self._initial_results.clear()
             if self._worker is None:
                 self._worker = threading.Thread(
                     target=self._run, name="HistoricalEventDateQuery", daemon=True)
@@ -689,14 +820,21 @@ class HistoricalEventQueryService:
             if self._closed or self._latest_generation != generation:
                 return False
             self._latest_generation = None
-            if self._active is not None and self._active.generation == generation:
+            active_request = (self._active is not None and
+                              self._active.generation == generation)
+            if active_request:
                 self._active.cancellation_event.set()
             if self._pending is not None and self._pending.generation == generation:
                 self._pending.cancellation_event.set()
                 self._pending = None
             completion = self._completed.pop(generation, None)
-            if completion is not None:
+            if completion is not None and generation not in self._initial_taken:
                 _discard_query_completion(completion)
+            if not active_request:
+                self._initial_taken.discard(generation)
+            initial = self._initial_results.pop(generation, None)
+            if initial is not None:
+                _discard_query_completion(initial)
             self._condition.notify_all()
             return True
 
@@ -708,6 +846,18 @@ class HistoricalEventQueryService:
             completion = self._completed.pop(generation, None)
             if completion is not None:
                 self._latest_generation = None
+                self._initial_results.pop(generation, None)
+                self._initial_taken.discard(generation)
+            return completion
+
+    def take_initial_result(self, generation: int) -> Optional[HistoricalEventQueryCompletion]:
+        """Transfer the first readable batch without ending query preparation."""
+        with self._condition:
+            if self._closed or self._latest_generation != generation:
+                return None
+            completion = self._initial_results.pop(generation, None)
+            if completion is not None:
+                self._initial_taken.add(generation)
             return completion
 
     def is_pending(self, generation: int) -> bool:
@@ -725,9 +875,13 @@ class HistoricalEventQueryService:
         with self._condition:
             self._closed = True
             self._latest_generation = None
-            for completion in self._completed.values():
-                _discard_query_completion(completion)
+            for generation, completion in self._completed.items():
+                if generation not in self._initial_taken:
+                    _discard_query_completion(completion)
             self._completed.clear()
+            for completion in self._initial_results.values():
+                _discard_query_completion(completion)
+            self._initial_results.clear()
             if self._active is not None:
                 self._active.cancellation_event.set()
             if self._pending is not None:
@@ -748,6 +902,17 @@ class HistoricalEventQueryService:
 
             try:
                 query_options = {"cancellation_event": request.cancellation_event}
+                try:
+                    parameters = inspect.signature(self._query_function).parameters.values()
+                    supports_initial = (any(parameter.name == "publish_initial"
+                                             for parameter in parameters) or
+                                        any(parameter.kind == parameter.VAR_KEYWORD
+                                            for parameter in parameters))
+                except (TypeError, ValueError):
+                    supports_initial = False
+                if supports_initial:
+                    query_options["publish_initial"] = (
+                        lambda result: self._publish_initial(request, result))
                 if self._index_path is not None:
                     query_options["index_path"] = self._index_path
                 result = self._query_function(self._session_root, self._app_event_path,
@@ -766,12 +931,27 @@ class HistoricalEventQueryService:
                         not request.cancellation_event.is_set()):
                     self._completed[request.generation] = completion
                 else:
-                    _discard_query_completion(completion)
+                    self._initial_results.pop(request.generation, None)
+                    if request.generation not in self._initial_taken:
+                        _discard_query_completion(completion)
+                    self._initial_taken.discard(request.generation)
                 if self._closed or self._pending is None:
                     self._worker = None
                     self._condition.notify_all()
                     return
                 self._condition.notify_all()
+
+    def _publish_initial(self, request: _HistoricalEventQueryRequest,
+                         result: HistoricalEventQueryResult) -> None:
+        completion = HistoricalEventQueryCompletion(
+            request.generation, request.date_range, True, result=result)
+        with self._condition:
+            if (self._closed or self._latest_generation != request.generation or
+                    request.cancellation_event.is_set()):
+                result.close()
+                raise RuntimeError("historical event query cancelled")
+            self._initial_results[request.generation] = completion
+            self._condition.notify_all()
 
 
 def _discard_query_completion(completion: HistoricalEventQueryCompletion) -> None:
@@ -808,28 +988,32 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                             date_range: HistoricalEventDateRange,
                             limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
                             cancellation_event: Optional[threading.Event] = None,
-                            index_path: Optional[Path] = None
+                            index_path: Optional[Path] = None,
+                            publish_initial: Optional[Callable[[HistoricalEventQueryResult], None]] = None
                             ) -> HistoricalEventQueryResult:
-    """Freeze matching source events into a temporary, disk-backed query snapshot.
+    """Freeze matching source events into temporary, disk-backed query storage.
 
     The retained in-memory page contains only summaries. Original records and large
-    diagnostics remain in the temporary snapshot until a selected key requests detail.
+    diagnostics remain in a fixed content store until a selected key requests detail.
     """
     if not isinstance(date_range, HistoricalEventDateRange):
         raise TypeError("date_range must be a HistoricalEventDateRange")
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
+    query_started_at = time.perf_counter()
     page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
     if index_path is not None:
         try:
             return _query_historical_events_with_index(
                 Path(session_root), Path(app_event_path) if app_event_path else None,
-                date_range, page_size, Path(index_path), cancellation_event)
+                date_range, page_size, Path(index_path), cancellation_event,
+                publish_initial, query_started_at)
         except (OSError, sqlite3.Error) as error:
             _raise_if_query_cancelled(cancellation_event)
             result = query_historical_events(
                 session_root, app_event_path, date_range, page_size,
-                cancellation_event=cancellation_event)
+                cancellation_event=cancellation_event,
+                publish_initial=publish_initial)
             result.index_degraded = True
             result.index_issue = str(error)
             return result
@@ -837,6 +1021,8 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     os.close(descriptor)
     store_path = Path(raw_path)
     connection = None
+    contents = None
+    content_path = None
     total_count = 0
     unclassified_count = 0
     source_issue_count = 0
@@ -845,6 +1031,7 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
     fallback_source_count = [0]
     fallback_bytes_read = [0]
     fallback_source_versions = {}
+    unstable_paths = set()
 
     def observe_source(path):
         fallback_source_count[0] += 1
@@ -856,42 +1043,55 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
 
     def observe_bytes(count):
         fallback_bytes_read[0] += count
+
     try:
+        # Pass one freezes count/order and content references only. No matching
+        # event_json or summary payload is copied before the reliable count exists.
         connection = sqlite3.connect(str(store_path))
         connection.execute("PRAGMA journal_mode=OFF")
         connection.execute("PRAGMA synchronous=OFF")
         connection.execute(
-            "CREATE TABLE matching_events ("
-            "event_key TEXT NOT NULL, local_wall_order INTEGER NOT NULL, "
-            "aware_rank INTEGER NOT NULL, epoch REAL, stable_identity TEXT NOT NULL, "
-            "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
-            "source_path TEXT NOT NULL, summary_json TEXT NOT NULL, event_json TEXT NOT NULL)"
-        )
+            "CREATE TABLE matching_events (event_key TEXT NOT NULL, "
+            "local_wall_order INTEGER NOT NULL, aware_rank INTEGER NOT NULL, epoch REAL, "
+            "stable_identity TEXT NOT NULL, sequence_number INTEGER NOT NULL, "
+            "source_order INTEGER NOT NULL, content_id TEXT NOT NULL, source_path TEXT NOT NULL, "
+            "source_ordinal INTEGER NOT NULL)")
+        connection.execute("CREATE INDEX event_key_lookup ON matching_events(event_key)")
         connection.execute(
-            "CREATE INDEX event_key_lookup ON matching_events(event_key)")
+            "CREATE TABLE prepared_events (ordinal INTEGER PRIMARY KEY, event_key TEXT NOT NULL, "
+            "local_wall_order INTEGER NOT NULL, aware_rank INTEGER NOT NULL, epoch REAL, "
+            "stable_identity TEXT NOT NULL, sequence_number INTEGER NOT NULL, "
+            "source_order INTEGER NOT NULL, summary_json TEXT NOT NULL)")
         connection.execute(
             "CREATE TABLE diagnostic_events (diagnostic_ordinal INTEGER PRIMARY KEY, "
-            "event_key TEXT NOT NULL, source_path TEXT NOT NULL, "
-            "summary_json TEXT NOT NULL, event_json TEXT NOT NULL)")
+            "event_key TEXT NOT NULL, content_id TEXT NOT NULL, source_path TEXT NOT NULL)")
         connection.execute("CREATE INDEX diagnostic_event_key ON diagnostic_events(event_key)")
+        connection.execute(
+            "CREATE INDEX diagnostic_content_lookup ON diagnostic_events(source_path, content_id)")
+        connection.execute(
+            "CREATE INDEX event_source_ordinal ON matching_events(source_path, source_ordinal)")
 
+        ordinals = {}
         _raise_if_query_cancelled(cancellation_event)
         for event in iter_historical_events(
                 session_root, app_event_path, read_observer=observe_bytes,
                 source_observer=observe_source):
             _raise_if_query_cancelled(cancellation_event)
+            source_path = event.source_path or ""
+            ordinals[source_path] = ordinals.get(source_path, 0) + 1
+            source_ordinal = ordinals[source_path]
+            source_version = fallback_source_versions.get(source_path)
+            content_id = _fallback_content_id(
+                source_path, source_ordinal, source_version, event.key)
             source_issue = event.source in {"read_error", "read_warning"}
             if source_issue:
                 source_issue_count += 1
-            occurred_at = _parse_occurred_at(
-                event.occurred_at, date_range._local_timezone)
+            occurred_at = _parse_occurred_at(event.occurred_at, date_range._local_timezone)
             if source_issue or occurred_at is None:
                 diagnostic_count += 1
                 connection.execute(
-                    "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
-                    (diagnostic_count, event.key, event.source_path or "",
-                     _event_summary_json(event),
-                     _event_json(event)))
+                    "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                    (diagnostic_count, event.key, content_id, source_path))
             if occurred_at is None:
                 if not source_issue:
                     unclassified_count += 1
@@ -905,15 +1105,12 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                 in_range = date_range._start_epoch <= epoch < date_range._end_epoch
             if not in_range:
                 continue
-
             sequence = event.sequence if type(event.sequence) is int else event.source_order
-            stable_identity = event.round_id or event.key
             connection.execute(
                 "INSERT INTO matching_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (event.key, local_wall_order, 0 if epoch is not None else 1, epoch,
-                 stable_identity, sequence, event.source_order,
-                 event.source_path or "",
-                 _event_summary_json(event), _event_json(event)))
+                 event.round_id or event.key, sequence, event.source_order, content_id,
+                 source_path, source_ordinal))
             total_count += 1
 
         for source_path, captured_version in fallback_source_versions.items():
@@ -923,6 +1120,7 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                 current_version = None
             if captured_version == current_version:
                 continue
+            unstable_paths.add(source_path)
             removed_events = connection.execute(
                 "DELETE FROM matching_events WHERE source_path=?", (source_path,))
             total_count -= removed_events.rowcount
@@ -937,12 +1135,11 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                 diagnostic="Source version could not be confirmed",
                 raw_record={"path": source_path,
                             "reason": "Historical source changed while being read"})
+            warning_id = _fallback_content_id(source_path, 0, current_version, warning.key)
             connection.execute(
-                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
-                (diagnostic_count, warning.key, source_path,
-                 _event_summary_json(warning), _event_json(warning)))
-            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
-                diagnostics.append(warning)
+                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                (diagnostic_count, warning.key, warning_id, source_path))
+            diagnostics.append(warning)
 
         captured_source_paths = set(fallback_source_versions)
         confirmed_source_paths = {
@@ -956,12 +1153,80 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                 "warning:source-added:{}".format(source_path), "read_warning", "",
                 reason, diagnostic=reason,
                 raw_record={"path": source_path, "reason": reason})
+            warning_id = _fallback_content_id(source_path, 0, None, warning.key)
             connection.execute(
-                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?, ?)",
-                (diagnostic_count, warning.key, source_path,
-                 _event_summary_json(warning), _event_json(warning)))
-            if len(diagnostics) < _DIAGNOSTIC_SAMPLE_LIMIT:
-                diagnostics.append(warning)
+                "INSERT INTO diagnostic_events VALUES (?, ?, ?, ?)",
+                (diagnostic_count, warning.key, warning_id, source_path))
+            diagnostics.append(warning)
+
+        # Total and ordering are now reliable. Build an independently owned,
+        # immutable content store in pass two and verify the same source generation.
+        descriptor, content_raw_path = tempfile.mkstemp(
+            prefix="b518-history-content-", suffix=".sqlite3")
+        os.close(descriptor)
+        content_path = Path(content_raw_path)
+        contents = sqlite3.connect(str(content_path))
+        contents.execute("PRAGMA journal_mode=OFF")
+        contents.execute("PRAGMA synchronous=OFF")
+        contents.execute(
+            "CREATE TABLE contents (content_id TEXT PRIMARY KEY, summary_json TEXT NOT NULL, "
+            "event_json TEXT NOT NULL)")
+        for source_path, captured_version in fallback_source_versions.items():
+            try:
+                current_version = _history_source_signature(Path(source_path))
+            except OSError:
+                current_version = None
+            if current_version != captured_version and source_path not in unstable_paths:
+                raise OSError("Historical source changed between fallback query passes: {}".format(
+                    source_path))
+        ordinals = {}
+        for event in iter_historical_events(
+                session_root, app_event_path, read_observer=observe_bytes):
+            _raise_if_query_cancelled(cancellation_event)
+            source_path = event.source_path or ""
+            ordinals[source_path] = ordinals.get(source_path, 0) + 1
+            source_ordinal = ordinals[source_path]
+            if source_path in unstable_paths or source_path not in fallback_source_versions:
+                continue
+            signature = fallback_source_versions.get(source_path)
+            content_id = _fallback_content_id(source_path, source_ordinal, signature, event.key)
+            referenced = connection.execute(
+                "SELECT 1 FROM matching_events WHERE source_path=? AND source_ordinal=? "
+                "UNION ALL SELECT 1 FROM diagnostic_events WHERE source_path=? "
+                "AND content_id=? LIMIT 1",
+                (source_path, source_ordinal, source_path, content_id)).fetchone()
+            if referenced is None:
+                continue
+            contents.execute(
+                "INSERT OR REPLACE INTO contents VALUES (?, ?, ?)",
+                (content_id, _event_summary_json(event), _event_json(event)))
+        for source_path, captured_version in fallback_source_versions.items():
+            try:
+                current_version = _history_source_signature(Path(source_path))
+            except OSError:
+                current_version = None
+            if current_version != captured_version and source_path not in unstable_paths:
+                raise OSError("Historical source changed during fallback content pass: {}".format(
+                    source_path))
+        final_source_paths = {
+            str(Path(source.path)) for source in
+            iter_historical_event_sources(session_root, app_event_path)}
+        if final_source_paths != confirmed_source_paths:
+            raise OSError("Historical source set changed during fallback content pass")
+        for row in connection.execute(
+                "SELECT event_key, content_id, source_path FROM diagnostic_events"):
+            event_key, content_id, source_path = row
+            if content_id in {item[0] for item in contents.execute(
+                    "SELECT content_id FROM contents WHERE content_id=?", (content_id,))}:
+                continue
+            warning = next((item for item in diagnostics if item.key == event_key), None)
+            if warning is not None:
+                contents.execute(
+                    "INSERT OR REPLACE INTO contents VALUES (?, ?, ?)",
+                    (content_id, _event_summary_json(warning), _event_json(warning)))
+        contents.commit()
+        contents.close()
+        contents = None
 
         _raise_if_query_cancelled(cancellation_event)
         connection.execute("CREATE INDEX event_order_lookup ON matching_events("
@@ -973,17 +1238,32 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         connection = None
         result = HistoricalEventQueryResult(
             date_range, total_count, unclassified_count, source_issue_count,
-            tuple(diagnostics), store_path, page_size,
+            tuple(diagnostics[:_DIAGNOSTIC_SAMPLE_LIMIT]), store_path, page_size,
             HistoricalEventIndexMetrics(
                 parsed_source_count=fallback_source_count[0],
                 source_bytes_read=fallback_bytes_read[0]),
-            diagnostic_count=diagnostic_count)
-        result._first_page = result.get_page(1).events
+            diagnostic_count=diagnostic_count, preparation_complete=False,
+            content_path=content_path)
+        result.total_count_ready_seconds = time.perf_counter() - query_started_at
+        _prepare_initial_query_events(result, cancellation_event)
+        result.initial_batch_ready_seconds = time.perf_counter() - query_started_at
+        if publish_initial is not None:
+            publish_initial(result)
+        try:
+            _prepare_remaining_query_batches(result, cancellation_event)
+        except Exception as error:
+            result._finish_preparation(error)
+            result.preparation_complete_seconds = time.perf_counter() - query_started_at
+            return result
+        result._finish_preparation()
+        result.preparation_complete_seconds = time.perf_counter() - query_started_at
         return result
     except Exception:
+        if contents is not None:
+            contents.close()
         if connection is not None:
             connection.close()
-        _remove_snapshot(store_path)
+        _remove_query_files(store_path, content_path)
         raise
 
 
@@ -991,7 +1271,9 @@ def _query_historical_events_with_index(session_root: Path,
                                         app_event_path: Optional[Path],
                                         date_range: HistoricalEventDateRange,
                                         page_size: int, index_path: Path,
-                                        cancellation_event: Optional[threading.Event]
+                                        cancellation_event: Optional[threading.Event],
+                                        publish_initial: Optional[Callable[[HistoricalEventQueryResult], None]],
+                                        query_started_at: float
                                         ) -> HistoricalEventQueryResult:
     index_path = index_path.expanduser().absolute()
     descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
@@ -1175,10 +1457,24 @@ def _query_historical_events_with_index(session_root: Path,
                     indexed_content_write_count=sum(content_write_counts)), index_path)
             connection.close()
             connection = None
-            if rebuilt_index:
-                snapshot.index_degraded = True
-                snapshot.index_issue = "The historical query index was rebuilt."
+        if rebuilt_index:
+            snapshot.index_degraded = True
+            snapshot.index_issue = "The historical query index was rebuilt."
+        snapshot.preparation_complete = False
+        snapshot.total_count_ready_seconds = time.perf_counter() - query_started_at
+        _prepare_initial_query_events(snapshot, cancellation_event)
+        snapshot.initial_batch_ready_seconds = time.perf_counter() - query_started_at
+        if publish_initial is not None:
+            publish_initial(snapshot)
+        try:
+            _prepare_remaining_query_batches(snapshot, cancellation_event)
+        except Exception as error:
+            snapshot._finish_preparation(error)
+            snapshot.preparation_complete_seconds = time.perf_counter() - query_started_at
             return snapshot
+        snapshot._finish_preparation()
+        snapshot.preparation_complete_seconds = time.perf_counter() - query_started_at
+        return snapshot
     except Exception:
         if snapshot_staging is not None:
             snapshot_staging.close()
@@ -1332,6 +1628,11 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             "aware_rank INTEGER NOT NULL, epoch REAL, stable_identity TEXT NOT NULL, "
             "sequence_number INTEGER NOT NULL, source_order INTEGER NOT NULL, "
             "content_id TEXT NOT NULL)")
+        snapshot.execute(
+            "CREATE TABLE prepared_events (ordinal INTEGER PRIMARY KEY, event_key TEXT NOT NULL, "
+            "local_wall_order INTEGER NOT NULL, aware_rank INTEGER NOT NULL, epoch REAL, "
+            "stable_identity TEXT NOT NULL, sequence_number INTEGER NOT NULL, "
+            "source_order INTEGER NOT NULL, summary_json TEXT NOT NULL)")
         snapshot.execute("CREATE INDEX event_key_lookup ON matching_events(event_key)")
         snapshot.execute(
             "CREATE TABLE diagnostic_events (diagnostic_ordinal INTEGER PRIMARY KEY, "
@@ -1482,7 +1783,6 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             date_range, total_count, unclassified_count, source_issue_count,
             tuple(diagnostics), snapshot_path, page_size, index_metrics,
             diagnostic_count=diagnostic_count, index_path=index_path, query_id=query_id)
-        result._first_page = result.get_page(1).events
         return result
     except Exception:
         connection.rollback()
@@ -1497,6 +1797,33 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
 def _naive_wall_order(value: datetime) -> int:
     return ((value.toordinal() * 86400 + value.hour * 3600 + value.minute * 60 +
              value.second) * 1000000 + value.microsecond)
+
+
+def _prepare_initial_query_events(result: HistoricalEventQueryResult,
+                                  cancellation_event: Optional[threading.Event]) -> None:
+    _raise_if_query_cancelled(cancellation_event)
+    count = min(result.total_count, HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE)
+    rows = result._read_unprepared_summaries(0, count)
+    result._persist_prepared_rows(rows)
+    events = tuple(_summary_from_json(row[-1]) for row in rows)
+    result._set_initial_events(events)
+
+
+def _prepare_remaining_query_batches(
+        result: HistoricalEventQueryResult,
+        cancellation_event: Optional[threading.Event],
+        batch_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE) -> None:
+    first_page = (result.prepared_count + result.page_size - 1) // result.page_size
+    batch_pages = max(1, batch_size // result.page_size)
+    for start in range(first_page + 1, result.page_count + 1, batch_pages):
+        _raise_if_query_cancelled(cancellation_event)
+        end = min(result.page_count, start + batch_pages - 1)
+        offset = (start - 1) * result.page_size
+        limit = min(result.total_count - offset, (end - start + 1) * result.page_size)
+        rows = result._read_unprepared_summaries(offset, limit)
+        _raise_if_query_cancelled(cancellation_event)
+        result._persist_prepared_rows(rows)
+        result.prepared_count = result._persisted_prepared_count()
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:
