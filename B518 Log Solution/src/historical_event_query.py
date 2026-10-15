@@ -271,10 +271,10 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        # H3's owned temporary snapshot contains the complete original record.
-        # Once captured there, it is acquired content and remains readable even
-        # if retention removes or replaces the backing source. Never reopen the
-        # current path here: it may now identify a different event version.
+        # Non-indexed queries keep the record in their owned snapshot; indexed
+        # queries resolve its immutable content_id in the shared index, retained
+        # by this query's reference until close/recovery. Never reopen the source
+        # path here: it may now identify a different event version.
         return _event_from_json(row[0])
 
     def get_diagnostic_page(self, page_number: int) -> HistoricalEventQueryPage:
@@ -330,7 +330,8 @@ class HistoricalEventQueryResult:
             connection.close()
         if row is None:
             return None
-        # Diagnostic detail is also frozen in the query-owned snapshot.
+        # Non-indexed queries keep diagnostics in their owned snapshot; indexed
+        # queries read shared immutable content retained by this query's lease.
         return _event_from_json(row[0])
 
     def close(self) -> None:
