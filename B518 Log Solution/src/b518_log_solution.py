@@ -380,6 +380,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_close_button = None
         self._app_diagnostics_records = ()
         self._unregister_settings_language_receiver = None
         self._unregister_app_diagnostics_language_receiver = None
@@ -1197,6 +1198,10 @@ class B518LogSolutionApp:
         if window is None or not window.winfo_exists():
             return
         window.title(self._t("app.diagnostic.heading"))
+        if self.app_diagnostics_retry_button is not None:
+            self.app_diagnostics_retry_button.configure(text=self._t("app.diagnostic.retry"))
+        if self.app_diagnostics_close_button is not None:
+            self.app_diagnostics_close_button.configure(text=self._t("app.diagnostic.close"))
         self._refresh_app_event_status(update_main=False)
         self._render_app_diagnostics_records(self._app_diagnostics_records)
 
@@ -1204,6 +1209,7 @@ class B518LogSolutionApp:
         if not self.app_diagnostics_list or not self.app_diagnostics_list.winfo_exists():
             return
         list_top = self.app_diagnostics_list.yview()[0]
+        list_left = self.app_diagnostics_list.xview()[0]
         detail_top = self.app_diagnostics_detail.yview()[0]
         selected = self.app_diagnostics_list.curselection()
         prior_id = getattr(self, "_selected_app_event_id", None)
@@ -1229,6 +1235,7 @@ class B518LogSolutionApp:
         elif prior_id is not None:
             self._selected_app_event_id = None
         self.app_diagnostics_list.yview_moveto(list_top)
+        self.app_diagnostics_list.xview_moveto(list_left)
         self.app_diagnostics_detail.yview_moveto(detail_top)
 
     def _show_app_event_detail(self, index: Optional[int] = None, records=None) -> None:
@@ -1270,16 +1277,46 @@ class B518LogSolutionApp:
         window = tk.Toplevel(self.root)
         self.app_diagnostics_window = window
         window.title(self._t("app.diagnostic.heading"))
-        window.geometry("760x430")
-        window.minsize(600, 340)
+        window.geometry("900x560")
+        window.minsize(760, 480)
         window.transient(self.root)
-        body = ttk.Frame(window, padding=10)
+        body = ttk.Frame(window, padding=12)
         body.pack(fill="both", expand=True)
-        self.app_diagnostics_list = tk.Listbox(body, width=42, exportselection=False)
-        self.app_diagnostics_list.pack(side="left", fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=3, uniform="app-diagnostics")
+        body.grid_columnconfigure(1, weight=4, uniform="app-diagnostics")
+        body.grid_rowconfigure(0, weight=1)
+        list_frame = ttk.Frame(body)
+        list_frame.grid(row=0, column=0, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_y_scrollbar = ttk.Scrollbar(list_frame, orient="vertical")
+        list_x_scrollbar = ttk.Scrollbar(list_frame, orient="horizontal")
+        self.app_diagnostics_list = tk.Listbox(
+            list_frame, width=42, exportselection=False,
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR,
+            relief="solid", borderwidth=1,
+            yscrollcommand=list_y_scrollbar.set,
+            xscrollcommand=list_x_scrollbar.set)
+        self.app_diagnostics_list.grid(row=0, column=0, sticky="nsew")
+        list_y_scrollbar.configure(command=self.app_diagnostics_list.yview)
+        list_y_scrollbar.grid(row=0, column=1, sticky="ns")
+        list_x_scrollbar.configure(command=self.app_diagnostics_list.xview)
+        list_x_scrollbar.grid(row=1, column=0, sticky="ew")
         self.app_diagnostics_list.bind("<<ListboxSelect>>", lambda _event: self._show_app_event_detail())
-        self.app_diagnostics_detail = tk.Text(body, wrap="word", state="disabled")
-        self.app_diagnostics_detail.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        detail_frame = ttk.Frame(body)
+        detail_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        detail_frame.grid_columnconfigure(0, weight=1)
+        detail_frame.grid_rowconfigure(0, weight=1)
+        detail_scrollbar = ttk.Scrollbar(detail_frame, orient="vertical")
+        self.app_diagnostics_detail = tk.Text(
+            detail_frame, wrap="word", state="disabled",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR,
+            relief="solid", borderwidth=1, yscrollcommand=detail_scrollbar.set)
+        self.app_diagnostics_detail.grid(row=0, column=0, sticky="nsew")
+        detail_scrollbar.configure(command=self.app_diagnostics_detail.yview)
+        detail_scrollbar.grid(row=0, column=1, sticky="ns")
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.pack(fill="x")
         footer_row = ttk.Frame(footer)
@@ -1288,11 +1325,13 @@ class B518LogSolutionApp:
         self.app_diagnostics_status.pack(side="left", fill="x", expand=True)
         self.app_diagnostics_retry_button = ttk.Button(
             footer_row, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
-            state="disabled")
+            width=22, state="disabled")
         self.app_diagnostics_retry_button.pack(side="left", padx=6)
-        ttk.Button(footer_row, text=self._t("app.diagnostic.close"),
-                   command=self._close_app_diagnostics_window).pack(side="right")
-        self.app_diagnostics_history = ttk.Label(footer, text="", wraplength=720, justify="left")
+        self.app_diagnostics_close_button = ttk.Button(
+            footer_row, text=self._t("app.diagnostic.close"),
+            command=self._close_app_diagnostics_window, width=12)
+        self.app_diagnostics_close_button.pack(side="right")
+        self.app_diagnostics_history = ttk.Label(footer, text="", wraplength=840, justify="left")
         self.app_diagnostics_history.pack(fill="x", pady=(5, 0))
         window.protocol("WM_DELETE_WINDOW", self._close_app_diagnostics_window)
         window.bind("<Destroy>", self._on_app_diagnostics_destroy, add="+")
@@ -1317,6 +1356,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_close_button = None
         self._selected_app_event_id = None
 
     def _close_app_diagnostics_window(self) -> None:
@@ -3217,15 +3257,15 @@ class B518LogSolutionApp:
         self._historical_query_status_parameters = {}
         self._historical_range_mode = "last90"
         window.title(self._t("app.settings.history.title"))
-        window.geometry("820x560")
-        window.minsize(560, 360)
+        window.geometry("960x680")
+        window.minsize(780, 580)
         outer = ttk.Frame(window, padding=12)
         outer.pack(fill="both", expand=True)
 
         range_controls = ttk.Frame(outer)
         range_controls.pack(fill="x", pady=(0, 6))
         self.historical_range_label = ttk.Label(
-            range_controls, text=self._t("app.settings.history.range"))
+            range_controls, text=self._t("app.settings.history.range"), width=14, anchor="w")
         self.historical_range_label.grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.historical_range_choice = ttk.Combobox(
             range_controls, state="readonly", width=18,
@@ -3242,13 +3282,13 @@ class B518LogSolutionApp:
         dates = ttk.Frame(outer)
         dates.pack(fill="x", pady=(0, 3))
         self.historical_start_label = ttk.Label(
-            dates, text=self._t("app.settings.history.start"))
+            dates, text=self._t("app.settings.history.start"), width=12, anchor="w")
         self.historical_start_label.grid(row=0, column=0, sticky="w", padx=(0, 5))
         self.historical_start_entry = ttk.Entry(
             dates, textvariable=self.historical_start_var, width=12)
         self.historical_start_entry.grid(row=0, column=1, sticky="w", padx=(0, 12))
         self.historical_end_label = ttk.Label(
-            dates, text=self._t("app.settings.history.end"))
+            dates, text=self._t("app.settings.history.end"), width=12, anchor="w")
         self.historical_end_label.grid(row=0, column=2, sticky="w", padx=(0, 5))
         self.historical_end_entry = ttk.Entry(
             dates, textvariable=self.historical_end_var, width=12)
@@ -3258,10 +3298,10 @@ class B518LogSolutionApp:
         self.historical_end_entry.bind(
             "<KeyRelease>", self._on_historical_date_edited, add="+")
         self.historical_date_error = ttk.Label(
-            outer, text="", foreground="#b91c1c", wraplength=780)
+            outer, text="", foreground="#b91c1c", wraplength=900)
         self.historical_date_error.pack(fill="x", anchor="w")
         self.historical_query_status = ttk.Label(
-            outer, text=self._t("app.settings.history.not_queried"), wraplength=780)
+            outer, text=self._t("app.settings.history.not_queried"), wraplength=900)
         self.historical_query_status.pack(fill="x", anchor="w", pady=(0, 5))
 
         page_controls = ttk.Frame(outer)
@@ -3271,7 +3311,8 @@ class B518LogSolutionApp:
             command=self._show_previous_historical_event_page, state="disabled")
         self.historical_previous_button.pack(side="left")
         self.historical_page_label = ttk.Label(
-            page_controls, text=self._t("app.settings.history.page_empty"), anchor="center")
+            page_controls, text=self._t("app.settings.history.page_empty"), anchor="center",
+            width=42)
         self.historical_page_label.pack(side="left", fill="x", expand=True)
         self.historical_next_button = ttk.Button(
             page_controls, text="→", width=4, takefocus=True,
@@ -3280,39 +3321,64 @@ class B518LogSolutionApp:
 
         headings = ttk.Frame(outer)
         headings.pack(fill="x")
+        headings.grid_columnconfigure(0, weight=1, uniform="historical-columns")
+        headings.grid_columnconfigure(1, weight=1, uniform="historical-columns")
         self.historical_event_heading = ttk.Label(
-            headings, text=self._t("app.settings.history.events"))
-        self.historical_event_heading.pack(side="left", fill="x", expand=True)
+            headings, text=self._t("app.settings.history.events"), anchor="w")
+        self.historical_event_heading.grid(row=0, column=0, sticky="ew")
         self.historical_event_detail_heading = ttk.Label(
-            headings, text=self._t("app.settings.history.detail"))
-        self.historical_event_detail_heading.pack(side="right", fill="x", expand=True)
+            headings, text=self._t("app.settings.history.detail"), anchor="w")
+        self.historical_event_detail_heading.grid(row=0, column=1, sticky="ew", padx=(10, 0))
         body = ttk.Frame(outer)
         body.pack(fill="both", expand=True, pady=(6, 8))
-        self.historical_event_list = tk.Listbox(body, exportselection=False, width=38,
-                                                selectmode="browse")
-        self.historical_event_list.pack(side="left", fill="both", expand=True)
+        body.grid_columnconfigure(0, weight=1, uniform="historical-columns")
+        body.grid_columnconfigure(1, weight=1, uniform="historical-columns")
+        body.grid_rowconfigure(0, weight=1)
+        list_frame = ttk.Frame(body)
+        list_frame.grid(row=0, column=0, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_y_scrollbar = ttk.Scrollbar(list_frame, orient="vertical")
+        list_x_scrollbar = ttk.Scrollbar(list_frame, orient="horizontal")
+        self.historical_event_list = tk.Listbox(
+            list_frame, exportselection=False, width=38, selectmode="browse",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR,
+            relief="solid", borderwidth=1,
+            yscrollcommand=list_y_scrollbar.set,
+            xscrollcommand=list_x_scrollbar.set)
+        self.historical_event_list.grid(row=0, column=0, sticky="nsew")
+        list_y_scrollbar.configure(command=self.historical_event_list.yview)
+        list_y_scrollbar.grid(row=0, column=1, sticky="ns")
+        list_x_scrollbar.configure(command=self.historical_event_list.xview)
+        list_x_scrollbar.grid(row=1, column=0, sticky="ew")
         self.historical_event_list.bind("<<ListboxSelect>>", self._select_historical_event)
         detail_frame = ttk.Frame(body)
-        detail_frame.pack(side="right", fill="both", expand=True, padx=(8, 0))
+        detail_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        detail_frame.grid_columnconfigure(0, weight=1)
+        detail_frame.grid_rowconfigure(0, weight=1)
         scrollbar = ttk.Scrollbar(detail_frame, orient="vertical")
-        scrollbar.pack(side="right", fill="y")
+        scrollbar.grid(row=0, column=1, sticky="ns")
         self.historical_event_detail = tk.Text(
             detail_frame, wrap="word", state="disabled", yscrollcommand=scrollbar.set,
-            background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
-            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR)
-        self.historical_event_detail.pack(side="left", fill="both", expand=True)
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            selectbackground="#dbeafe", selectforeground=TEXT_COLOUR,
+            relief="solid", borderwidth=1)
+        self.historical_event_detail.grid(row=0, column=0, sticky="nsew")
         scrollbar.configure(command=self.historical_event_detail.yview)
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
+        controls.grid_columnconfigure(0, weight=1, uniform="historical-actions")
+        controls.grid_columnconfigure(1, weight=1, uniform="historical-actions")
+        self.historical_event_cancel_button = ttk.Button(
+            controls, text=self._t("app.settings.history.cancel_query"), width=22,
+            command=self._cancel_historical_event_query, state="disabled")
+        self.historical_event_cancel_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.historical_event_refresh_button = ttk.Button(
             controls, text="🔍 {}".format(self._t("app.settings.history.search")),
-            width=20, takefocus=True,
+            width=22, takefocus=True,
             command=self._reload_historical_events)
-        self.historical_event_refresh_button.pack(side="right", padx=(6, 0))
-        self.historical_event_cancel_button = ttk.Button(
-            controls, text=self._t("app.settings.history.cancel_query"),
-            command=self._cancel_historical_event_query, state="disabled")
-        self.historical_event_cancel_button.pack(side="right")
+        self.historical_event_refresh_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
         self._historical_control_hints = (
             _LocalizedControlHint(
                 self.historical_event_refresh_button,
@@ -3557,6 +3623,7 @@ class B518LogSolutionApp:
         selected = self._historical_event_selected_key
         event_list = self.historical_event_list
         detail_view = self.historical_event_detail
+        list_left = event_list.xview()[0]
         list_top_index = int(event_list.index("@0,0")) if event_list.size() else 0
         record_index = list_top_index - 1 if self._historical_showing_diagnostics else list_top_index
         list_top_key = (self._historical_event_records[record_index].key
@@ -3722,12 +3789,13 @@ class B518LogSolutionApp:
         def restore_view():
             self._historical_restore_after_id = None
             self._restore_historical_event_view(
-                window, event_list, detail_view, list_top_key, detail_top)
+                window, event_list, detail_view, list_top_key, list_left, detail_top)
 
         self._historical_restore_after_id = self._schedule_ui("idle", restore_view)
 
     def _restore_historical_event_view(self, window, event_list, detail_view,
-                                       list_top_key: Optional[str], detail_top: str) -> None:
+                                       list_top_key: Optional[str], list_left: float,
+                                       detail_top: str) -> None:
         if not window.winfo_exists():
             return
         if list_top_key == "__query_diagnostics__":
@@ -3741,6 +3809,7 @@ class B518LogSolutionApp:
         if event_list.size():
             target = min(max(0, list_top_index), event_list.size() - 1)
             event_list.yview_moveto(float(target) / event_list.size())
+        event_list.xview_moveto(list_left)
         detail_view.yview(detail_top)
 
     def _select_historical_event(self, _event=None) -> None:

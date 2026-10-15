@@ -1,5 +1,6 @@
 import csv
 import gc
+import hashlib
 import io
 import json
 import os
@@ -22,7 +23,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
-    B518LogSolutionApp, _LocalizedControlHint, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
+    MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
 )
@@ -9402,18 +9404,21 @@ class LogSolutionUiTests(unittest.TestCase):
             raw_detail = "Keep original historical diagnostic — " * 500
             for sequence in range(1, 206):
                 audit.append_event(AuditEvent(
-                    sequence, "round_ready", "saved language event", None,
+                    sequence, "round_ready",
+                    "saved language event — " + "LONG-READING-POSITION-" * 12, None,
                     detail={"raw_diagnostic": raw_detail if sequence == 103 else ""}),
                     event_time, float(sequence))
             self.assertTrue(audit.flush())
             source_bytes = audit.audit_path.read_bytes()
             legacy_path = session_root / "legacy-language" / "events.log"
             legacy_path.parent.mkdir(parents=True)
-            legacy_path.write_text(json.dumps({
+            legacy_record = json.dumps({
                 "timestamp": datetime.now().astimezone().replace(
                     second=0, microsecond=0).isoformat(),
                 "message": "Keep the original legacy wording",
-            }) + "\n", encoding="utf-8")
+            })
+            legacy_path.write_text(legacy_record + "\n{malformed legacy record\n",
+                                   encoding="utf-8")
             legacy_bytes = legacy_path.read_bytes()
 
             root = tk.Tk()
@@ -9422,9 +9427,92 @@ class LogSolutionUiTests(unittest.TestCase):
                 root, hotkey_factory=FakeHotkey, session_root=session_root,
                 app_event_path=root_path / "app-events.json")
             moved_source = audit.audit_path.with_suffix(".held")
+            evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
+            evidence_root = Path(evidence_value) if evidence_value else None
+            evidence_bounds = {}
+
+            def control_bounds(widgets):
+                root.update_idletasks()
+                return {
+                    name: [widget.winfo_x(), widget.winfo_y(),
+                           widget.winfo_width(), widget.winfo_height()]
+                    for name, widget in widgets.items()
+                }
+
+            def capture_window(language, key, window, widgets):
+                if evidence_root is None:
+                    return
+                import Quartz
+                from Foundation import NSURL
+
+                window.lift()
+                window.focus_force()
+                root.update()
+                native_windows = Quartz.CGWindowListCopyWindowInfo(
+                    Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+                native_window = next((item for item in native_windows
+                                      if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                                      and item.get(Quartz.kCGWindowName) == window.title()), None)
+                self.assertIsNotNone(native_window, "missing native window: {}".format(key))
+                image = Quartz.CGWindowListCreateImage(
+                    Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
+                    native_window[Quartz.kCGWindowNumber],
+                    Quartz.kCGWindowImageBoundsIgnoreFraming)
+                self.assertIsNotNone(image)
+                filename = "{}-{}.png".format(key, language)
+                output = evidence_root / filename
+                output.parent.mkdir(parents=True, exist_ok=True)
+                destination = Quartz.CGImageDestinationCreateWithURL(
+                    NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
+                Quartz.CGImageDestinationAddImage(destination, image, None)
+                self.assertTrue(Quartz.CGImageDestinationFinalize(destination))
+                native_bounds = native_window[Quartz.kCGWindowBounds]
+                evidence_bounds.setdefault(language, {})[key] = {
+                    "title": window.title(),
+                    "geometry": window.geometry(),
+                    "native_bounds": {
+                        name: float(native_bounds[name])
+                        for name in ("X", "Y", "Width", "Height")
+                    },
+                    "image_pixels": {
+                        "width": Quartz.CGImageGetWidth(image),
+                        "height": Quartz.CGImageGetHeight(image),
+                    },
+                    "controls": control_bounds(widgets),
+                    "source_sha256": {
+                        "round_audit": hashlib.sha256(source_bytes).hexdigest(),
+                        "legacy_events": hashlib.sha256(legacy_bytes).hexdigest(),
+                        "app_events": hashlib.sha256(app_event_bytes).hexdigest(),
+                    },
+                    "screenshot": filename,
+                }
+
+            def capture_current_language(language):
+                capture_window(language, "history-events", app.historical_event_window, {
+                    "date_mode": app.historical_range_choice,
+                    "date_start": app.historical_start_entry,
+                    "date_end": app.historical_end_entry,
+                    "previous": app.historical_previous_button,
+                    "page": app.historical_page_label,
+                    "next": app.historical_next_button,
+                    "event_list": app.historical_event_list,
+                    "detail": app.historical_event_detail,
+                    "cancel": app.historical_event_cancel_button,
+                    "search": app.historical_event_refresh_button,
+                })
+                capture_window(language, "app-diagnostics", app.app_diagnostics_window, {
+                    "event_list": app.app_diagnostics_list,
+                    "detail": app.app_diagnostics_detail,
+                    "retry": app.app_diagnostics_retry_button,
+                    "close": app.app_diagnostics_close_button,
+                })
+                app.historical_event_window.lift()
+                root.update()
+
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
                 app_event_bytes = app.app_events.path.read_bytes()
+                app.open_app_diagnostics()
                 app.open_historical_events()
                 self.assertIsNone(app._historical_query_result)
                 self.click_tk_widget(root, app.historical_event_refresh_button)
@@ -9433,6 +9521,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 original_result = app._historical_query_result
                 original_range = original_result.date_range
                 self.assertGreater(original_result.page_count, 2)
+                self.assertGreater(original_result.diagnostic_count, 0)
 
                 self.click_tk_widget(root, app.historical_next_button)
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -9445,10 +9534,46 @@ class LogSolutionUiTests(unittest.TestCase):
                 selected_detail = app._historical_event_selected_detail
                 app.historical_event_detail.yview_moveto(0.4)
                 app.historical_event_list.yview_moveto(0.35)
+                app.historical_event_list.xview_moveto(0.35)
                 root.update()
                 detail_top = app.historical_event_detail.index("@0,0")
+                list_left = app.historical_event_list.xview()[0]
                 list_top_index = app.historical_event_list.index("@0,0")
                 list_top_key = app._historical_event_records[list_top_index].key
+                for widget in (app.historical_event_detail, app.app_diagnostics_detail):
+                    self.assertEqual(widget.cget("background"), LIGHT_BACKGROUND)
+                    self.assertEqual(int(widget.cget("borderwidth")), 1)
+                    self.assertEqual(widget.cget("relief"), "solid")
+                self.assertEqual(app.style.lookup("TEntry", "fieldbackground"),
+                                 FIELD_BACKGROUND)
+                self.assertTrue(app.historical_event_list.cget("xscrollcommand"))
+                self.assertTrue(app.historical_event_list.cget("yscrollcommand"))
+                self.assertEqual(app.app_diagnostics_retry_button.cget("text"),
+                                 "Retry App Saves")
+                self.assertEqual(app.app_diagnostics_close_button.cget("text"), "Close")
+                en_history_size = (app.historical_event_window.winfo_width(),
+                                   app.historical_event_window.winfo_height())
+                en_diagnostics_size = (app.app_diagnostics_window.winfo_width(),
+                                       app.app_diagnostics_window.winfo_height())
+                en_history_bounds = control_bounds({
+                    "mode": app.historical_range_choice,
+                    "start": app.historical_start_entry,
+                    "end": app.historical_end_entry,
+                    "previous": app.historical_previous_button,
+                    "page": app.historical_page_label,
+                    "next": app.historical_next_button,
+                    "list": app.historical_event_list,
+                    "detail": app.historical_event_detail,
+                    "cancel": app.historical_event_cancel_button,
+                    "search": app.historical_event_refresh_button,
+                })
+                en_diagnostics_bounds = control_bounds({
+                    "list": app.app_diagnostics_list,
+                    "detail": app.app_diagnostics_detail,
+                    "retry": app.app_diagnostics_retry_button,
+                    "close": app.app_diagnostics_close_button,
+                })
+                capture_current_language("en")
 
                 app.historical_start_var.set("not-a-date")
                 app.historical_end_var.set("2026-")
@@ -9471,12 +9596,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.historical_end_var.get(), "2026-")
                 self.assertEqual(app._historical_event_selected_key, selected_key)
                 self.assertIs(app._historical_event_selected_detail, selected_detail)
+                self.assertEqual(app.app_diagnostics_retry_button.cget("text"),
+                                 "重試 App 保存")
+                self.assertEqual(app.app_diagnostics_close_button.cget("text"), "關閉")
                 self.assertIn("開始日期無效", app.historical_date_error.cget("text"))
                 self.assertNotEqual(app.historical_date_error.cget("text"), english_validation)
                 self.assertIn("第 2／3 頁", app.historical_page_label.cget("text"))
-                self.assertIn("共找到", app.historical_query_status.cget("text"))
+                self.assertIn("歷史讀取不完整", app.historical_query_status.cget("text"))
                 self.assertIn(raw_detail[:40], app.historical_event_detail.get("1.0", "end"))
                 self.assertEqual(detail_top, app.historical_event_detail.index("@0,0"))
+                self.assertAlmostEqual(list_left, app.historical_event_list.xview()[0], places=2)
                 restored_list_top = app.historical_event_list.index("@0,0")
                 self.assertEqual(app._historical_event_records[restored_list_top].key,
                                  list_top_key)
@@ -9487,6 +9616,67 @@ class LogSolutionUiTests(unittest.TestCase):
                                  "🔍 " + app._t("app.settings.history.search"))
                 self.assertEqual(legacy_path.read_bytes(), legacy_bytes)
                 self.assertEqual(app.app_events.path.read_bytes(), app_event_bytes)
+                self.assertEqual((app.historical_event_window.winfo_width(),
+                                  app.historical_event_window.winfo_height()),
+                                 en_history_size)
+                self.assertEqual((app.app_diagnostics_window.winfo_width(),
+                                  app.app_diagnostics_window.winfo_height()),
+                                 en_diagnostics_size)
+                self.assertEqual(control_bounds({
+                    "mode": app.historical_range_choice,
+                    "start": app.historical_start_entry,
+                    "end": app.historical_end_entry,
+                    "previous": app.historical_previous_button,
+                    "page": app.historical_page_label,
+                    "next": app.historical_next_button,
+                    "list": app.historical_event_list,
+                    "detail": app.historical_event_detail,
+                    "cancel": app.historical_event_cancel_button,
+                    "search": app.historical_event_refresh_button,
+                }), en_history_bounds)
+                self.assertEqual(control_bounds({
+                    "list": app.app_diagnostics_list,
+                    "detail": app.app_diagnostics_detail,
+                    "retry": app.app_diagnostics_retry_button,
+                    "close": app.app_diagnostics_close_button,
+                }), en_diagnostics_bounds)
+                capture_current_language("zh-TW")
+
+                warning_index = len(app._historical_event_records)
+                self.click_tk_listbox_row(root, app.historical_event_list, warning_index)
+                self.wait_for_ui(root, lambda: app._historical_showing_diagnostics)
+                self.wait_for_ui(root, lambda: app._historical_page_request_id is None and
+                                 app._historical_event_detail_request_id is None)
+                self.assertGreater(app.historical_event_list.size(), 1)
+                self.click_tk_listbox_row(root, app.historical_event_list, 1)
+                self.wait_for_ui(root, lambda: app._historical_event_detail_request_id is None)
+                self.assertEqual(app.historical_event_list.curselection(), (1,))
+                capture_window("zh-TW", "history-diagnostics",
+                               app.historical_event_window, {
+                                   "page": app.historical_page_label,
+                                   "list": app.historical_event_list,
+                                   "detail": app.historical_event_detail,
+                                   "previous": app.historical_previous_button,
+                                   "next": app.historical_next_button,
+                               })
+                warning_selection = tuple(app.historical_event_list.curselection())
+                self.select_language_from_menu(app, root, ENGLISH)
+                self.assertTrue(app._historical_showing_diagnostics)
+                self.assertEqual(tuple(app.historical_event_list.curselection()),
+                                 warning_selection)
+                capture_window("en", "history-diagnostics",
+                               app.historical_event_window, {
+                                   "page": app.historical_page_label,
+                                   "list": app.historical_event_list,
+                                   "detail": app.historical_event_detail,
+                                   "previous": app.historical_previous_button,
+                                   "next": app.historical_next_button,
+                               })
+                if evidence_root is not None:
+                    with (evidence_root / "window-bounds.json").open(
+                            "w", encoding="utf-8") as evidence_file:
+                        json.dump(evidence_bounds, evidence_file, ensure_ascii=False,
+                                  indent=2)
 
                 os.replace(moved_source, audit.audit_path)
                 query_entered = threading.Event()
@@ -9523,7 +9713,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(app._historical_query_result.date_range.start.isoformat(),
                                      "2099-01-01")
                     self.assertEqual(app._historical_query_result.total_count, 0)
-                    self.assertIn("No events were found in this date range.",
+                    self.assertIn("0 matching events were read",
                                   app.historical_query_status.cget("text"))
                 self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
                 self.assertEqual(legacy_path.read_bytes(), legacy_bytes)
@@ -9534,6 +9724,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 if moved_source.exists():
                     os.replace(moved_source, audit.audit_path)
                 app._close_historical_event_window()
+                app._close_app_diagnostics_window()
                 app.hotkey.close()
                 root.destroy()
             self.assertEqual(audit.audit_path.read_bytes(), source_bytes)
