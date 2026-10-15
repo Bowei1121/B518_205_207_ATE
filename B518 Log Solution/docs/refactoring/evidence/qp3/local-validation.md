@@ -11,6 +11,9 @@ Fixed review base: `61dccbc088dab9e48a643c711d49c74d2abb520f`.
 
 An isolated capacity sample used the public query API with the capacity fixture generator: 2,000 fixture events yielded 1,520 matching events across 16 pages. After warming six page positions, 12 more round trips (72 page requests) retained 616,206 bytes under `tracemalloc`; after those trips it retained 616,234 bytes, a 28-byte difference. Peak traced allocation during navigation was 723,911 bytes. The result held 420 list summaries at the end (hard limit 500), and each page returned at most 100. The matching index contained identities/content IDs and ordering fields, not summary or raw-event JSON. Query metrics reported 0 query content copies and 2,007,544 bytes of indexed content writes. This is a single-process Python allocation sample, not a physical-RSS or cold-disk benchmark.
 
-## Desktop validation limitation
+## Desktop validation
 
-Attempted the real-Tk UI page/detail tests with `B518_TK_TESTS=1`; the Python process aborted with exit code 134 before producing test output. The regular non-Tk query, display, and capacity suites passed. A successful real desktop Tk run remains required before QP3 acceptance.
+- `PYTHONPATH=src B518_TK_TESTS=1 python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_qp3_cached_pages_detail_language_and_cancelled_requery` — passed in the authorized macOS Tk desktop session (1 test, 2.389s).
+- The public UI test holds the background summary read at offset 500 while navigating cached pages 1–5, selecting and loading a detail, and switching to Traditional Chinese. It then requests page 6 and verifies it loads after the gate opens. The test checks the summary-cache ceiling remains 500.
+- It then starts a requery from Search, cancels from Cancel while the read is gated, and verifies the previous result object stays active. Full pre/post byte snapshots of the audit source and app-event source compare equal, so neither UI path changed source data.
+- The initial non-escalated Tk attempt aborted before test output; the authorized desktop run above passed, superseding that environment limitation.
