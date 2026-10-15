@@ -1,0 +1,1748 @@
+{
+  "current_measured_commit": "c816286e1d17bac92192634d3717cae5e10df22c",
+  "current_review_base": "990a3d87193035e9dc235fb8f765267fdd8f820a",
+  "fixed_base": "31d08141add7bf9a936e701d99f193455bf40ede",
+  "fixture_manifest": {
+    "app_event_path": "/private/tmp/qp6-fixture/app-events.json",
+    "event_count": 10000,
+    "event_count_unit": "synthetic saved events, not product units",
+    "expected_in_range_event_count": 7510,
+    "expected_out_of_range_event_count": 2490,
+    "fixture_local_offset": "+08:00",
+    "format_version": 1,
+    "generator": "scripts/historical_event_capacity.py",
+    "ignored_precedence_duplicate_count": 1,
+    "physical_source_file_count": 13,
+    "range_end": "2026-10-13",
+    "range_end_inclusive_full_local_day": true,
+    "range_start": "2026-07-16",
+    "range_start_inclusive_local_midnight": true,
+    "runtime": {
+      "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+      "logical_cpu_count": 8,
+      "machine": "x86_64",
+      "physical_memory_bytes": null,
+      "platform": "macOS-10.16-x86_64-i386-64bit",
+      "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]"
+    },
+    "seed_rule": "source type blocks; 1000 records per round source; day = ordinal modulo 120",
+    "sessions_path": "/private/tmp/qp6-fixture/sessions",
+    "source_bytes_by_type": {
+      "app_journal": 19005,
+      "ignored_legacy_precedence": 153,
+      "legacy_events_log": 67892,
+      "round_audit": 3970319
+    },
+    "source_bytes_total": 4057369,
+    "source_count": 12,
+    "source_counts_by_type": {
+      "app_journal_files": 1,
+      "legacy_events_log_files": 1,
+      "round_audit_files": 10
+    },
+    "source_date_span_days": 120,
+    "source_event_counts": {
+      "app_journal": 50,
+      "legacy_events_log": 500,
+      "round_audit": 9450
+    },
+    "source_sha256": {
+      "app-events.json": "6fbd9f0fca8a1d992ed37da74e0a75a93c39cf3133e442861c22fc91d674c21c",
+      "sessions/h8-capacity-legacy-000000/events.log": "e9ecfbf7136cb9421a0c9c3442b7d09f697a43d59f5aec77fe83d2fbcc654473",
+      "sessions/h8-capacity-round-000000/audit.jsonl": "44309a80a5b64cfb8fbce2d856c644b86e4b408d872a57db5ca61dcc404d92dc",
+      "sessions/h8-capacity-round-000000/events.log": "a536e962d1bf5ca154cf336d75bc066318eaf8786e0079421c3e2dd91731a717",
+      "sessions/h8-capacity-round-000001/audit.jsonl": "09c8e7ff3c4c7f44cd8d53b47be3cb2123b1d6ed04ead03f925402939024477a",
+      "sessions/h8-capacity-round-000002/audit.jsonl": "665c68b855836da2ed3e54822a96d2f782a90be632f0f74b0f3c403619833a5e",
+      "sessions/h8-capacity-round-000003/audit.jsonl": "ab8f633b21db337d72736defa52271769f61f28fe10e5aa531de05fea568276c",
+      "sessions/h8-capacity-round-000004/audit.jsonl": "fb47531ce6f80e982ee74978392960ba203365406dbeb3426af4f75cc1a10788",
+      "sessions/h8-capacity-round-000005/audit.jsonl": "3db9d3db1ec0c6aef4517666b72950019f46055c043e1c70d919fc43b2a29439",
+      "sessions/h8-capacity-round-000006/audit.jsonl": "983e922c9cf1b1ae76b6a0272078b4cc329f458b4c2404d972b6f47f2192d3a2",
+      "sessions/h8-capacity-round-000007/audit.jsonl": "d058cdc055e7d028a2096f71bcefe6e01f45b2cc914ce1a73d9928bcb9da7c97",
+      "sessions/h8-capacity-round-000008/audit.jsonl": "a82dd41ad69b112084f91b24e5554882ab5b3d7d1407a3e64edf0820f68245e0",
+      "sessions/h8-capacity-round-000009/audit.jsonl": "22542275c7ac052665c6d1ce56351aead67867f47935adb913ae2ed90f7079fb"
+    }
+  },
+  "fixture_manifest_sha256": "cca65ac8500e27dff492a520f86200c29929f1c860c27174a8a2b94bfa6bdc5c",
+  "fixture_root": "/private/tmp/qp6-fixture",
+  "measurement_count": 36,
+  "os_cache_condition": "uncontrolled; no cold-disk claim",
+  "purpose": "Historical context only: compares the original pre-QP1 query implementation to the current QP6 source for repeated content-copy accounting; not the fixed QP6 modification baseline.",
+  "ranges": {
+    "one_day_under_500": [
+      "2026-10-13",
+      "2026-10-13"
+    ],
+    "seven_days_over_500": [
+      "2026-10-07",
+      "2026-10-13"
+    ]
+  },
+  "raw_measurements": "/private/tmp/qp6-runs-3/raw-measurements.jsonl",
+  "reports": {
+    "one_day_under_500/current_qp6_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 5.96230000002862e-05,
+        "samples": [
+          5.479899999993876e-05,
+          5.96230000002862e-05,
+          7.180700000031237e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 8.571399999990348e-05,
+        "samples": [
+          6.694300000020803e-05,
+          8.571399999990348e-05,
+          8.861999999965064e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0014926960000005707,
+        "samples": [
+          0.0010414210000000423,
+          0.0014926960000005707,
+          0.0020746870000003526
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.642160749,
+        "samples": [
+          4.152626809,
+          4.6502104090000005,
+          4.642160749
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.642202711,
+        "samples": [
+          4.152648145,
+          4.650228033,
+          4.642202711
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.637135289,
+        "samples": [
+          4.14640357,
+          4.6449195329999995,
+          4.637135289
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.622140743,
+        "samples": [
+          4.131999783,
+          4.628713241,
+          4.622140743
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 473295,
+        "samples": [
+          472887,
+          473297,
+          473295
+        ]
+      }
+    },
+    "one_day_under_500/current_qp6_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 5.04750000001053e-05,
+        "samples": [
+          2.9887000000172748e-05,
+          5.04750000001053e-05,
+          6.119000000026631e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 5.440199999995343e-05,
+        "samples": [
+          4.4044000000020844e-05,
+          5.440199999995343e-05,
+          8.525400000003458e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0009890139999999548,
+        "samples": [
+          0.0006963100000003664,
+          0.0009890139999999548,
+          0.0016685299999998904
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.608166477,
+        "samples": [
+          4.608166477,
+          4.086320991,
+          5.018767491
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.60818081,
+        "samples": [
+          4.60818081,
+          4.086340281,
+          5.018800749
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.607032933,
+        "samples": [
+          4.607032933,
+          4.080608972,
+          5.011966821
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.5938798830000005,
+        "samples": [
+          4.5938798830000005,
+          4.065680814,
+          4.997435112
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 472877,
+        "samples": [
+          472877,
+          472877,
+          472814
+        ]
+      }
+    },
+    "one_day_under_500/current_qp6_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 4.4258000000019226e-05,
+        "samples": [
+          4.4258000000019226e-05,
+          3.7507999999963904e-05,
+          4.791300000001053e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 5.677200000001048e-05,
+        "samples": [
+          5.677200000001048e-05,
+          0.00010146399999999556,
+          5.5610000000011484e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 102400,
+        "samples": [
+          102400,
+          102400,
+          102400
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0009358739999999754,
+        "samples": [
+          0.0014851290000000017,
+          0.0006516540000000015,
+          0.0009358739999999754
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.05743114200000002,
+        "samples": [
+          0.05743114200000002,
+          0.050268724999999986,
+          0.057441363999999995
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.057459500999999996,
+        "samples": [
+          0.05746574800000001,
+          0.05028163399999999,
+          0.057459500999999996
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.051438814,
+        "samples": [
+          0.051438814,
+          0.049148094999999975,
+          0.052255828000000004
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.036976691000000006,
+        "samples": [
+          0.036976691000000006,
+          0.03483926799999998,
+          0.037912366
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 436761,
+        "samples": [
+          436761,
+          436761,
+          436761
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_31d0814/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 100415,
+        "samples": [
+          100415,
+          100415,
+          100415
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 84,
+        "samples": [
+          84,
+          84,
+          84
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.0038786530000001207,
+        "samples": [
+          0.0036719170000001355,
+          0.004305919999999741,
+          0.0038786530000001207
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.003666883000000176,
+        "samples": [
+          0.003467279000000101,
+          0.004165078999999849,
+          0.003666883000000176
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0004392140000000211,
+        "samples": [
+          0.00038015900000010205,
+          0.0005226970000000719,
+          0.0004392140000000211
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 3.368408833,
+        "samples": [
+          3.368408833,
+          3.5993089389999997,
+          3.2181974650000003
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 3.3647310270000004,
+        "samples": [
+          3.3647310270000004,
+          3.595000352,
+          3.214315206
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 723456,
+        "samples": [
+          723108,
+          723461,
+          723456
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_31d0814/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 100415,
+        "samples": [
+          100415,
+          100415,
+          100415
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 84,
+        "samples": [
+          84,
+          84,
+          84
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.0034482169999998646,
+        "samples": [
+          0.003621877000000051,
+          0.0034482169999998646,
+          0.003325052000000106
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.003928024000000363,
+        "samples": [
+          0.00420430900000035,
+          0.0036554170000000497,
+          0.003928024000000363
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0005158579999999802,
+        "samples": [
+          0.0005158579999999802,
+          0.00044646599999964565,
+          0.0006107890000000005
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 3.259315597,
+        "samples": [
+          3.259315597,
+          3.190628782,
+          3.396646864
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 3.255683479,
+        "samples": [
+          3.255683479,
+          3.187178443,
+          3.393319832
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 722904,
+        "samples": [
+          722490,
+          722904,
+          722909
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_31d0814/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 100415,
+        "samples": [
+          100415,
+          100415,
+          100415
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 84,
+        "samples": [
+          84,
+          84,
+          84
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.003393024999999994,
+        "samples": [
+          0.00330720000000001,
+          0.003393024999999994,
+          0.003537790000000013
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.0037722889999999842,
+        "samples": [
+          0.0037224699999999777,
+          0.0037722889999999842,
+          0.004076075999999984
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 225280,
+        "samples": [
+          225280,
+          225280,
+          225280
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0004726479999999922,
+        "samples": [
+          0.0004436849999999992,
+          0.0004726479999999922,
+          0.0005023030000000095
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.035576829000000004,
+        "samples": [
+          0.03735677400000001,
+          0.03400007699999999,
+          0.035576829000000004
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.03203768000000001,
+        "samples": [
+          0.034047788999999995,
+          0.030604221999999986,
+          0.03203768000000001
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 693936,
+        "samples": [
+          693936,
+          693936,
+          693936
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.00014254199999985673,
+        "samples": [
+          0.0002260659999997472,
+          0.00014254199999985673,
+          0.00011598099999954314
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.0043117389999993705,
+        "samples": [
+          0.0042563289999995035,
+          0.006395329000000061,
+          0.0043117389999993705
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0010985269999999048,
+        "samples": [
+          0.0010985269999999048,
+          0.001805178999999768,
+          0.0008526879999992687
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.610198684,
+        "samples": [
+          4.477262639,
+          4.957160438,
+          4.610198684
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.62174745,
+        "samples": [
+          4.4879047320000005,
+          4.967550511,
+          4.62174745
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.607360806,
+        "samples": [
+          4.475163256,
+          4.952301351,
+          4.607360806
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.556782386,
+        "samples": [
+          4.429021921,
+          4.8982680400000005,
+          4.556782386
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2115245,
+        "samples": [
+          2115644,
+          2115245,
+          2115243
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 8.412800000012766e-05,
+        "samples": [
+          7.480099999934708e-05,
+          8.412800000012766e-05,
+          0.00010926900000018946
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.0041400330000005425,
+        "samples": [
+          0.00425253800000025,
+          0.0041147370000000905,
+          0.0041400330000005425
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0008444719999998185,
+        "samples": [
+          0.0008365069999998198,
+          0.0008444719999998185,
+          0.0009290480000005985
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.190509158,
+        "samples": [
+          4.640090301,
+          4.110841907,
+          4.190509158
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.201407872,
+        "samples": [
+          4.65143294,
+          4.121285992,
+          4.201407872
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.186918953999999,
+        "samples": [
+          4.637310784,
+          4.106418179,
+          4.186918953999999
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.148136914,
+        "samples": [
+          4.5949968210000005,
+          4.069130135,
+          4.148136914
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2115175,
+        "samples": [
+          2115115,
+          2115233,
+          2115175
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.0001276510000000064,
+        "samples": [
+          0.0001276510000000064,
+          8.630599999998045e-05,
+          0.00015180100000000696
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.004286220999999979,
+        "samples": [
+          0.0058105189999999585,
+          0.004286220999999979,
+          0.00420966300000003
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 544768,
+        "samples": [
+          544768,
+          544768,
+          544768
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0009796870000000069,
+        "samples": [
+          0.0010365880000000605,
+          0.0009796870000000069,
+          0.0008400590000000041
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.12219987599999999,
+        "samples": [
+          0.20886533899999998,
+          0.11027293600000002,
+          0.12219987599999999
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.13272594799999998,
+        "samples": [
+          0.220355338,
+          0.12174032200000004,
+          0.13272594799999998
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.11731681199999999,
+        "samples": [
+          0.20408495399999999,
+          0.10860098800000001,
+          0.11731681199999999
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.07168863399999997,
+        "samples": [
+          0.15695821399999998,
+          0.06902122900000002,
+          0.07168863399999997
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2079141,
+        "samples": [
+          2078733,
+          2079141,
+          2079141
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_31d0814/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 574711,
+        "samples": [
+          574711,
+          574711,
+          574711
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 588,
+        "samples": [
+          588,
+          588,
+          588
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.025001537000000518,
+        "samples": [
+          0.024045752000000142,
+          0.025001537000000518,
+          0.036365239000000216
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.029660332000000622,
+        "samples": [
+          0.029660332000000622,
+          0.02930890499999972,
+          0.04552353600000014
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0007132090000006031,
+        "samples": [
+          0.0007132090000006031,
+          0.0005899439999996758,
+          0.0008630510000005032
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.245043088999999,
+        "samples": [
+          4.245043088999999,
+          3.954879784,
+          4.751933073
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.220995111000001,
+        "samples": [
+          4.220995111000001,
+          3.929875622,
+          4.715563282
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 1702226,
+        "samples": [
+          1702226,
+          1701752,
+          1702228
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_31d0814/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 574711,
+        "samples": [
+          574711,
+          574711,
+          574711
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 588,
+        "samples": [
+          588,
+          588,
+          588
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.04015810900000005,
+        "samples": [
+          0.043210007999999966,
+          0.04015810900000005,
+          0.02996241000000044
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.039370848999999986,
+        "samples": [
+          0.039370848999999986,
+          0.05406076300000073,
+          0.038439240999999846
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.000881003000000824,
+        "samples": [
+          0.000881003000000824,
+          0.00159226800000134,
+          0.0006579640000001774
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 6.717121715,
+        "samples": [
+          4.600956523,
+          9.293778846,
+          6.717121715
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 6.68715428,
+        "samples": [
+          4.557741747,
+          9.253616394,
+          6.68715428
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 1701556,
+        "samples": [
+          1701678,
+          1701268,
+          1701556
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_31d0814/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 574711,
+        "samples": [
+          574711,
+          574711,
+          574711
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 588,
+        "samples": [
+          588,
+          588,
+          588
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.025216202999999993,
+        "samples": [
+          0.025216202999999993,
+          0.025152461999999987,
+          0.031808278999999995
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.030645562000000015,
+        "samples": [
+          0.03021969899999999,
+          0.030645562000000015,
+          0.03557912499999999
+        ]
+      },
+      "index_bytes": {
+        "median": 24293376,
+        "samples": [
+          24293376,
+          24293376,
+          24293376
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 1306624,
+        "samples": [
+          1306624,
+          1306624,
+          1306624
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0005649400000000138,
+        "samples": [
+          0.0005568140000000166,
+          0.0009321909999999711,
+          0.0005649400000000138
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.13175037700000003,
+        "samples": [
+          0.13175037700000003,
+          0.10519561,
+          0.13944932399999999
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.10653022900000003,
+        "samples": [
+          0.10653022900000003,
+          0.08003733800000001,
+          0.10763583300000001
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 1673458,
+        "samples": [
+          1673458,
+          1673050,
+          1673458
+        ]
+      }
+    }
+  },
+  "runtime": {
+    "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+    "logical_cpu_count": 8,
+    "machine": "x86_64",
+    "physical_memory_bytes": null,
+    "platform": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]"
+  },
+  "samples_per_implementation_range_lifecycle": 3
+}

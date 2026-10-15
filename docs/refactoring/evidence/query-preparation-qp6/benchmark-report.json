@@ -1,0 +1,2037 @@
+{
+  "baseline_description": "QP6 fixed ticket review base immediately before the warm-query reclamation optimization.",
+  "current_measured_commit": "c816286e1d17bac92192634d3717cae5e10df22c",
+  "current_review_base": "990a3d87193035e9dc235fb8f765267fdd8f820a",
+  "current_worktree_basis": "Measured committed QP6 source; no source changes occurred during the measurement.",
+  "fixed_base": "990a3d87193035e9dc235fb8f765267fdd8f820a",
+  "fixture_manifest": {
+    "app_event_path": "/private/tmp/qp6-fixture/app-events.json",
+    "event_count": 10000,
+    "event_count_unit": "synthetic saved events, not product units",
+    "expected_in_range_event_count": 7510,
+    "expected_out_of_range_event_count": 2490,
+    "fixture_local_offset": "+08:00",
+    "format_version": 1,
+    "generator": "scripts/historical_event_capacity.py",
+    "ignored_precedence_duplicate_count": 1,
+    "physical_source_file_count": 13,
+    "range_end": "2026-10-13",
+    "range_end_inclusive_full_local_day": true,
+    "range_start": "2026-07-16",
+    "range_start_inclusive_local_midnight": true,
+    "runtime": {
+      "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+      "logical_cpu_count": 8,
+      "machine": "x86_64",
+      "physical_memory_bytes": null,
+      "platform": "macOS-10.16-x86_64-i386-64bit",
+      "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]"
+    },
+    "seed_rule": "source type blocks; 1000 records per round source; day = ordinal modulo 120",
+    "sessions_path": "/private/tmp/qp6-fixture/sessions",
+    "source_bytes_by_type": {
+      "app_journal": 19005,
+      "ignored_legacy_precedence": 153,
+      "legacy_events_log": 67892,
+      "round_audit": 3970319
+    },
+    "source_bytes_total": 4057369,
+    "source_count": 12,
+    "source_counts_by_type": {
+      "app_journal_files": 1,
+      "legacy_events_log_files": 1,
+      "round_audit_files": 10
+    },
+    "source_date_span_days": 120,
+    "source_event_counts": {
+      "app_journal": 50,
+      "legacy_events_log": 500,
+      "round_audit": 9450
+    },
+    "source_sha256": {
+      "app-events.json": "6fbd9f0fca8a1d992ed37da74e0a75a93c39cf3133e442861c22fc91d674c21c",
+      "sessions/h8-capacity-legacy-000000/events.log": "e9ecfbf7136cb9421a0c9c3442b7d09f697a43d59f5aec77fe83d2fbcc654473",
+      "sessions/h8-capacity-round-000000/audit.jsonl": "44309a80a5b64cfb8fbce2d856c644b86e4b408d872a57db5ca61dcc404d92dc",
+      "sessions/h8-capacity-round-000000/events.log": "a536e962d1bf5ca154cf336d75bc066318eaf8786e0079421c3e2dd91731a717",
+      "sessions/h8-capacity-round-000001/audit.jsonl": "09c8e7ff3c4c7f44cd8d53b47be3cb2123b1d6ed04ead03f925402939024477a",
+      "sessions/h8-capacity-round-000002/audit.jsonl": "665c68b855836da2ed3e54822a96d2f782a90be632f0f74b0f3c403619833a5e",
+      "sessions/h8-capacity-round-000003/audit.jsonl": "ab8f633b21db337d72736defa52271769f61f28fe10e5aa531de05fea568276c",
+      "sessions/h8-capacity-round-000004/audit.jsonl": "fb47531ce6f80e982ee74978392960ba203365406dbeb3426af4f75cc1a10788",
+      "sessions/h8-capacity-round-000005/audit.jsonl": "3db9d3db1ec0c6aef4517666b72950019f46055c043e1c70d919fc43b2a29439",
+      "sessions/h8-capacity-round-000006/audit.jsonl": "983e922c9cf1b1ae76b6a0272078b4cc329f458b4c2404d972b6f47f2192d3a2",
+      "sessions/h8-capacity-round-000007/audit.jsonl": "d058cdc055e7d028a2096f71bcefe6e01f45b2cc914ce1a73d9928bcb9da7c97",
+      "sessions/h8-capacity-round-000008/audit.jsonl": "a82dd41ad69b112084f91b24e5554882ab5b3d7d1407a3e64edf0820f68245e0",
+      "sessions/h8-capacity-round-000009/audit.jsonl": "22542275c7ac052665c6d1ce56351aead67867f47935adb913ae2ed90f7079fb"
+    }
+  },
+  "fixture_manifest_sha256": "cca65ac8500e27dff492a520f86200c29929f1c860c27174a8a2b94bfa6bdc5c",
+  "fixture_root": "/private/tmp/qp6-fixture",
+  "measurement_count": 36,
+  "os_cache_condition": "uncontrolled; no cold-disk claim",
+  "ranges": {
+    "one_day_under_500": [
+      "2026-10-13",
+      "2026-10-13"
+    ],
+    "seven_days_over_500": [
+      "2026-10-07",
+      "2026-10-13"
+    ]
+  },
+  "raw_measurements": "/private/tmp/qp6-runs-4/raw-measurements.jsonl",
+  "reports": {
+    "one_day_under_500/current_qp6_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 5.7883000000202856e-05,
+        "samples": [
+          5.0298000000559284e-05,
+          5.7883000000202856e-05,
+          0.00014980899999983421
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 7.638400000065104e-05,
+        "samples": [
+          5.4887999999309045e-05,
+          7.638400000065104e-05,
+          9.09010000000876e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.000941296000000591,
+        "samples": [
+          0.0007943730000006255,
+          0.000941296000000591,
+          0.0010294900000005214
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.504283283,
+        "samples": [
+          4.575920657,
+          4.504283283,
+          4.042445711
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.504312588,
+        "samples": [
+          4.575939963,
+          4.504312588,
+          4.0424717910000005
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.4984951650000005,
+        "samples": [
+          4.568989631,
+          4.4984951650000005,
+          4.035790089
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.483706479,
+        "samples": [
+          4.553297684,
+          4.483706479,
+          4.021788552
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 473355,
+        "samples": [
+          473355,
+          473355,
+          473162
+        ]
+      }
+    },
+    "one_day_under_500/current_qp6_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 5.656600000047973e-05,
+        "samples": [
+          7.024700000002326e-05,
+          4.438100000037082e-05,
+          5.656600000047973e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 7.371099999975428e-05,
+        "samples": [
+          8.103699999928438e-05,
+          7.371099999975428e-05,
+          6.354699999988611e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0013988290000002124,
+        "samples": [
+          0.0015088079999996395,
+          0.0010525079999998965,
+          0.0013988290000002124
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.925307303,
+        "samples": [
+          4.094383703,
+          5.188533227,
+          4.925307303
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.925357583,
+        "samples": [
+          4.094407064,
+          5.1885536,
+          4.925357583
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.918503537,
+        "samples": [
+          4.086689515,
+          5.183591653000001,
+          4.918503537
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.904885038,
+        "samples": [
+          4.072407692,
+          5.1694347700000005,
+          4.904885038
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 472811,
+        "samples": [
+          472877,
+          472811,
+          472690
+        ]
+      }
+    },
+    "one_day_under_500/current_qp6_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 6.108900000001416e-05,
+        "samples": [
+          6.108900000001416e-05,
+          0.00010173400000001998,
+          4.281899999997174e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 5.2415999999999574e-05,
+        "samples": [
+          0.00012877799999999606,
+          4.922299999998714e-05,
+          5.2415999999999574e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 102400,
+        "samples": [
+          102400,
+          102400,
+          102400
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0010202369999999794,
+        "samples": [
+          0.0014536419999999772,
+          0.0008933239999999731,
+          0.0010202369999999794
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.065050579,
+        "samples": [
+          0.06599321699999999,
+          0.05281575399999999,
+          0.065050579
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.065067718,
+        "samples": [
+          0.06601791000000001,
+          0.052833817000000005,
+          0.065067718
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.058987494999999945,
+        "samples": [
+          0.06032112199999998,
+          0.050416618999999996,
+          0.058987494999999945
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.04236082499999999,
+        "samples": [
+          0.04264193499999999,
+          0.037051163,
+          0.04236082499999999
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 436353,
+        "samples": [
+          436284,
+          436761,
+          436353
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 7.056599999977209e-05,
+        "samples": [
+          7.300199999971113e-05,
+          7.056599999977209e-05,
+          4.241099999990894e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 8.616499999991589e-05,
+        "samples": [
+          8.616499999991589e-05,
+          7.890600000060033e-05,
+          8.911900000008188e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.001306436000000133,
+        "samples": [
+          0.0008582839999995429,
+          0.001510224999999643,
+          0.001306436000000133
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.959078161,
+        "samples": [
+          4.959078161,
+          4.509892877,
+          5.405657995
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.95912372,
+        "samples": [
+          4.95912372,
+          4.509923367,
+          5.411508725
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.956493536,
+        "samples": [
+          4.956493536,
+          4.50488376,
+          5.4048760179999995
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.942269451,
+        "samples": [
+          4.942269451,
+          4.489416984,
+          5.391496202
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 473327,
+        "samples": [
+          472919,
+          473327,
+          473327
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 6.220000000034531e-05,
+        "samples": [
+          9.877599999974507e-05,
+          3.959200000025476e-05,
+          6.220000000034531e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 8.492700000051201e-05,
+        "samples": [
+          0.00018262900000021176,
+          5.2613000000256704e-05,
+          8.492700000051201e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.001610626999999809,
+        "samples": [
+          0.001610626999999809,
+          0.0009400039999993837,
+          0.0020050679999998877
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.6129317930000004,
+        "samples": [
+          4.868175912,
+          4.278673518000001,
+          4.6129317930000004
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.612956716,
+        "samples": [
+          4.868204679000001,
+          4.2786914330000005,
+          4.612956716
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.6075007,
+        "samples": [
+          4.862729593,
+          4.273459386000001,
+          4.6075007
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.595212781,
+        "samples": [
+          4.847153435,
+          4.25921811,
+          4.595212781
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 472783,
+        "samples": [
+          472374,
+          472783,
+          472849
+        ]
+      }
+    },
+    "one_day_under_500/fixed_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 8.166900000000643e-05,
+        "samples": [
+          5.931000000003461e-05,
+          8.845199999996112e-05,
+          8.166900000000643e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 7.542500000001784e-05,
+        "samples": [
+          7.542500000001784e-05,
+          6.31749999999709e-05,
+          8.317899999998879e-05
+        ]
+      },
+      "index_bytes": {
+        "median": 27893760,
+        "samples": [
+          27893760,
+          27893760,
+          27893760
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 102400,
+        "samples": [
+          102400,
+          102400,
+          102400
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0013517299999999954,
+        "samples": [
+          0.00159844800000003,
+          0.0013517299999999954,
+          0.0011918590000000173
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.12292036,
+        "samples": [
+          0.131635268,
+          0.1179983,
+          0.12292036
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.12295230400000001,
+        "samples": [
+          0.131661976,
+          0.11802123200000003,
+          0.12295230400000001
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.11739614599999998,
+        "samples": [
+          0.125481552,
+          0.11276339000000002,
+          0.11739614599999998
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.10388038500000002,
+        "samples": [
+          0.10946681899999999,
+          0.09910896899999999,
+          0.10388038500000002
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 437189,
+        "samples": [
+          436781,
+          437189,
+          437189
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.00011423199999960332,
+        "samples": [
+          0.00018647000000004965,
+          0.00011423199999960332,
+          7.72630000005492e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.004453881999999965,
+        "samples": [
+          0.006908646000000296,
+          0.004350243000000198,
+          0.004453881999999965
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0009569799999997741,
+        "samples": [
+          0.0012685139999994988,
+          0.0009569799999997741,
+          0.0008176589999999706
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.5676760100000005,
+        "samples": [
+          4.8904181840000005,
+          4.458763214,
+          4.5676760100000005
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.580472086,
+        "samples": [
+          4.946075996,
+          4.469137954000001,
+          4.580472086
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.562313761,
+        "samples": [
+          4.885214599,
+          4.4542709,
+          4.562313761
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.522967833,
+        "samples": [
+          4.838414834,
+          4.412829243,
+          4.522967833
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2115711,
+        "samples": [
+          2115711,
+          2115711,
+          2115174
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 7.379100000015626e-05,
+        "samples": [
+          7.379100000015626e-05,
+          0.00012345099999944154,
+          6.730499999996198e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.005126275000000291,
+        "samples": [
+          0.005126275000000291,
+          0.007022687000000083,
+          0.0038918020000000553
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0007974110000006362,
+        "samples": [
+          0.0007974110000006362,
+          0.0012040120000005317,
+          0.0006713640000004517
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.424517548,
+        "samples": [
+          4.100705853,
+          4.424517548,
+          4.9571864119999995
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.467157128,
+        "samples": [
+          4.1069002470000004,
+          4.467157128,
+          4.96854392
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.420094023,
+        "samples": [
+          4.09578223,
+          4.420094023,
+          4.952765490000001
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.368282593,
+        "samples": [
+          4.058646434,
+          4.368282593,
+          4.912576336000001
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2114825,
+        "samples": [
+          2115233,
+          2114767,
+          2114825
+        ]
+      }
+    },
+    "seven_days_over_500/current_qp6_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.00012127499999997626,
+        "samples": [
+          0.0001358440000000516,
+          0.00011045999999997891,
+          0.00012127499999997626
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.004530976999999992,
+        "samples": [
+          0.007035238999999971,
+          0.004530976999999992,
+          0.004335880999999986
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 544768,
+        "samples": [
+          544768,
+          544768,
+          544768
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0011759060000000043,
+        "samples": [
+          0.0011759060000000043,
+          0.0008534629999999988,
+          0.0013777050000000068
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.12013176799999997,
+        "samples": [
+          0.12551700200000002,
+          0.11246730400000002,
+          0.12013176799999997
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.132540216,
+        "samples": [
+          0.135842367,
+          0.11976588699999999,
+          0.132540216
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.11686916399999997,
+        "samples": [
+          0.12122196000000002,
+          0.10660357000000001,
+          0.11686916399999997
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.07389720899999996,
+        "samples": [
+          0.07748686799999999,
+          0.06641528499999996,
+          0.07389720899999996
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2078733,
+        "samples": [
+          2078733,
+          2079141,
+          2078733
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_990a3d8/corrupt_index_recovery": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.00014492599999993416,
+        "samples": [
+          0.00014492599999993416,
+          0.00015414399999968964,
+          8.486400000062844e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.0055384110000007425,
+        "samples": [
+          0.005990366000000691,
+          0.0055384110000007425,
+          0.003715083000000341
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0008984999999999133,
+        "samples": [
+          0.0010586799999998675,
+          0.0008984999999999133,
+          0.0008414429999996642
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.521072042,
+        "samples": [
+          4.012477674,
+          4.735162595,
+          4.521072042
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.5326222199999995,
+        "samples": [
+          4.023420558,
+          4.746660501,
+          4.5326222199999995
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.516466359000001,
+        "samples": [
+          4.007651856000001,
+          4.730148189,
+          4.516466359000001
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.475612326,
+        "samples": [
+          3.970567286,
+          4.687209444,
+          4.475612326
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2115507,
+        "samples": [
+          2115507,
+          2115683,
+          2115275
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_990a3d8/initial_index_build": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 8.418699999968027e-05,
+        "samples": [
+          8.418699999968027e-05,
+          9.716499999967709e-05,
+          7.118999999988773e-05
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.008922619999999881,
+        "samples": [
+          0.004915203999999562,
+          0.009720200999999484,
+          0.008922619999999881
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 9459562,
+        "samples": [
+          9459562,
+          9459562,
+          9459562
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 10000,
+        "samples": [
+          10000,
+          10000,
+          10000
+        ]
+      },
+      "parsed_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 2064384,
+        "samples": [
+          2064384,
+          2064384,
+          2064384
+        ]
+      },
+      "reused_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.0013396569999999386,
+        "samples": [
+          0.0009935439999999574,
+          0.001436456000000419,
+          0.0013396569999999386
+        ]
+      },
+      "source_bytes_read": {
+        "median": 8041090,
+        "samples": [
+          8041090,
+          8041090,
+          8041090
+        ]
+      },
+      "source_version_checks": {
+        "median": 24,
+        "samples": [
+          24,
+          24,
+          24
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 4.850653761999999,
+        "samples": [
+          4.459982171,
+          5.061864304,
+          4.850653761999999
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 4.860988644,
+        "samples": [
+          4.471276989000001,
+          5.08520256,
+          4.860988644
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 4.846065469999999,
+        "samples": [
+          4.4560158329999995,
+          5.05801803,
+          4.846065469999999
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 4.8048922990000005,
+        "samples": [
+          4.4151565029999995,
+          4.934656586,
+          4.8048922990000005
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2115083,
+        "samples": [
+          2115205,
+          2115083,
+          2114670
+        ]
+      }
+    },
+    "seven_days_over_500/fixed_base_990a3d8/warm_index_reuse": {
+      "event_json_copied_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "event_json_copied_rows": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "first_pages_read_seconds": {
+        "median": 0.0001273309999999528,
+        "samples": [
+          0.00020019300000001516,
+          6.897999999999627e-05,
+          0.0001273309999999528
+        ]
+      },
+      "full_page_order_digest_seconds": {
+        "median": 0.005135481999999969,
+        "samples": [
+          0.004978764000000024,
+          0.005135481999999969,
+          0.005890837000000038
+        ]
+      },
+      "index_bytes": {
+        "median": 28004352,
+        "samples": [
+          28004352,
+          28004352,
+          28004352
+        ]
+      },
+      "indexed_content_write_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "indexed_content_write_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parsed_sources": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_bytes": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_content_copy_count": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "query_snapshot_bytes": {
+        "median": 544768,
+        "samples": [
+          544768,
+          544768,
+          544768
+        ]
+      },
+      "reused_sources": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "selected_detail_seconds": {
+        "median": 0.001061044000000011,
+        "samples": [
+          0.0009261509999999862,
+          0.001061044000000011,
+          0.0012849779999999922
+        ]
+      },
+      "source_bytes_read": {
+        "median": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "source_version_checks": {
+        "median": 12,
+        "samples": [
+          12,
+          12,
+          12
+        ]
+      },
+      "submit_to_first_readable_pages_seconds": {
+        "median": 0.16146147899999996,
+        "samples": [
+          0.166062126,
+          0.160396658,
+          0.16146147899999996
+        ]
+      },
+      "submit_to_full_completion_seconds": {
+        "median": 0.17230307499999997,
+        "samples": [
+          0.17334759400000002,
+          0.168200549,
+          0.17230307499999997
+        ]
+      },
+      "submit_to_sorted_initial_batch_seconds": {
+        "median": 0.156533936,
+        "samples": [
+          0.161497928,
+          0.15576667800000002,
+          0.156533936
+        ]
+      },
+      "submit_to_total_count_seconds": {
+        "median": 0.11656835499999998,
+        "samples": [
+          0.12209091300000002,
+          0.11602252700000001,
+          0.11656835499999998
+        ]
+      },
+      "tracemalloc_peak_bytes": {
+        "median": 2079569,
+        "samples": [
+          2079569,
+          2079569,
+          2079569
+        ]
+      }
+    }
+  },
+  "runtime": {
+    "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+    "logical_cpu_count": 8,
+    "machine": "x86_64",
+    "physical_memory_bytes": null,
+    "platform": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]"
+  },
+  "samples_per_implementation_range_lifecycle": 3
+}
