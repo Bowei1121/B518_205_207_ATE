@@ -2,7 +2,7 @@
   "general_notice": {
     "en": {
       "title": "Language Preference Not Saved",
-      "geometry": "640x400+106+88",
+      "geometry": "640x400+193+175",
       "size": [
         640,
         400
@@ -22,8 +22,8 @@
         ]
       },
       "native_bounds": {
-        "X": 106.0,
-        "Y": 88.0,
+        "X": 193.0,
+        "Y": 175.0,
         "Width": 640.0,
         "Height": 428.0
       },
@@ -35,7 +35,7 @@
     },
     "zh-TW": {
       "title": "語言設定未保存",
-      "geometry": "640x400+106+88",
+      "geometry": "640x400+193+175",
       "size": [
         640,
         400
@@ -55,8 +55,8 @@
         ]
       },
       "native_bounds": {
-        "X": 106.0,
-        "Y": 88.0,
+        "X": 193.0,
+        "Y": 175.0,
         "Width": 640.0,
         "Height": 428.0
       },
