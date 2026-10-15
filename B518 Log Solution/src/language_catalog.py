@@ -16,7 +16,7 @@ SUPPORTED_LANGUAGE_CODES = frozenset(code for code, _name in LANGUAGE_OPTIONS)
 
 LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
     ENGLISH: {
-        "app.title": "B518 Log Solution-V0.1.0",
+        "app.title": "ATE Log Solution-V{version}",
         "term.test_round": "Test Round",
         "term.awaiting_review": "Awaiting Review",
         "term.station_type": "Station Type",
@@ -49,7 +49,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "app.hotkey.title": "Global Hotkey",
         "app.profile.validation_title": "Configuration Error",
         "app.profile.save_title": "Configuration Save Failed",
-        "app.settings.title": "B518 Log Solution Settings",
+        "app.settings.title": "Setting",
         "app.settings.tab.configuration": "Engineer Configuration",
         "app.settings.tab.events": "Events & Session",
         "app.settings.tab.retention": "Retention",
@@ -295,6 +295,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.round_alarm": "Round Alarm",
         "main.round_alarm_pending": "Round Alarm (Awaiting Review)",
         "main.round_alarm_acknowledged": "Round Alarm (Acknowledged)",
+        "main.language": "Select language (current: {current_language})",
         "conflict.title": "Same-Round Result Conflict",
         "conflict.instructions": "Choose whether to keep the original result or accept the captured new candidate for each item. Closing this window does not make a decision.",
         "conflict.position": "Display position: {position}",
@@ -411,7 +412,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "platform.sample_json.unreadable": "Sample JSON source could not be read: {source_filename}",
     },
     TRADITIONAL_CHINESE: {
-        "app.title": "B518 Log Solution-V0.1.0",
+        "app.title": "ATE Log Solution-V{version}",
         "term.test_round": "測試輪次",
         "term.awaiting_review": "待確認",
         "term.station_type": "工站類型",
@@ -444,7 +445,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "app.hotkey.title": "全域快捷鍵",
         "app.profile.validation_title": "配置錯誤",
         "app.profile.save_title": "配置保存失敗",
-        "app.settings.title": "B518 Log Solution 設定",
+        "app.settings.title": "設定",
         "app.settings.tab.configuration": "工程師配置",
         "app.settings.tab.events": "事件與 Session",
         "app.settings.tab.retention": "保存期限",
@@ -690,6 +691,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "main.round_alarm": "整輪警報",
         "main.round_alarm_pending": "整輪警報（待確認）",
         "main.round_alarm_acknowledged": "整輪警報已確認",
+        "main.language": "選擇語言（目前：{current_language}）",
         "conflict.title": "同輪結果衝突",
         "conflict.instructions": "請逐項選擇保留原結果或採用已捕捉的新候選；關閉視窗不會做出裁決。",
         "conflict.position": "顯示位置：{position}",

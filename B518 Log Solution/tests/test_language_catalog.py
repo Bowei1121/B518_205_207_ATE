@@ -8,6 +8,11 @@ class LanguageCatalogTests(unittest.TestCase):
     def test_main_message_translates_with_named_parameters(self):
         self.assertEqual(language_catalog.translate("main.settings", "en"), "Settings")
         self.assertEqual(language_catalog.translate("main.settings", "zh-TW"), "設定")
+        self.assertEqual(language_catalog.translate(
+            "app.title", "en", version="0.1.0"), "ATE Log Solution-V0.1.0")
+        self.assertEqual(language_catalog.translate(
+            "main.language", "zh-TW", current_language="English"),
+            "選擇語言（目前：English）")
         self.assertEqual(
             language_catalog.translate("main.station_title", "zh-TW", machine="B482"),
             "B482 Log 監控",

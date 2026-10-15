@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
-    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    B518LogSolutionApp, _LocalizedControlHint, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
 )
@@ -168,6 +168,296 @@ class LogSolutionUiTests(unittest.TestCase):
         )
         app.language_menu.invoke(index)
         root.update()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                root.update_idletasks()
+                self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
+                self.assertEqual(app.company_logo.width(), 137)
+                self.assertEqual(app.company_logo.height(), 35)
+                for button, icon in ((app.settings_button, "settings"),
+                                     (app.review_button, "review"),
+                                     (app.round_alarm_button, "alarm"),
+                                     (app.language_button, "language")):
+                    self.assertEqual(button.cget("text"), "")
+                    self.assertIn(str(app.toolbar_icons[icon]), button.cget("image"))
+                    self.assertTrue(button.winfo_viewable())
+
+                def bounds(widgets):
+                    return tuple((widget.winfo_x(), widget.winfo_y(),
+                                  widget.winfo_width(), widget.winfo_height())
+                                 for widget in widgets)
+
+                toolbar = (app.settings_button, app.review_group,
+                           app.round_alarm_button, app.language_button)
+                kvm = (app.kvm_results, app.kvm_result_title, app.kvm_state_marker,
+                       app.kvm_layout_marker, *app.kvm_result_blocks.values())
+                toolbar_bounds, kvm_bounds = bounds(toolbar), bounds(kvm)
+                self.assertEqual(app.review_count.cget("text"), "0")
+                self.assertEqual(str(app.review_button["state"]), "disabled")
+                review_count_width = app.review_count.winfo_width()
+                app.review_count.configure(text="1234567")
+                root.update_idletasks()
+                review_count_font = tkfont.Font(root=root, font=app.review_count.cget("font"))
+                self.assertEqual(app.review_count.cget("text"), "1234567")
+                self.assertGreaterEqual(
+                    app.review_count.winfo_width(), review_count_font.measure("1234567"))
+                self.assertEqual(app.review_count.winfo_width(), review_count_width)
+                self.assertEqual(bounds(toolbar), toolbar_bounds)
+                self.assertEqual(bounds(kvm), kvm_bounds)
+                app.review_count.configure(text="0")
+                root.update_idletasks()
+
+                alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
+                                        acknowledged_at=None, created_at="2026-10-15T12:00:00")
+                alarm_snapshot = SimpleNamespace(
+                    round_alarm=alarm, round_alarm_ready=True, round_id=alarm.round_id,
+                    pending_conflicts=(), source_preparation_pending=False,
+                    state=SimpleNamespace(value="IDLE"), completion_reason=None,
+                )
+                original_snapshot = app.rounds.snapshot
+                app.rounds.snapshot = lambda: alarm_snapshot
+                original_render_conflict_button = app._render_conflict_review_button
+                app._render_conflict_review_button = lambda snapshot=None: app.review_button.configure(
+                    state="normal")
+
+                tooltip_expectations = (
+                    (app.settings_button, app._toolbar_hints[0], "Settings"),
+                    (app.language_button, app._toolbar_hints[1],
+                     "Select language (current: English)"),
+                    (app.round_alarm_button, app._toolbar_hints[2],
+                     "Round Alarm (Awaiting Review)"),
+                    (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
+                )
+                for widget, hint, expected in tooltip_expectations:
+                    widget.configure(state="normal")
+                    widget.event_generate("<Enter>")
+                    deadline = time.monotonic() + 1
+                    while hint._window is None and time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(0.01)
+                    self.assertIsNotNone(hint._window, expected)
+                    self.assertEqual(hint._window.winfo_children()[0].cget("text"), expected)
+                    widget.event_generate("<Leave>")
+                    root.update()
+                    if widget in (app.round_alarm_button, app.review_button):
+                        widget.configure(state="disabled")
+                language_hint = app._toolbar_hints[1]
+                app.language_button.focus_force()
+                app.language_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: language_hint._window is not None)
+                language_hint_window = language_hint._window
+                app._select_language(TRADITIONAL_CHINESE)
+                self.wait_for_ui(root, lambda:
+                                 language_hint_window.winfo_children()[0].cget("text") ==
+                                 "選擇語言（目前：繁體中文）")
+                self.assertIs(language_hint._window, language_hint_window)
+                self.assertEqual(sum(hint._window is not None
+                                     for hint in app._toolbar_hints), 1)
+                app.language_button.event_generate("<Leave>")
+                root.update()
+
+                disabled_hint = app._toolbar_hints[3]
+                app.review_button.configure(state="normal")
+                app.review_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: disabled_hint._window is not None)
+                app._render_conflict_review_button = original_render_conflict_button
+                app._render_conflict_review_button(
+                    SimpleNamespace(pending_conflicts=()))
+                self.assertIsNone(disabled_hint._window)
+
+                app._select_language(ENGLISH)
+                root.update()
+                settings_hint = app._toolbar_hints[0]
+                app.settings_button.focus_force()
+                app.settings_button.event_generate("<FocusIn>")
+                root.update()
+                deadline = time.monotonic() + 1
+                while settings_hint._window is None and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.01)
+                self.assertIsNotNone(settings_hint._window)
+                self.assertEqual(settings_hint._window.winfo_children()[0].cget("text"), "Settings")
+                settings_hint._hide()
+
+                app.language_button.focus_force()
+                root.update()
+                for key in ("<space>", "<Return>", "<Down>"):
+                    self.assertTrue(app.language_button.bind(key), key)
+
+                app.settings_button.focus_force()
+                root.update()
+                app.settings_button.event_generate("<KeyPress-space>")
+                app.settings_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertIsNotNone(app.settings_window)
+                self.assertEqual(app.settings_window.title(), "Setting")
+                app._close_settings()
+
+                app.review_button.configure(state="normal")
+                app.review_button.event_generate(
+                    "<ButtonPress-1>", x=app.review_button.winfo_width() // 2,
+                    y=app.review_button.winfo_height() // 2)
+                app.review_button.event_generate(
+                    "<ButtonRelease-1>", x=app.review_button.winfo_width() // 2,
+                    y=app.review_button.winfo_height() // 2)
+                root.update()
+                self.assertIsNotNone(app.conflict_window)
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                app.conflict_window.destroy()
+
+                with patch.object(app.rounds, "snapshot", return_value=alarm_snapshot):
+                    app.round_alarm_button.configure(state="normal")
+                    app.round_alarm_button.event_generate(
+                        "<ButtonPress-1>", x=app.round_alarm_button.winfo_width() // 2,
+                        y=app.round_alarm_button.winfo_height() // 2)
+                    app.round_alarm_button.event_generate(
+                        "<ButtonRelease-1>", x=app.round_alarm_button.winfo_width() // 2,
+                        y=app.round_alarm_button.winfo_height() // 2)
+                    root.update()
+                    self.assertIsNotNone(app.round_alarm_window)
+                    self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
+                    app.round_alarm_window.destroy()
+
+                conflicts = tuple(SimpleNamespace() for _ in range(20))
+                snapshot = SimpleNamespace(
+                    pending_conflicts=conflicts, round_alarm=None,
+                    state=SimpleNamespace(value="IDLE"), completion_reason=None,
+                )
+                with patch.object(app.rounds, "snapshot", return_value=snapshot):
+                    app._refresh_main_round_labels()
+                    root.update_idletasks()
+                    self.assertEqual(app.review_count.cget("text"), "20")
+                    self.assertEqual(str(app.review_button["state"]), "normal")
+                    self.assertEqual(bounds(toolbar), toolbar_bounds)
+                    self.assertEqual(bounds(kvm), kvm_bounds)
+                    app._set_main_monitor_state("monitor.awaiting_conflicts", count=20)
+                    app._select_language(TRADITIONAL_CHINESE)
+                    root.update_idletasks()
+                    self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
+                    self.assertIn("20", app.monitor_state.cget("text"))
+                    self.assertEqual(app.review_count.cget("text"), "20")
+                    self.assertEqual(bounds(toolbar), toolbar_bounds)
+                    app.project.set("SAMPLE")
+                    app.station.set("BT")
+                    app._render_main_title()
+                    self.assertEqual(root.title(), "SAMPLE BT ATE Log Solution-V0.1.0")
+                    app._set_main_monitor_state("monitor.idle")
+                    self.assertEqual(app.monitor_state.cget("text"), "待命")
+
+                scratch_button = ttk.Button(root)
+                scratch_button.pack()
+                scratch_hint = _LocalizedControlHint(scratch_button, lambda: "Scratch")
+                scratch_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: scratch_hint._window is not None)
+                scratch_window = scratch_hint._window
+                scratch_button.destroy()
+                root.update()
+                self.assertIsNone(scratch_hint._widget)
+                self.assertFalse(scratch_window.winfo_exists())
+            finally:
+                if "original_snapshot" in locals():
+                    app.rounds.snapshot = original_snapshot
+                if "original_render_conflict_button" in locals():
+                    app._render_conflict_review_button = original_render_conflict_button
+                toolbar_hints = tuple(app._toolbar_hints)
+                language_hint = toolbar_hints[1]
+                app.language_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: language_hint._window is not None)
+                language_hint_window = language_hint._window
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+                self.assertTrue(all(hint._widget is None for hint in toolbar_hints))
+                self.assertFalse(language_hint_window.winfo_exists())
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hm1_logo_normal_missing_and_corrupt_keep_fixed_slot_without_dialog(self):
+        with TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            missing_logo = temporary_path / "missing.png"
+            corrupt_logo = temporary_path / "corrupt.png"
+            corrupt_logo.write_bytes(b"not a PNG")
+            normal_logo = Path(__file__).resolve().parents[1] / "assets" / "foxlink_logo.png"
+            expected_bounds = None
+
+            for state, logo_path in (("normal", normal_logo),
+                                     ("missing", missing_logo),
+                                     ("corrupt", corrupt_logo)):
+                with self.subTest(state=state), \
+                        patch("b518_log_solution.PREFS_PATH",
+                              temporary_path / "preferences.json"), \
+                        patch("b518_log_solution.COMPANY_LOGO_PATH", logo_path):
+                    root = tk.Tk()
+                    root.deiconify()
+                    app = B518LogSolutionApp(
+                        root, hotkey_factory=FakeHotkey,
+                        session_root=temporary_path / (state + "-sessions"),
+                        app_event_path=temporary_path / (state + "-events.json"),
+                    )
+                    try:
+                        root.update_idletasks()
+                        slot_bounds = (app.company_logo_slot.winfo_x(),
+                                       app.company_logo_slot.winfo_y(),
+                                       app.company_logo_slot.winfo_width(),
+                                       app.company_logo_slot.winfo_height())
+                        toolbar_bounds = tuple(
+                            (widget.winfo_x(), widget.winfo_y(),
+                             widget.winfo_width(), widget.winfo_height())
+                            for widget in (app.settings_button, app.review_group,
+                                           app.round_alarm_button, app.language_button)
+                        )
+                        self.assertEqual(slot_bounds[2:], (137, 35))
+                        self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                        if expected_bounds is None:
+                            expected_bounds = (slot_bounds, toolbar_bounds)
+                        else:
+                            self.assertEqual((slot_bounds, toolbar_bounds), expected_bounds)
+
+                        if state == "normal":
+                            self.assertIsNotNone(app.company_logo)
+                            self.assertEqual((app.company_logo.width(), app.company_logo.height()),
+                                             (137, 35))
+                            self.assertEqual(len(app.company_logo_slot.winfo_children()), 1)
+                        else:
+                            self.assertIsNone(app.company_logo)
+                            self.assertEqual(app.company_logo_slot.winfo_children(), [])
+
+                        def descendants(widget):
+                            for child in widget.winfo_children():
+                                yield child
+                                yield from descendants(child)
+
+                        visible_text = [child.cget("text") for child in descendants(root)
+                                        if "text" in child.keys()]
+                        self.assertNotIn("B518 LOG", visible_text)
+                        deadline = time.monotonic() + 0.4
+                        while time.monotonic() < deadline:
+                            root.update()
+                            time.sleep(0.01)
+                        self.assertEqual(
+                            [child for child in root.children.values()
+                             if isinstance(child, tk.Toplevel)], [],
+                        )
+                    finally:
+                        app.rounds.request_close()
+                        self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                        app.hotkey.close()
+                        root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -919,7 +1209,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.language_menu.invoke(chinese_index)
                 root.update()
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertIn("繁體中文", app.language_button.cget("text"))
+                self.assertEqual(app.language_choice.get(), TRADITIONAL_CHINESE)
                 self.assertEqual(preferences.read_bytes(), original_preferences)
                 self.assertIn("preference disk full", app.event_lines[-1])
 
@@ -1277,14 +1567,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._profile_changed()
                 root.update()
                 self.assertEqual(app.current_language, DEFAULT_LANGUAGE)
-                self.assertEqual(app.language_button.cget("text"), "English ▾")
+                self.assertEqual(app.language_button.cget("text"), "")
+                self.assertEqual(app.language_button.cget("image"), str(app.toolbar_icons["language"]))
                 self.assertEqual(
                     [app.language_menu.entrycget(index, "label")
                      for index in range(app.language_menu.index("end") + 1)],
                     ["English", "繁體中文"],
                 )
                 self.assertEqual(app.language_choice.get(), ENGLISH)
-                self.assertEqual(app.settings_button.cget("text"), "Settings")
+                self.assertEqual(app.settings_button.cget("text"), "")
                 self.assertEqual(app.project_label.cget("text"), "Project")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
                 self.assertLessEqual(
@@ -1368,8 +1659,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(0.01)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertEqual(app.language_button.cget("text"), "繁體中文 ▾")
-                self.assertEqual(app.settings_button.cget("text"), "設定")
+                self.assertEqual(app.language_button.cget("text"), "")
+                self.assertEqual(app.settings_button.cget("text"), "")
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
@@ -1493,7 +1784,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         patch("b518_log_solution.show_notice") as show_error:
                     app.language_menu.invoke(chinese_index)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertIn("繁體中文", app.language_button.cget("text"))
+                self.assertEqual(app.language_choice.get(), TRADITIONAL_CHINESE)
                 self.assertIn("disk full", show_error.call_args.args[1])
                 failed_write = MachineProfileStore(preferences)
                 failed_write.load()
@@ -1535,7 +1826,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 )
                 try:
                     self.assertEqual(second_app.current_language, ENGLISH)
-                    self.assertEqual(second_app.language_button.cget("text"), "English ▾")
+                    self.assertEqual(second_app.language_choice.get(), ENGLISH)
                 finally:
                     second_app.rounds.request_close()
                     self.wait_for(lambda: second_app.rounds.close_status().status == "complete")
@@ -1592,7 +1883,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(0.01)
                 self.assertEqual(app.current_language, ENGLISH)
                 self.assertIsNone(app.profile_error)
-                self.assertEqual(app.language_button.cget("text"), "English ▾")
+                self.assertEqual(app.language_choice.get(), ENGLISH)
                 self.assertIn("unavailable", show_warning.call_args.args[1])
                 self.assertEqual(
                     [app.language_menu.entrycget(index, "label")
@@ -5287,7 +5578,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                "app.language.refresh_failed")
                 self.assertIsNone(failure.get("round_id"))
                 self.assertEqual(failure["diagnostic"],
-                                 "B518 Log Solution 設定: settings refresh unavailable")
+                                 "設定: settings refresh unavailable")
                 disk_records = read_app_event_store(path)["events"]
                 self.assertIn(failure["event_id"],
                               [record["event_id"] for record in disk_records])

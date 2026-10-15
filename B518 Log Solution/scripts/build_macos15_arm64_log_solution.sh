@@ -39,7 +39,9 @@ BUILD=build-macos15_0-arm64
 rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
-  --distpath "$DIST" --workpath "$BUILD" --specpath "$BUILD" --paths "$ROOT/src" --add-data "$ROOT/assets:assets" "$ROOT/src/b518_log_solution.py"
+  --distpath "$DIST" --workpath "$BUILD" --specpath "$BUILD" --paths "$ROOT/src" \
+  --add-data "$ROOT/assets:assets" --add-data "$ROOT/VERSION:VERSION" \
+  "$ROOT/src/b518_log_solution.py"
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"
