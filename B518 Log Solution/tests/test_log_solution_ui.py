@@ -2619,12 +2619,21 @@ class LogSolutionUiTests(unittest.TestCase):
                                      "app.settings.retention.reason.archive.write_failed")
                     self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
 
+                app.round_alarm_button.invoke()
+                root.update()
+                app.recovery_tabs.select(1)
+                app._refresh_recovery_center()
+                self.assertIn("temporary archive fault",
+                              app.recovery_archive_detail.cget("text"))
+                self.assertIn("all eligible archives (1)",
+                              app.recovery_archive_retry_button.cget("text").lower())
+
                 self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
                 self.assertIn("無法寫入可信輪次封存資訊", app.archive_status_label.cget("text"))
                 self.assertIn("temporary archive fault", app.archive_status_label.cget("text"))
                 self.select_language_from_menu(app, root, ENGLISH)
 
-                app.archive_retry_button.invoke()
+                app.recovery_archive_retry_button.invoke()
                 self.wait_for_ui(root, lambda:
                     rounds.archive_status(started.round_id).status == "archived" and
                     app.status_rows[1]["status"].cget("text") == "PASS")
@@ -2719,23 +2728,30 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(any("temporary disk fault" in line for line in app.event_lines))
                     coordinator.stop()
 
-                    app.retry_save_button.invoke()
+                    self.assertEqual(str(app.round_alarm_button["state"]), "normal")
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertTrue(app.recovery_window.winfo_exists())
+                    self.assertIsNone(coordinator.snapshot().round_alarm)
+                    self.assertIn("temporary disk fault",
+                                  app.recovery_save_detail.cget("text"))
+                    app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
-                    self.assertEqual(str(app.retry_save_button["state"]), "disabled")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.retry_save_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertEqual(write_number[0], 2)
                     release_retry.set()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "failed" or
-                           str(app.retry_save_button["state"]) != "normal") and time.monotonic() < deadline:
+                           str(app.recovery_save_retry_button["state"]) != "normal") and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
                     self.assertEqual(coordinator.snapshot().save_state, "failed")
-                    self.assertEqual(str(app.retry_save_button["state"]), "normal")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "normal")
                     ui_tick.clear()
                     root.after(0, ui_tick.set)
                     root.update()
@@ -8387,6 +8403,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 conflict_window = app.conflict_window
                 alarm_window = app.round_alarm_window
                 conflict_id = rounds.snapshot().pending_conflicts[0].conflict_id
+                alarm = rounds.snapshot().round_alarm
+                app.round_alarm_button.invoke()
+                root.update()
+                recovery_window = app.recovery_window
+                self.assertTrue(recovery_window.winfo_exists())
+                self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.cget("text"))
+                self.assertIn("configured round monitoring limit",
+                              app.recovery_alarm_detail.cget("text"))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 app.conflict_list.selection_set(0)
                 app.conflict_list.activate(0)
                 conflict_window.geometry("{}x{}".format(*conflict_window.minsize()))
@@ -8422,6 +8447,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("繁體中文")
                     self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertEqual(recovery_window.title(), "通知與恢復")
+                    self.assertIn("已達設定的整輪監控時間上限",
+                                  app.recovery_alarm_detail.cget("text"))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertIn("同輪結果衝突",
                                   app.language_refresh_banner.cget("text"))
@@ -8438,6 +8466,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 click(app.language_refresh_retry_button)
                 self.assertIs(app.conflict_window, conflict_window)
                 self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertIs(app.recovery_window, recovery_window)
                 self.assertEqual(conflict_window.title(), "同輪結果衝突")
                 self.assertEqual(alarm_window.title(), "整輪監控逾時")
                 self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],

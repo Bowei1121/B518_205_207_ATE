@@ -45,6 +45,22 @@ class LanguageCatalogTests(unittest.TestCase):
         self.assertEqual(language_catalog.translate("main.settings", "fr"), "Settings")
         self.assertEqual(language_catalog.validate_translations(), ())
 
+    def test_recovery_center_explains_zero_state_and_archive_retry_scope_in_both_languages(self):
+        self.assertEqual(language_catalog.translate("recovery.no_alarms", "zh-TW"),
+                         "沒有追蹤中的整輪警報")
+        self.assertIn("does not acknowledge alarms", language_catalog.translate(
+            "recovery.no_alarms_detail", "en"))
+        self.assertEqual(language_catalog.translate(
+            "recovery.retry_all_archives", "zh-TW", count=3),
+            "重試所有符合資格的封存（3）")
+        self.assertEqual(language_catalog.translate(
+            "recovery.retry_all_archives", "en", count=3),
+            "Retry all eligible archives (3)")
+        self.assertTrue(language_catalog.translate(
+            "alarm.reason.round_deadline", "en"))
+        self.assertTrue(language_catalog.translate(
+            "alarm.reason.round_deadline", "zh-TW"))
+
     def test_slotless_round_events_never_invent_slot_zero(self):
         for kind, detail in (
                 ("conflict_detected", {}),

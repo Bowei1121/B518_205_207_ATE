@@ -431,6 +431,26 @@ class B518LogSolutionApp:
         self.round_alarm_close_button: Optional[ttk.Button] = None
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._rendered_alarm_view_state = None
+        self.recovery_window: Optional[tk.Toplevel] = None
+        self.recovery_tabs: Optional[ttk.Notebook] = None
+        self.recovery_alarm_list: Optional[tk.Listbox] = None
+        self.recovery_alarm_detail: Optional[ttk.Label] = None
+        self.recovery_alarm_ack_button: Optional[ttk.Button] = None
+        self.recovery_save_list: Optional[tk.Listbox] = None
+        self.recovery_save_heading: Optional[ttk.Label] = None
+        self.recovery_save_detail: Optional[ttk.Label] = None
+        self.recovery_save_retry_button: Optional[ttk.Button] = None
+        self.recovery_archive_detail: Optional[ttk.Label] = None
+        self.recovery_archive_retry_button: Optional[ttk.Button] = None
+        self.recovery_archive_list: Optional[tk.Listbox] = None
+        self.recovery_archive_heading: Optional[ttk.Label] = None
+        self._recovery_archive_ids: list[str] = []
+        self._recovery_selected_archive: Optional[str] = None
+        self._recovery_alarm_ids: list[tuple[str, str]] = []
+        self._recovery_save_ids: list[str] = []
+        self._recovery_selected_alarm: Optional[tuple[str, str]] = None
+        self._recovery_selected_save: Optional[str] = None
+        self._unregister_recovery_language_receiver = None
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
@@ -611,12 +631,12 @@ class B518LogSolutionApp:
 
         self.round_alarm_button = ttk.Button(
             header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=2,
-            command=self._open_round_alarm, style="Toolbar.TButton", state="disabled",
+            command=self._open_recovery_center, style="Toolbar.TButton",
             takefocus=True,
         )
         self.round_alarm_button.pack(side="right")
         self._toolbar_hints.append(_LocalizedControlHint(
-            self.round_alarm_button, lambda: self._t(self._round_alarm_hint_id())))
+            self.round_alarm_button, lambda: self._t("recovery.title")))
         self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
         self.review_group.pack(side="right", padx=(2, 2))
         self.review_button = ttk.Button(
@@ -1054,9 +1074,7 @@ class B518LogSolutionApp:
             self._toolbar_hints[3].refresh()
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
-        self.round_alarm_button.configure(
-            state="normal" if alarm_pending and snapshot.round_alarm_ready else "disabled",
-        )
+        self.round_alarm_button.configure(state="normal")
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
         if alarm_pending and conflicts:
@@ -2486,6 +2504,7 @@ class B518LogSolutionApp:
                     self._round_alarm_window_identity[0] != snapshot.round_id and
                     self.round_alarm_window and self.round_alarm_window.winfo_exists()):
                 self.round_alarm_window.withdraw()
+            self._refresh_recovery_center()
             return
         identity = (alarm.round_id, alarm.alarm_id)
         if identity != getattr(self, "_shown_round_alarm_identity", None):
@@ -2494,23 +2513,361 @@ class B518LogSolutionApp:
             view_state = (alarm, snapshot.round_alarm_ready)
             if view_state != self._rendered_alarm_view_state:
                 self._render_round_alarm(alarm)
+        self._refresh_recovery_center()
 
     def _render_round_alarm_button(self, snapshot=None) -> None:
         if not hasattr(self, "round_alarm_button"):
             return
-        snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
-        alarm = snapshot.round_alarm if snapshot else None
-        if alarm is None:
-            self.round_alarm_button.configure(state="disabled")
-            if len(getattr(self, "_toolbar_hints", ())) > 2:
-                self._toolbar_hints[2].refresh()
-            return
-        pending = not alarm.acknowledged_at
-        self.round_alarm_button.configure(
-            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
-        )
+        self.round_alarm_button.configure(state="normal")
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
+
+    def _open_recovery_center(self) -> None:
+        """Open the current-run alarm, save, and archive recovery center."""
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            window = tk.Toplevel(self.root)
+            self.recovery_window = window
+            window.title(self._t("recovery.title"))
+            window.geometry("900x620")
+            window.minsize(760, 520)
+            window.transient(self.root)
+            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            self.recovery_tabs = ttk.Notebook(window)
+            self.recovery_tabs.pack(fill="both", expand=True, padx=12, pady=12)
+
+            alarms = ttk.Frame(self.recovery_tabs, padding=10)
+            alarms.columnconfigure(1, weight=1)
+            alarms.rowconfigure(0, weight=1)
+            self.recovery_tabs.add(alarms, text=self._t("recovery.alarms"))
+            alarm_list_frame = ttk.Frame(alarms)
+            alarm_list_frame.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+            alarm_list_frame.rowconfigure(0, weight=1)
+            self.recovery_alarm_list = tk.Listbox(
+                alarm_list_frame, width=34, exportselection=False,
+                background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                selectbackground="#1d4ed8", selectforeground="#ffffff",
+            )
+            self.recovery_alarm_list.grid(row=0, column=0, sticky="nsew")
+            alarm_scrollbar = ttk.Scrollbar(
+                alarm_list_frame, orient="vertical", command=self.recovery_alarm_list.yview)
+            alarm_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_alarm_list.configure(yscrollcommand=alarm_scrollbar.set)
+            self.recovery_alarm_list.bind("<<ListboxSelect>>", self._select_recovery_alarm)
+            alarm_detail = ttk.Frame(alarms)
+            alarm_detail.columnconfigure(0, weight=1)
+            alarm_detail.rowconfigure(0, weight=1)
+            alarm_detail.grid(row=0, column=1, sticky="nsew")
+            self.recovery_alarm_detail = ttk.Label(
+                alarm_detail, text="", wraplength=560, justify="left", anchor="nw",
+            )
+            self.recovery_alarm_detail.grid(row=0, column=0, sticky="nsew")
+            self.recovery_alarm_ack_button = ttk.Button(
+                alarm_detail, text=self._t("alarm.button.acknowledge"),
+                command=self._acknowledge_recovery_alarm,
+            )
+            self.recovery_alarm_ack_button.grid(row=1, column=0, sticky="e", pady=(12, 0))
+
+            recovery = ttk.Frame(self.recovery_tabs, padding=10)
+            recovery.columnconfigure(0, weight=1)
+            recovery.columnconfigure(1, weight=1)
+            recovery.rowconfigure(1, weight=1)
+            self.recovery_tabs.add(recovery, text=self._t("recovery.saves_archives"))
+            self.recovery_save_heading = ttk.Label(
+                recovery, text=self._t("recovery.unsaved_heading"))
+            self.recovery_save_heading.grid(
+                row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 5))
+            self.recovery_archive_heading = ttk.Label(
+                recovery, text=self._t("recovery.archive_heading"))
+            self.recovery_archive_heading.grid(
+                row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 5))
+            save_list_frame = ttk.Frame(recovery)
+            save_list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+            save_list_frame.rowconfigure(0, weight=1)
+            save_list_frame.columnconfigure(0, weight=1)
+            self.recovery_save_list = tk.Listbox(
+                save_list_frame, exportselection=False, background=FIELD_BACKGROUND,
+                foreground=TEXT_COLOUR, selectbackground="#1d4ed8",
+                selectforeground="#ffffff",
+            )
+            self.recovery_save_list.grid(row=0, column=0, sticky="nsew")
+            save_scrollbar = ttk.Scrollbar(
+                save_list_frame, orient="vertical", command=self.recovery_save_list.yview)
+            save_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_save_list.configure(yscrollcommand=save_scrollbar.set)
+            self.recovery_save_list.bind("<<ListboxSelect>>", self._select_recovery_save)
+            archive_list_frame = ttk.Frame(recovery)
+            archive_list_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+            archive_list_frame.rowconfigure(0, weight=1)
+            archive_list_frame.columnconfigure(0, weight=1)
+            self.recovery_archive_list = tk.Listbox(
+                archive_list_frame, exportselection=False, background=FIELD_BACKGROUND,
+                foreground=TEXT_COLOUR, selectbackground="#1d4ed8",
+                selectforeground="#ffffff",
+            )
+            self.recovery_archive_list.grid(row=0, column=0, sticky="nsew")
+            archive_scrollbar = ttk.Scrollbar(
+                archive_list_frame, orient="vertical", command=self.recovery_archive_list.yview)
+            archive_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_archive_list.configure(yscrollcommand=archive_scrollbar.set)
+            self.recovery_archive_list.bind("<<ListboxSelect>>", self._select_recovery_archive)
+            self.recovery_save_detail = ttk.Label(
+                recovery, text="", wraplength=360, justify="left", anchor="nw")
+            self.recovery_save_detail.grid(row=2, column=0, sticky="ew", padx=(0, 8), pady=8)
+            self.recovery_archive_detail = ttk.Label(
+                recovery, text="", wraplength=360, justify="left", anchor="nw")
+            self.recovery_archive_detail.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=8)
+            self.recovery_save_retry_button = ttk.Button(
+                recovery, text=self._t("main.retry_selected"),
+                command=self._retry_recovery_save,
+            )
+            self.recovery_save_retry_button.grid(row=3, column=0, sticky="ew", padx=(0, 8))
+            self.recovery_archive_retry_button = ttk.Button(
+                recovery, text=self._t("main.retry_archive"),
+                command=self._retry_recovery_archives,
+            )
+            self.recovery_archive_retry_button.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+            window.bind("<Destroy>", self._on_recovery_center_destroy, add="+")
+            self._unregister_recovery_language_receiver = self.register_language_receiver(
+                lambda: self._t("recovery.title"),
+                self._refresh_recovery_center_language,
+                window.winfo_exists,
+            )
+        self._refresh_recovery_center()
+        self.recovery_window.deiconify()
+        self.recovery_window.lift()
+
+    def _on_recovery_center_destroy(self, event) -> None:
+        if event.widget is not self.recovery_window:
+            return
+        unregister = self._unregister_recovery_language_receiver
+        self._unregister_recovery_language_receiver = None
+        if unregister is not None:
+            unregister()
+        self.recovery_window = None
+        self.recovery_tabs = None
+        self.recovery_alarm_list = None
+        self.recovery_alarm_detail = None
+        self.recovery_alarm_ack_button = None
+        self.recovery_save_list = None
+        self.recovery_save_heading = None
+        self.recovery_save_detail = None
+        self.recovery_save_retry_button = None
+        self.recovery_archive_detail = None
+        self.recovery_archive_retry_button = None
+        self.recovery_archive_list = None
+        self.recovery_archive_heading = None
+        self._recovery_alarm_ids = []
+        self._recovery_save_ids = []
+        self._recovery_archive_ids = []
+
+    def _refresh_recovery_center_language(self) -> None:
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            return
+        self.recovery_window.title(self._t("recovery.title"))
+        self.recovery_tabs.tab(0, text=self._t("recovery.alarms"))
+        self.recovery_tabs.tab(1, text=self._t("recovery.saves_archives"))
+        self.recovery_save_heading.configure(text=self._t("recovery.unsaved_heading"))
+        self.recovery_archive_heading.configure(text=self._t("recovery.archive_heading"))
+        self.recovery_save_retry_button.configure(text=self._t("main.retry_selected"))
+        self.recovery_archive_retry_button.configure(text=self._t("main.retry_archive"))
+        self._refresh_recovery_center()
+
+    def _refresh_recovery_center(self) -> None:
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            return
+        self._refresh_recovery_alarms()
+        self._refresh_recovery_saves_and_archives()
+
+    def _refresh_recovery_alarms(self) -> None:
+        snapshots = []
+        for status in self.rounds.archive_statuses():
+            snapshot = self.rounds.round_snapshot(status.round_id)
+            if snapshot is not None and snapshot.round_alarm is not None:
+                snapshots.append(snapshot)
+        alarms = [(snapshot, snapshot.round_alarm) for snapshot in snapshots]
+        selected = self._recovery_selected_alarm
+        self._recovery_alarm_ids = [(alarm.round_id, alarm.alarm_id) for _, alarm in alarms]
+        self.recovery_alarm_list.delete(0, "end")
+        selected_index = None
+        for index, (snapshot, alarm) in enumerate(alarms):
+            status = self._t("recovery.acknowledged" if alarm.acknowledged_at
+                             else "recovery.pending")
+            self.recovery_alarm_list.insert(
+                "end", "{} · {} · {}".format(snapshot.station, alarm.round_id[:10], status))
+            if (alarm.round_id, alarm.alarm_id) == selected:
+                selected_index = index
+        if not alarms:
+            self.recovery_alarm_list.insert("end", self._t("recovery.no_alarms"))
+            self.recovery_alarm_detail.configure(text=self._t("recovery.no_alarms_detail"))
+            self.recovery_alarm_ack_button.configure(state="disabled")
+            self._recovery_selected_alarm = None
+            return
+        if selected_index is None:
+            selected_index = next((i for i, (_, alarm) in enumerate(alarms)
+                                   if not alarm.acknowledged_at), 0)
+        self.recovery_alarm_list.selection_set(selected_index)
+        self.recovery_alarm_list.activate(selected_index)
+        self._recovery_selected_alarm = self._recovery_alarm_ids[selected_index]
+        self._render_recovery_alarm(alarms[selected_index][0], alarms[selected_index][1])
+
+    def _select_recovery_alarm(self, _event=None) -> None:
+        selected = self.recovery_alarm_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_alarm_ids):
+            return
+        self._recovery_selected_alarm = self._recovery_alarm_ids[selected[0]]
+        snapshot = self.rounds.round_snapshot(self._recovery_selected_alarm[0])
+        if snapshot is not None:
+            self._render_recovery_alarm(snapshot, snapshot.round_alarm)
+
+    def _render_recovery_alarm(self, snapshot, alarm) -> None:
+        if alarm is None:
+            return
+        pending = not alarm.acknowledged_at
+        status_id = ("alarm.status.preparation_pending" if pending and not snapshot.round_alarm_ready
+                    else "alarm.status.pending" if pending else "alarm.status.acknowledged")
+        reason = next((item.event.detail.get("reason") for item in snapshot.events
+                       if item.event.kind == "round_alarm_created" and
+                       item.event.detail.get("alarm_id") == alarm.alarm_id), "round_deadline")
+        detail = self._t(
+            "alarm.body", round_label=self._t("alarm.round"), round_id=alarm.round_id,
+            alarm_label=self._t("alarm.identity"), alarm_id=alarm.alarm_id,
+            created_label=self._t("alarm.created_at"), created_at=alarm.created_at,
+            status="{}\n{}\n{}: {}".format(
+                self._t(status_id), self._t("alarm.status.conflict_note"),
+                self._t("recovery.reason"), self._t("alarm.reason." + str(reason))),
+        )
+        self.recovery_alarm_detail.configure(text=detail)
+        self.recovery_alarm_ack_button.configure(
+            text=self._t("alarm.button.acknowledged" if not pending else "alarm.button.acknowledge"),
+            state="normal" if pending and snapshot.round_alarm_ready and not self._closing_ui
+            else "disabled",
+        )
+
+    def _acknowledge_recovery_alarm(self) -> None:
+        identity = self._recovery_selected_alarm
+        if identity is None or self._closing_ui:
+            return
+        self.rounds.acknowledge_round_alarm(*identity)
+        self._refresh_round_alarm()
+        self._refresh_conflict_review()
+
+    def _refresh_recovery_saves_and_archives(self) -> None:
+        statuses = self.rounds.archive_statuses()
+        unsaved = self.rounds.unsaved_rounds()
+        previous_save = self._recovery_selected_save
+        self._recovery_save_ids = [snapshot.round_id for snapshot in unsaved]
+        self.recovery_save_list.delete(0, "end")
+        selected_save_index = None
+        for index, snapshot in enumerate(unsaved):
+            state = self._t(save_state_message_id(snapshot.save_state))
+            self.recovery_save_list.insert(
+                "end", "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10], state))
+            if snapshot.round_id == previous_save:
+                selected_save_index = index
+        if unsaved:
+            if selected_save_index is None:
+                selected_save_index = next((i for i, item in enumerate(unsaved)
+                                            if item.save_state == "failed"), 0)
+            self.recovery_save_list.selection_set(selected_save_index)
+            self.recovery_save_list.activate(selected_save_index)
+            self._recovery_selected_save = self._recovery_save_ids[selected_save_index]
+            self._render_recovery_save(unsaved[selected_save_index])
+        else:
+            self.recovery_save_list.insert("end", self._t("recovery.no_unsaved"))
+            self._recovery_selected_save = None
+            self.recovery_save_detail.configure(text=self._t("recovery.no_unsaved_detail"))
+            self.recovery_save_retry_button.configure(state="disabled")
+
+        previous_archive = self._recovery_selected_archive
+        self._recovery_archive_ids = [status.round_id for status in statuses]
+        self.recovery_archive_list.delete(0, "end")
+        selected_archive_index = None
+        for index, status in enumerate(statuses):
+            state_id = ("main.archived" if status.cleanup_eligible else
+                        "main.save.failed" if status.save_state == "failed" else
+                        "main.archive_protected" if status.status == "protected" else
+                        "main.archive_waiting" if status.status in {"waiting", "saving"} else
+                        "main.archive_failed")
+            self.recovery_archive_list.insert(
+                "end", "{} · {} · {}".format(status.station, status.round_id[:10], self._t(state_id)))
+            if status.round_id == previous_archive:
+                selected_archive_index = index
+        if statuses:
+            if selected_archive_index is None:
+                selected_archive_index = next((i for i, status in enumerate(statuses)
+                                               if status.status in {"failed", "protected"}), 0)
+            self.recovery_archive_list.selection_set(selected_archive_index)
+            self.recovery_archive_list.activate(selected_archive_index)
+            self._recovery_selected_archive = self._recovery_archive_ids[selected_archive_index]
+            self._render_recovery_archive(statuses[selected_archive_index])
+        else:
+            self.recovery_archive_list.insert("end", self._t("recovery.no_rounds"))
+            self._recovery_selected_archive = None
+            self.recovery_archive_detail.configure(text=self._t("recovery.no_rounds_detail"))
+        retryable = [status for status in statuses
+                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
+        self.recovery_archive_retry_button.configure(
+            text=self._t("recovery.retry_all_archives", count=len(retryable)),
+            state="normal" if retryable and not self._closing_ui else "disabled")
+
+    def _select_recovery_save(self, _event=None) -> None:
+        selected = self.recovery_save_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_save_ids):
+            return
+        self._recovery_selected_save = self._recovery_save_ids[selected[0]]
+        snapshot = self.rounds.round_snapshot(self._recovery_selected_save)
+        if snapshot is not None:
+            self._render_recovery_save(snapshot)
+
+    def _render_recovery_save(self, snapshot) -> None:
+        if snapshot.save_errors:
+            detail = "{}\n{}".format(self._t("recovery.save_error"), "\n".join(snapshot.save_errors))
+        else:
+            detail = self._t("recovery.save_state_detail", state=self._t(
+                save_state_message_id(snapshot.save_state)))
+        self.recovery_save_detail.configure(text=detail)
+        self.recovery_save_retry_button.configure(
+            state="normal" if snapshot.save_state == "failed" and not self._closing_ui
+            else "disabled")
+
+    def _retry_recovery_save(self) -> None:
+        round_id = self._recovery_selected_save
+        if round_id and not self._closing_ui:
+            self.rounds.retry_saves(round_id)
+            self._refresh_recovery_center()
+
+    def _select_recovery_archive(self, _event=None) -> None:
+        selected = self.recovery_archive_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_archive_ids):
+            return
+        self._recovery_selected_archive = self._recovery_archive_ids[selected[0]]
+        status = self.rounds.archive_status(self._recovery_selected_archive)
+        if status is not None:
+            self._render_recovery_archive(status)
+
+    def _render_recovery_archive(self, status) -> None:
+        state_id = ("main.archived" if status.cleanup_eligible else
+                    "main.save.failed" if status.save_state == "failed" else
+                    "main.archive_protected" if status.status == "protected" else
+                    "main.archive_waiting" if status.status in {"waiting", "saving"} else
+                    "main.archive_failed")
+        reason = (self._retention_reason_detail(status.reason_message)
+                  if status.reason_message is not None else
+                  self._retention_reason_detail(status.message))
+        detail = "{} · {}".format(status.round_id, self._t(state_id))
+        if reason:
+            detail += "\n" + reason
+        if status.status == "failed" and status.message:
+            detail += "\n{}: {}".format(self._t("recovery.archive_diagnostic"), status.message)
+        self.recovery_archive_detail.configure(text=detail)
+
+    def _retry_recovery_archives(self) -> None:
+        if self._closing_ui:
+            return
+        for status in self.rounds.archive_statuses():
+            if status.status in {"failed", "protected"} and status.save_state == "complete":
+                self.rounds.retry_archival(status.round_id)
+        self._refresh_recovery_center()
 
     def _refresh_round_alarm_language(self) -> None:
         window = self.round_alarm_window
