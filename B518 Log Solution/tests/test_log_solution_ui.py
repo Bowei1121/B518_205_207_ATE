@@ -9279,9 +9279,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: app._historical_page_request_id is None and
                                  app._historical_query_page_number == 5)
                 self.click_tk_listbox_row(root, app.historical_event_list, 0)
-                self.wait_for_ui(root, lambda:
-                                 app._historical_event_selected_detail is not None)
                 selected_key = app._historical_event_selected_key
+                self.wait_for_ui(root, lambda:
+                                 app._historical_event_selected_detail is not None and
+                                 app._historical_event_selected_detail.key == selected_key)
                 app._select_language(ENGLISH)
                 root.update()
                 self.assertIn("Retry the remaining pages",
