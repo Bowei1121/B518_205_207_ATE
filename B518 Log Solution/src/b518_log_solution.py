@@ -98,46 +98,13 @@ STATUS_COLOURS = {
 }
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 20
-TOOLBAR_ICON_ROWS = {
-    "settings": (
-        "...##...##...", "..###...###..", "..###.##.###..", ".############.",
-        "##.########.##", "##.##....##.##", "...##....##...", "...##....##...",
-        "##.##....##.##", "##.########.##", ".############.", "..###.##.###..",
-        "..###...###..", "...##...##...",
-    ),
-    "review": (
-        ".......##.......", "......####......", ".....######.....", "....########....",
-        "...##########...", "..############..", ".##############.", "################",
-        "################", ".......##.......", ".......##.......", ".......##.......",
-        ".......##.......", ".......##.......", ".......##.......", ".......##.......",
-    ),
-    "alarm": (
-        ".......####.......", "......######......", ".....########.....", "....##########....",
-        "...############...", "...############...", "..##############..", "..##############..",
-        "..##############..", "..##############..", "...############...", "...############...",
-        "....##########....", ".....########......", "......######.......", "....############..",
-        "...#############..", "..##############...", ".################..", "##################",
-    ),
-    "language": (
-        ".....########.....", "...############...", "..##############..", ".################.",
-        "##################", "####...##...######", "###....##....#####", "##.....##.....####",
-        "##.....##.....####", "##.....##.....####", "###....##....#####", "####...##...######",
-        "##################", ".################.", "..##############..", "...############...",
-        ".....########.....",
-    ),
+TOOLBAR_ICON_GLYPHS = {
+    "settings": "⚙️",
+    "review": "⚠️",
+    "language": "🌐",
+    "alarm": "🔔",
 }
-
-
-def toolbar_icon(master: tk.Misc, name: str) -> tk.PhotoImage:
-    """Build stable monochrome toolbar artwork without platform emoji fonts."""
-    rows = TOOLBAR_ICON_ROWS[name]
-    width = max(map(len, rows))
-    image = tk.PhotoImage(master=master, width=width, height=len(rows))
-    for y, row in enumerate(rows):
-        for x, pixel in enumerate(row):
-            if pixel == "#":
-                image.put(TEXT_COLOUR, (x, y))
-    return image
+TOOLBAR_ICON_FONT = ("Apple Color Emoji", 15)
 
 
 class _LocalizedControlHint:
@@ -583,7 +550,8 @@ class B518LogSolutionApp:
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
-                             foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0)
+                             foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
+                             font=TOOLBAR_ICON_FONT)
         self.style.map("Toolbar.TButton", background=[("active", "#e5e7eb"),
                                                         ("pressed", "#d1d5db"),
                                                         ("disabled", LIGHT_BACKGROUND)])
@@ -609,11 +577,10 @@ class B518LogSolutionApp:
         header = tk.Frame(body, background=LIGHT_BACKGROUND, height=35)
         header.pack(fill="x")
         header.pack_propagate(False)
-        self.toolbar_icons = {name: toolbar_icon(self.root, name) for name in TOOLBAR_ICON_ROWS}
         self._toolbar_hints = []
         self.settings_button = ttk.Button(
-            header, image=self.toolbar_icons["settings"], command=self.open_settings,
-            style="Toolbar.TButton", takefocus=True,
+            header, text=TOOLBAR_ICON_GLYPHS["settings"], width=2,
+            command=self.open_settings, style="Toolbar.TButton", takefocus=True,
         )
         self.settings_button.pack(side="left", padx=(0, 3))
         self._toolbar_hints.append(_LocalizedControlHint(self.settings_button,
@@ -622,10 +589,10 @@ class B518LogSolutionApp:
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
         self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
         self.language_button = tk.Menubutton(
-            header, image=self.toolbar_icons["language"],
+            header, text=TOOLBAR_ICON_GLYPHS["language"], width=2,
             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
             activebackground="#e5e7eb", relief="flat", borderwidth=0,
-            takefocus=True,
+            takefocus=True, font=TOOLBAR_ICON_FONT,
         )
         self.language_menu = tk.Menu(self.language_button, tearoff=False)
         for language, native_name in LANGUAGE_OPTIONS:
@@ -643,8 +610,9 @@ class B518LogSolutionApp:
                 "main.language", current_language=language_name(self.current_language))))
 
         self.round_alarm_button = ttk.Button(
-            header, image=self.toolbar_icons["alarm"], command=self._open_round_alarm,
-            style="Toolbar.TButton", state="disabled", takefocus=True,
+            header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=2,
+            command=self._open_round_alarm, style="Toolbar.TButton", state="disabled",
+            takefocus=True,
         )
         self.round_alarm_button.pack(side="right")
         self._toolbar_hints.append(_LocalizedControlHint(
@@ -652,8 +620,9 @@ class B518LogSolutionApp:
         self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
         self.review_group.pack(side="right", padx=(2, 2))
         self.review_button = ttk.Button(
-            self.review_group, image=self.toolbar_icons["review"], command=self._open_conflict_review,
-            style="Toolbar.TButton", state="disabled", takefocus=True,
+            self.review_group, text=TOOLBAR_ICON_GLYPHS["review"], width=2,
+            command=self._open_conflict_review, style="Toolbar.TButton", state="disabled",
+            takefocus=True,
         )
         self.review_button.pack(side="left")
         self.review_count = tk.Label(

@@ -269,12 +269,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
                 self.assertEqual(app.company_logo.width(), 137)
                 self.assertEqual(app.company_logo.height(), 35)
-                for button, icon in ((app.settings_button, "settings"),
-                                     (app.review_button, "review"),
-                                     (app.round_alarm_button, "alarm"),
-                                     (app.language_button, "language")):
-                    self.assertEqual(button.cget("text"), "")
-                    self.assertIn(str(app.toolbar_icons[icon]), button.cget("image"))
+                for button, glyph in ((app.settings_button, "⚙️"),
+                                      (app.review_button, "⚠️"),
+                                      (app.round_alarm_button, "🔔"),
+                                      (app.language_button, "🌐")):
+                    self.assertEqual(button.cget("text"), glyph)
                     self.assertTrue(button.winfo_viewable())
 
                 footer_buttons = (
@@ -1800,15 +1799,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._profile_changed()
                 root.update()
                 self.assertEqual(app.current_language, DEFAULT_LANGUAGE)
-                self.assertEqual(app.language_button.cget("text"), "")
-                self.assertEqual(app.language_button.cget("image"), str(app.toolbar_icons["language"]))
+                self.assertEqual(app.language_button.cget("text"), "🌐")
                 self.assertEqual(
                     [app.language_menu.entrycget(index, "label")
                      for index in range(app.language_menu.index("end") + 1)],
                     ["English", "繁體中文"],
                 )
                 self.assertEqual(app.language_choice.get(), ENGLISH)
-                self.assertEqual(app.settings_button.cget("text"), "")
+                self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "Project")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
                 self.assertLessEqual(
@@ -1892,8 +1890,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(0.01)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertEqual(app.language_button.cget("text"), "")
-                self.assertEqual(app.settings_button.cget("text"), "")
+                self.assertEqual(app.language_button.cget("text"), "🌐")
+                self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
