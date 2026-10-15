@@ -384,6 +384,12 @@ def _sample_command(arguments):
     else:
         verified_count, identity_sha256 = 0, ""
     digest_seconds = monotonic_time.perf_counter() - key_started
+    first_batch_page_count = min(5, result.page_count)
+    first_batch_started = monotonic_time.perf_counter()
+    first_batch_event_count = 0
+    for page_number in range(1, first_batch_page_count + 1):
+        first_batch_event_count += len(result.get_page(page_number).events)
+    first_batch_seconds = monotonic_time.perf_counter() - first_batch_started
     detail_seconds = 0.0
     detail_size = 0
     page_latencies = []
@@ -433,6 +439,9 @@ def _sample_command(arguments):
         "measurement_recorded_at_local": datetime.now().astimezone().isoformat(),
         "query_seconds": completed_at - started,
         "identity_digest_seconds": digest_seconds,
+        "first_batch_page_count": first_batch_page_count,
+        "first_batch_event_count": first_batch_event_count,
+        "first_batch_seconds": first_batch_seconds,
         "first_middle_last_page_latencies": page_latencies,
         "selected_detail_seconds": detail_seconds,
         "selected_detail_json_bytes": detail_size,

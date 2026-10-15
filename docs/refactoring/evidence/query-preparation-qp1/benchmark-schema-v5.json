@@ -1,0 +1,172 @@
+{
+  "baseline": {
+    "code": "31d08141add7bf9a936e701d99f193455bf40ede",
+    "index_bytes_before_and_after": 4894720
+  },
+  "fixed_review_baseline": "31d08141add7bf9a936e701d99f193455bf40ede",
+  "fixture": {
+    "as_of": "2026-10-13",
+    "events": 2000,
+    "first_batch_events": 500,
+    "first_batch_pages": 5,
+    "matching_events": 1520,
+    "pages": 16,
+    "sources": 4
+  },
+  "measurement": "three fresh-process valid-index requery samples per build; digest=none; same fixture and public service runner; OS cache uncontrolled",
+  "medians": {
+    "baseline-fixed-31d0814": {
+      "first_batch_event_count": 500,
+      "first_batch_page_count": 5,
+      "first_batch_seconds": 0.02215773099999996,
+      "index_bytes_after_query": 4894720,
+      "indexed_content_write_bytes": 0,
+      "indexed_content_write_count": 0,
+      "page_count": 16,
+      "parsed_source_count": 0,
+      "query_content_json_bytes_copied": 1440256,
+      "query_content_json_rows_copied": 1520,
+      "query_seconds": 0.139347934,
+      "query_snapshot_bytes": 3231744,
+      "reused_source_count": 4,
+      "source_bytes_read_by_reader": 0,
+      "total_count": 1520
+    },
+    "qp1-v5": {
+      "first_batch_event_count": 500,
+      "first_batch_page_count": 5,
+      "first_batch_seconds": 0.025041687000000035,
+      "index_bytes_after_query": 5980160,
+      "indexed_content_write_bytes": 0,
+      "indexed_content_write_count": 0,
+      "page_count": 16,
+      "parsed_source_count": 0,
+      "query_content_json_bytes_copied": 0,
+      "query_content_json_rows_copied": 0,
+      "query_seconds": 0.13351052800000002,
+      "query_snapshot_bytes": 471040,
+      "reused_source_count": 4,
+      "source_bytes_read_by_reader": 0,
+      "total_count": 1520
+    }
+  },
+  "qp1_schema_v5": {
+    "code": "b713c70fc43e827320c498d880127537febbfe9a plus local comment-only commit 0a04c4e8c1cb059aede65be90f4f828522e86711",
+    "index_bytes_before_and_after": 5980160,
+    "initial_build": {
+      "indexed_content_write_bytes": 1889544,
+      "indexed_content_write_count": 2000,
+      "parsed_sources": 4,
+      "reused_sources": 0
+    }
+  },
+  "runtime": "Python 3.8.10; macOS 10.16 x86_64",
+  "samples": {
+    "baseline-fixed-31d0814": [
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.02374119899999999,
+        "index_bytes_after_query": 4894720,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 1440256,
+        "query_content_json_rows_copied": 1520,
+        "query_seconds": 0.139347934,
+        "query_snapshot_bytes": 3231744,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      },
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.021243597000000003,
+        "index_bytes_after_query": 4894720,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 1440256,
+        "query_content_json_rows_copied": 1520,
+        "query_seconds": 0.133473347,
+        "query_snapshot_bytes": 3231744,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      },
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.02215773099999996,
+        "index_bytes_after_query": 4894720,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 1440256,
+        "query_content_json_rows_copied": 1520,
+        "query_seconds": 0.14231014699999997,
+        "query_snapshot_bytes": 3231744,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      }
+    ],
+    "qp1-v5": [
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.025041687000000035,
+        "index_bytes_after_query": 5980160,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 0,
+        "query_content_json_rows_copied": 0,
+        "query_seconds": 0.13170087600000002,
+        "query_snapshot_bytes": 471040,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      },
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.035305688,
+        "index_bytes_after_query": 5980160,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 0,
+        "query_content_json_rows_copied": 0,
+        "query_seconds": 0.13351052800000002,
+        "query_snapshot_bytes": 471040,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      },
+      {
+        "first_batch_event_count": 500,
+        "first_batch_page_count": 5,
+        "first_batch_seconds": 0.025021827999999968,
+        "index_bytes_after_query": 5980160,
+        "indexed_content_write_bytes": 0,
+        "indexed_content_write_count": 0,
+        "page_count": 16,
+        "parsed_source_count": 0,
+        "query_content_json_bytes_copied": 0,
+        "query_content_json_rows_copied": 0,
+        "query_seconds": 0.13374833,
+        "query_snapshot_bytes": 471040,
+        "reused_source_count": 4,
+        "source_bytes_read_by_reader": 0,
+        "total_count": 1520
+      }
+    ]
+  }
+}
