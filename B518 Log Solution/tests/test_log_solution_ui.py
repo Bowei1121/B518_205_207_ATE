@@ -9285,7 +9285,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                  app._historical_event_selected_detail.key == selected_key)
                 app._select_language(ENGLISH)
                 root.update()
-                self.assertIn("Retry the remaining pages",
+                self.assertIn("Retry remaining pages",
                               app.historical_event_retry_button.cget("text"))
 
                 retry_entered = threading.Event()
