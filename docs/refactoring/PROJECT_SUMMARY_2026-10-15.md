@@ -24,3 +24,14 @@
 - H8 已 fast-forward 合併至主線，主線合併後完整含 Tk 套件 467 tests / 1,092.897 seconds / exit 0 / no skips。驗收文件已提交並推送；Gitea 與 GitHub 均直接確認主線同步，H8 本地／遠端票分支已正常刪除且查無殘留。其他 worktree、stash 及既存修改維持原狀，細節見 H8 local validation。
 
 交付詳情：[H8 local validation](evidence/historical-event-query-ticket-08/local-validation.md)。H8 不改保存／清理／監控／裁決政策、不操作正式來源資料，不宣稱現場驗收完成。
+
+## 本對話：H8完成後架構優先順序與HMI方向
+
+- 本次依 improve-codebase-architecture 重新分析，固定程式基準為主線 `0ac5575`。原自訂 skill 路徑已不存在，改讀已安裝 plugin 中 engineering/improve-codebase-architecture 的 SKILL／HTML-REPORT，以及 codebase-design；獨立只讀探索所得結論一致。
+- 延續本對話前次查核：H8耗時主要為合成容量查詢與完整事件集合核對；當時仍在執行不等於本次仍卡住。目前H8已合併，主線467項含Tk回歸通過（1,092.897秒），票分支已依既有交付紀錄收尾。本次沒有重跑全套或大型容量測試，不將既有證據寫成新測試結果。
+- P1／Strong：歷史查詢準備固定結果的成本。216萬合成事件／162萬符合範圍，有效索引重查中位數485.302秒、單來源變更476.969秒；查詢快照3,492,605,952 bytes、持久索引5,377,343,488 bytes。讀取原檔的重複解析已解決，但仍逐筆搬移summary與完整event_json到新快照並建排序索引。建議沿現有查詢interface與seam分段量測、減少重複處理，不取消固定集合、清理後既有詳細可讀與來源不改寫的契約。
+- 換頁本身約4.1–100.6毫秒，Tk背景查詢／分頁已在，不再沿用「Tk同步讀全部歷史」的舊版結論。容量runner含tracemalloc、OS cache未控制；上述秒數不是正式設備每次必然等待時間，合成事件量也不是產品件數。
+- P2／Worth exploring：AppEventStore逐筆整份journal讀取／驗證／替換及診斷深複製；缺少正常事件頻率、單次保存延遲及關閉等待量測，不升P1。Tk診斷有視窗存在與revision閘門，不是每150ms無條件深複製。保存module已有真正深度，不直接改為append或拆薄殼。
+- 本次沒有發現新的、已重現的保存完整性或裁決缺陷，不建議全面架構重寫。HMI可並行做操作流程與原型，主頁固定376px寬與KVM格位／定位／狀態標記屬ADR0002辨識契約，不能當普通裝飾任意搬動；維持ADR0005既有Tk分工與ADR0009即時雙語。尚未進行現場可用性或新版畫面驗收。
+- 啟始git status乾淨，沒有使用者未提交檔案可補交。本次只更新本摘要，產品程式不變；另產生繁體中文HTML報告於OS暫存目錄（見下方），不將報告放進repo。系統open失敗、內建瀏覽器file協定被政策拒絕，未改用伺服器或其他方式繞過；交付檔案連結供查看。
+- 報告：/var/folders/gk/zpblb4q57bl24pt55p1m933h0000gn/T/architecture-review-20261015-124423.html
