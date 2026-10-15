@@ -1,0 +1,603 @@
+{
+  "en": {
+    "history-events": {
+      "title": "Historical Events",
+      "geometry": "960x680+480+192",
+      "native_bounds": {
+        "X": 480.0,
+        "Y": 192.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "date_mode": [
+          136,
+          0,
+          182,
+          22
+        ],
+        "date_start": [
+          117,
+          0,
+          114,
+          22
+        ],
+        "date_end": [
+          360,
+          0,
+          114,
+          22
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ],
+        "event_list": [
+          0,
+          0,
+          454,
+          438
+        ],
+        "detail": [
+          0,
+          0,
+          444,
+          452
+        ],
+        "cancel": [
+          0,
+          0,
+          307,
+          34
+        ],
+        "search": [
+          317,
+          0,
+          307,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "history-events-en.png"
+    },
+    "app-diagnostics": {
+      "title": "App diagnostics",
+      "geometry": "900x560+540+312",
+      "native_bounds": {
+        "X": 540.0,
+        "Y": 312.0,
+        "Width": 900.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1176
+      },
+      "controls": {
+        "event_list": [
+          0,
+          0,
+          362,
+          453
+        ],
+        "detail": [
+          0,
+          0,
+          476,
+          467
+        ],
+        "retry": [
+          516,
+          0,
+          224,
+          34
+        ],
+        "close": [
+          746,
+          0,
+          134,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "app-diagnostics-en.png"
+    },
+    "history-diagnostics": {
+      "title": "Historical Events",
+      "geometry": "960x680+480+192",
+      "native_bounds": {
+        "X": 480.0,
+        "Y": 192.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "list": [
+          0,
+          0,
+          454,
+          438
+        ],
+        "detail": [
+          0,
+          0,
+          444,
+          452
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "history-diagnostics-en.png"
+    }
+  },
+  "zh-TW": {
+    "history-events": {
+      "title": "歷史事件",
+      "geometry": "960x680+480+192",
+      "native_bounds": {
+        "X": 480.0,
+        "Y": 192.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "date_mode": [
+          136,
+          0,
+          182,
+          22
+        ],
+        "date_start": [
+          117,
+          0,
+          114,
+          22
+        ],
+        "date_end": [
+          360,
+          0,
+          114,
+          22
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ],
+        "event_list": [
+          0,
+          0,
+          454,
+          438
+        ],
+        "detail": [
+          0,
+          0,
+          444,
+          452
+        ],
+        "cancel": [
+          0,
+          0,
+          307,
+          34
+        ],
+        "search": [
+          317,
+          0,
+          307,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "history-events-zh-TW.png"
+    },
+    "app-diagnostics": {
+      "title": "App 診斷",
+      "geometry": "900x560+540+312",
+      "native_bounds": {
+        "X": 540.0,
+        "Y": 312.0,
+        "Width": 900.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1176
+      },
+      "controls": {
+        "event_list": [
+          0,
+          0,
+          362,
+          453
+        ],
+        "detail": [
+          0,
+          0,
+          476,
+          467
+        ],
+        "retry": [
+          516,
+          0,
+          224,
+          34
+        ],
+        "close": [
+          746,
+          0,
+          134,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "app-diagnostics-zh-TW.png"
+    },
+    "history-diagnostics": {
+      "title": "歷史事件",
+      "geometry": "960x680+480+192",
+      "native_bounds": {
+        "X": 480.0,
+        "Y": 192.0,
+        "Width": 960.0,
+        "Height": 708.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1416
+      },
+      "controls": {
+        "page": [
+          62,
+          7,
+          812,
+          20
+        ],
+        "list": [
+          0,
+          0,
+          454,
+          438
+        ],
+        "detail": [
+          0,
+          0,
+          444,
+          452
+        ],
+        "previous": [
+          0,
+          0,
+          62,
+          34
+        ],
+        "next": [
+          874,
+          0,
+          62,
+          34
+        ]
+      },
+      "source_sha256": {
+        "round_audit": "2e4a0fd5d18fcda4409f8bad4fe670de236a8c5c178dcb08acb91f9a30a2b4ef",
+        "legacy_events": "193f5e89f3f0d4af4490391aec9c198869f82aa8116a33bc37e9c6be448d09c3",
+        "app_events": "577855efb4b865d921be4efbed72751e7a7494f903e5c8c709844b707f2ba338"
+      },
+      "screenshot": "history-diagnostics-zh-TW.png"
+    }
+  },
+  "general_notice": {
+    "en": {
+      "title": "Language Preference Not Saved",
+      "geometry": "640x400+800+445",
+      "size": [
+        640,
+        400
+      ],
+      "controls": {
+        "body": [
+          16,
+          16,
+          594,
+          318
+        ],
+        "acknowledge": [
+          499,
+          350,
+          125,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 800.0,
+        "Y": 445.0,
+        "Width": 640.0,
+        "Height": 428.0
+      },
+      "image_pixels": {
+        "width": 1280,
+        "height": 856
+      },
+      "screenshot": "general-notice-en.png"
+    },
+    "zh-TW": {
+      "title": "語言設定未保存",
+      "geometry": "640x400+800+445",
+      "size": [
+        640,
+        400
+      ],
+      "controls": {
+        "body": [
+          16,
+          16,
+          594,
+          318
+        ],
+        "acknowledge": [
+          499,
+          350,
+          125,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 800.0,
+        "Y": 445.0,
+        "Width": 640.0,
+        "Height": 428.0
+      },
+      "image_pixels": {
+        "width": 1280,
+        "height": 856
+      },
+      "screenshot": "general-notice-zh-TW.png"
+    }
+  },
+  "close_progress": {
+    "en": {
+      "title": "Save Before Closing",
+      "geometry": "620x390+820+482",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          570,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 820.0,
+        "Y": 482.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-en.png"
+    },
+    "zh-TW": {
+      "title": "關閉前保存",
+      "geometry": "620x390+820+482",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          570,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 820.0,
+        "Y": 482.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-zh-TW.png"
+    }
+  },
+  "main_page_capacity12": {
+    "en": {
+      "title": "HM6-KVM FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x795+1052+32",
+      "size": [
+        376,
+        795
+      ],
+      "controls": {
+        "kvm": [
+          8,
+          95,
+          360,
+          88
+        ],
+        "state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ],
+        "slot_1": [
+          8,
+          129,
+          34,
+          26
+        ],
+        "slot_11": [
+          8,
+          156,
+          34,
+          26
+        ],
+        "slot_12": [
+          42,
+          156,
+          34,
+          26
+        ],
+        "unused_slot_13": [
+          76,
+          156,
+          34,
+          26
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 823.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1646
+      },
+      "screenshot": "main-page-capacity12-en.png"
+    }
+  }
+}
