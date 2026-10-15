@@ -89,7 +89,7 @@ ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
 DETAIL_ROWS_VISIBLE = 7
-WINDOW_FIXED_HEIGHT = 379
+WINDOW_FIXED_HEIGHT = 513
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -668,6 +668,7 @@ class B518LogSolutionApp:
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
         selection.pack(fill="x", pady=(3, 3))
+        selection.columnconfigure(0, minsize=81)
         selection.columnconfigure(1, weight=1)
         self.project_label = ttk.Label(selection, text="專案")
         self.project_label.grid(row=0, column=0, sticky="w")

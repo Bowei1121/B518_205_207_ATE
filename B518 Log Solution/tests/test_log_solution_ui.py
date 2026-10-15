@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
     B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
-    MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
 )
@@ -261,6 +261,11 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 root.update_idletasks()
                 self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                self.assertGreaterEqual(root.winfo_height(), root.winfo_reqheight())
+                self.assertGreaterEqual(app.stop_button.winfo_height(),
+                                        app.stop_button.winfo_reqheight())
+                self.assertGreaterEqual(app.retry_save_button.winfo_height(),
+                                        app.retry_save_button.winfo_reqheight())
                 self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
                 self.assertEqual(app.company_logo.width(), 137)
                 self.assertEqual(app.company_logo.height(), 35)
@@ -272,6 +277,32 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn(str(app.toolbar_icons[icon]), button.cget("image"))
                     self.assertTrue(button.winfo_viewable())
 
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    main_page_evidence = {}
+                    for language, key in ((ENGLISH, "en"),
+                                          (TRADITIONAL_CHINESE, "zh-TW")):
+                        app._select_language(language)
+                        root.update()
+                        main_page_evidence[key] = capture_tk_window_evidence(
+                            root, "main-page", key, {
+                                "settings": app.settings_button,
+                                "logo": app.company_logo_slot,
+                                "review": app.review_group,
+                                "alarm": app.round_alarm_button,
+                                "language": app.language_button,
+                                "project": app.project_choice,
+                                "station": app.machine_choice,
+                                "start": app.start_button,
+                                "monitor_state": app.monitor_state,
+                                "stop": app.stop_button,
+                                "kvm": app.kvm_results,
+                                "kvm_state_marker": app.kvm_state_marker,
+                                "kvm_layout_marker": app.kvm_layout_marker,
+                            })
+                    write_tk_bounds_evidence("main_page", main_page_evidence)
+                    app._select_language(ENGLISH)
+                    root.update()
+
                 def bounds(widgets):
                     return tuple((widget.winfo_x(), widget.winfo_y(),
                                   widget.winfo_width(), widget.winfo_height())
@@ -282,6 +313,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 kvm = (app.kvm_results, app.kvm_result_title, app.kvm_state_marker,
                        app.kvm_layout_marker, *app.kvm_result_blocks.values())
                 toolbar_bounds, kvm_bounds = bounds(toolbar), bounds(kvm)
+                profile_choice_bounds = bounds((app.project_choice, app.machine_choice))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    self.assertEqual(
+                        main_page_evidence["en"]["controls"],
+                        main_page_evidence["zh-TW"]["controls"],
+                    )
                 self.assertEqual(app.review_count.cget("text"), "0")
                 self.assertEqual(str(app.review_button["state"]), "disabled")
                 review_count_width = app.review_count.winfo_width()
@@ -299,6 +336,10 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
                                         acknowledged_at=None, created_at="2026-10-15T12:00:00")
+                # This presentation test substitutes partial snapshots below;
+                # stop the periodic live-round renderer before using them.
+                for after_id in tuple(app._after_ids):
+                    app._cancel_ui_timer(after_id)
                 alarm_snapshot = SimpleNamespace(
                     round_alarm=alarm, round_alarm_ready=True, round_id=alarm.round_id,
                     pending_conflicts=(), source_preparation_pending=False,
@@ -410,7 +451,9 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 conflicts = tuple(SimpleNamespace() for _ in range(20))
                 snapshot = SimpleNamespace(
-                    pending_conflicts=conflicts, round_alarm=None,
+                    round_id=None, pending_conflicts=conflicts, round_alarm=None,
+                    source_preparation_pending=False, audit_complete=True, audit_errors=(),
+                    results=(),
                     state=SimpleNamespace(value="IDLE"), completion_reason=None,
                 )
                 with patch.object(app.rounds, "snapshot", return_value=snapshot):
@@ -427,6 +470,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("20", app.monitor_state.cget("text"))
                     self.assertEqual(app.review_count.cget("text"), "20")
                     self.assertEqual(bounds(toolbar), toolbar_bounds)
+                    self.assertEqual(bounds((app.project_choice, app.machine_choice)),
+                                     profile_choice_bounds)
                     app.project.set("SAMPLE")
                     app.station.set("BT")
                     app._render_main_title()
@@ -2043,6 +2088,62 @@ class LogSolutionUiTests(unittest.TestCase):
                      for index in range(app.language_menu.index("end") + 1)],
                     ["English", "繁體中文"],
                 )
+            finally:
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hm6_two_row_kvm_keeps_geometry_and_unused_slots_black(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                profile = replace(
+                    app.profiles.get("B518", "FCT"), project="HM6-KVM", capacity=12,
+                    mapping=tuple((slot, slot) for slot in range(1, 13)),
+                )
+                app.profiles = app.profiles.with_profile(profile)
+                app.project_choice.configure(values=app.profiles.projects)
+                app.project.set(profile.project)
+                app._project_changed()
+                app.machine_choice.set(profile.machine)
+                app._profile_changed()
+                root.update_idletasks()
+
+                self.assertEqual(app._display_capacity(), 12)
+                self.assertEqual(app.kvm_results.winfo_height(), KVM_BAND_HEIGHT)
+                first_row_y = app.kvm_result_blocks[1].winfo_y()
+                second_row_y = app.kvm_result_blocks[11].winfo_y()
+                self.assertGreater(second_row_y, first_row_y)
+                self.assertEqual(app.kvm_state_marker.winfo_height(), MARKER_SIZE)
+                self.assertEqual(app.kvm_layout_marker.winfo_height(), 14)
+                app._set_kvm_result_block(12, "PASS")
+                app._set_kvm_result_block(13, "PASS")
+                self.assertEqual(app.kvm_result_blocks[12].cget("background"),
+                                 STATUS_COLOURS["PASS"])
+                self.assertEqual(app.kvm_result_blocks[13].cget("background"),
+                                 UNAVAILABLE_COLOUR)
+
+                evidence = capture_tk_window_evidence(
+                    root, "main-page-capacity12", "en", {
+                        "kvm": app.kvm_results,
+                        "state_marker": app.kvm_state_marker,
+                        "layout_marker": app.kvm_layout_marker,
+                        "slot_1": app.kvm_result_blocks[1],
+                        "slot_11": app.kvm_result_blocks[11],
+                        "slot_12": app.kvm_result_blocks[12],
+                        "unused_slot_13": app.kvm_result_blocks[13],
+                    })
+                write_tk_bounds_evidence("main_page_capacity12", {"en": evidence})
             finally:
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
@@ -3978,9 +4079,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.conflict_window.winfo_exists())
                 self.assertTrue(app.conflict_window.winfo_viewable())
                 self.assertEqual((app.conflict_window.winfo_width(), app.conflict_window.winfo_height()),
-                                 (820, 430))
-                self.assertLessEqual(app.conflict_window.winfo_rootx() + app.conflict_window.winfo_width(),
-                                     root.winfo_rootx())
+                                 (960, 600))
+                conflict_x = app.conflict_window.winfo_rootx()
+                conflict_y = app.conflict_window.winfo_rooty()
+                self.assertGreaterEqual(conflict_x, 0)
+                self.assertGreaterEqual(conflict_y, 0)
+                self.assertLessEqual(conflict_x + app.conflict_window.winfo_width(),
+                                     root.winfo_screenwidth())
+                self.assertLessEqual(conflict_y + app.conflict_window.winfo_height(),
+                                     root.winfo_screenheight())
                 self.assertEqual(app._display_capacity(), 2)
                 self.assertEqual(app.rounds.snapshot().results[0].status, "TESTING")
                 self.assertEqual(app.rounds.snapshot().results[1].status, "PASS")
@@ -5159,11 +5266,11 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(profiles.get("B518", "DFU").capacity, 7)
         self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
         self.assertEqual(profiles.get("B482", "BT").capacity, 4)
-        # The second profile-selection row reserves 26 pixels above the KVM band.
-        self.assertEqual(window_height(4), 540)
-        self.assertEqual(window_height(6), 634)
-        self.assertEqual(window_height(7), 681)
-        self.assertEqual(window_height(20), 708)
+        # The two profile rows and save/archive/diagnostic controls stay visible.
+        self.assertEqual(window_height(4), 674)
+        self.assertEqual(window_height(6), 768)
+        self.assertEqual(window_height(7), 815)
+        self.assertEqual(window_height(20), 795)
         self.assertEqual(visible_detail_rows(20, 500), 1)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
@@ -6520,7 +6627,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(
                     root,
                     lambda: app._historical_query_result is not None and
-                    app._historical_query_result.date_range.start.isoformat() == "2099-01-01")
+                    app._historical_query_result.date_range.start.isoformat() == "2099-01-01" and
+                    app._historical_query_status_key not in {
+                        "app.settings.history.querying",
+                        "app.settings.history.preparing",
+                    })
                 self.assertEqual(app._historical_event_records, ())
                 self.assertIn("歷史讀取不完整",
                               app.historical_query_status.cget("text"))
@@ -7204,7 +7315,7 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertEqual(style.lookup("TEntry", "fieldbackground"), "#ffffff")
             self.assertEqual(style.lookup("TButton", "foreground"), "#111827")
             self.assertEqual(app.settings_window.cget("background"), "#f3f4f6")
-            self.assertEqual(app.settings_log.cget("background"), "#ffffff")
+            self.assertEqual(app.settings_log.cget("background"), LIGHT_BACKGROUND)
             self.assertEqual(app.settings_log.cget("foreground"), "#111827")
 
             def descendants(widget):
@@ -9120,7 +9231,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.wait_for_ui(root, lambda: app._historical_query_result is not None)
                     self.assertTrue(entered_batch.wait(2))
                     result = app._historical_query_result
-                    self.assertEqual(result.total_count, 501)
+                    # The 501 audit events are accompanied by one round record.
+                    self.assertEqual(result.total_count, 502)
                     self.assertEqual(result.prepared_count, 500)
                     self.assertFalse(result.preparation_complete)
                     for page_number in range(2, 6):
@@ -9137,7 +9249,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     release_batch.set()
                     self.wait_for_ui(root, lambda: app._historical_query_page_number == 6)
                     self.wait_for_ui(root, lambda: result.preparation_complete)
-                    self.assertEqual(result.prepared_count, 501)
+                    self.assertEqual(result.prepared_count, 502)
             finally:
                 release_batch.set()
                 app._close_historical_event_window()

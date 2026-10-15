@@ -31,8 +31,8 @@
 | #56 | HM3 | `codex/hm3-20261015` | `0a877eb8dbb97e60fdf7e6309080019f06de69d2` | integrated at `b513c78`; closed after acceptance |
 | #57 | HM4 | `codex/hm4-20261015` | `b513c78981159ac1fbfbd67c797ddfcf93ab5080` | integrated at `62e027f`; fixed-base dual-axis review clean; 107 related non-Tk and 2 true-Tk integration checks passed; closed after acceptance |
 | #58 | HM5 | `codex/hm5-20261015` | `eda24aae7eac0197650ea7273b17870e7bc03e2d` | integrated at `2665485`; fixed-base standards/spec review clean; 90 related integration tests + 2 true-Tk checks passed; closed after acceptance |
-| #59 | HM6 | pending | pending | ready after #58; serialized HMI work not yet started |
+| #59 | HM6 | `codex/hm6-20261015` | `c9b19934462acdda7cddd62012fc4b76b5b99fbc` | in progress; found/fixing clipped home controls and language-shifting profile fields; final matrix/regression pending |
 
 ## QP6 integration note
 
-QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The same five true-Tk acceptance tests passed on the ticket worktree at the exact QP6 implementation commit; an integration-worktree rerun could not initialize Tk in the current headless command session (Python aborted in `tkinter.Tk()` before test setup). The full final integration regression and dual-axis review remain mandatory before merging to `B518-Log-Solution` or closing parent #46/#47.
+QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The five true-Tk acceptance tests also passed on the integration branch in the interactive Aqua slot (13.552s); the initial non-escalated shell attempt aborted before test setup because it lacked desktop permission. The full final integration regression and dual-axis review remain mandatory before merging to `B518-Log-Solution` or closing parent #46/#47.
