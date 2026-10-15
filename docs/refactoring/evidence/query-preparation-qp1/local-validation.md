@@ -18,12 +18,12 @@
 | 重用來源數 | 0 | 0 | 4 | 4 |
 | 持久索引大小 | 4,894,720 B | 5,619,712 B | 4,894,720 B | 5,619,712 B |
 
-重查快照縮小 85.4%，原文 JSON 的逐查詢複製由 1,440,256 bytes 降至 0。此小 fixture 的重查時間中位數由 0.13576 s 增至 0.34833 s（2.56×）；首建由 0.839 s 增至 1.699 s，因此本次沒有宣稱耗時改善，需由整合驗收評估此交易成本。持久索引增加約 14.8%，用來保存共享不可變內容。QP1 初次建置寫入 2,000 個內容版本、1,889,544 bytes；未變來源的後續查詢新增 0 個版本。為避免每個查詢對每筆內容各寫一筆長期引用，舊內容在任何查詢仍開啟時採保守保留，最後一個查詢關閉後再回收無來源引用版本。
+重查快照縮小 85.4%，原文 JSON 的逐查詢複製由 1,440,256 bytes 降至 0。此小 fixture 的重查時間中位數由 0.13576 s 增至 0.34833 s（2.56×）；首建由 0.839 s 增至 1.699 s，因此本次沒有宣稱耗時改善，需由整合驗收評估此交易成本。持久索引增加約 14.8%，用來保存共享不可變內容。QP1 初次建置寫入 2,000 個內容版本、1,889,544 bytes；未變來源的後續查詢新增 0 個版本。QP1 後續修正以 `history_query_contents(query_id, content_id)` 記錄每個查詢快照實際引用的內容；只有來源索引與所有活動查詢都不再引用時才回收。其他查詢仍開啟不會延後無關舊版本回收。上表效能數字是逐查詢引用表加入前的 QP1 v4 短 fixture 測量，包含已觀察到的 2.56× 重查耗時退步；本次 lifecycle 修正未重跑 capacity benchmark，這些數字不代表 schema v5 的新量測。
 
 ## 驗證命令與結果
 
-- `PYTHONPATH=src python3 -m unittest tests.test_historical_event_query -v`：45 tests，全部通過。包括新增的同路徑來源替換後舊結果仍可讀、最後一個結果關閉後舊內容回收、重查內容複製計數為 0。
-- `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting -v`：真實 App/Tk 單案例通過（1 test，5.081 s）；確認公開查詢、選取與語言切換、來源 bytes 未改寫及關閉流程。
+- `PYTHONPATH=src python3 -m unittest tests.test_historical_event_query -v`：46 tests，全部通過。包括 A/B 查詢分別持有新舊 generation、關閉 A 後即回收舊內容且 B 仍可讀、abandoned query lease 回收，以及重查內容複製計數為 0。
+- `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_historical_reader_selects_and_localizes_disk_records_without_rewriting -v`：真實 App/Tk 單案例通過（1 test，4.168 s）；確認公開查詢、選取與語言切換、來源 bytes 未改寫及關閉流程。
 - `python3 -m py_compile src/historical_event_query.py scripts/historical_event_capacity.py`：通過。
 - 公開成本量測以 `scripts/historical_event_capacity.py sample` 執行，基準程式取固定基準 commit；測量為三次重查樣本。只跑短 fixture，沒有啟動全套或極端容量流程。
 

@@ -107,7 +107,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 fresh_service_result.close()
                 fresh_service.shutdown()
 
-    def test_indexed_requery_reuses_immutable_content_until_last_result_closes(self):
+    def test_indexed_requery_reclaims_unreferenced_generation_when_owner_closes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             sessions = root / "sessions"
@@ -147,6 +147,11 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(second.index_metrics.indexed_content_write_count, 1)
                 self.assertEqual(second.get_page(1).events[0].message, "replacement message")
                 self.assertEqual(first.get_detail(event_key).message, "original message")
+                replacement_key = second.get_page(1).events[0].key
+                with sqlite3.connect(str(index_path)) as connection:
+                    replacement_content_id = connection.execute(
+                        "SELECT content_id FROM history_events WHERE event_key=?",
+                        (replacement_key,)).fetchone()[0]
                 with sqlite3.connect(str(index_path)) as connection:
                     retained = connection.execute(
                         "SELECT COUNT(*) FROM history_contents WHERE content_id=?",
@@ -158,13 +163,57 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     retained = connection.execute(
                         "SELECT COUNT(*) FROM history_contents WHERE content_id=?",
                         (original_content_id,)).fetchone()[0]
-                self.assertEqual(retained, 1)
+                    replacement_retained = connection.execute(
+                        "SELECT COUNT(*) FROM history_contents WHERE content_id=?",
+                        (replacement_content_id,)).fetchone()[0]
+                self.assertEqual(retained, 0)
+                self.assertEqual(replacement_retained, 1)
+                self.assertEqual(second.get_detail(event_key).message, "replacement message")
                 second.close()
                 with sqlite3.connect(str(index_path)) as connection:
                     retained = connection.execute(
                         "SELECT COUNT(*) FROM history_contents WHERE content_id=?",
                         (original_content_id,)).fetchone()[0]
                 self.assertEqual(retained, 0)
+
+    def test_index_reclaims_contents_owned_only_by_abandoned_query(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            index_path = root / "historical-event-query-index.sqlite3"
+            day = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+            result = query_historical_events(sessions, None, day, index_path=index_path)
+            result.close()
+
+            abandoned_pid = os.getpid() + 1000000
+            while True:
+                try:
+                    os.kill(abandoned_pid, 0)
+                except ProcessLookupError:
+                    break
+                abandoned_pid += 1
+            with sqlite3.connect(str(index_path)) as connection:
+                connection.execute("PRAGMA foreign_keys=ON")
+                connection.execute("INSERT INTO history_contents VALUES (?, ?, ?)",
+                                   ("abandoned-content", "{}", "{}"))
+                connection.execute("INSERT INTO history_queries VALUES (?, ?)",
+                                   ("abandoned-query", abandoned_pid))
+                connection.execute(
+                    "INSERT INTO history_query_contents VALUES (?, ?)",
+                    ("abandoned-query", "abandoned-content"))
+
+            recovered = query_historical_events(sessions, None, day, index_path=index_path)
+            try:
+                with sqlite3.connect(str(index_path)) as connection:
+                    self.assertEqual(connection.execute(
+                        "SELECT COUNT(*) FROM history_queries WHERE query_id=?",
+                        ("abandoned-query",)).fetchone()[0], 0)
+                    self.assertEqual(connection.execute(
+                        "SELECT COUNT(*) FROM history_contents WHERE content_id=?",
+                        ("abandoned-content",)).fetchone()[0], 0)
+            finally:
+                recovered.close()
 
     def test_official_app_event_cleanup_keeps_all_captured_snapshot_details(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -797,7 +846,7 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(result.total_count, 1)
                 self.assertEqual(result.index_metrics.parsed_source_count, 1)
                 with sqlite3.connect(str(index_path)) as connection:
-                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
+                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
                 self.assertEqual(audit.audit_path.read_bytes(), source_before)
             finally:
                 result.close()

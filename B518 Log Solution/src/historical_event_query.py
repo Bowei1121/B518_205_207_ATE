@@ -25,7 +25,7 @@ from historical_event_display import (HistoricalEvent, HistoricalEventSource,
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
 _DIAGNOSTIC_SAMPLE_LIMIT = 20
-_HISTORY_INDEX_VERSION = 4
+_HISTORY_INDEX_VERSION = 5
 _HISTORY_INDEX_APPLICATION_ID = 0x42353138
 _HISTORY_INDEX_LOCK = threading.RLock()
 
@@ -369,14 +369,10 @@ def _remove_snapshot(path: Path) -> None:
 
 
 def _reclaim_unreferenced_contents(connection: sqlite3.Connection) -> None:
-    # A live query may refer to any historical content generation. Conservatively
-    # retain orphaned generations until the last query closes instead of writing
-    # one durable reference row for every event in every query.
-    if connection.execute("SELECT 1 FROM history_queries LIMIT 1").fetchone():
-        return
     connection.execute(
         "DELETE FROM history_contents WHERE content_id NOT IN "
-        "(SELECT content_id FROM history_events)")
+        "(SELECT content_id FROM history_events) AND content_id NOT IN "
+        "(SELECT content_id FROM history_query_contents)")
 
 
 def _reclaim_abandoned_query_contents(connection: sqlite3.Connection) -> None:
@@ -1254,6 +1250,11 @@ def _open_history_index(index_path: Path):
             "CREATE TABLE history_contents ("
             "content_id TEXT PRIMARY KEY, summary_json TEXT NOT NULL, event_json TEXT NOT NULL);"
             "CREATE TABLE history_queries (query_id TEXT PRIMARY KEY, process_id INTEGER NOT NULL);"
+            "CREATE TABLE history_query_contents ("
+            "query_id TEXT NOT NULL, content_id TEXT NOT NULL, "
+            "PRIMARY KEY(query_id, content_id), "
+            "FOREIGN KEY(query_id) REFERENCES history_queries(query_id) ON DELETE CASCADE, "
+            "FOREIGN KEY(content_id) REFERENCES history_contents(content_id));"
             "CREATE TABLE history_events ("
             "source_key TEXT NOT NULL, source_ordinal INTEGER NOT NULL, event_key TEXT NOT NULL, "
             "occurred_at TEXT NOT NULL, time_kind INTEGER NOT NULL, aware_epoch REAL, "
@@ -1286,12 +1287,15 @@ def _open_history_index(index_path: Path):
             "PRAGMA table_info(history_sources)")}
         event_columns = {row[1] for row in database.execute(
             "PRAGMA table_info(history_events)")}
+        query_content_columns = {row[1] for row in database.execute(
+            "PRAGMA table_info(history_query_contents)")}
         if not {"source_key", "source_path", "device", "inode", "byte_size", "modified_ns",
                 "changed_ns", "event_count"}.issubset(source_columns) or not {
                 "source_key", "source_ordinal", "event_key", "occurred_at", "time_kind",
                 "aware_epoch", "naive_order", "stable_identity", "sequence_number",
                 "source_order", "source", "content_id"}.issubset(
-                    event_columns):
+                    event_columns) or not {"query_id", "content_id"}.issubset(
+                        query_content_columns):
             raise sqlite3.DatabaseError("unsupported historical event index version")
         _reclaim_abandoned_query_contents(database)
         return database, False
@@ -1463,8 +1467,15 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
         snapshot.commit()
         connection.execute("INSERT INTO history_queries VALUES (?, ?)",
                            (query_id, os.getpid()))
+        connection.execute("ATTACH DATABASE ? AS query_snapshot", (str(snapshot_path),))
+        connection.execute(
+            "INSERT INTO history_query_contents(query_id, content_id) "
+            "SELECT ?, content_id FROM query_snapshot.matching_events "
+            "UNION SELECT ?, content_id FROM query_snapshot.diagnostic_events",
+            (query_id, query_id))
         _reclaim_unreferenced_contents(connection)
         connection.commit()
+        connection.execute("DETACH DATABASE query_snapshot")
         snapshot.close()
         result = HistoricalEventQueryResult(
             date_range, total_count, unclassified_count, source_issue_count,
