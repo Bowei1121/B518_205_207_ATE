@@ -67,3 +67,10 @@
 - `git diff --check` — 通過。
 
 所有 Tk case 依序使用授權的 macOS WindowServer。官方容量 runner 的舊樣本曾與 HM2 Tk 重測並行，已全部 discard / no compare；本文件只採用後來的隔離 phase runner。這些結果可供 #49 ticket review；關閉子票仍需協調者確認完整票規與整合驗收，父規格的關閉條件另行判定。
+
+## Review follow-up — fallback preparation gate
+
+- Spec review found that the no-index fallback constructed its result with the default `preparation_complete=True`, even though only the first 500 summary rows had been persisted. The fallback now constructs the result with `preparation_complete=False` before publishing its initial result; `_finish_preparation()` remains the point that wakes page waiters after later batches finish.
+- Added `test_fallback_page_service_waits_for_later_preparation_batch`: while the fallback worker is gated, the result reports 500/501 prepared rows, direct page 6 reads raise `HistoricalEventPageNotReady`, and the page service returns only after release. Passed.
+- Added `test_real_tk_fallback_keeps_page_six_loading_until_prepared` for the UI loading/page-preservation path with the index disabled. This shell could not execute the Tk test: Python aborted during the test class's `tk.Tk()` setup (`Fatal Python error: Aborted`, `test_log_solution_ui.py:511`) before entering the test body. The pre-existing indexed-path true-Tk gate test remains separately recorded above.
+- Re-ran the complete related non-Tk suites after the fix: `test_historical_event_query`, `test_historical_event_display`, `test_historical_event_capacity`, and `test_round_retention` — 106 tests passed in 32.945 s. `py_compile` and `git diff --check` passed.

@@ -7983,6 +7983,85 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_fallback_keeps_page_six_loading_until_prepared(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            sessions = root_path / "sessions"
+            round_id = "qp2-fallback-paused-batches"
+            audit_path = sessions / round_id / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            today = datetime.now().astimezone().date()
+            occurred_at = datetime.combine(
+                today, datetime.min.time(), datetime.now().astimezone().tzinfo).isoformat()
+            records = [{
+                "record_type": "round", "schema_version": 1,
+                "round_id": round_id, "station": "FCT", "config": {},
+                "time_contract": {},
+            }]
+            for sequence in range(1, 502):
+                records.append({
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": round_id, "sequence": sequence,
+                    "kind": "round_ready", "message": "fallback event {}".format(sequence),
+                    "observed_at": occurred_at, "elapsed_seconds": float(sequence),
+                    "display_position": None,
+                    "detail": {"raw_diagnostic": "fallback detail {}".format(sequence)},
+                })
+            audit_path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            entered_batch, release_batch = threading.Event(), threading.Event()
+            original_prepare = historical_event_query._prepare_remaining_query_batches
+
+            def blocked_prepare(result, cancellation_event, batch_size=100):
+                entered_batch.set()
+                if not release_batch.wait(20):
+                    raise RuntimeError("controlled QP2 fallback batch gate timed out")
+                return original_prepare(result, cancellation_event, batch_size)
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=sessions,
+                app_event_path=root_path / "app-events.json")
+            app._historical_query_service._index_path = None
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                with patch.object(historical_event_query,
+                                  "_prepare_remaining_query_batches",
+                                  side_effect=blocked_prepare):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                    self.assertTrue(entered_batch.wait(2))
+                    result = app._historical_query_result
+                    self.assertEqual(result.total_count, 501)
+                    self.assertEqual(result.prepared_count, 500)
+                    self.assertFalse(result.preparation_complete)
+                    for page_number in range(2, 6):
+                        self.click_tk_widget(root, app.historical_next_button)
+                        self.wait_for_ui(
+                            root, lambda expected=page_number:
+                            app._historical_query_page_number == expected)
+                    self.click_tk_widget(root, app.historical_next_button)
+                    self.wait_for_ui(root, lambda: app._historical_requested_page_number == 6)
+                    self.assertEqual(app._historical_query_page_number, 5)
+                    self.assertEqual(
+                        app.historical_page_label.cget("text"),
+                        app._t("app.settings.history.page_loading", page=6))
+                    release_batch.set()
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 6)
+                    self.wait_for_ui(root, lambda: result.preparation_complete)
+                    self.assertEqual(result.prepared_count, 501)
+            finally:
+                release_batch.set()
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_keeps_later_preparation_failure_visible(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \

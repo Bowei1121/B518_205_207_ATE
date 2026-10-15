@@ -1242,7 +1242,8 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
             HistoricalEventIndexMetrics(
                 parsed_source_count=fallback_source_count[0],
                 source_bytes_read=fallback_bytes_read[0]),
-            diagnostic_count=diagnostic_count, content_path=content_path)
+            diagnostic_count=diagnostic_count, preparation_complete=False,
+            content_path=content_path)
         result.total_count_ready_seconds = time.perf_counter() - query_started_at
         _prepare_initial_query_events(result, cancellation_event)
         result.initial_batch_ready_seconds = time.perf_counter() - query_started_at

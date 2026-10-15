@@ -295,6 +295,73 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     result.close()
                 service.shutdown()
 
+    def test_fallback_page_service_waits_for_later_preparation_batch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-fallback-preparation-gate",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat() for sequence in range(1, 502)])
+            entered_batch = threading.Event()
+            release_batch = threading.Event()
+            original_prepare = historical_event_query._prepare_remaining_query_batches
+
+            def blocked_prepare(result, cancellation_event, batch_size=100):
+                entered_batch.set()
+                if not release_batch.wait(5):
+                    raise RuntimeError("fallback remaining batch gate timed out")
+                return original_prepare(result, cancellation_event, batch_size)
+
+            service = HistoricalEventQueryService(sessions, None, index_path=None)
+            pages = HistoricalEventDetailService()
+            result = None
+            try:
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=blocked_prepare):
+                    generation = service.submit(HistoricalEventDateRange(
+                        date(2026, 10, 13), date(2026, 10, 13)))
+                    initial = None
+                    deadline = time.monotonic() + 5
+                    while initial is None and time.monotonic() < deadline:
+                        initial = service.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    self.assertTrue(entered_batch.wait(2))
+                    result = initial.result
+                    self.assertEqual(result.total_count, 501)
+                    self.assertFalse(result.preparation_complete)
+                    self.assertEqual(result.prepared_count, 500)
+                    with self.assertRaisesRegex(
+                            historical_event_query.HistoricalEventPageNotReady,
+                            "page 6 is still being prepared"):
+                        result.get_page(6)
+
+                    page_request = pages.submit_page(result, 6)
+                    time.sleep(0.03)
+                    self.assertIsNone(pages.take_result(page_request))
+
+                    release_batch.set()
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = pages.take_result(page_request)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                    self.assertTrue(completion.succeeded, completion.error)
+                    self.assertEqual([event.sequence for event in completion.page.events], [1])
+                    self.assertTrue(result.preparation_complete)
+                    self.assertEqual(result.prepared_count, 501)
+            finally:
+                release_batch.set()
+                pages.shutdown()
+                if result is not None:
+                    result.close()
+                service.shutdown()
+
     def test_query_service_preserves_readable_result_and_error_after_later_batch_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
