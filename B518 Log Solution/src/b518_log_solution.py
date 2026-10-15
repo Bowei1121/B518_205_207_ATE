@@ -4142,17 +4142,26 @@ class B518LogSolutionApp:
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", self.cancel_close)
             window.grid_columnconfigure(0, weight=1)
-            window.grid_rowconfigure(0, minsize=72)
+            window.grid_rowconfigure(0, minsize=64)
             window.grid_rowconfigure(1, minsize=56)
             window.grid_rowconfigure(2, weight=1)
-            self._close_status_label = ttk.Label(window, text="正在停止來源並確認所有輪次紀錄…",
-                                                  wraplength=564, justify="left", anchor="w")
-            self._close_status_label.grid(row=0, column=0, sticky="ew", padx=18,
-                                          pady=(16, 8), ipady=8)
+            status_frame = tk.Frame(window, height=64)
+            status_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(12, 4))
+            status_frame.grid_propagate(False)
+            status_frame.grid_columnconfigure(0, weight=1)
+            status_frame.grid_rowconfigure(0, weight=1)
+            self._close_status_label = ttk.Label(
+                status_frame, text="正在停止來源並確認所有輪次紀錄…",
+                wraplength=564, justify="left", anchor="w")
+            self._close_status_label.grid(row=0, column=0, sticky="nsew")
+            language_frame = tk.Frame(window, height=56)
+            language_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 4))
+            language_frame.grid_propagate(False)
+            language_frame.grid_columnconfigure(0, weight=1)
+            language_frame.grid_rowconfigure(0, weight=1)
             self._close_language_reason_label = ttk.Label(
-                window, text="", wraplength=564, justify="left", anchor="w")
-            self._close_language_reason_label.grid(row=1, column=0, sticky="ew", padx=18,
-                                                  pady=(0, 8), ipady=5)
+                language_frame, text="", wraplength=564, justify="left", anchor="w")
+            self._close_language_reason_label.grid(row=0, column=0, sticky="nsew")
             diagnostic_frame = ttk.Frame(window)
             diagnostic_frame.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 8))
             diagnostic_frame.grid_columnconfigure(0, weight=1)

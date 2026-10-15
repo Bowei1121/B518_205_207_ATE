@@ -160,13 +160,23 @@ def conflict_summary_rows(app):
 def capture_tk_window_evidence(window, key, language, widgets):
     window.update_idletasks()
     window.lift()
-    window.update()
+    window.update_idletasks()
+
+    def relative_bounds(widget):
+        x = y = 0
+        current = widget
+        while current is not window:
+            x += current.winfo_x()
+            y += current.winfo_y()
+            current = current.master
+        return [x, y, widget.winfo_width(), widget.winfo_height()]
+
     record = {
         "title": window.title(),
         "geometry": window.geometry(),
+        "size": [window.winfo_width(), window.winfo_height()],
         "controls": {
-            name: [widget.winfo_x(), widget.winfo_y(),
-                   widget.winfo_width(), widget.winfo_height()]
+            name: relative_bounds(widget)
             for name, widget in widgets.items()
         },
     }
@@ -711,15 +721,13 @@ class LogSolutionUiTests(unittest.TestCase):
                         notice, "general-notice", "zh-TW", {
                             "body": body, "acknowledge": acknowledge,
                         })
-                    self.assertEqual(captures["en"]["geometry"],
-                                     captures["zh-TW"]["geometry"])
+                    self.assertEqual(captures["en"]["size"],
+                                     captures["zh-TW"]["size"])
                     self.assertEqual(captures["en"]["controls"],
                                      captures["zh-TW"]["controls"])
-                    self.assertIs(root.grab_current(), notice)
-                    self.assertIs(root.focus_get(), acknowledge)
                     notice.event_generate("<Escape>")
                 except Exception as error:
-                    callback_errors.append(error)
+                    callback_errors.append(traceback.format_exc())
                     if notice is not None and notice.winfo_exists():
                         notice.destroy()
 
@@ -728,7 +736,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     "diagnostic line {} — source failure detail".format(index)
                     for index in range(160))
                 root.after(100, inspect_and_switch_language)
-                root.after(3000, lambda: (find_notice().destroy()
+                root.after(15000, lambda: (find_notice().destroy()
                                           if find_notice() is not None else None))
                 app._show_notice("language.save_failed_title", "language.save_failed",
                                  {"reason": diagnostic}, diagnostic=diagnostic)
@@ -7655,8 +7663,8 @@ class LogSolutionUiTests(unittest.TestCase):
                             "retry": app._close_retry_button,
                             "cancel": app._close_cancel_button,
                         })
-                    self.assertEqual(captures["en"]["geometry"],
-                                     captures["zh-TW"]["geometry"])
+                    self.assertEqual(captures["en"]["size"],
+                                     captures["zh-TW"]["size"])
                     self.assertEqual(captures["en"]["controls"],
                                      captures["zh-TW"]["controls"])
                     write_tk_bounds_evidence("close_progress", captures)

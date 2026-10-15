@@ -1,0 +1,174 @@
+{
+  "general_notice": {
+    "en": {
+      "title": "Language Preference Not Saved",
+      "geometry": "640x400+106+88",
+      "size": [
+        640,
+        400
+      ],
+      "controls": {
+        "body": [
+          16,
+          16,
+          593,
+          318
+        ],
+        "acknowledge": [
+          499,
+          350,
+          125,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 640.0,
+        "Height": 428.0
+      },
+      "image_pixels": {
+        "width": 1280,
+        "height": 856
+      },
+      "screenshot": "general-notice-en.png"
+    },
+    "zh-TW": {
+      "title": "語言設定未保存",
+      "geometry": "640x400+106+88",
+      "size": [
+        640,
+        400
+      ],
+      "controls": {
+        "body": [
+          16,
+          16,
+          593,
+          318
+        ],
+        "acknowledge": [
+          499,
+          350,
+          125,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 640.0,
+        "Height": 428.0
+      },
+      "image_pixels": {
+        "width": 1280,
+        "height": 856
+      },
+      "screenshot": "general-notice-zh-TW.png"
+    }
+  },
+  "close_progress": {
+    "en": {
+      "title": "Save Before Closing",
+      "geometry": "620x390+106+88",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          569,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-en.png"
+    },
+    "zh-TW": {
+      "title": "關閉前保存",
+      "geometry": "620x390+135+117",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          569,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 135.0,
+        "Y": 117.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-zh-TW.png"
+    }
+  }
+}

@@ -145,7 +145,7 @@ def show_notice(title, message, *, parent, text_provider, register_refresh,
                 raise
             return
         window.grab_set()
-        acknowledge.focus_set()
+        acknowledge.focus_force()
         parent.wait_window(window)
     finally:
         unregister()
