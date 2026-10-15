@@ -10,43 +10,56 @@
 
 ## 首批可讀與完整準備：同口徑隔離測試
 
-[`phase-benchmark.py`](phase-benchmark.py) 每次由新的 Python process 執行；baseline 呼叫固定 base 的 `HistoricalEventQueryService.submit`，每 10 ms 輪詢 `take_result`。QP2 同樣 submit/10 ms 輪詢，但先呼叫 `take_initial_result`。兩者用同 fixture、各自已建立且重用的暖 index；`digest=none`。取到結果後，兩版都透過正式 `get_page(1..5)` 取得前五頁共 500 筆，對第一筆 round event 呼叫 `get_detail`；QP2 隨後繼續輪詢到 `take_result`。時間從 submit 前起算。OS cache 未控制，這是短 fixture 本機 wall-clock 觀察。
+[`phase-benchmark.py`](phase-benchmark.py) 每次由新的 Python process 執行；baseline 呼叫固定 base 的 `HistoricalEventQueryService.submit`，每 10 ms 輪詢 `take_result`。QP2 同樣 submit/10 ms 輪詢，但先呼叫 `take_initial_result`。兩者用同 fixture、各自已建立且重用的暖 index；`digest=none`。取到結果後，兩版都透過正式 `get_page(1..5)` 取得前五頁共 500 筆並記錄實讀時間；QP2 再輪詢到 `take_result`。兩版都在 full completion 後，對第一筆 round event 呼叫 `get_detail`，detail 欄只量該單次呼叫；另列從 submit 到 detail 完成的總時間。時間從 submit 前起算。OS cache 未控制，這是短 fixture 本機 wall-clock 觀察。
 
-每版三個獨立 process 的原始值，單位秒。這是 HM2 完成真 Tk slot 後、沒有 Tk/重測並行時的正式樣本；之前在 HM2 Tk 時段跑出的 phase/official-runner 樣本全部 discard，不列入計算。
+三輪各版三個獨立 process 的原始值，單位秒；每輪均在無 Tk / 重測並行時以同一 fixture、各自已建立且重用的 index 執行。第二、三輪修正了 detail 欄位計時方式；第一輪的 submit/500-readable、五頁 API 與 full completion 原始值保留，但其 detail 值不可比較，因舊公式把五頁讀取後等待剩餘準備的時間也算進 detail。之前與 HM2 Tk 重測並行的 phase/official-runner 樣本全部 discard，不列入計算。
 
-| 版本/run | Submit → 可實讀500筆 | 五頁 API | Detail | Submit → 全部完成 | QP2 讀頁當下狀態 |
+| Round / 版本/run | Submit → 可實讀500筆 | 五頁 API | Detail 單次呼叫 | Submit → 全部完成 | QP2 讀頁當下狀態 |
 | --- | ---: | ---: | ---: | ---: | --- |
-| base/1 | 0.191096 | 0.013718 | 0.000546 | 0.177378 | 無分階段 API |
-| base/2 | 0.178604 | 0.013361 | 0.000583 | 0.165243 | 無分階段 API |
-| base/3 | 0.190687 | 0.012828 | 0.000987 | 0.177859 | 無分階段 API |
-| QP2/1 | 0.185237 | 0.000024 | 0.036137 | 0.220426 | `prepared_count=600`, `complete=false` |
-| QP2/2 | 0.185375 | 0.000028 | 0.034333 | 0.218814 | `prepared_count=600`, `complete=false` |
-| QP2/3 | 0.216581 | 0.000035 | 0.032209 | 0.247793 | `prepared_count=700`, `complete=false` |
+| 1 / base/1 | 0.301828 | 0.015302 | — | 0.286526 | 無分階段 API |
+| 1 / QP2/1 | 0.315444 | 0.000067 | — | 0.415430 | `prepared_count=600`, `complete=false` |
+| 1 / base/2 | 0.421114 | 0.023054 | — | 0.398060 | 無分階段 API |
+| 1 / QP2/2 | 0.307584 | 0.000058 | — | 0.408413 | `prepared_count=600`, `complete=false` |
+| 1 / base/3 | 0.234728 | 0.015468 | — | 0.219259 | 無分階段 API |
+| 1 / QP2/3 | 0.228979 | 0.000167 | — | 0.327021 | `prepared_count=700`, `complete=false` |
+| 2 / base/1 | 0.199500 | 0.012943 | 0.001478 | 0.186557 | 無分階段 API |
+| 2 / QP2/1 | 0.195311 | 0.000162 | 0.002493 | 0.306120 | `prepared_count=500`, `complete=false` |
+| 2 / base/2 | 0.213494 | 0.014931 | 0.000502 | 0.198563 | 無分階段 API |
+| 2 / QP2/2 | 0.204069 | 0.000094 | 0.001134 | 0.303975 | `prepared_count=500`, `complete=false` |
+| 2 / base/3 | 0.223586 | 0.015433 | 0.000647 | 0.208153 | 無分階段 API |
+| 2 / QP2/3 | 0.253461 | 0.000041 | 0.001508 | 0.342009 | `prepared_count=600`, `complete=false` |
+| 3 / base/1 | 0.259903 | 0.014739 | 0.000590 | 0.245163 | 無分階段 API |
+| 3 / QP2/1 | 0.261328 | 0.000065 | 0.000679 | 0.351548 | `prepared_count=600`, `complete=false` |
+| 3 / base/2 | 0.192317 | 0.012931 | 0.000540 | 0.179387 | 無分階段 API |
+| 3 / QP2/2 | 0.193578 | 0.000037 | 0.000987 | 0.284553 | `prepared_count=600`, `complete=false` |
+| 3 / base/3 | 0.182648 | 0.012867 | 0.000546 | 0.169781 | 無分階段 API |
+| 3 / QP2/3 | 0.180127 | 0.000036 | 0.000688 | 0.279230 | `prepared_count=500`, `complete=false` |
 
-三次中位數：
+第三輪中位數（各輪分列，未把主機波動較大的輪次混算）：
 
 | 指標 | 固定 base `94d98b1` | QP2 | 觀察差異 |
 | --- | ---: | ---: | ---: |
-| 前500筆實際可讀 | 0.190687 s | 0.185375 s | QP2 約快 2.8% |
-| 首500發布後讀五頁 | 0.013361 s | 0.000028 s | QP2 約少 99.8% |
-| Detail 讀取 | 0.000583 s | 0.034333 s | QP2 有 32–36 ms 異常樣本，原因未定 |
-| 全部準備完成 | 0.177378 s | 0.220426 s | QP2 約慢 24.3% |
+| 前500筆實際可讀 | 0.192317 s | 0.193578 s | QP2 約慢 0.66%，在此短 fixture 測量噪音內 |
+| 首500發布後讀五頁 | 0.012931 s | 0.000037 s | 前500已物化，五頁 API 讀取量不同 |
+| Detail 單次呼叫 | 0.000546 s | 0.000688 s | 三樣本短測，沒有顯著差異；同結果額外連續8次為 0.000675–0.001037 s |
+| 全部準備完成 | 0.179387 s | 0.284553 s | QP2 約慢 58.6%，本機短 fixture 有可見額外背景準備成本 |
 
-範圍限制：2,000-event fixture、每版三個樣本、OS cache 未控制，不能推論大型歷史資料或普遍效能。此 fixture 的首500筆實讀時間約快 2.8%；QP2 把五頁 API 讀取成本移至初批發布，且讀頁時後續背景仍未完成。QP2 full preparation 中位數慢 24.3%；首批到完整完成約多 35 ms，與額外走訪剩餘頁面一致，但本次沒有 profiling 來判定具體 SQL、鎖或記憶體成因。QP2 detail 有 32–36 ms 三筆異常樣本，原因未定，不拿來作 detail 效能結論。這不是整體效能改善證據。
+範圍限制：2,000-event fixture、每輪每版三個樣本、OS cache 未控制，跨輪首500及full completion時間波動明顯，不能推論大型歷史資料或普遍效能。第三輪首500中位數慢 0.66%，屬噪音內，不宣稱改善；full preparation 慢 58.6%，是本次需由 QP6 獨立判定的成本風險，不因 QP2 功能驗收通過而略過。detail 舊 32–36 ms 數字是錯誤計時欄位，已標為無效；後續兩輪只計 `get_detail()` 單次呼叫，沒有重現該異常。本結果不替代父規格成本門檻，也不能推論現場容量。
 
 精確命令（`N=1,2,3`；baseline 與 QP2 各用暖 index）：
 
 - `PYTHONPATH="/private/tmp/qp2-baseline/src" python3 docs/refactoring/evidence/query-preparation-qp2/phase-benchmark.py baseline /private/tmp/qp2-benchmark-fixture /private/tmp/qp2-base-official.sqlite3`
 - `PYTHONPATH="/private/tmp/b518-qp2/B518 Log Solution/src" python3 docs/refactoring/evidence/query-preparation-qp2/phase-benchmark.py staged /private/tmp/qp2-benchmark-fixture /private/tmp/qp2-current-official.sqlite3`
 
-這組 phase runner 沒有暫停 worker；`complete=false` 及 700/800 計數是在五頁讀完時直接由結果取得。額外的 Event-gate 測試會在 QP2 初批發布後攔住 `_prepare_remaining_query_batches`，確認 `prepared_count=500`、`preparation_complete=false` 時仍能實際讀取五頁、detail，釋放 gate 後才完成其餘頁。真 Tk 對應案例也在 gate 期間翻閱前五頁、選 detail、切換語言。
+這組 phase runner 沒有暫停 worker；`complete=false` 與實際 `prepared_count` 是讀頁時直接取得。額外的 Event-gate 測試在 QP2 初批發布後攔住實際後頁寫入，檢查 snapshot 的 `matching_events=501` refs、`prepared_events=500` rows，並證明 page6 尚未備妥；同時透過正式 page/detail API 讀前五頁及 detail。release 後 page6 row 寫入、page service 完成、`prepared_count=501`。真 Tk 對應案例亦在 gate 期間讀前五頁、選 detail、切語言；在第六頁等待時保留第5頁並顯示 loading，release後才跳到第6頁。
 
 ## 功能及 UI 驗收
 
 從 `B518 Log Solution` 執行：
 
-- `PYTHONPATH=src python3 -m unittest tests.test_historical_event_query` — 50 tests 全部通過。涵蓋 0/1/99/100/101/499/500/501 總數邊界、來源原 bytes、generation replace/cancel/close、初批可讀、背景錯誤保留與服務 ownership。
-- `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -u -m unittest -v test_log_solution_ui.LogSolutionUiTests.test_real_tk_reads_five_pages_while_remaining_batches_are_paused` — 通過；真實 Tk 前五頁、detail、切換語言、背景 Event gate。
+- `python3 scripts/run_tests.py test_historical_event_query` — 52 tests 全部通過。涵蓋 0/1/99/100/101/499/500/501 總數邊界、來源原 bytes、generation replace/cancel/close、初批可讀、snapshot真實prepared rows、fallback兩遍版本變更中止、背景錯誤保留與服務 ownership。
+- `python3 scripts/run_tests.py test_historical_event_query test_historical_event_display test_historical_event_capacity test_round_retention` — 105 tests 全部通過（最終重跑 28.791 s）。
+- `B518_TK_TESTS=1 python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_real_tk_reads_five_pages_while_remaining_batches_are_paused` — 通過；真實 Tk 前五頁、detail、切換語言、後續頁等待/loading、背景 Event gate。
 - `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -u -m unittest -v test_log_solution_ui.LogSolutionUiTests.test_real_tk_historical_pages_load_details_on_selection` — 通過。
 - `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -u -m unittest -v test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_query_latest_request_cancel_and_window_lifecycle` — 通過。
 - `B518_TK_TESTS=1 PYTHONPATH=src:tests python3 -u -m unittest -v test_log_solution_ui.LogSolutionUiTests.test_real_tk_keeps_later_preparation_failure_visible` — 通過（1 test，1.417 s）；後續整理失敗原因留在狀態列，初批結果仍保留可讀。

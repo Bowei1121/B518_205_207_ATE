@@ -82,6 +82,21 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual(result.events[0].key, "round:round-1:101")
             self.assertEqual(result.events[-1].key, "round:round-1:2")
             self.assertEqual(audit.audit_path.read_bytes(), before)
+            snapshot = sqlite3.connect(str(result._store_path))
+            try:
+                self.assertEqual(snapshot.execute(
+                    "SELECT COUNT(*) FROM matching_events").fetchone()[0], 101)
+                columns = {row[1] for row in snapshot.execute(
+                    "PRAGMA table_info(matching_events)")}
+                self.assertNotIn("summary_json", columns)
+                self.assertNotIn("event_json", columns)
+            finally:
+                snapshot.close()
+            self.assertIsNotNone(result._content_path)
+            audit.audit_path.unlink()
+            self.assertEqual(result.get_detail("round:round-1:101").raw_record[
+                "detail"]["raw_diagnostic"], "original 101")
+            result.close()
 
     def test_public_query_prepares_the_first_five_pages_at_count_boundaries(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -189,6 +204,95 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     result.close()
             finally:
                 release_batch.set()
+                service.shutdown()
+
+    def test_later_summary_rows_are_absent_until_background_batch_is_released(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-persisted-preparation-gate",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat() for sequence in range(1, 502)])
+            entered_batch = threading.Event()
+            release_batch = threading.Event()
+            original_prepare = historical_event_query._prepare_remaining_query_batches
+
+            def blocked_prepare(result, cancellation_event, batch_size=100):
+                entered_batch.set()
+                if not release_batch.wait(5):
+                    raise RuntimeError("remaining batch gate timed out")
+                return original_prepare(result, cancellation_event, batch_size)
+
+            service = HistoricalEventQueryService(
+                sessions, None, index_path=root / "history-index.sqlite3")
+            pages = HistoricalEventDetailService()
+            result = None
+            try:
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=blocked_prepare):
+                    generation = service.submit(HistoricalEventDateRange(
+                        date(2026, 10, 13), date(2026, 10, 13)))
+                    initial = None
+                    deadline = time.monotonic() + 5
+                    while initial is None and time.monotonic() < deadline:
+                        initial = service.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    self.assertTrue(entered_batch.wait(2))
+                    result = initial.result
+                    self.assertEqual(result.total_count, 501)
+                    self.assertEqual(result.page_count, 6)
+                    snapshot = sqlite3.connect(str(result._store_path))
+                    try:
+                        self.assertEqual(snapshot.execute(
+                            "SELECT COUNT(*) FROM matching_events").fetchone()[0], 501)
+                        self.assertEqual(snapshot.execute(
+                            "SELECT COUNT(*) FROM prepared_events").fetchone()[0], 500)
+                    finally:
+                        snapshot.close()
+                    self.assertFalse(result.preparation_complete)
+                    self.assertEqual(result.prepared_count, 500)
+                    with self.assertRaisesRegex(
+                            historical_event_query.HistoricalEventPageNotReady,
+                            "page 6 is still being prepared"):
+                        result.get_page(6)
+                    for page_number in range(1, 6):
+                        page = result.get_page(page_number)
+                        self.assertEqual(len(page.events), 100)
+                    chosen = result.get_page(1).events[0]
+                    self.assertEqual(result.get_detail(chosen.key).raw_record["detail"][
+                        "raw_diagnostic"], "original 501")
+                    page_request = pages.submit_page(result, 6)
+                    time.sleep(0.03)
+                    self.assertIsNone(pages.take_result(page_request))
+
+                    release_batch.set()
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = pages.take_result(page_request)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                    self.assertTrue(completion.succeeded, completion.error)
+                    self.assertEqual([event.sequence for event in completion.page.events], [1])
+                    self.assertTrue(service.take_result(generation).succeeded)
+                    self.assertTrue(result.preparation_complete)
+                    self.assertEqual(result.prepared_count, 501)
+                    snapshot = sqlite3.connect(str(result._store_path))
+                    try:
+                        self.assertEqual(snapshot.execute(
+                            "SELECT COUNT(*) FROM prepared_events").fetchone()[0], 501)
+                    finally:
+                        snapshot.close()
+            finally:
+                release_batch.set()
+                pages.shutdown()
+                if result is not None:
+                    result.close()
                 service.shutdown()
 
     def test_query_service_preserves_readable_result_and_error_after_later_batch_failure(self):
@@ -1195,7 +1299,8 @@ class HistoricalEventQueryTests(unittest.TestCase):
 
             def replace_after_read(*args, **kwargs):
                 events = list(real_reader(*args, **kwargs))
-                os.replace(str(replacement.audit_path), str(audit.audit_path))
+                if replacement.audit_path.exists():
+                    os.replace(str(replacement.audit_path), str(audit.audit_path))
                 return iter(events)
 
             with unittest.mock.patch(
@@ -1216,6 +1321,39 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertEqual(audit.audit_path.read_bytes(), replacement_bytes)
             finally:
                 result.close()
+
+    def test_fallback_aborts_if_source_generation_changes_between_count_and_content_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit = self._write_audit(sessions, ["2026-10-13T08:00:00+08:00"])
+            replacement = RoundAuditStore(
+                root / "replacement", "round-1", "FCT",
+                "2026-10-13T00:00:00+08:00", 0.0)
+            replacement.append_event(
+                AuditEvent(1, "round_ready", "new source version", None),
+                "2026-10-13T09:00:00+08:00", 1.0)
+            self.assertTrue(replacement.flush())
+            real_reader = historical_event_query.iter_historical_events
+            calls = [0]
+
+            def replace_before_second_pass(*args, **kwargs):
+                calls[0] += 1
+                if calls[0] == 2:
+                    os.replace(str(replacement.audit_path), str(audit.audit_path))
+                return real_reader(*args, **kwargs)
+
+            published = []
+            with unittest.mock.patch(
+                    "historical_event_query.iter_historical_events",
+                    side_effect=replace_before_second_pass):
+                with self.assertRaisesRegex(OSError, "changed during fallback content pass"):
+                    query_historical_events(
+                        sessions, None,
+                        HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13)),
+                        publish_initial=published.append)
+            self.assertEqual(calls[0], 2)
+            self.assertEqual(published, [])
 
     def test_fallback_query_marks_new_source_appearing_after_discovery(self):
         with tempfile.TemporaryDirectory() as temporary:

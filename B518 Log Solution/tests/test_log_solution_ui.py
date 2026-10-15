@@ -3,6 +3,7 @@ import gc
 import io
 import json
 import os
+import sqlite3
 import shutil
 import subprocess
 import sys
@@ -7920,6 +7921,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertGreaterEqual(result.total_count, 501)
                     self.assertEqual(len(result.initial_events), 500)
                     self.assertFalse(result.preparation_complete)
+                    snapshot = sqlite3.connect(str(result._store_path))
+                    try:
+                        self.assertEqual(snapshot.execute(
+                            "SELECT COUNT(*) FROM matching_events").fetchone()[0],
+                            result.total_count)
+                        self.assertEqual(snapshot.execute(
+                            "SELECT COUNT(*) FROM prepared_events").fetchone()[0], 500)
+                        columns = {row[1] for row in snapshot.execute(
+                            "PRAGMA table_info(matching_events)")}
+                        self.assertNotIn("summary_json", columns)
+                        self.assertNotIn("event_json", columns)
+                    finally:
+                        snapshot.close()
                     self.assertIn(app._t("app.settings.history.preparing"),
                                   app.historical_query_status.cget("text"))
 
@@ -7951,7 +7965,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     self.assertEqual(app.current_language, ENGLISH)
                     self.assertFalse(result.preparation_complete)
+                    self.click_tk_widget(root, app.historical_next_button)
+                    self.wait_for_ui(root, lambda: app._historical_requested_page_number == 6)
+                    self.assertEqual(app._historical_query_page_number, 5)
+                    self.assertEqual(app.historical_page_label.cget("text"),
+                                     app._t("app.settings.history.page_loading", page=6))
                     release_batch.set()
+                    self.wait_for_ui(root, lambda: app._historical_query_page_number == 6)
                     self.wait_for_ui(root, lambda: result.preparation_complete)
                     self.assertEqual(result.prepared_count, result.total_count)
                 self.assertEqual(audit_path.read_bytes(), source_bytes)

@@ -56,7 +56,8 @@ print(json.dumps({
     "submit_to_result_publish_seconds": round(published - started, 6),
     "submit_to_500_readable_seconds": round(first_five_read - started, 6),
     "five_page_api_seconds": round(first_five_read - published, 6),
-    "detail_read_seconds": round(detail_read - first_five_read, 6),
+    "detail_read_seconds": round(detail_read - detail_started, 6),
+    "submit_to_detail_ready_seconds": round(detail_read - started, 6),
     "submit_to_full_completion_seconds": round(finished - started, 6),
 }, sort_keys=True))
 result.close()
