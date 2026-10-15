@@ -6762,7 +6762,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(visible_controls)
                 outside = [(widget.cget("text") if isinstance(widget, (ttk.Label, ttk.Button))
                             else widget.winfo_class(),
-                            widget.winfo_rootx() + widget.winfo_width() - right_edge)
+                            widget.winfo_rootx() + widget.winfo_width() - right_edge,
+                            widget.winfo_rootx() - window.winfo_rootx(),
+                            widget.winfo_width(),
+                            widget.master.winfo_rootx() - window.winfo_rootx(),
+                            widget.master.winfo_width())
                            for widget in visible_controls
                            if widget.winfo_rootx() + widget.winfo_width() > right_edge]
                 self.assertEqual(outside, [],
@@ -6783,6 +6787,154 @@ class LogSolutionUiTests(unittest.TestCase):
                                  "Retention controls extend beyond the window: {}".format(outside))
                 self.assertGreater(app.retention_help_label.winfo_height(), 42)
                 self.assertIn("full 24 hours", app.retention_help_label.cget("text"))
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                    "complete", "failed"
+                })
+                self.wait_for_archive_checks(app.rounds)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_settings_layout_is_stable_across_languages_and_keeps_drafts(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                window = app.settings_window
+                window.geometry("680x560")
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                app.profile_editor_project.set("Unsaved bilingual draft")
+                app.profile_editor_capacity.set("17")
+                long_path = "/deployment/" + ("long-directory/" * 12) + "final-results.csv"
+                app.profile_editor_paths["final"].set(long_path)
+                station_before_mouse_selection = app.profile_editor_machine.get()
+                machine_choice = app.profile_editor_machine_choice
+                arrow_x = machine_choice.winfo_width() - 5
+                arrow_y = machine_choice.winfo_height() // 2
+                machine_choice.event_generate("<ButtonPress-1>", x=arrow_x, y=arrow_y)
+                machine_choice.event_generate("<ButtonRelease-1>", x=arrow_x, y=arrow_y)
+                root.update()
+                machine_choice.event_generate("<KeyPress-Down>")
+                machine_choice.event_generate("<KeyPress-Return>")
+                root.update()
+
+                def settings_control_bounds():
+                    bounds = []
+
+                    def collect(parent):
+                        for widget in parent.winfo_children():
+                            if isinstance(widget, (ttk.Label, ttk.Button, ttk.Entry,
+                                                  ttk.Combobox)) and widget.winfo_ismapped():
+                                bounds.append((widget.winfo_class(),
+                                               widget.winfo_rootx() - window.winfo_rootx(),
+                                               widget.winfo_rooty() - window.winfo_rooty(),
+                                               widget.winfo_width(), widget.winfo_height(),
+                                               widget.cget("text")))
+                            collect(widget)
+
+                    collect(window)
+                    return bounds
+
+                self.assertIn(app.profile_editor_machine.get(),
+                              app.profile_editor_machine_choice.cget("values"))
+                self.assertNotEqual(app.profile_editor_machine.get(),
+                                    station_before_mouse_selection)
+                self.assertEqual(app.style.lookup("TEntry", "fieldbackground"), "#ffffff")
+                for index, tab in enumerate(app.settings_notebook.tabs()):
+                    app.settings_notebook.select(tab)
+                    root.update()
+                    english_bounds = settings_control_bounds()
+                    app._select_language("zh-TW")
+                    root.update()
+                    chinese_bounds = settings_control_bounds()
+                    self.assertEqual([item[:5] for item in chinese_bounds],
+                                     [item[:5] for item in english_bounds],
+                                     "Settings tab {} changed control bounds: {}".format(
+                                         index + 1,
+                                         [(old[5], new[5], old[:5], new[:5])
+                                          for old, new in zip(english_bounds, chinese_bounds)
+                                          if old[:5] != new[:5]]))
+                    self.assertEqual(app.settings_notebook.select(), tab)
+                    self.assertEqual(window.title(), "設定")
+                    app._select_language("en")
+                    root.update()
+                    self.assertEqual(window.title(), "Setting")
+                    self.assertEqual(settings_control_bounds(), english_bounds)
+
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
+                self.assertEqual(app.profile_editor_project.get(), "Unsaved bilingual draft")
+                self.assertEqual(app.profile_editor_capacity.get(), "17")
+                self.assertEqual(app.profile_editor_paths["final"].get(), long_path)
+
+                app.settings_notebook.select(app.settings_notebook.tabs()[1])
+                app._event_records = [("event {}".format(index), None, None)
+                                      for index in range(120)]
+                app.event_lines = ["event {}".format(index) for index in range(120)]
+                app._refresh_event_log()
+                root.update()
+                app.settings_log.yview_moveto(0.45)
+                app.settings_log.tag_add("sel", "24.0", "26.0")
+                app._select_language("zh-TW")
+                root.update()
+                self.assertAlmostEqual(app.settings_log.yview()[0], 0.45, delta=0.03)
+                self.assertEqual(tuple(map(str, app.settings_log.tag_ranges("sel"))),
+                                 ("24.0", "26.0"))
+                self.assertEqual(app.settings_log.cget("background"), "#f3f4f6")
+                self.assertEqual(app.settings_log.cget("relief"), "solid")
+
+                app.settings_notebook.select(app.settings_notebook.tabs()[2])
+                app.retention_days_entry.delete(0, "end")
+                app.retention_days_entry.insert(0, "14")
+                save_button = app.retention_save_button
+                save_button.event_generate("<ButtonPress-1>",
+                                           x=save_button.winfo_width() // 2,
+                                           y=save_button.winfo_height() // 2)
+                save_button.event_generate("<ButtonRelease-1>",
+                                           x=save_button.winfo_width() // 2,
+                                           y=save_button.winfo_height() // 2)
+                root.update()
+                self.assertEqual(app.profile_store.retention_days, 14)
+                app._select_language("en")
+                root.update()
+                self.assertEqual(app.retention_days_var.get(), "14")
+                self.assertTrue(app.retention_cleanup_text.winfo_ismapped())
+                self.assertGreater(app.retention_cleanup_scrollbar.winfo_height(), 0)
+
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
+                export_button = next(widget for widget, message_id in app._settings_text_widgets
+                                     if message_id == "app.settings.profile.export")
+                export_path = Path(temporary) / "profiles.json"
+                with patch("b518_log_solution.filedialog.asksaveasfilename",
+                           return_value=str(export_path)):
+                    export_button.focus_set()
+                    export_button.event_generate("<KeyPress-space>")
+                    export_button.event_generate("<KeyRelease-space>")
+                    root.update()
+                self.assertTrue(export_path.exists())
+                import_button = next(widget for widget, message_id in app._settings_text_widgets
+                                     if message_id == "app.settings.profile.import")
+                with patch("b518_log_solution.filedialog.askopenfilename",
+                           return_value=str(export_path)):
+                    import_button.focus_set()
+                    import_button.event_generate("<KeyPress-space>")
+                    import_button.event_generate("<KeyRelease-space>")
+                    root.update()
+                self.assertIn("Configuration validated, imported", app.profile_editor_status.get())
             finally:
                 app._close_settings()
                 app.rounds.request_close()
