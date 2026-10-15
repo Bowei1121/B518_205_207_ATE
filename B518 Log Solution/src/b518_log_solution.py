@@ -430,6 +430,7 @@ class B518LogSolutionApp:
         self._updating_conflict_list = False
         self.conflict_instructions: Optional[ttk.Label] = None
         self.conflict_list: Optional[tk.Listbox] = None
+        self.conflict_list_xscrollbar: Optional[ttk.Scrollbar] = None
         self.conflict_panes: Optional[ttk.Panedwindow] = None
         self.conflict_position_label: Optional[ttk.Label] = None
         self.conflict_comparison: Optional[tk.Text] = None
@@ -1942,22 +1943,50 @@ class B518LogSolutionApp:
             window = tk.Toplevel(self.root)
             self.conflict_window = window
             self.root.update_idletasks()
-            window_x = max(self.root.winfo_rootx() - 820 - 12, 0)
-            window_y = max(self.root.winfo_rooty(), 0)
-            window.geometry("820x430+{}+{}".format(window_x, window_y))
-            window.minsize(720, 360)
+            window_width, window_height, window_gap = 960, 600, 12
+            root_x = self.root.winfo_rootx()
+            root_y = self.root.winfo_rooty()
+            root_width = self.root.winfo_width()
+            root_height = self.root.winfo_height()
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            left_x = root_x - window_width - window_gap
+            right_x = root_x + root_width + window_gap
+            if left_x >= 0:
+                window_x, window_y = left_x, root_y
+            elif right_x + window_width <= screen_width:
+                window_x, window_y = right_x, root_y
+            else:
+                below_y = root_y + root_height + window_gap
+                above_y = root_y - window_height - window_gap
+                window_x = max(0, min(root_x, screen_width - window_width))
+                window_y = (below_y if below_y + window_height <= screen_height
+                            else max(0, above_y))
+            window.geometry("{}x{}+{}+{}".format(
+                window_width, window_height, window_x, window_y))
+            window.minsize(820, 540)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            instruction_area = ttk.Frame(window, height=44)
+            instruction_area.pack(fill="x", padx=12, pady=(12, 8))
+            instruction_area.pack_propagate(False)
             self.conflict_instructions = ttk.Label(
-                window, text="", wraplength=780,
+                instruction_area, text="", wraplength=900,
             )
-            self.conflict_instructions.pack(fill="x", padx=12, pady=(12, 8))
+            self.conflict_instructions.pack(fill="both", expand=True)
             body = ttk.Frame(window)
             body.pack(fill="both", expand=True, padx=12, pady=4)
-            self.conflict_list = tk.Listbox(body, width=38, exportselection=False,
+            list_frame = ttk.Frame(body)
+            list_frame.pack(side="left", fill="y")
+            self.conflict_list = tk.Listbox(list_frame, width=52, exportselection=False,
                                             background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                                             selectbackground="#1d4ed8", selectforeground="#ffffff")
-            self.conflict_list.pack(side="left", fill="y")
+            self.conflict_list.pack(side="top", fill="y", expand=True)
+            self.conflict_list_xscrollbar = ttk.Scrollbar(
+                list_frame, orient="horizontal", command=self.conflict_list.xview,
+            )
+            self.conflict_list_xscrollbar.pack(side="bottom", fill="x")
+            self.conflict_list.configure(xscrollcommand=self.conflict_list_xscrollbar.set)
             self.conflict_list.bind("<<ListboxSelect>>", self._on_conflict_list_select)
             self.conflict_panes = ttk.Panedwindow(body, orient="vertical")
             self.conflict_panes.pack(side="left", fill="both", expand=True, padx=(10, 0))
@@ -1968,12 +1997,12 @@ class B518LogSolutionApp:
             self.conflict_position_label = ttk.Label(summary, text=self._t(
                 "conflict.position", position=self._t("conflict.unknown"),
             ))
-            self.conflict_position_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
+            self.conflict_position_label.grid(row=0, column=0, sticky="ew", pady=(0, 4))
             comparison_font = tkfont.nametofont("TkDefaultFont")
             self.conflict_comparison = tk.Text(
                 summary, wrap="none", height=5, state="disabled", font=comparison_font,
-                background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR, relief="flat",
-                borderwidth=0, padx=4, pady=4,
+                background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR, relief="solid",
+                borderwidth=1, padx=4, pady=4,
             )
             self.conflict_comparison_header_font = tkfont.Font(
                 root=window, font=comparison_font,
@@ -2021,20 +2050,22 @@ class B518LogSolutionApp:
             self._schedule_ui("idle", self._set_initial_conflict_sash)
             actions = ttk.Frame(window)
             actions.pack(side="bottom", fill="x", padx=12, pady=(8, 12), before=body)
+            for column in range(3):
+                actions.columnconfigure(column, weight=1, uniform="conflict-actions")
             self.resolve_conflict_original_button = ttk.Button(
                 actions, text="",
                 command=lambda: self._resolve_selected_conflict("keep_original"),
             )
-            self.resolve_conflict_original_button.pack(side="left", padx=(0, 8))
+            self.resolve_conflict_original_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
             self.resolve_conflict_candidate_button = ttk.Button(
                 actions, text="",
                 command=lambda: self._resolve_selected_conflict("accept_candidate"),
             )
-            self.resolve_conflict_candidate_button.pack(side="left")
+            self.resolve_conflict_candidate_button.grid(row=0, column=1, sticky="ew", padx=(0, 8))
             self.conflict_close_button = ttk.Button(
                 actions, text="", command=window.withdraw,
             )
-            self.conflict_close_button.pack(side="right")
+            self.conflict_close_button.grid(row=0, column=2, sticky="ew")
             window.bind("<Destroy>", self._on_conflict_window_destroy, add="+")
             self._unregister_conflict_language_receiver = self.register_language_receiver(
                 lambda: self._t("conflict.title"),
@@ -2380,6 +2411,7 @@ class B518LogSolutionApp:
         self.conflict_window = None
         self.conflict_instructions = None
         self.conflict_list = None
+        self.conflict_list_xscrollbar = None
         self.conflict_panes = None
         self.conflict_position_label = None
         self.conflict_comparison = None
@@ -2460,22 +2492,28 @@ class B518LogSolutionApp:
             window = tk.Toplevel(self.root)
             self.round_alarm_window = window
             window.title(self._t("alarm.title"))
-            window.geometry("460x220")
-            window.minsize(420, 190)
+            window.geometry("700x340")
+            window.minsize(620, 300)
             window.transient(self.root)
             window.protocol("WM_DELETE_WINDOW", window.withdraw)
-            self.round_alarm_message = ttk.Label(window, wraplength=420, justify="left")
-            self.round_alarm_message.pack(fill="both", expand=True, padx=16, pady=(18, 10))
+            self.round_alarm_message = ttk.Label(
+                window, wraplength=650, justify="left",
+                background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                anchor="nw",
+            )
+            self.round_alarm_message.pack(fill="both", expand=True, padx=20, pady=(20, 12))
             actions = ttk.Frame(window)
-            actions.pack(fill="x", padx=16, pady=(0, 14))
+            actions.pack(fill="x", padx=20, pady=(0, 18))
+            actions.columnconfigure(0, weight=1, uniform="alarm-actions")
+            actions.columnconfigure(1, weight=1, uniform="alarm-actions")
             self.round_alarm_ack_button = ttk.Button(
                 actions, text=self._t("alarm.button.acknowledge"),
             )
-            self.round_alarm_ack_button.pack(side="left")
+            self.round_alarm_ack_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
             self.round_alarm_close_button = ttk.Button(
                 actions, text=self._t("alarm.button.close"), command=window.withdraw,
             )
-            self.round_alarm_close_button.pack(side="right")
+            self.round_alarm_close_button.grid(row=0, column=1, sticky="ew")
             window.bind("<Destroy>", self._on_round_alarm_destroy, add="+")
             self._unregister_round_alarm_language_receiver = self.register_language_receiver(
                 lambda: self._t("alarm.title"),

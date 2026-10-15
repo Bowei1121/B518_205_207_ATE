@@ -1,0 +1,444 @@
+{
+  "conflict": {
+    "en": {
+      "geometry": "960x600+80+60",
+      "native_bounds": {
+        "X": 80.0,
+        "Y": 60.0,
+        "Width": 960.0,
+        "Height": 628.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1256
+      },
+      "controls": [
+        [
+          ".!toplevel.!toplevel.!frame",
+          "TFrame",
+          12,
+          12,
+          936,
+          44
+        ],
+        [
+          ".!toplevel.!toplevel.!frame.!label",
+          "TLabel",
+          0,
+          0,
+          936,
+          44
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2",
+          "TFrame",
+          12,
+          68,
+          936,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame",
+          "TFrame",
+          0,
+          0,
+          470,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame.!listbox",
+          "Listbox",
+          0,
+          0,
+          470,
+          460
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame.!scrollbar",
+          "TScrollbar",
+          0,
+          460,
+          470,
+          14
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow",
+          "TPanedwindow",
+          480,
+          0,
+          456,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame",
+          "TFrame",
+          0,
+          0,
+          456,
+          220
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!label",
+          "TLabel",
+          0,
+          0,
+          442,
+          20
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!scrollbar",
+          "TScrollbar",
+          442,
+          24,
+          14,
+          182
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!scrollbar2",
+          "TScrollbar",
+          0,
+          206,
+          442,
+          14
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!text",
+          "Text",
+          0,
+          24,
+          442,
+          182
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2",
+          "TFrame",
+          0,
+          226,
+          456,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2.!scrollbar",
+          "TScrollbar",
+          442,
+          0,
+          14,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2.!text",
+          "Text",
+          0,
+          0,
+          442,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3",
+          "TFrame",
+          12,
+          554,
+          936,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button",
+          "TButton",
+          0,
+          0,
+          304,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button2",
+          "TButton",
+          312,
+          0,
+          304,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button3",
+          "TButton",
+          624,
+          0,
+          312,
+          34
+        ]
+      ],
+      "screenshot": "conflict-review-en.png"
+    },
+    "zh-TW": {
+      "geometry": "960x600+80+60",
+      "native_bounds": {
+        "X": 80.0,
+        "Y": 60.0,
+        "Width": 960.0,
+        "Height": 628.0
+      },
+      "image_pixels": {
+        "width": 1920,
+        "height": 1256
+      },
+      "controls": [
+        [
+          ".!toplevel.!toplevel.!frame",
+          "TFrame",
+          12,
+          12,
+          936,
+          44
+        ],
+        [
+          ".!toplevel.!toplevel.!frame.!label",
+          "TLabel",
+          0,
+          0,
+          936,
+          44
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2",
+          "TFrame",
+          12,
+          68,
+          936,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame",
+          "TFrame",
+          0,
+          0,
+          470,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame.!listbox",
+          "Listbox",
+          0,
+          0,
+          470,
+          460
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!frame.!scrollbar",
+          "TScrollbar",
+          0,
+          460,
+          470,
+          14
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow",
+          "TPanedwindow",
+          480,
+          0,
+          456,
+          474
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame",
+          "TFrame",
+          0,
+          0,
+          456,
+          220
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!label",
+          "TLabel",
+          0,
+          0,
+          442,
+          20
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!scrollbar",
+          "TScrollbar",
+          442,
+          24,
+          14,
+          182
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!scrollbar2",
+          "TScrollbar",
+          0,
+          206,
+          442,
+          14
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame.!text",
+          "Text",
+          0,
+          24,
+          442,
+          182
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2",
+          "TFrame",
+          0,
+          226,
+          456,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2.!scrollbar",
+          "TScrollbar",
+          442,
+          0,
+          14,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame2.!panedwindow.!frame2.!text",
+          "Text",
+          0,
+          0,
+          442,
+          248
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3",
+          "TFrame",
+          12,
+          554,
+          936,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button",
+          "TButton",
+          0,
+          0,
+          304,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button2",
+          "TButton",
+          312,
+          0,
+          304,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel.!frame3.!button3",
+          "TButton",
+          624,
+          0,
+          312,
+          34
+        ]
+      ],
+      "screenshot": "conflict-review-zh-TW.png"
+    }
+  },
+  "alarm": {
+    "en": {
+      "geometry": "700x340+164+146",
+      "native_bounds": {
+        "X": 164.0,
+        "Y": 146.0,
+        "Width": 700.0,
+        "Height": 368.0
+      },
+      "image_pixels": {
+        "width": 1400,
+        "height": 736
+      },
+      "controls": [
+        [
+          ".!toplevel.!toplevel2.!frame",
+          "TFrame",
+          20,
+          288,
+          660,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!frame.!button",
+          "TButton",
+          0,
+          0,
+          322,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!frame.!button2",
+          "TButton",
+          330,
+          0,
+          330,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!label",
+          "TLabel",
+          20,
+          20,
+          660,
+          256
+        ]
+      ],
+      "screenshot": "round-alarm-en.png"
+    },
+    "zh-TW": {
+      "geometry": "700x340+164+146",
+      "native_bounds": {
+        "X": 164.0,
+        "Y": 146.0,
+        "Width": 700.0,
+        "Height": 368.0
+      },
+      "image_pixels": {
+        "width": 1400,
+        "height": 736
+      },
+      "controls": [
+        [
+          ".!toplevel.!toplevel2.!frame",
+          "TFrame",
+          20,
+          288,
+          660,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!frame.!button",
+          "TButton",
+          0,
+          0,
+          322,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!frame.!button2",
+          "TButton",
+          330,
+          0,
+          330,
+          34
+        ],
+        [
+          ".!toplevel.!toplevel2.!label",
+          "TLabel",
+          20,
+          20,
+          660,
+          256
+        ]
+      ],
+      "screenshot": "round-alarm-zh-TW.png"
+    }
+  },
+  "selected_conflict_id": "247303bbd77b45b29572ccb8f9bac098",
+  "selected_index": 17,
+  "sash_position": 220,
+  "detail_top_index": "8.0",
+  "alarm_acknowledged": false,
+  "pending_conflict_count": 28
+}

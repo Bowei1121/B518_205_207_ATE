@@ -7688,6 +7688,244 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            elapsed = [0.0]
+            rounds = RoundCoordinator(
+                app.events.put, monotonic=lambda: elapsed[0], audit_root=session_root)
+            rounds.register_app_event_store(app.app_events, Path(temporary))
+            app.rounds = rounds
+            sources = []
+
+            def create(callback):
+                source = ControlledConflictMonitor(callback)
+                sources.append(source)
+                return source
+
+            def pump_until(predicate, timeout=5):
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(0.01)
+                self.fail("Timed out while pumping HM3 layout validation")
+
+            def bounds(window):
+                root.update_idletasks()
+                values = []
+                def collect(widget):
+                    if widget is not window and widget.winfo_ismapped():
+                        values.append((widget.winfo_pathname(widget.winfo_id()),
+                                       widget.winfo_class(), widget.winfo_x(),
+                                       widget.winfo_y(), widget.winfo_width(),
+                                       widget.winfo_height()))
+                    for child in widget.winfo_children():
+                        collect(child)
+                collect(window)
+                return sorted(values)
+
+            def overlaps(first, second):
+                first_left, first_top = first.winfo_rootx(), first.winfo_rooty()
+                first_right = first_left + first.winfo_width()
+                first_bottom = first_top + first.winfo_height()
+                second_left, second_top = second.winfo_rootx(), second.winfo_rooty()
+                second_right = second_left + second.winfo_width()
+                second_bottom = second_top + second.winfo_height()
+                return (first_left < second_right and second_left < first_right and
+                        first_top < second_bottom and second_top < first_bottom)
+
+            def capture(window, filename):
+                evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
+                if not evidence_root:
+                    return
+                import Quartz
+                from Foundation import NSURL
+
+                root.update()
+                native_windows = Quartz.CGWindowListCopyWindowInfo(
+                    Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+                native_window = next((item for item in native_windows
+                                      if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                                      and item.get(Quartz.kCGWindowName) == window.title()), None)
+                self.assertIsNotNone(native_window,
+                                     "Window missing from Aqua window list: {}".format(
+                                         window.title()))
+                native_id = native_window[Quartz.kCGWindowNumber]
+                captured = Quartz.CGWindowListCreateImage(
+                    Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
+                    native_id, Quartz.kCGWindowImageBoundsIgnoreFraming)
+                self.assertIsNotNone(captured)
+                output = Path(evidence_root) / filename
+                output.parent.mkdir(parents=True, exist_ok=True)
+                destination = Quartz.CGImageDestinationCreateWithURL(
+                    NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
+                Quartz.CGImageDestinationAddImage(destination, captured, None)
+                self.assertTrue(Quartz.CGImageDestinationFinalize(destination))
+                return {
+                    "geometry": window.geometry(),
+                    "native_bounds": {
+                        key: float(native_window[Quartz.kCGWindowBounds][key])
+                        for key in ("X", "Y", "Width", "Height")
+                    },
+                    "image_pixels": {
+                        "width": Quartz.CGImageGetWidth(captured),
+                        "height": Quartz.CGImageGetHeight(captured),
+                    },
+                    "controls": bounds(window),
+                    "screenshot": filename,
+                }
+
+            try:
+                started = rounds.start(
+                    "FCT", create, run_async=False, round_timeout_seconds=1, capacity=2)
+                app.active_round_id = started.round_id
+                for index in range(28):
+                    source = "/controlled/" + ("long-diagnostic-directory/" * 8) + "base.csv"
+                    sn = ("SN-CANDIDATE-LONG-{:02d}-".format(index) +
+                          ("READING-POSITION-" * 4))
+                    event = MonitorEvent(
+                        "result_candidate", "controlled candidate", slot=1, sn=sn,
+                        status="FAIL", source=source,
+                        detail={"round_evidence_id": "controlled-round-evidence",
+                                "source_id": "candidate-" + ("long-provenance-" * 8),
+                                "source_time": "2026-10-08T10:01:00",
+                                "diagnostic": "long source diagnostic " * 24},
+                    )
+                    self.assertEqual(sources[0].callback(event), "defer")
+                pump_until(lambda: app.conflict_list is not None
+                           and app.conflict_list.size() == 28)
+                sources[0].timeout_seconds = lambda kind: 1 if kind == "round" else 3600
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                pump_until(lambda: app.round_alarm_window is not None
+                           and app.round_alarm_window.winfo_exists())
+                original_snapshot = rounds.snapshot()
+
+                conflict_window = app.conflict_window
+                alarm_window = app.round_alarm_window
+                conflict_window.geometry("960x600")
+                alarm_window.geometry("700x340")
+                root.update()
+                for marker in (app.kvm_state_marker, app.kvm_layout_marker,
+                               *app.kvm_result_blocks.values()):
+                    self.assertFalse(overlaps(conflict_window, marker),
+                                     "Conflict review must not cover KVM markers")
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.selection_set(17)
+                app.conflict_list.activate(17)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                app.conflict_list.yview_moveto(0.4)
+                app.conflict_panes.sashpos(0, 220)
+                app.conflict_details.yview_moveto(0.35)
+                app.conflict_comparison.xview_moveto(0.25)
+                root.update()
+                conflict_id = app._conflict_ids[17]
+                selected_snapshot = rounds.snapshot()
+                detail_top = app.conflict_details.index("@0,0")
+                kvm_widgets = [
+                    app.kvm_results, app.kvm_state_marker, app.kvm_layout_marker,
+                    *app.kvm_result_blocks.values(),
+                ]
+                kvm_geometry = tuple(
+                    (widget.winfo_x(), widget.winfo_y(),
+                     widget.winfo_width(), widget.winfo_height())
+                    for widget in kvm_widgets
+                )
+                conflict_bounds = {}
+                alarm_bounds = {}
+                conflict_evidence = {}
+                alarm_evidence = {}
+                for language in (ENGLISH, TRADITIONAL_CHINESE, ENGLISH,
+                                 TRADITIONAL_CHINESE):
+                    if language != app.current_language:
+                        self.select_language_from_menu(app, root, language)
+                    key = "en" if language == ENGLISH else "zh-TW"
+                    conflict_bounds[key] = bounds(conflict_window)
+                    alarm_bounds[key] = bounds(alarm_window)
+                    conflict_window.update_idletasks()
+                    alarm_window.update_idletasks()
+                    conflict_evidence[key] = capture(
+                        conflict_window, "conflict-review-{}.png".format(key))
+                    alarm_evidence[key] = capture(
+                        alarm_window, "round-alarm-{}.png".format(key))
+                    self.assertEqual(conflict_window.geometry().split("+")[0], "960x600")
+                    self.assertEqual(alarm_window.geometry().split("+")[0], "700x340")
+                    self.assertEqual(app.conflict_list.curselection(), (17,))
+                    self.assertEqual(app._conflict_ids[17], conflict_id)
+                    self.assertTrue(app.conflict_list_xscrollbar.winfo_ismapped())
+                    self.assertEqual(
+                        conflict_window.title(),
+                        "Same-Round Result Conflict" if language == ENGLISH
+                        else "同輪結果衝突",
+                    )
+                    self.assertEqual(
+                        alarm_window.title(),
+                        "Round Monitoring Timeout" if language == ENGLISH
+                        else "整輪監控逾時",
+                    )
+                    self.assertEqual(rounds.snapshot().pending_conflicts,
+                                     selected_snapshot.pending_conflicts)
+                    self.assertEqual(rounds.snapshot().results, original_snapshot.results)
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
+                    self.assertEqual(app.conflict_panes.sashpos(0), 220)
+                    self.assertEqual(app.conflict_details.index("@0,0"), detail_top)
+                    self.assertEqual(tuple(
+                        (widget.winfo_x(), widget.winfo_y(),
+                         widget.winfo_width(), widget.winfo_height())
+                        for widget in kvm_widgets
+                    ), kvm_geometry)
+                    self.assertIn("/controlled/slot1/base.csv",
+                                  app.conflict_details.get("@0,0", "@0,0 + 200 chars"))
+                    self.assertEqual(app.conflict_comparison.cget("relief"), "solid")
+                    self.assertEqual(app.conflict_comparison.cget("background"), "#f3f4f6")
+                    self.assertGreaterEqual(int(app.conflict_comparison.cget("borderwidth")), 1)
+                    self.assertIn("SN-CANDIDATE", app.conflict_details.get("1.0", "end"))
+
+                self.assertEqual(conflict_bounds["en"], conflict_bounds["zh-TW"])
+                self.assertEqual(alarm_bounds["en"], alarm_bounds["zh-TW"])
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                    with (evidence_dir / "window-bounds.json").open(
+                            "w", encoding="utf-8") as evidence_file:
+                        json.dump({
+                            "conflict": conflict_evidence,
+                            "alarm": alarm_evidence,
+                            "selected_conflict_id": conflict_id,
+                            "selected_index": 17,
+                            "sash_position": app.conflict_panes.sashpos(0),
+                            "detail_top_index": detail_top,
+                            "alarm_acknowledged": False,
+                            "pending_conflict_count": len(
+                                selected_snapshot.pending_conflicts),
+                        }, evidence_file, ensure_ascii=False, indent=2)
+                        evidence_file.write("\n")
+            finally:
+                snapshot = rounds.snapshot()
+                for conflict in snapshot.pending_conflicts:
+                    rounds.resolve_review(conflict.conflict_id, "keep_original")
+                alarm = rounds.snapshot().round_alarm
+                if alarm and not alarm.acknowledged_at:
+                    rounds.acknowledge_round_alarm(alarm.round_id, alarm.alarm_id)
+                rounds.stop()
+                app.close()
+                pump_until(lambda: rounds.close_status().status == "complete")
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_conflict_and_alarm_refresh_fail_independently_and_retry_latest_language(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
