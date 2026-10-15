@@ -905,14 +905,74 @@ class B518LogSolutionApp:
                     receiver_name=lambda: self._t(title_id))
 
     def _settings_label(self, parent, message_id: str, **kwargs):
-        widget = ttk.Label(parent, text=self._t(message_id, **kwargs))
+        widths = {
+            "app.settings.profile.project": 13,
+            "app.settings.profile.station_type": 13,
+            "app.settings.profile.platform": 13,
+            "app.settings.profile.capacity": 13,
+            "app.settings.retention.days": 28,
+            "app.settings.retention.cleanup.heading": 30,
+        }
+        widget = ttk.Label(parent, text=self._t(message_id, **kwargs),
+                           width=widths.get(message_id, 20))
         self._settings_text_widgets.append((widget, message_id))
         return widget
 
+    def _settings_wrapped_label(self, parent, message_id: str,
+                                width: int = 140, height: int = 36) -> ttk.Frame:
+        """Reserve the same two-line label box for long English and Chinese field names."""
+        frame = ttk.Frame(parent, width=width, height=height)
+        frame.grid_propagate(False)
+        frame.pack_propagate(False)
+        label = ttk.Label(frame, text=self._t(message_id), wraplength=width,
+                          justify="left", anchor="w")
+        label.pack(fill="both", expand=True)
+        self._settings_text_widgets.append((label, message_id))
+        return frame
+
     def _settings_button(self, parent, message_id: str, command):
-        widget = ttk.Button(parent, text=self._t(message_id), command=command)
+        widths = {
+            "app.settings.profile.choose_directory": 20,
+            "app.settings.profile.load": 25,
+            "app.settings.profile.validate": 19,
+            "app.settings.profile.apply": 18,
+            "app.settings.profile.cancel": 16,
+            "app.settings.profile.import": 21,
+            "app.settings.profile.export": 21,
+            "app.settings.profile.reload": 30,
+            "app.settings.session.open": 24,
+            "app.settings.history.open": 24,
+            "app.settings.retention.save": 18,
+            "app.settings.retention.cleanup.retry": 27,
+        }
+        widget = ttk.Button(parent, text=self._t(message_id), command=command,
+                            width=widths.get(message_id, 20))
         self._settings_text_widgets.append((widget, message_id))
         return widget
+
+    @staticmethod
+    def _settings_scrollable_tab(parent: ttk.Frame) -> ttk.Frame:
+        """Keep long settings pages reachable without changing control positions on translation."""
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(parent, background=LIGHT_BACKGROUND, highlightthickness=0,
+                           borderwidth=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        content = ttk.Frame(canvas, padding=12)
+        window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_scroll_region(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def fit_content(event):
+            canvas.itemconfigure(window_id, width=event.width)
+
+        content.bind("<Configure>", update_scroll_region, add="+")
+        canvas.bind("<Configure>", fit_content, add="+")
+        return content
 
     def _set_profile_editor_status(self, message_id: str, **parameters: object) -> None:
         self._profile_editor_status_message = (message_id, dict(parameters))
@@ -951,6 +1011,7 @@ class B518LogSolutionApp:
             message_id, parameters = self._retention_status_message
             self.retention_status.set(self._t(message_id, **parameters))
         self._refresh_retention_cleanup_status()
+        self._refresh_event_log()
 
     def _restore_captured_round_messages_for_display(self) -> None:
         """Reuse captured round messages when an early callback reached the UI first."""
@@ -2500,12 +2561,18 @@ class B518LogSolutionApp:
         dialog.minsize(680, 560)
         dialog.transient(self.root)
         dialog.protocol("WM_DELETE_WINDOW", self._close_settings)
-        notebook = ttk.Notebook(dialog)
+        self.style.configure("Settings.TNotebook.Tab", width=22)
+        notebook = ttk.Notebook(dialog, style="Settings.TNotebook")
+        self.style.configure("Settings.TNotebook", background=LIGHT_BACKGROUND,
+                             borderwidth=0)
+        self.style.map("Settings.TNotebook.Tab",
+                       background=[("selected", FIELD_BACKGROUND), ("active", "#dbeafe")],
+                       foreground=[("selected", TEXT_COLOUR), ("active", TEXT_COLOUR)])
         self.settings_notebook = notebook
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
-        profile_tab = ttk.Frame(notebook, padding=12)
+        profile_tab = ttk.Frame(notebook)
         log_tab = ttk.Frame(notebook, padding=12)
-        retention_tab = ttk.Frame(notebook, padding=12)
+        retention_tab = ttk.Frame(notebook)
         self._settings_tab_ids = [
             "app.settings.tab.configuration", "app.settings.tab.events",
             "app.settings.tab.retention",
@@ -2513,9 +2580,9 @@ class B518LogSolutionApp:
         notebook.add(profile_tab, text=self._t(self._settings_tab_ids[0]))
         notebook.add(log_tab, text=self._t(self._settings_tab_ids[1]))
         notebook.add(retention_tab, text=self._t(self._settings_tab_ids[2]))
-        self._build_profile_editor_tab(profile_tab)
+        self._build_profile_editor_tab(self._settings_scrollable_tab(profile_tab))
         self._build_log_tab(log_tab)
-        self._build_retention_tab(retention_tab)
+        self._build_retention_tab(self._settings_scrollable_tab(retention_tab))
         dialog.bind("<Destroy>", self._on_settings_destroy, add="+")
         self._unregister_settings_language_receiver = self.register_language_receiver(
             lambda: self._t("app.settings.title"),
@@ -2531,7 +2598,7 @@ class B518LogSolutionApp:
         self._set_retention_status("app.settings.retention.status.saved")
         self.retention_effective_label = ttk.Label(
             parent, text=self._t("app.settings.retention.effective",
-                                 days=self.profile_store.retention_days))
+                                 days=self.profile_store.retention_days), width=36)
         self.retention_effective_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(4, 10))
         self._settings_label(parent, "app.settings.retention.days").grid(
             row=1, column=0, sticky="w", pady=4)
@@ -2540,21 +2607,40 @@ class B518LogSolutionApp:
         self.retention_save_button = self._settings_button(
             parent, "app.settings.retention.save", self._save_retention_days)
         self.retention_save_button.grid(row=2, column=0, sticky="w", pady=(8, 4))
-        ttk.Label(parent, textvariable=self.retention_status, wraplength=620,
-                  foreground=TEXT_COLOUR).grid(row=2, column=1, sticky="w", padx=8, pady=(8, 4))
-        self.retention_help_label = self._settings_label(
-            parent, "app.settings.retention.help")
-        self.retention_help_label.configure(
-            wraplength=650, justify="left", foreground=TEXT_COLOUR,
-        )
-        self.retention_help_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        retention_status_frame = ttk.Frame(parent, width=270, height=54)
+        retention_status_frame.grid(row=2, column=1, sticky="ew", padx=8, pady=(8, 4))
+        retention_status_frame.grid_propagate(False)
+        ttk.Label(retention_status_frame, textvariable=self.retention_status,
+                  width=36, wraplength=270, foreground=TEXT_COLOUR).pack(
+                      fill="both", expand=True)
+        self.retention_help_label = tk.Label(
+            parent, text=self._t("app.settings.retention.help"), width=66, height=6,
+            wraplength=540, justify="left", anchor="nw",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
+        self._settings_text_widgets.append(
+            (self.retention_help_label, "app.settings.retention.help"))
+        self.retention_help_label.grid(row=3, column=0, columnspan=2,
+                                       sticky="w", pady=(12, 4))
         self.retention_cleanup_status = tk.StringVar(master=self.root, value="背景清理尚未執行")
         self.retention_cleanup_heading = self._settings_label(
             parent, "app.settings.retention.cleanup.heading")
         self.retention_cleanup_heading.configure(font=("Helvetica", 10, "bold"))
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
-        ttk.Label(parent, textvariable=self.retention_cleanup_status, wraplength=650,
-                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+        self.retention_cleanup_text = tk.Text(
+            parent, wrap="word", width=1, height=12, state="disabled",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
+            selectforeground=TEXT_COLOUR, relief="solid", borderwidth=1,
+        )
+        cleanup_output = ttk.Frame(parent)
+        cleanup_output.grid(row=5, column=0, columnspan=2, sticky="ew")
+        cleanup_output.columnconfigure(0, weight=1)
+        self.retention_cleanup_scrollbar = ttk.Scrollbar(
+            cleanup_output, orient="vertical", command=self.retention_cleanup_text.yview)
+        self.retention_cleanup_text.configure(
+            yscrollcommand=self.retention_cleanup_scrollbar.set)
+        self.retention_cleanup_text.grid(in_=cleanup_output, row=0, column=0, sticky="nsew")
+        self.retention_cleanup_scrollbar.grid(row=0, column=1, sticky="ns")
         self.retention_retry_button = self._settings_button(
             parent, "app.settings.retention.cleanup.retry", self._retry_retention_cleanup)
         self.retention_retry_button.grid(row=6, column=0, sticky="w", pady=(8, 4))
@@ -2701,6 +2787,21 @@ class B518LogSolutionApp:
                         if latest.app_events.reason_message is not None
                         else latest.app_events.reason))
         variable.set(detail)
+        output = getattr(self, "retention_cleanup_text", None)
+        if output is not None and output.winfo_exists():
+            reading_position = output.yview()[0]
+            selection = (output.index("sel.first"), output.index("sel.last")) \
+                if output.tag_ranges("sel") else None
+            output.configure(state="normal")
+            output.delete("1.0", "end")
+            output.insert("1.0", detail)
+            if selection is not None:
+                try:
+                    output.tag_add("sel", *selection)
+                except tk.TclError:
+                    pass
+            output.yview_moveto(reading_position)
+            output.configure(state="disabled")
 
     def _retention_reason_detail(self, reason: object) -> str:
         """Render a localized outer reason and retain its complete source evidence."""
@@ -2763,8 +2864,9 @@ class B518LogSolutionApp:
             row=1, column=2, sticky="w", padx=(12, 0), pady=4)
         ttk.Entry(parent, textvariable=self.profile_editor_capacity, width=10).grid(
             row=1, column=3, sticky="w", padx=6, pady=4)
-        self._settings_label(parent, "app.settings.profile.mapping").grid(
-            row=2, column=0, sticky="w", pady=4)
+        self._settings_wrapped_label(
+            parent, "app.settings.profile.mapping").grid(
+                row=2, column=0, sticky="w", pady=4)
         ttk.Entry(parent, textvariable=self.profile_editor_mapping, width=34).grid(
             row=2, column=1, columnspan=3, sticky="ew", padx=6, pady=4)
 
@@ -2773,8 +2875,9 @@ class B518LogSolutionApp:
                        ("caseinfo", "app.settings.profile.path_caseinfo"))
         for index, (field, message_id) in enumerate(path_labels):
             row = 3 + index * 2
-            self._settings_label(parent, message_id).grid(
-                row=row, column=0, columnspan=4, sticky="w", pady=(6, 0))
+            path_label = self._settings_label(parent, message_id)
+            path_label.configure(width=0, wraplength=600)
+            path_label.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(6, 0))
             ttk.Entry(parent, textvariable=self.profile_editor_paths[field]).grid(
                 row=row + 1, column=0, columnspan=3, sticky="ew", padx=6, pady=4)
             self._settings_button(
@@ -2788,13 +2891,15 @@ class B518LogSolutionApp:
         for row, (field, message_id) in ((9, timeout_labels[0]), (9, timeout_labels[1]),
                                          (10, timeout_labels[2])):
             column = 0 if field in {"start", "round"} else 2
-            self._settings_label(parent, message_id).grid(
+            self._settings_wrapped_label(parent, message_id).grid(
                 row=row, column=column, sticky="w", padx=(12, 0) if column else 0, pady=4)
             ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
                 row=row, column=column + 1, sticky="ew", padx=6, pady=4)
-        ttk.Label(parent, textvariable=self.profile_editor_status, wraplength=620,
-                  foreground=TEXT_COLOUR).grid(row=11, column=0, columnspan=4,
-                                               sticky="w", pady=(10, 6))
+        status_frame = ttk.Frame(parent, height=72)
+        status_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(10, 6))
+        status_frame.grid_propagate(False)
+        ttk.Label(status_frame, textvariable=self.profile_editor_status, wraplength=600,
+                  foreground=TEXT_COLOUR).pack(fill="both", expand=True)
         edit_actions = ttk.Frame(parent)
         edit_actions.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         for message_id, action in (("app.settings.profile.load", self._load_profile_editor_selection),
@@ -3011,16 +3116,22 @@ class B518LogSolutionApp:
 
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         controls = ttk.Frame(parent)
-        controls.pack(fill="x", pady=(0, 8))
+        controls.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self._settings_button(controls, "app.settings.session.open",
                               self.open_session).pack(side="left")
         self._settings_button(controls, "app.settings.history.open",
                               self.open_historical_events).pack(side="left", padx=(8, 0))
-        self.settings_log = tk.Text(parent, wrap="word", state="disabled", height=26,
-                                    background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        self.settings_log_scrollbar = ttk.Scrollbar(parent, orient="vertical")
+        self.settings_log = tk.Text(parent, wrap="word", state="disabled",
+                                    background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
                                     insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
-                                    selectforeground=TEXT_COLOUR)
-        self.settings_log.pack(fill="both", expand=True)
+                                    selectforeground=TEXT_COLOUR, relief="solid", borderwidth=1,
+                                    yscrollcommand=self.settings_log_scrollbar.set)
+        self.settings_log.grid(row=1, column=0, sticky="nsew")
+        self.settings_log_scrollbar.configure(command=self.settings_log.yview)
+        self.settings_log_scrollbar.grid(row=1, column=1, sticky="ns")
         self.settings_log.configure(state="normal")
         self.settings_log.insert("1.0", "\n".join(self.event_lines))
         self.settings_log.configure(state="disabled")
@@ -3815,6 +3926,7 @@ class B518LogSolutionApp:
             unregister()
         self.settings_window = None
         self.settings_log = None
+        self.retention_cleanup_text = None
         self._settings_text_widgets = []
         self._settings_tab_ids = []
         self._profile_editor_status_message = None
