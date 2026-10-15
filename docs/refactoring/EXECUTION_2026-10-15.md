@@ -24,7 +24,7 @@
 | #49 | QP2 | `codex/qp2-20261015` | `94d98b192f5521bb27faa7d61c44fd10d766b737` | integrated at `61dccbc`; closed after acceptance |
 | #50 | QP3 | `codex/qp3-20261015` | `61dccbc088dab9e48a643c711d49c74d2abb520f` | integrated at `e59a343`; fixed-base Standards/Spec reviews clean; 64 query/language + 2 true-Tk integrated checks passed; closed after acceptance |
 | #51 | QP4 | `codex/qp4-20261015` | `61dccbc088dab9e48a643c711d49c74d2abb520f` | integrated at `7627bd6`; 63 query/language + 3 true-Tk integration checks passed; fixed-base Spec review clean; Standards review clean through implementation, remaining commits were tests/docs only; closed after acceptance |
-| #52 | QP5 | pending | pending | blocked by #50, #51 |
+| #52 | QP5 | `codex/qp5-20261015` | `f4fa968` | ready; worktree creation pending; unblocked after #50/#51 acceptance |
 | #53 | QP6 | pending | pending | blocked by #52 |
 | #54 | HM1 | `codex/hm1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | integrated at `a429138`; closed after acceptance |
 | #55 | HM2 | `codex/hm2-20261015` | `53ccf8577440d1b04e4da2403a6bbe9f30fa68e6` | integrated at `c80ddb8`; closed after acceptance |
