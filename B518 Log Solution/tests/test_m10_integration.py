@@ -154,9 +154,9 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     self.assertEqual(windows, (app.settings_window, app.conflict_window,
                         app.round_alarm_window, app.app_diagnostics_window, app.historical_event_window))
                     self.assertTrue(all(w.winfo_viewable() for w in windows))
-                    expected_titles = (("B518 Log Solution 設定", "同輪結果衝突",
+                    expected_titles = (("設定", "同輪結果衝突",
                         "整輪監控逾時", "App 診斷", "歷史事件") if index else
-                        ("B518 Log Solution Settings", "Same-Round Result Conflict",
+                        ("Setting", "Same-Round Result Conflict",
                          "Round Monitoring Timeout", "App diagnostics", "Historical Events"))
                     self.assertEqual(tuple(w.title() for w in windows), expected_titles)
                     self.assertIn("確認" if index else "Acknowledge",

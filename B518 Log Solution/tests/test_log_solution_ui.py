@@ -290,7 +290,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.settings_button.event_generate("<KeyRelease-space>")
                 root.update()
                 self.assertIsNotNone(app.settings_window)
-                self.assertEqual(app.settings_window.title(), "B518 Log Solution Settings")
+                self.assertEqual(app.settings_window.title(), "Setting")
                 app._close_settings()
 
                 app.review_button.configure(state="normal")
@@ -5565,7 +5565,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                "app.language.refresh_failed")
                 self.assertIsNone(failure.get("round_id"))
                 self.assertEqual(failure["diagnostic"],
-                                 "B518 Log Solution 設定: settings refresh unavailable")
+                                 "設定: settings refresh unavailable")
                 disk_records = read_app_event_store(path)["events"]
                 self.assertIn(failure["event_id"],
                               [record["event_id"] for record in disk_records])
