@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import sqlite3
@@ -24,6 +25,7 @@ from historical_event_display import (HistoricalEvent, HistoricalEventSource,
 
 
 HISTORICAL_EVENT_QUERY_PAGE_SIZE = 100
+HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE = 500
 _DIAGNOSTIC_SAMPLE_LIMIT = 20
 _HISTORY_INDEX_VERSION = 5
 _HISTORY_INDEX_APPLICATION_ID = 0x42353138
@@ -173,7 +175,8 @@ class HistoricalEventQueryResult:
                  index_metrics: Optional[HistoricalEventIndexMetrics] = None,
                  index_degraded: bool = False, index_issue: str = "",
                  diagnostic_count: Optional[int] = None,
-                 index_path: Optional[Path] = None, query_id: Optional[str] = None):
+                 index_path: Optional[Path] = None, query_id: Optional[str] = None,
+                 preparation_complete: bool = True):
         self.date_range = date_range
         self.total_count = total_count
         self.unclassified_count = unclassified_count
@@ -189,6 +192,14 @@ class HistoricalEventQueryResult:
         self._index_path = Path(index_path) if index_path is not None else None
         self._query_id = query_id
         self._first_page = ()
+        self._initial_events = ()
+        self.prepared_count = total_count if preparation_complete else 0
+        self.preparation_complete = preparation_complete
+        self.preparation_error = None
+        self.total_count_ready_seconds = None
+        self.initial_batch_ready_seconds = None
+        self.preparation_complete_seconds = None
+        self._preparation_lock = threading.Lock()
         self._closed = False
         if self._index_path is not None and self._query_id is not None:
             self._finalizer = weakref.finalize(
@@ -202,6 +213,30 @@ class HistoricalEventQueryResult:
         """Compatibility view of the first bounded page."""
         self._ensure_open()
         return self._first_page
+
+    @property
+    def initial_events(self) -> Tuple[HistoricalEventSummary, ...]:
+        """The atomically prepared newest events, capped at five standard pages."""
+        self._ensure_open()
+        return self._initial_events
+
+    def _set_initial_events(self, events: Tuple[HistoricalEventSummary, ...]) -> None:
+        self._initial_events = events
+        self._first_page = events[:self.page_size]
+        self.prepared_count = len(events)
+
+    def _record_prepared_page(self, page: HistoricalEventQueryPage) -> None:
+        with self._preparation_lock:
+            self.prepared_count = max(
+                self.prepared_count,
+                min(self.total_count, page.page_number * self.page_size))
+
+    def _finish_preparation(self, error: Optional[Exception] = None) -> None:
+        with self._preparation_lock:
+            self.preparation_error = error
+            self.preparation_complete = True
+            if error is None:
+                self.prepared_count = self.total_count
 
     @property
     def page_count(self) -> int:
@@ -219,6 +254,11 @@ class HistoricalEventQueryResult:
         if not self.page_count and page_number != 1:
             raise IndexError("an empty query only has its empty first page")
         offset = (page_number - 1) * self.page_size
+        if offset < len(self._initial_events):
+            summaries = self._initial_events[offset:offset + self.page_size]
+            return HistoricalEventQueryPage(
+                self.date_range, page_number, self.page_size,
+                self.total_count, summaries)
         connection = self._connect_snapshot_readonly()
         try:
             if self._index_path is None:
@@ -243,9 +283,11 @@ class HistoricalEventQueryResult:
         finally:
             connection.close()
         summaries = tuple(_summary_from_json(row[0]) for row in rows)
-        return HistoricalEventQueryPage(
+        page = HistoricalEventQueryPage(
             self.date_range, page_number, self.page_size,
             self.total_count, summaries)
+        self._record_prepared_page(page)
+        return page
 
     def get_detail(self, event_key: str) -> Optional[HistoricalEvent]:
         """Load the original event only for the selected identity."""
@@ -657,6 +699,8 @@ class HistoricalEventQueryService:
         self._pending: Optional[_HistoricalEventQueryRequest] = None
         self._worker: Optional[threading.Thread] = None
         self._completed: Dict[int, HistoricalEventQueryCompletion] = {}
+        self._initial_results: Dict[int, HistoricalEventQueryCompletion] = {}
+        self._initial_taken = set()
         self._closed = False
 
     def submit(self, date_range: HistoricalEventDateRange) -> int:
@@ -673,9 +717,15 @@ class HistoricalEventQueryService:
                 self._pending.cancellation_event.set()
             self._pending = request
             self._latest_generation = request.generation
-            for completion in self._completed.values():
-                _discard_query_completion(completion)
+            for generation, completion in self._completed.items():
+                if generation not in self._initial_taken:
+                    _discard_query_completion(completion)
+                else:
+                    self._initial_taken.discard(generation)
             self._completed.clear()
+            for completion in self._initial_results.values():
+                _discard_query_completion(completion)
+            self._initial_results.clear()
             if self._worker is None:
                 self._worker = threading.Thread(
                     target=self._run, name="HistoricalEventDateQuery", daemon=True)
@@ -689,14 +739,21 @@ class HistoricalEventQueryService:
             if self._closed or self._latest_generation != generation:
                 return False
             self._latest_generation = None
-            if self._active is not None and self._active.generation == generation:
+            active_request = (self._active is not None and
+                              self._active.generation == generation)
+            if active_request:
                 self._active.cancellation_event.set()
             if self._pending is not None and self._pending.generation == generation:
                 self._pending.cancellation_event.set()
                 self._pending = None
             completion = self._completed.pop(generation, None)
-            if completion is not None:
+            if completion is not None and generation not in self._initial_taken:
                 _discard_query_completion(completion)
+            if not active_request:
+                self._initial_taken.discard(generation)
+            initial = self._initial_results.pop(generation, None)
+            if initial is not None:
+                _discard_query_completion(initial)
             self._condition.notify_all()
             return True
 
@@ -708,6 +765,18 @@ class HistoricalEventQueryService:
             completion = self._completed.pop(generation, None)
             if completion is not None:
                 self._latest_generation = None
+                self._initial_results.pop(generation, None)
+                self._initial_taken.discard(generation)
+            return completion
+
+    def take_initial_result(self, generation: int) -> Optional[HistoricalEventQueryCompletion]:
+        """Transfer the first readable batch without ending query preparation."""
+        with self._condition:
+            if self._closed or self._latest_generation != generation:
+                return None
+            completion = self._initial_results.pop(generation, None)
+            if completion is not None:
+                self._initial_taken.add(generation)
             return completion
 
     def is_pending(self, generation: int) -> bool:
@@ -725,9 +794,13 @@ class HistoricalEventQueryService:
         with self._condition:
             self._closed = True
             self._latest_generation = None
-            for completion in self._completed.values():
-                _discard_query_completion(completion)
+            for generation, completion in self._completed.items():
+                if generation not in self._initial_taken:
+                    _discard_query_completion(completion)
             self._completed.clear()
+            for completion in self._initial_results.values():
+                _discard_query_completion(completion)
+            self._initial_results.clear()
             if self._active is not None:
                 self._active.cancellation_event.set()
             if self._pending is not None:
@@ -748,6 +821,17 @@ class HistoricalEventQueryService:
 
             try:
                 query_options = {"cancellation_event": request.cancellation_event}
+                try:
+                    parameters = inspect.signature(self._query_function).parameters.values()
+                    supports_initial = (any(parameter.name == "publish_initial"
+                                             for parameter in parameters) or
+                                        any(parameter.kind == parameter.VAR_KEYWORD
+                                            for parameter in parameters))
+                except (TypeError, ValueError):
+                    supports_initial = False
+                if supports_initial:
+                    query_options["publish_initial"] = (
+                        lambda result: self._publish_initial(request, result))
                 if self._index_path is not None:
                     query_options["index_path"] = self._index_path
                 result = self._query_function(self._session_root, self._app_event_path,
@@ -766,12 +850,27 @@ class HistoricalEventQueryService:
                         not request.cancellation_event.is_set()):
                     self._completed[request.generation] = completion
                 else:
-                    _discard_query_completion(completion)
+                    self._initial_results.pop(request.generation, None)
+                    if request.generation not in self._initial_taken:
+                        _discard_query_completion(completion)
+                    self._initial_taken.discard(request.generation)
                 if self._closed or self._pending is None:
                     self._worker = None
                     self._condition.notify_all()
                     return
                 self._condition.notify_all()
+
+    def _publish_initial(self, request: _HistoricalEventQueryRequest,
+                         result: HistoricalEventQueryResult) -> None:
+        completion = HistoricalEventQueryCompletion(
+            request.generation, request.date_range, True, result=result)
+        with self._condition:
+            if (self._closed or self._latest_generation != request.generation or
+                    request.cancellation_event.is_set()):
+                result.close()
+                raise RuntimeError("historical event query cancelled")
+            self._initial_results[request.generation] = completion
+            self._condition.notify_all()
 
 
 def _discard_query_completion(completion: HistoricalEventQueryCompletion) -> None:
@@ -808,7 +907,8 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                             date_range: HistoricalEventDateRange,
                             limit: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE,
                             cancellation_event: Optional[threading.Event] = None,
-                            index_path: Optional[Path] = None
+                            index_path: Optional[Path] = None,
+                            publish_initial: Optional[Callable[[HistoricalEventQueryResult], None]] = None
                             ) -> HistoricalEventQueryResult:
     """Freeze matching source events into a temporary, disk-backed query snapshot.
 
@@ -819,17 +919,20 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         raise TypeError("date_range must be a HistoricalEventDateRange")
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
+    query_started_at = time.perf_counter()
     page_size = min(limit, HISTORICAL_EVENT_QUERY_PAGE_SIZE)
     if index_path is not None:
         try:
             return _query_historical_events_with_index(
                 Path(session_root), Path(app_event_path) if app_event_path else None,
-                date_range, page_size, Path(index_path), cancellation_event)
+                date_range, page_size, Path(index_path), cancellation_event,
+                publish_initial, query_started_at)
         except (OSError, sqlite3.Error) as error:
             _raise_if_query_cancelled(cancellation_event)
             result = query_historical_events(
                 session_root, app_event_path, date_range, page_size,
-                cancellation_event=cancellation_event)
+                cancellation_event=cancellation_event,
+                publish_initial=publish_initial)
             result.index_degraded = True
             result.index_issue = str(error)
             return result
@@ -978,7 +1081,13 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
                 parsed_source_count=fallback_source_count[0],
                 source_bytes_read=fallback_bytes_read[0]),
             diagnostic_count=diagnostic_count)
-        result._first_page = result.get_page(1).events
+        result.total_count_ready_seconds = time.perf_counter() - query_started_at
+        _prepare_initial_query_events(result, cancellation_event)
+        result.initial_batch_ready_seconds = time.perf_counter() - query_started_at
+        if publish_initial is not None:
+            publish_initial(result)
+        result._finish_preparation()
+        result.preparation_complete_seconds = time.perf_counter() - query_started_at
         return result
     except Exception:
         if connection is not None:
@@ -991,7 +1100,9 @@ def _query_historical_events_with_index(session_root: Path,
                                         app_event_path: Optional[Path],
                                         date_range: HistoricalEventDateRange,
                                         page_size: int, index_path: Path,
-                                        cancellation_event: Optional[threading.Event]
+                                        cancellation_event: Optional[threading.Event],
+                                        publish_initial: Optional[Callable[[HistoricalEventQueryResult], None]],
+                                        query_started_at: float
                                         ) -> HistoricalEventQueryResult:
     index_path = index_path.expanduser().absolute()
     descriptor, raw_path = tempfile.mkstemp(prefix="b518-history-query-", suffix=".sqlite3")
@@ -1175,10 +1286,24 @@ def _query_historical_events_with_index(session_root: Path,
                     indexed_content_write_count=sum(content_write_counts)), index_path)
             connection.close()
             connection = None
-            if rebuilt_index:
-                snapshot.index_degraded = True
-                snapshot.index_issue = "The historical query index was rebuilt."
+        if rebuilt_index:
+            snapshot.index_degraded = True
+            snapshot.index_issue = "The historical query index was rebuilt."
+        snapshot.preparation_complete = False
+        snapshot.total_count_ready_seconds = time.perf_counter() - query_started_at
+        _prepare_initial_query_events(snapshot, cancellation_event)
+        snapshot.initial_batch_ready_seconds = time.perf_counter() - query_started_at
+        if publish_initial is not None:
+            publish_initial(snapshot)
+        try:
+            _prepare_remaining_query_batches(snapshot, cancellation_event)
+        except Exception as error:
+            snapshot._finish_preparation(error)
+            snapshot.preparation_complete_seconds = time.perf_counter() - query_started_at
             return snapshot
+        snapshot._finish_preparation()
+        snapshot.preparation_complete_seconds = time.perf_counter() - query_started_at
+        return snapshot
     except Exception:
         if snapshot_staging is not None:
             snapshot_staging.close()
@@ -1482,7 +1607,6 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
             date_range, total_count, unclassified_count, source_issue_count,
             tuple(diagnostics), snapshot_path, page_size, index_metrics,
             diagnostic_count=diagnostic_count, index_path=index_path, query_id=query_id)
-        result._first_page = result.get_page(1).events
         return result
     except Exception:
         connection.rollback()
@@ -1497,6 +1621,33 @@ def _create_indexed_query_snapshot(connection: sqlite3.Connection, snapshot_path
 def _naive_wall_order(value: datetime) -> int:
     return ((value.toordinal() * 86400 + value.hour * 3600 + value.minute * 60 +
              value.second) * 1000000 + value.microsecond)
+
+
+def _prepare_initial_query_events(result: HistoricalEventQueryResult,
+                                  cancellation_event: Optional[threading.Event]) -> None:
+    events = []
+    page_limit = min(
+        result.page_count,
+        (HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE + result.page_size - 1) //
+        result.page_size)
+    for page_number in range(1, page_limit + 1):
+        _raise_if_query_cancelled(cancellation_event)
+        events.extend(result.get_page(page_number).events)
+    result._set_initial_events(tuple(events[:HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE]))
+
+
+def _prepare_remaining_query_batches(
+        result: HistoricalEventQueryResult,
+        cancellation_event: Optional[threading.Event],
+        batch_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE) -> None:
+    first_page = (len(result.initial_events) + result.page_size - 1) // result.page_size
+    batch_pages = max(1, batch_size // result.page_size)
+    for start in range(first_page + 1, result.page_count + 1, batch_pages):
+        _raise_if_query_cancelled(cancellation_event)
+        end = min(result.page_count, start + batch_pages - 1)
+        for page_number in range(start, end + 1):
+            _raise_if_query_cancelled(cancellation_event)
+            result.get_page(page_number)
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:

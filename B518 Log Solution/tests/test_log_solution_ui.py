@@ -7863,6 +7863,168 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_reads_five_pages_while_remaining_batches_are_paused(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            sessions = root_path / "sessions"
+            round_id = "qp2-paused-batches"
+            audit_path = sessions / round_id / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            today = datetime.now().astimezone().date()
+            occurred_at = datetime.combine(
+                today, datetime.min.time(), datetime.now().astimezone().tzinfo).isoformat()
+            header = {
+                "record_type": "round", "schema_version": 1,
+                "round_id": round_id, "station": "FCT", "config": {},
+                "time_contract": {},
+            }
+            records = [header]
+            for sequence in range(1, 502):
+                records.append({
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": round_id, "sequence": sequence,
+                    "kind": "round_ready", "message": "event {}".format(sequence),
+                    "observed_at": occurred_at, "elapsed_seconds": float(sequence),
+                    "display_position": None,
+                    "detail": {"raw_diagnostic": "QP2 detail {}".format(sequence)},
+                })
+            audit_path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            source_bytes = audit_path.read_bytes()
+            entered_batch, release_batch = threading.Event(), threading.Event()
+            original_prepare = historical_event_query._prepare_remaining_query_batches
+
+            def blocked_prepare(result, cancellation_event, batch_size=100):
+                entered_batch.set()
+                if not release_batch.wait(20):
+                    raise RuntimeError("controlled QP2 batch gate timed out")
+                return original_prepare(result, cancellation_event, batch_size)
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=sessions,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                with patch.object(historical_event_query,
+                                  "_prepare_remaining_query_batches",
+                                  side_effect=blocked_prepare):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, lambda: app._historical_query_result is not None)
+                    self.assertTrue(entered_batch.wait(2))
+                    result = app._historical_query_result
+                    self.assertGreaterEqual(result.total_count, 501)
+                    self.assertEqual(len(result.initial_events), 500)
+                    self.assertFalse(result.preparation_complete)
+                    self.assertIn(app._t("app.settings.history.preparing"),
+                                  app.historical_query_status.cget("text"))
+
+                    for page_number in range(1, 6):
+                        if page_number > 1:
+                            self.click_tk_widget(root, app.historical_next_button)
+                        self.wait_for_ui(
+                            root, lambda expected=page_number:
+                            app._historical_query_page_number == expected)
+                        self.assertEqual(app._historical_query_page_number, page_number)
+                        self.assertEqual(len(app._historical_event_records), 100)
+                        self.assertFalse(result.preparation_complete)
+                        selected_index = next(
+                            index for index, event in enumerate(app._historical_event_records)
+                            if event.source == "round")
+                        selected_sequence = app._historical_event_records[
+                            selected_index].sequence
+                        self.click_tk_listbox_row(
+                            root, app.historical_event_list, selected_index)
+                        self.wait_for_ui(
+                            root, lambda: app._historical_event_detail_request_id is None and
+                            "QP2 detail {}".format(selected_sequence) in
+                            app.historical_event_detail.get("1.0", "end"))
+
+                    language_index = next(
+                        index for index in range(app.language_menu.index("end") + 1)
+                        if app.language_menu.entrycget(index, "label") == language_name(ENGLISH))
+                    app.language_menu.invoke(language_index)
+                    root.update()
+                    self.assertEqual(app.current_language, ENGLISH)
+                    self.assertFalse(result.preparation_complete)
+                    release_batch.set()
+                    self.wait_for_ui(root, lambda: result.preparation_complete)
+                    self.assertEqual(result.prepared_count, result.total_count)
+                self.assertEqual(audit_path.read_bytes(), source_bytes)
+            finally:
+                release_batch.set()
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_keeps_later_preparation_failure_visible(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            sessions = root_path / "sessions"
+            round_id = "qp2-failed-later-batches"
+            audit_path = sessions / round_id / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            today = datetime.now().astimezone().date()
+            occurred_at = datetime.combine(
+                today, datetime.min.time(), datetime.now().astimezone().tzinfo).isoformat()
+            records = [{
+                "record_type": "round", "schema_version": 1,
+                "round_id": round_id, "station": "FCT", "config": {},
+                "time_contract": {},
+            }]
+            for sequence in range(1, 502):
+                records.append({
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": round_id, "sequence": sequence,
+                    "kind": "round_ready", "message": "event {}".format(sequence),
+                    "observed_at": occurred_at, "elapsed_seconds": float(sequence),
+                    "display_position": None,
+                    "detail": {"raw_diagnostic": "QP2 failure detail {}".format(sequence)},
+                })
+            audit_path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            source_bytes = audit_path.read_bytes()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=sessions,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                with patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=OSError("controlled later-page failure")):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(
+                        root, lambda: "controlled later-page failure" in
+                        app.historical_query_status.cget("text"))
+                    self.assertIsNotNone(app._historical_query_result)
+                    self.assertIsInstance(
+                        app._historical_query_result.preparation_error, OSError)
+                    self.assertEqual(len(app._historical_event_records), 100)
+                    self.assertEqual(
+                        app.historical_query_status.cget("text"),
+                        app._t("app.settings.history.preparation_failed",
+                               reason="controlled later-page failure"))
+                    self.assertNotIn(app._t("app.settings.history.preparing"),
+                                     app.historical_query_status.cget("text"))
+                self.assertEqual(audit_path.read_bytes(), source_bytes)
+            finally:
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_fixed_history_coexists_with_official_app_event_cleanup(self):
         old_event_time = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
         event_clock = [old_event_time]
