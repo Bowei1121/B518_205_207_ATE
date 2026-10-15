@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 import weakref
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
@@ -197,8 +198,10 @@ class HistoricalEventQueryResult:
                                  else diagnostic_count)
         self._index_path = Path(index_path) if index_path is not None else None
         self._query_id = query_id
-        self._first_page = ()
-        self._initial_events = ()
+        self._summary_cache = OrderedDict()
+        self._summary_cache_size = 0
+        self._summary_cache_lock = threading.Lock()
+        self._requested_preparation_page = None
         self.prepared_count = total_count if preparation_complete else 0
         self.preparation_complete = preparation_complete
         self.preparation_error = None
@@ -208,6 +211,8 @@ class HistoricalEventQueryResult:
         self._preparation_lock = threading.Lock()
         self._prepared_condition = threading.Condition(self._preparation_lock)
         self._closed = False
+        self._active_detail_reads = 0
+        self._next_preparation_page = 1
         if self._index_path is not None and self._query_id is not None:
             self._finalizer = weakref.finalize(
                 self, _release_indexed_snapshot, self._store_path,
@@ -219,19 +224,28 @@ class HistoricalEventQueryResult:
     @property
     def events(self) -> Tuple[HistoricalEventSummary, ...]:
         """Compatibility view of the first bounded page."""
-        self._ensure_open()
-        return self._first_page
+        return self.get_page(1).events
 
     @property
     def initial_events(self) -> Tuple[HistoricalEventSummary, ...]:
-        """The atomically prepared newest events, capped at five standard pages."""
+        """Compatibility view of whichever first-five-page summaries remain cached."""
         self._ensure_open()
-        return self._initial_events
+        with self._summary_cache_lock:
+            summaries = []
+            for page_number in range(1, 6):
+                page = self._summary_cache.get(page_number)
+                if page is None:
+                    break
+                summaries.extend(page)
+            return tuple(summaries)
 
     def _set_initial_events(self, events: Tuple[HistoricalEventSummary, ...]) -> None:
-        self._initial_events = events
-        self._first_page = events[:self.page_size]
+        for offset in range(0, len(events), self.page_size):
+            page_number = offset // self.page_size + 1
+            self._cache_page_summaries(page_number, events[offset:offset + self.page_size])
         self.prepared_count = self._persisted_prepared_count()
+        self._next_preparation_page = (
+            (self.prepared_count + self.page_size - 1) // self.page_size + 1)
 
     def _finish_preparation(self, error: Optional[Exception] = None) -> None:
         with self._prepared_condition:
@@ -255,17 +269,19 @@ class HistoricalEventQueryResult:
             raise IndexError("page_number is outside this query snapshot")
         if not self.page_count and page_number != 1:
             raise IndexError("an empty query only has its empty first page")
+        with self._summary_cache_lock:
+            cached = self._summary_cache.get(page_number)
+            if cached is not None:
+                self._summary_cache.move_to_end(page_number)
+                return HistoricalEventQueryPage(
+                    self.date_range, page_number, self.page_size,
+                    self.total_count, cached)
         offset = (page_number - 1) * self.page_size
-        if offset < len(self._initial_events):
-            summaries = self._initial_events[offset:offset + self.page_size]
-            return HistoricalEventQueryPage(
-                self.date_range, page_number, self.page_size,
-                self.total_count, summaries)
         connection = self._connect_snapshot_readonly()
         try:
             rows = connection.execute(
-                "SELECT summary_json FROM prepared_events ORDER BY ordinal "
-                "LIMIT ? OFFSET ?", (self.page_size, offset)).fetchall()
+                "SELECT summary_json FROM prepared_events WHERE ordinal>=? AND ordinal<? "
+                "ORDER BY ordinal", (offset, offset + self.page_size)).fetchall()
         finally:
             connection.close()
         expected = min(self.page_size, max(0, self.total_count - offset))
@@ -273,10 +289,85 @@ class HistoricalEventQueryResult:
             raise HistoricalEventPageNotReady(
                 "page {} is still being prepared".format(page_number))
         summaries = tuple(_summary_from_json(row[0]) for row in rows)
+        self._cache_page_summaries(page_number, summaries)
         page = HistoricalEventQueryPage(
             self.date_range, page_number, self.page_size,
             self.total_count, summaries)
         return page
+
+    @property
+    def cached_summary_count(self) -> int:
+        """Current number of normal-list summaries retained in the bounded cache."""
+        with self._summary_cache_lock:
+            return self._summary_cache_size
+
+    def _cache_page_summaries(self, page_number: int,
+                              summaries: Tuple[HistoricalEventSummary, ...]) -> None:
+        with self._summary_cache_lock:
+            previous = self._summary_cache.pop(page_number, ())
+            self._summary_cache_size -= len(previous)
+            self._summary_cache[page_number] = summaries
+            self._summary_cache_size += len(summaries)
+            while self._summary_cache_size > HISTORICAL_EVENT_QUERY_INITIAL_BATCH_SIZE:
+                _, evicted = self._summary_cache.popitem(last=False)
+                self._summary_cache_size -= len(evicted)
+
+    def request_preparation_page(self, page_number: int) -> None:
+        """Prioritize one currently requested page in the bounded preparation worker."""
+        if type(page_number) is not int or page_number < 1:
+            raise ValueError("page_number must be a positive integer")
+        if page_number > self.page_count or self._page_is_prepared(page_number):
+            return
+        with self._prepared_condition:
+            if not self._closed:
+                self._requested_preparation_page = page_number
+                self._prepared_condition.notify_all()
+
+    def _page_is_prepared(self, page_number: int) -> bool:
+        offset = (page_number - 1) * self.page_size
+        expected = min(self.page_size, max(0, self.total_count - offset))
+        connection = self._connect_snapshot_readonly()
+        try:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM prepared_events WHERE ordinal>=? AND ordinal<?",
+                (offset, offset + expected)).fetchone()[0]
+            return count >= expected
+        finally:
+            connection.close()
+
+    def _prepare_next_batch(self, cancellation_event: threading.Event,
+                            batch_size: int) -> bool:
+        with self._prepared_condition:
+            while self._active_detail_reads:
+                if cancellation_event is not None and cancellation_event.is_set():
+                    _raise_if_query_cancelled(cancellation_event)
+                self._prepared_condition.wait(timeout=0.1)
+            requested_page = self._requested_preparation_page
+        prepared_through = (min(self.total_count, self.prepared_count) - 1) // self.page_size
+        if (requested_page is not None and requested_page > prepared_through and
+                not self._page_is_prepared(requested_page)):
+            page_number = requested_page
+        else:
+            while (self._next_preparation_page <= self.page_count and
+                   self._page_is_prepared(self._next_preparation_page)):
+                self._next_preparation_page += 1
+            if self._next_preparation_page > self.page_count:
+                return False
+            page_number = self._next_preparation_page
+            self._next_preparation_page += 1
+        offset = (page_number - 1) * self.page_size
+        pages_per_batch = max(1, batch_size // self.page_size)
+        limit = min(self.total_count - offset, pages_per_batch * self.page_size)
+        rows = self._read_unprepared_summaries(offset, limit)
+        _raise_if_query_cancelled(cancellation_event)
+        if not rows:
+            raise RuntimeError("historical query preparation returned an empty page")
+        self._persist_prepared_rows(rows)
+        with self._prepared_condition:
+            if self._requested_preparation_page == page_number:
+                self._requested_preparation_page = None
+            self._prepared_condition.notify_all()
+        return True
 
     def _read_unprepared_summaries(self, offset: int, limit: int):
         connection = self._connect_snapshot_readonly()
@@ -333,45 +424,53 @@ class HistoricalEventQueryResult:
 
     def wait_for_page(self, page_number: int,
                       cancellation_event: threading.Event) -> bool:
-        target = min(self.total_count, page_number * self.page_size)
+        self.request_preparation_page(page_number)
         with self._prepared_condition:
-            while self.prepared_count < target and not self.preparation_complete:
+            while not self._page_is_prepared(page_number) and not self.preparation_complete:
                 if cancellation_event.is_set() or self._closed:
                     return False
                 self._prepared_condition.wait(timeout=0.1)
-            return self.prepared_count >= target
+            return self._page_is_prepared(page_number)
 
     def get_detail(self, event_key: str) -> Optional[HistoricalEvent]:
         """Load the original event only for the selected identity."""
         if not isinstance(event_key, str) or not event_key:
             raise ValueError("event_key must be a non-empty string")
         self._ensure_open()
-        connection = self._connect_snapshot_readonly()
+        with self._prepared_condition:
+            self._active_detail_reads += 1
+            self._prepared_condition.notify_all()
         try:
-            if self._index_path is None:
-                row = connection.execute(
-                    "SELECT content.event_json FROM matching_events AS matching "
-                    "JOIN fallback_content.contents AS content "
-                    "ON content.content_id=matching.content_id WHERE matching.event_key = ?",
-                    (event_key,),
-                ).fetchone()
-            else:
-                self._attach_content_index(connection)
-                row = connection.execute(
-                    "SELECT content.event_json FROM matching_events AS matching "
-                    "JOIN history_index.history_contents AS content "
-                    "ON content.content_id=matching.content_id WHERE matching.event_key = ?",
-                    (event_key,),
-                ).fetchone()
+            connection = self._connect_snapshot_readonly()
+            try:
+                if self._index_path is None:
+                    row = connection.execute(
+                        "SELECT content.event_json FROM matching_events AS matching "
+                        "JOIN fallback_content.contents AS content "
+                        "ON content.content_id=matching.content_id WHERE matching.event_key = ?",
+                        (event_key,),
+                    ).fetchone()
+                else:
+                    self._attach_content_index(connection)
+                    row = connection.execute(
+                        "SELECT content.event_json FROM matching_events AS matching "
+                        "JOIN history_index.history_contents AS content "
+                        "ON content.content_id=matching.content_id WHERE matching.event_key = ?",
+                        (event_key,),
+                    ).fetchone()
+            finally:
+                connection.close()
+            if row is None:
+                return None
+            # Fallback queries keep the record in their owned content store; indexed
+            # queries resolve its immutable content_id in the shared index, retained
+            # by this query's reference until close/recovery. Never reopen the source
+            # path here: it may now identify a different event version.
+            return _event_from_json(row[0])
         finally:
-            connection.close()
-        if row is None:
-            return None
-        # Fallback queries keep the record in their owned content store; indexed
-        # queries resolve its immutable content_id in the shared index, retained
-        # by this query's reference until close/recovery. Never reopen the source
-        # path here: it may now identify a different event version.
-        return _event_from_json(row[0])
+            with self._prepared_condition:
+                self._active_detail_reads -= 1
+                self._prepared_condition.notify_all()
 
     def get_diagnostic_page(self, page_number: int) -> HistoricalEventQueryPage:
         """Read one bounded page of source/date anomalies from the frozen snapshot."""
@@ -1813,17 +1912,10 @@ def _prepare_remaining_query_batches(
         result: HistoricalEventQueryResult,
         cancellation_event: Optional[threading.Event],
         batch_size: int = HISTORICAL_EVENT_QUERY_PAGE_SIZE) -> None:
-    first_page = (result.prepared_count + result.page_size - 1) // result.page_size
-    batch_pages = max(1, batch_size // result.page_size)
-    for start in range(first_page + 1, result.page_count + 1, batch_pages):
+    while result.prepared_count < result.total_count:
         _raise_if_query_cancelled(cancellation_event)
-        end = min(result.page_count, start + batch_pages - 1)
-        offset = (start - 1) * result.page_size
-        limit = min(result.total_count - offset, (end - start + 1) * result.page_size)
-        rows = result._read_unprepared_summaries(offset, limit)
-        _raise_if_query_cancelled(cancellation_event)
-        result._persist_prepared_rows(rows)
-        result.prepared_count = result._persisted_prepared_count()
+        if not result._prepare_next_batch(cancellation_event, batch_size):
+            break
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:
