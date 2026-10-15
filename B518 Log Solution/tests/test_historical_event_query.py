@@ -362,6 +362,82 @@ class HistoricalEventQueryTests(unittest.TestCase):
                     result.close()
                 service.shutdown()
 
+    def test_fallback_keeps_published_snapshot_after_later_batch_failure_or_cancel(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-fallback-retained-snapshot",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat() for sequence in range(1, 502)])
+
+            for mode in ("failure", "cancel"):
+                with self.subTest(mode=mode):
+                    entered_batch = threading.Event()
+                    release_batch = threading.Event()
+                    original_prepare = historical_event_query._prepare_remaining_query_batches
+
+                    def blocked_prepare(result, cancellation_event, batch_size=100):
+                        entered_batch.set()
+                        if not release_batch.wait(5):
+                            raise RuntimeError("fallback retained-snapshot gate timed out")
+                        if mode == "failure":
+                            raise OSError("controlled fallback batch failure")
+                        return original_prepare(result, cancellation_event, batch_size)
+
+                    service = HistoricalEventQueryService(sessions, None, index_path=None)
+                    result = None
+                    try:
+                        with unittest.mock.patch.object(
+                                historical_event_query,
+                                "_prepare_remaining_query_batches",
+                                side_effect=blocked_prepare):
+                            generation = service.submit(HistoricalEventDateRange(
+                                date(2026, 10, 13), date(2026, 10, 13)))
+                            initial = None
+                            deadline = time.monotonic() + 5
+                            while initial is None and time.monotonic() < deadline:
+                                initial = service.take_initial_result(generation)
+                                if initial is None:
+                                    time.sleep(0.005)
+                            self.assertIsNotNone(initial)
+                            self.assertTrue(entered_batch.wait(2))
+                            result = initial.result
+                            self.assertEqual(result.prepared_count, 500)
+                            self.assertFalse(result.preparation_complete)
+                            if mode == "cancel":
+                                self.assertTrue(service.cancel(generation))
+
+                            release_batch.set()
+                            if mode == "failure":
+                                completion = None
+                                deadline = time.monotonic() + 5
+                                while completion is None and time.monotonic() < deadline:
+                                    completion = service.take_result(generation)
+                                    if completion is None:
+                                        time.sleep(0.005)
+                                self.assertIsNotNone(completion)
+                                self.assertTrue(completion.succeeded, completion.error)
+                                self.assertIs(completion.result, result)
+                            else:
+                                deadline = time.monotonic() + 5
+                                while service._active is not None and time.monotonic() < deadline:
+                                    time.sleep(0.005)
+                                self.assertIsNone(service._active)
+
+                            self.assertTrue(result.preparation_complete)
+                            self.assertIsNotNone(result.preparation_error)
+                            first_page = result.get_page(1)
+                            self.assertEqual(first_page.events[0].sequence, 501)
+                            self.assertEqual(
+                                result.get_detail(first_page.events[0].key).raw_record[
+                                    "detail"]["raw_diagnostic"], "original 501")
+                    finally:
+                        release_batch.set()
+                        if result is not None:
+                            result.close()
+                        service.shutdown()
+
     def test_query_service_preserves_readable_result_and_error_after_later_batch_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

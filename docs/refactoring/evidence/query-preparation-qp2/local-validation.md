@@ -74,3 +74,8 @@
 - Added `test_fallback_page_service_waits_for_later_preparation_batch`: while the fallback worker is gated, the result reports 500/501 prepared rows, direct page 6 reads raise `HistoricalEventPageNotReady`, and the page service returns only after release. Passed.
 - Added `test_real_tk_fallback_keeps_page_six_loading_until_prepared` for the UI loading/page-preservation path with the index disabled. This shell could not execute the Tk test: Python aborted during the test class's `tk.Tk()` setup (`Fatal Python error: Aborted`, `test_log_solution_ui.py:511`) before entering the test body. The pre-existing indexed-path true-Tk gate test remains separately recorded above.
 - Re-ran the complete related non-Tk suites after the fix: `test_historical_event_query`, `test_historical_event_display`, `test_historical_event_capacity`, and `test_round_retention` — 106 tests passed in 32.945 s. `py_compile` and `git diff --check` passed.
+
+## Review follow-up — fallback snapshot ownership
+
+- Final Spec re-review found that a later fallback batch exception escaped to pre-publication cleanup even after the result had been transferred to the UI. The fallback now catches post-publication preparation errors, records them through `_finish_preparation(error)`, and returns the published result, matching indexed preparation behavior. Unpublished failures still use the outer cleanup path.
+- Added `test_fallback_keeps_published_snapshot_after_later_batch_failure_or_cancel`. Event gates cover both a controlled later-batch `OSError` and query cancellation after first-batch transfer; in both cases the 500-row snapshot stays open, first-page data remains readable, and the selected event's original detail remains available. Passed.

@@ -1249,7 +1249,12 @@ def query_historical_events(session_root: Path, app_event_path: Optional[Path],
         result.initial_batch_ready_seconds = time.perf_counter() - query_started_at
         if publish_initial is not None:
             publish_initial(result)
-        _prepare_remaining_query_batches(result, cancellation_event)
+        try:
+            _prepare_remaining_query_batches(result, cancellation_event)
+        except Exception as error:
+            result._finish_preparation(error)
+            result.preparation_complete_seconds = time.perf_counter() - query_started_at
+            return result
         result._finish_preparation()
         result.preparation_complete_seconds = time.perf_counter() - query_started_at
         return result
