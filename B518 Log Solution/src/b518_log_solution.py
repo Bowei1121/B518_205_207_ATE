@@ -122,80 +122,10 @@ def toolbar_icon(master: tk.Misc, name: str) -> tk.PhotoImage:
     return image
 
 
-class _ToolbarHint:
-    """Show the localized icon action on hover or keyboard focus."""
+class _LocalizedControlHint:
+    """Show one localized hint for a Tk or ttk control, with owned lifecycle."""
 
     def __init__(self, widget: tk.Widget, text_provider):
-        self.widget = widget
-        self.text_provider = text_provider
-        self.after_id = None
-        self.window = None
-        for sequence in ("<Enter>", "<FocusIn>"):
-            widget.bind(sequence, self._schedule, add="+")
-        for sequence in ("<Leave>", "<FocusOut>"):
-            widget.bind(sequence, self._hide, add="+")
-
-    def _schedule(self, _event=None):
-        self._hide()
-        self.after_id = self.widget.after(450, self._show)
-
-    def _show(self):
-        self.after_id = None
-        try:
-            if not self.widget.winfo_exists() or not self.widget.winfo_viewable():
-                return
-            self.window = tk.Toplevel(self.widget)
-            self.window.wm_overrideredirect(True)
-            self.window.wm_geometry("+{}+{}".format(
-                self.widget.winfo_rootx(), self.widget.winfo_rooty() + self.widget.winfo_height()))
-            tk.Label(self.window, text=self.text_provider(), background="#fffbe6",
-                     foreground=TEXT_COLOUR, relief="solid", borderwidth=1,
-                     padx=5, pady=2).pack()
-        except tk.TclError:
-            self._hide()
-
-    def _hide(self, _event=None):
-        if self.after_id is not None:
-            try:
-                self.widget.after_cancel(self.after_id)
-            except tk.TclError:
-                pass
-            self.after_id = None
-        if self.window is not None:
-            try:
-                self.window.destroy()
-            except tk.TclError:
-                pass
-            self.window = None
-
-
-def visible_detail_rows(capacity: int, screen_height: int) -> int:
-    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
-    screen_limit = max(1, (screen_height - 64 - fixed_height) // (ROW_HEIGHT + ROW_GAP))
-    return min(max(1, capacity), DETAIL_ROWS_VISIBLE, screen_limit)
-
-
-def window_height(capacity: int, screen_height: int = 900) -> int:
-    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
-    return fixed_height + visible_detail_rows(capacity, screen_height) * (ROW_HEIGHT + ROW_GAP)
-
-
-def kvm_block_colour(capacity: int, slot: int, status: str) -> str:
-    """Return the no-text KVM result colour for one fixed slot position."""
-    if slot > capacity:
-        return UNAVAILABLE_COLOUR
-    return STATUS_COLOURS.get(status, STATUS_COLOURS["WAITING"])
-
-
-def sn_font_size(_sn: str, _column_width: int = 188) -> int:
-    """Keep all main-HMI text at the fixed KVM template size."""
-    return MAIN_FONT_SIZE
-
-
-class _HistoricalEventControlHint:
-    """Show a localized, non-focusing hint for a history action button."""
-
-    def __init__(self, widget: ttk.Button, text_provider):
         self._widget = widget
         self._text_provider = text_provider
         self._after_id = None
@@ -207,14 +137,36 @@ class _HistoricalEventControlHint:
                 ("<Leave>", self._hide), ("<FocusOut>", self._hide)):
             binding_id = widget.bind(sequence, callback, add="+")
             self._bindings.append((sequence, binding_id))
+        if isinstance(widget, tk.Menubutton):
+            for sequence in ("<ButtonPress-1>", "<KeyPress-space>",
+                             "<KeyPress-Return>", "<KeyPress-Down>"):
+                binding_id = widget.bind(sequence, self._hide, add="+")
+                self._bindings.append((sequence, binding_id))
         self._destroy_binding = widget.bind("<Destroy>", self._on_destroy, add="+")
+
+    def _disabled(self, widget) -> bool:
+        try:
+            if hasattr(widget, "instate"):
+                return widget.instate(["disabled"])
+            return str(widget.cget("state")) == "disabled"
+        except (tk.TclError, KeyError):
+            return True
+
+    def _menu_is_posted(self, widget) -> bool:
+        if not isinstance(widget, tk.Menubutton):
+            return False
+        try:
+            menu = widget.cget("menu")
+            return bool(menu and widget.tk.call("winfo", "viewable", menu))
+        except tk.TclError:
+            return False
 
     def refresh(self) -> None:
         widget = self._widget
         if widget is None:
             return
         try:
-            if widget.instate(["disabled"]):
+            if self._disabled(widget):
                 self._hide()
             elif self._label is not None and self._label.winfo_exists():
                 self._label.configure(text=self._text_provider())
@@ -245,7 +197,8 @@ class _HistoricalEventControlHint:
         if widget is None:
             return
         try:
-            if not widget.winfo_exists() or widget.instate(["disabled"]):
+            if (not widget.winfo_exists() or self._disabled(widget) or
+                    self._menu_is_posted(widget)):
                 self._hide()
                 return
             self._cancel_after()
@@ -259,12 +212,13 @@ class _HistoricalEventControlHint:
         if widget is None:
             return
         try:
-            if not widget.winfo_exists() or widget.instate(["disabled"]):
+            if (not widget.winfo_exists() or self._disabled(widget) or
+                    self._menu_is_posted(widget)):
                 return
             if self._window is not None and self._window.winfo_exists():
                 self._label.configure(text=self._text_provider())
                 return
-            window = tk.Toplevel(widget)
+            window = tk.Toplevel(widget.winfo_toplevel())
             window.overrideredirect(True)
             label = tk.Label(
                 window, text=self._text_provider(), anchor="w", justify="left",
@@ -308,7 +262,39 @@ class _HistoricalEventControlHint:
 
     def _on_destroy(self, event) -> None:
         if event.widget is self._widget:
-            self.close()
+            widget = self._widget
+            if isinstance(widget, tk.Menubutton):
+                try:
+                    widget.tk.call("set", "::tk::Priv(inMenubutton)", "")
+                except tk.TclError:
+                    pass
+            self._hide()
+            self._bindings.clear()
+            self._destroy_binding = None
+            self._widget = None
+
+
+def visible_detail_rows(capacity: int, screen_height: int) -> int:
+    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
+    screen_limit = max(1, (screen_height - 64 - fixed_height) // (ROW_HEIGHT + ROW_GAP))
+    return min(max(1, capacity), DETAIL_ROWS_VISIBLE, screen_limit)
+
+
+def window_height(capacity: int, screen_height: int = 900) -> int:
+    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
+    return fixed_height + visible_detail_rows(capacity, screen_height) * (ROW_HEIGHT + ROW_GAP)
+
+
+def kvm_block_colour(capacity: int, slot: int, status: str) -> str:
+    """Return the no-text KVM result colour for one fixed slot position."""
+    if slot > capacity:
+        return UNAVAILABLE_COLOUR
+    return STATUS_COLOURS.get(status, STATUS_COLOURS["WAITING"])
+
+
+def sn_font_size(_sn: str, _column_width: int = 188) -> int:
+    """Keep all main-HMI text at the fixed KVM template size."""
+    return MAIN_FONT_SIZE
 
 
 class B518LogSolutionApp:
@@ -503,6 +489,12 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        language_button = getattr(self, "language_button", None)
+        if language_button is not None:
+            try:
+                language_button.tk.call("set", "::tk::Priv(inMenubutton)", "")
+            except tk.TclError:
+                pass
         if hasattr(self, "_historical_query_service"):
             self._historical_query_service.shutdown()
         if hasattr(self, "_historical_detail_service"):
@@ -514,6 +506,9 @@ class B518LogSolutionApp:
             self._language_refresh_notifications.close()
         self._language_refresh_notifications = None
         self._main_language_receiver = None
+        for hint in getattr(self, "_toolbar_hints", ()):
+            hint.close()
+        self._toolbar_hints = ()
         for after_id in tuple(self._after_ids):
             self._cancel_ui_timer(after_id)
         self._close_after_id = None
@@ -599,7 +594,7 @@ class B518LogSolutionApp:
             style="Toolbar.TButton", takefocus=True,
         )
         self.settings_button.pack(side="left", padx=(0, 3))
-        self._toolbar_hints.append(_ToolbarHint(self.settings_button,
+        self._toolbar_hints.append(_LocalizedControlHint(self.settings_button,
                                                  lambda: self._t("main.settings")))
         self._build_company_identity(header)
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
@@ -621,7 +616,7 @@ class B518LogSolutionApp:
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
-        self._toolbar_hints.append(_ToolbarHint(
+        self._toolbar_hints.append(_LocalizedControlHint(
             self.language_button, lambda: self._t(
                 "main.language", current_language=language_name(self.current_language))))
 
@@ -630,7 +625,7 @@ class B518LogSolutionApp:
             style="Toolbar.TButton", state="disabled", takefocus=True,
         )
         self.round_alarm_button.pack(side="right")
-        self._toolbar_hints.append(_ToolbarHint(
+        self._toolbar_hints.append(_LocalizedControlHint(
             self.round_alarm_button, lambda: self._t(self._round_alarm_hint_id())))
         self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
         self.review_group.pack(side="right", padx=(2, 2))
@@ -645,7 +640,7 @@ class B518LogSolutionApp:
             font=("Helvetica", 10, "bold"),
         )
         self.review_count.pack(side="left", padx=(1, 0))
-        self._toolbar_hints.append(_ToolbarHint(
+        self._toolbar_hints.append(_LocalizedControlHint(
             self.review_button, lambda: self._t("main.review_count",
                                                 count=self._pending_conflict_count())))
 
@@ -836,6 +831,8 @@ class B518LogSolutionApp:
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
         self._refresh_app_event_status(update_diagnostics=False)
+        for hint in self._toolbar_hints:
+            hint.refresh()
 
     def register_language_receiver(self, name, refresh, alive):
         """Register an App-owned window for the existing language notification."""
@@ -990,11 +987,15 @@ class B518LogSolutionApp:
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_count.configure(text=str(len(conflicts)))
         self.review_button.configure(state="normal" if conflicts else "disabled")
+        if len(getattr(self, "_toolbar_hints", ())) > 3:
+            self._toolbar_hints[3].refresh()
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
         self.round_alarm_button.configure(
             state="normal" if alarm_pending and snapshot.round_alarm_ready else "disabled",
         )
+        if len(getattr(self, "_toolbar_hints", ())) > 2:
+            self._toolbar_hints[2].refresh()
         if alarm_pending and conflicts:
             self._set_main_monitor_state("monitor.awaiting_both", count=len(conflicts))
         elif alarm_pending:
@@ -1993,6 +1994,10 @@ class B518LogSolutionApp:
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self.review_count.configure(text=str(len(conflicts)))
         self.review_button.configure(state="normal" if conflicts else "disabled")
+        if len(getattr(self, "_toolbar_hints", ())) > 3:
+            self._toolbar_hints[3].refresh()
+        if len(getattr(self, "_toolbar_hints", ())) > 3:
+            self._toolbar_hints[3].refresh()
 
     def _refresh_conflict_review(self, preserve_reading: bool = False,
                                  update_main: bool = True,
@@ -2366,11 +2371,15 @@ class B518LogSolutionApp:
         alarm = snapshot.round_alarm if snapshot else None
         if alarm is None:
             self.round_alarm_button.configure(state="disabled")
+            if len(getattr(self, "_toolbar_hints", ())) > 2:
+                self._toolbar_hints[2].refresh()
             return
         pending = not alarm.acknowledged_at
         self.round_alarm_button.configure(
             state="normal" if pending and snapshot.round_alarm_ready else "disabled",
         )
+        if len(getattr(self, "_toolbar_hints", ())) > 2:
+            self._toolbar_hints[2].refresh()
 
     def _refresh_round_alarm_language(self) -> None:
         window = self.round_alarm_window
@@ -3140,13 +3149,13 @@ class B518LogSolutionApp:
             command=self._cancel_historical_event_query, state="disabled")
         self.historical_event_cancel_button.pack(side="right")
         self._historical_control_hints = (
-            _HistoricalEventControlHint(
+            _LocalizedControlHint(
                 self.historical_event_refresh_button,
                 lambda: self._t("app.settings.history.search_hint")),
-            _HistoricalEventControlHint(
+            _LocalizedControlHint(
                 self.historical_previous_button,
                 lambda: self._t("app.settings.history.previous_page_hint")),
-            _HistoricalEventControlHint(
+            _LocalizedControlHint(
                 self.historical_next_button,
                 lambda: self._t("app.settings.history.next_page_hint")),
         )

@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from b518_log_solution import (
-    B518LogSolutionApp, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    B518LogSolutionApp, _LocalizedControlHint, MAIN_FONT_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
 )
@@ -208,33 +208,75 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.review_count.cget("text"), "0")
                 self.assertEqual(str(app.review_button["state"]), "disabled")
 
+                alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
+                                        acknowledged_at=None, created_at="2026-10-15T12:00:00")
+                alarm_snapshot = SimpleNamespace(
+                    round_alarm=alarm, round_alarm_ready=True, round_id=alarm.round_id,
+                    pending_conflicts=(), source_preparation_pending=False,
+                    state=SimpleNamespace(value="IDLE"), completion_reason=None,
+                )
+                original_snapshot = app.rounds.snapshot
+                app.rounds.snapshot = lambda: alarm_snapshot
+                original_render_conflict_button = app._render_conflict_review_button
+                app._render_conflict_review_button = lambda snapshot=None: app.review_button.configure(
+                    state="normal")
+
                 tooltip_expectations = (
                     (app.settings_button, app._toolbar_hints[0], "Settings"),
                     (app.language_button, app._toolbar_hints[1],
                      "Select language (current: English)"),
-                    (app.round_alarm_button, app._toolbar_hints[2], "Round Alarm"),
+                    (app.round_alarm_button, app._toolbar_hints[2],
+                     "Round Alarm (Awaiting Review)"),
                     (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
                 )
                 for widget, hint, expected in tooltip_expectations:
+                    widget.configure(state="normal")
                     widget.event_generate("<Enter>")
                     deadline = time.monotonic() + 1
-                    while hint.window is None and time.monotonic() < deadline:
+                    while hint._window is None and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
-                    self.assertIsNotNone(hint.window, expected)
-                    self.assertEqual(hint.window.winfo_children()[0].cget("text"), expected)
+                    self.assertIsNotNone(hint._window, expected)
+                    self.assertEqual(hint._window.winfo_children()[0].cget("text"), expected)
                     widget.event_generate("<Leave>")
                     root.update()
+                    if widget in (app.round_alarm_button, app.review_button):
+                        widget.configure(state="disabled")
+                language_hint = app._toolbar_hints[1]
+                app.language_button.focus_force()
+                app.language_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: language_hint._window is not None)
+                language_hint_window = language_hint._window
+                app._select_language(TRADITIONAL_CHINESE)
+                self.wait_for_ui(root, lambda:
+                                 language_hint_window.winfo_children()[0].cget("text") ==
+                                 "選擇語言（目前：繁體中文）")
+                self.assertIs(language_hint._window, language_hint_window)
+                self.assertEqual(sum(hint._window is not None
+                                     for hint in app._toolbar_hints), 1)
+                app.language_button.event_generate("<Leave>")
+                root.update()
 
+                disabled_hint = app._toolbar_hints[3]
+                app.review_button.configure(state="normal")
+                app.review_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: disabled_hint._window is not None)
+                app._render_conflict_review_button = original_render_conflict_button
+                app._render_conflict_review_button(
+                    SimpleNamespace(pending_conflicts=()))
+                self.assertIsNone(disabled_hint._window)
+
+                app._select_language(ENGLISH)
+                root.update()
                 settings_hint = app._toolbar_hints[0]
                 app.settings_button.focus_force()
                 root.update()
                 deadline = time.monotonic() + 1
-                while settings_hint.window is None and time.monotonic() < deadline:
+                while settings_hint._window is None and time.monotonic() < deadline:
                     root.update()
                     time.sleep(0.01)
-                self.assertIsNotNone(settings_hint.window)
-                self.assertEqual(settings_hint.window.winfo_children()[0].cget("text"), "Settings")
+                self.assertIsNotNone(settings_hint._window)
+                self.assertEqual(settings_hint._window.winfo_children()[0].cget("text"), "Settings")
                 settings_hint._hide()
 
                 app.language_button.focus_force()
@@ -263,14 +305,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(app.conflict_window.winfo_viewable())
                 app.conflict_window.destroy()
 
-                alarm = SimpleNamespace(round_id="hint-round", alarm_id="hint-alarm",
-                                        acknowledged_at=None, created_at="2026-10-15T12:00:00")
-                alarm_snapshot = SimpleNamespace(
-                    round_alarm=alarm, round_alarm_ready=True, round_id=alarm.round_id,
-                    pending_conflicts=(), source_preparation_pending=False,
-                    state=SimpleNamespace(value="IDLE"),
-                    completion_reason=None,
-                )
                 with patch.object(app.rounds, "snapshot", return_value=alarm_snapshot):
                     app.round_alarm_button.configure(state="normal")
                     app.round_alarm_button.event_generate(
@@ -309,11 +343,33 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(root.title(), "SAMPLE BT ATE Log Solution-V0.1.0")
                     app._set_main_monitor_state("monitor.idle")
                     self.assertEqual(app.monitor_state.cget("text"), "待命")
+
+                scratch_button = ttk.Button(root)
+                scratch_button.pack()
+                scratch_hint = _LocalizedControlHint(scratch_button, lambda: "Scratch")
+                scratch_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: scratch_hint._window is not None)
+                scratch_window = scratch_hint._window
+                scratch_button.destroy()
+                root.update()
+                self.assertIsNone(scratch_hint._widget)
+                self.assertFalse(scratch_window.winfo_exists())
             finally:
+                if "original_snapshot" in locals():
+                    app.rounds.snapshot = original_snapshot
+                if "original_render_conflict_button" in locals():
+                    app._render_conflict_review_button = original_render_conflict_button
+                toolbar_hints = tuple(app._toolbar_hints)
+                language_hint = toolbar_hints[1]
+                app.language_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: language_hint._window is not None)
+                language_hint_window = language_hint._window
                 app.rounds.request_close()
                 self.wait_for(lambda: app.rounds.close_status().status == "complete")
                 app.hotkey.close()
                 root.destroy()
+                self.assertTrue(all(hint._widget is None for hint in toolbar_hints))
+                self.assertFalse(language_hint_window.winfo_exists())
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
