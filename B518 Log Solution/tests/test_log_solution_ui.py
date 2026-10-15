@@ -9288,6 +9288,33 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("Retry the remaining pages",
                               app.historical_event_retry_button.cget("text"))
 
+                retry_entered = threading.Event()
+                release_retry = threading.Event()
+
+                def cancel_gated_retry(_result, cancellation_event, batch_size=100):
+                    retry_entered.set()
+                    if not release_retry.wait(5):
+                        raise OSError("controlled retry cancellation gate timed out")
+                    if cancellation_event.is_set():
+                        raise RuntimeError("historical event query cancelled")
+
+                with patch.object(historical_event_query,
+                                  "_prepare_remaining_query_batches",
+                                  side_effect=cancel_gated_retry):
+                    self.click_tk_widget(root, app.historical_event_retry_button)
+                    self.assertTrue(retry_entered.wait(2))
+                    self.click_tk_widget(root, app.historical_event_cancel_button)
+                    self.assertEqual(app._historical_query_status_key,
+                                     "app.settings.history.query_cancelled")
+                    release_retry.set()
+                    self.wait_for_ui(
+                        root, lambda: result.preparation_complete and
+                        str(app.historical_event_retry_button.cget("state")) == "normal")
+                self.assertEqual(result.prepared_count, 600)
+                self.assertIsInstance(result.preparation_error, RuntimeError)
+                self.assertEqual(app._historical_query_page_number, 5)
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+
                 appended = {
                     "record_type": "event", "schema_version": 1,
                     "round_id": "resume-round", "sequence": 702,
@@ -9323,6 +9350,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertIn("共找到 701 筆事件", app.historical_query_status.cget("text"))
             finally:
+                if "release_retry" in locals():
+                    release_retry.set()
                 app._close_historical_event_window()
                 app.hotkey.close()
                 root.destroy()

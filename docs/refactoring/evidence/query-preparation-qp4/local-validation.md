@@ -17,9 +17,12 @@ Fixed ticket review base: `61dccbc088dab9e48a643c711d49c74d2abb520f`.
 - Controlled fixed-version test: fail after page 6, append a new source event, retry, then verify all 701 original events and detail are available in the original order while the appended event is absent: passed.
 - Missing-index test: delete the retained index, retry, verify a typed “search again” failure, keep the first 500 rows readable, and verify neither retry nor closing the result recreates the index: passed.
 - New-query-during-retry race test: verify the newer query wins, the old retry completion is discarded, and the displayed prior snapshot remains readable: passed.
+- Retry-cancel race test: cancel an in-flight preparation retry, verify the prior fixed snapshot remains open, then explicitly retry it to completion: passed at the query-service level.
 - Existing later-batch failure preservation test: passed.
-- True Tk bilingual acceptance test was added as `test_real_tk_history_retry_resumes_fixed_snapshot_and_keeps_reading_page`. It could not execute on this runner: Tk aborts in the suite's shared-root `tk.Tk()` setup (exit 134, Python 3.8.10 framework build; `DISPLAY` is unset and no interactive desktop is attached). This remains an environment-bound acceptance check for an interactive macOS session.
+- True Tk bilingual acceptance test `test_real_tk_history_retry_resumes_fixed_snapshot_and_keeps_reading_page` covers failure, cancellation while retrying, button recovery, same-snapshot retry, page/detail preservation, and source-version isolation. It could not execute on this runner: Tk aborts in the suite's shared-root `tk.Tk()` setup (exit 134, Python 3.8.10 framework build; `DISPLAY` is unset and no interactive desktop is attached). This remains an environment-bound acceptance check for an interactive macOS session.
 
 ## Fixed-base review
 
-Standards and Spec review against `61dccbc088dab9e48a643c711d49c74d2abb520f...HEAD` is pending.
+- Standards review against `61dccbc088dab9e48a643c711d49c74d2abb520f...6fc8ff4aa5ac0cb13e4dd109f74d778b912a9e61`: no documented-standard violations or actionable smells.
+- Spec review against the same fixed range: no confirmed implementation blocker. The reviewer initially flagged a missing cancel refresh, then withdrew it after confirming `_refresh_cancelled_preparation_state`; the new true Tk cancellation case above was added after that review.
+- Final review range after the test/evidence-only follow-up commits is `61dccbc088dab9e48a643c711d49c74d2abb520f...HEAD`; reviewers should verify that these additions do not change the prior conclusions.

@@ -712,6 +712,18 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 self.assertFalse(result._closed)
                 self.assertTrue(result.preparation_complete)
                 self.assertIsInstance(result.preparation_error, RuntimeError)
+                retry_after_cancel = service.retry_preparation(result)
+                completion = None
+                deadline = time.monotonic() + 5
+                while completion is None and time.monotonic() < deadline:
+                    completion = service.take_result(retry_after_cancel)
+                    if completion is None:
+                        time.sleep(0.005)
+                self.assertIsNotNone(completion)
+                self.assertTrue(completion.succeeded, completion.error)
+                self.assertIs(completion.result, result)
+                self.assertEqual(result.prepared_count, 501)
+                self.assertIsNone(result.preparation_error)
                 newer_result.close()
             finally:
                 release_retry.set()
