@@ -169,6 +169,10 @@ class HistoricalEventPageNotReady(RuntimeError):
     """Raised when a requested page has not been persisted by preparation yet."""
 
 
+class HistoricalEventSnapshotUnavailable(RuntimeError):
+    """Raised when a failed query snapshot can no longer be resumed safely."""
+
+
 class HistoricalEventQueryResult:
     """A fixed, temporary query snapshot with bounded pages and lazy detail reads."""
 
@@ -237,7 +241,79 @@ class HistoricalEventQueryResult:
         with self._prepared_condition:
             self.preparation_error = error
             self.preparation_complete = True
-            self.prepared_count = self._persisted_prepared_count()
+            try:
+                self.prepared_count = self._persisted_prepared_count()
+            except (OSError, sqlite3.Error) as count_error:
+                if self.preparation_error is None:
+                    self.preparation_error = count_error
+            self._prepared_condition.notify_all()
+
+    def _begin_preparation_retry(self) -> None:
+        """Validate and reopen only the remaining rows in this fixed snapshot."""
+        self._ensure_open()
+        if not self.preparation_complete or self.preparation_error is None:
+            raise RuntimeError("historical query has no failed preparation to retry")
+        if self.prepared_count >= self.total_count:
+            raise RuntimeError("historical query preparation is already complete")
+        if not self._store_path.is_file():
+            raise HistoricalEventSnapshotUnavailable(
+                "the fixed query snapshot is unavailable; search again")
+        if self._index_path is None:
+            if self._content_path is None or not self._content_path.is_file():
+                raise HistoricalEventSnapshotUnavailable(
+                    "the fixed query content is unavailable; search again")
+        else:
+            if self._query_id is None or not self._index_path.is_file():
+                raise HistoricalEventSnapshotUnavailable(
+                    "the fixed query index is unavailable; search again")
+            try:
+                connection = sqlite3.connect(
+                    self._index_path.as_uri() + "?mode=ro", uri=True)
+                try:
+                    retained = connection.execute(
+                        "SELECT 1 FROM history_queries WHERE query_id=?",
+                        (self._query_id,)).fetchone()
+                finally:
+                    connection.close()
+            except sqlite3.Error as error:
+                raise HistoricalEventSnapshotUnavailable(
+                    "the fixed query index is unavailable; search again") from error
+            if retained is None:
+                raise HistoricalEventSnapshotUnavailable(
+                    "the fixed query content was reclaimed; search again")
+        connection = self._connect_snapshot_readonly()
+        try:
+            row = connection.execute(
+                "SELECT COUNT(*), COALESCE(MAX(ordinal), -1) FROM prepared_events"
+            ).fetchone()
+            if self._index_path is None:
+                source_rows = connection.execute(
+                    "SELECT COUNT(*), COUNT(content.content_id) "
+                    "FROM matching_events AS matching LEFT JOIN fallback_content.contents "
+                    "AS content ON content.content_id=matching.content_id"
+                ).fetchone()
+            else:
+                self._attach_content_index(connection)
+                source_rows = connection.execute(
+                    "SELECT COUNT(*), COUNT(content.content_id) "
+                    "FROM matching_events AS matching LEFT JOIN history_index.history_contents "
+                    "AS content ON content.content_id=matching.content_id"
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise HistoricalEventSnapshotUnavailable(
+                "the fixed query snapshot is unavailable; search again") from error
+        finally:
+            connection.close()
+        count, maximum = row
+        if count != self.prepared_count or maximum != count - 1:
+            raise HistoricalEventSnapshotUnavailable(
+                "the fixed query snapshot is incomplete; search again")
+        if source_rows != (self.total_count, self.total_count):
+            raise HistoricalEventSnapshotUnavailable(
+                "the fixed query content is incomplete; search again")
+        with self._prepared_condition:
+            self.preparation_error = None
+            self.preparation_complete = False
             self._prepared_condition.notify_all()
 
     @property
@@ -460,7 +536,9 @@ class HistoricalEventQueryResult:
     def _attach_content_index(self, connection: sqlite3.Connection) -> None:
         if self._index_path is None:
             raise RuntimeError("query content index is unavailable")
-        connection.execute("ATTACH DATABASE ? AS history_index", (str(self._index_path),))
+        connection.execute(
+            "ATTACH DATABASE ? AS history_index",
+            (self._index_path.as_uri() + "?mode=ro",))
 
     @property
     def is_limited(self) -> bool:
@@ -512,7 +590,8 @@ def _reclaim_abandoned_query_contents(connection: sqlite3.Connection) -> None:
 def _release_indexed_snapshot(snapshot_path: Path, index_path: Path, query_id: str) -> None:
     try:
         with _HISTORY_INDEX_LOCK:
-            connection = sqlite3.connect(str(index_path), timeout=30.0)
+            connection = sqlite3.connect(
+                index_path.as_uri() + "?mode=rw", timeout=30.0, uri=True)
             try:
                 connection.execute("PRAGMA foreign_keys=ON")
                 connection.execute("BEGIN IMMEDIATE")
@@ -750,12 +829,14 @@ class HistoricalEventQueryCompletion:
     succeeded: bool
     result: Optional[HistoricalEventQueryResult] = None
     error: Optional[Exception] = None
+    owns_result: bool = True
 
 
 @dataclass
 class _HistoricalEventQueryRequest:
     generation: int
     date_range: HistoricalEventDateRange
+    resume_result: Optional[HistoricalEventQueryResult] = None
     cancellation_event: threading.Event = field(default_factory=threading.Event)
 
 
@@ -787,11 +868,22 @@ class HistoricalEventQueryService:
     def submit(self, date_range: HistoricalEventDateRange) -> int:
         if not isinstance(date_range, HistoricalEventDateRange):
             raise TypeError("date_range must be a HistoricalEventDateRange")
+        return self._submit_request(date_range)
+
+    def retry_preparation(self, result: HistoricalEventQueryResult) -> int:
+        """Continue a failed query without rereading sources or changing its version."""
+        if not isinstance(result, HistoricalEventQueryResult):
+            raise TypeError("result must be a HistoricalEventQueryResult")
+        return self._submit_request(result.date_range, result)
+
+    def _submit_request(self, date_range: HistoricalEventDateRange,
+                        resume_result: Optional[HistoricalEventQueryResult] = None) -> int:
         with self._condition:
             if self._closed:
                 raise RuntimeError("historical query service is closed")
             self._next_generation += 1
-            request = _HistoricalEventQueryRequest(self._next_generation, date_range)
+            request = _HistoricalEventQueryRequest(
+                self._next_generation, date_range, resume_result)
             if self._active is not None:
                 self._active.cancellation_event.set()
             if self._pending is not None:
@@ -901,25 +993,41 @@ class HistoricalEventQueryService:
                 self._active = request
 
             try:
-                query_options = {"cancellation_event": request.cancellation_event}
-                try:
-                    parameters = inspect.signature(self._query_function).parameters.values()
-                    supports_initial = (any(parameter.name == "publish_initial"
-                                             for parameter in parameters) or
-                                        any(parameter.kind == parameter.VAR_KEYWORD
-                                            for parameter in parameters))
-                except (TypeError, ValueError):
-                    supports_initial = False
-                if supports_initial:
-                    query_options["publish_initial"] = (
-                        lambda result: self._publish_initial(request, result))
-                if self._index_path is not None:
-                    query_options["index_path"] = self._index_path
-                result = self._query_function(self._session_root, self._app_event_path,
-                                              request.date_range, **query_options)
+                if request.resume_result is not None:
+                    result = request.resume_result
+                    result._begin_preparation_retry()
+                    try:
+                        _prepare_remaining_query_batches(
+                            result, request.cancellation_event)
+                    except Exception as error:
+                        result._finish_preparation(error)
+                    else:
+                        result._finish_preparation()
+                else:
+                    query_options = {"cancellation_event": request.cancellation_event}
+                    try:
+                        parameters = inspect.signature(
+                            self._query_function).parameters.values()
+                        supports_initial = (any(parameter.name == "publish_initial"
+                                                 for parameter in parameters) or
+                                            any(parameter.kind == parameter.VAR_KEYWORD
+                                                for parameter in parameters))
+                    except (TypeError, ValueError):
+                        supports_initial = False
+                    if supports_initial:
+                        query_options["publish_initial"] = (
+                            lambda result: self._publish_initial(request, result))
+                    if self._index_path is not None:
+                        query_options["index_path"] = self._index_path
+                    result = self._query_function(
+                        self._session_root, self._app_event_path,
+                        request.date_range, **query_options)
                 completion = HistoricalEventQueryCompletion(
-                    request.generation, request.date_range, True, result=result)
+                    request.generation, request.date_range, True, result=result,
+                    owns_result=request.resume_result is None)
             except Exception as error:
+                if request.resume_result is not None:
+                    request.resume_result._finish_preparation(error)
                 completion = HistoricalEventQueryCompletion(
                     request.generation, request.date_range, False, error=error)
 
@@ -955,7 +1063,7 @@ class HistoricalEventQueryService:
 
 
 def _discard_query_completion(completion: HistoricalEventQueryCompletion) -> None:
-    if (completion.succeeded and
+    if (completion.owns_result and completion.succeeded and
             isinstance(completion.result, HistoricalEventQueryResult)):
         completion.result.close()
 
@@ -1824,6 +1932,7 @@ def _prepare_remaining_query_batches(
         _raise_if_query_cancelled(cancellation_event)
         result._persist_prepared_rows(rows)
         result.prepared_count = result._persisted_prepared_count()
+    _raise_if_query_cancelled(cancellation_event)
 
 
 def _raise_if_query_cancelled(cancellation_event: Optional[threading.Event]) -> None:

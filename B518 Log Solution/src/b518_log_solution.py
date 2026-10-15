@@ -24,6 +24,7 @@ from historical_event_query import (HistoricalEventDateError, HistoricalEventDat
                                     HistoricalEventDetailService,
                                     HistoricalEventQueryService,
                                     HistoricalEventQueryResult, HistoricalEventSummary,
+                                    HistoricalEventSnapshotUnavailable,
                                     parse_historical_event_date_range,
                                     query_historical_events,
                                     recent_historical_event_date_range)
@@ -393,6 +394,7 @@ class B518LogSolutionApp:
         self.historical_event_detail_heading = None
         self.historical_event_refresh_button = None
         self.historical_event_cancel_button = None
+        self.historical_event_retry_button = None
         self.historical_previous_button = None
         self.historical_next_button = None
         self.historical_page_label = None
@@ -3313,6 +3315,10 @@ class B518LogSolutionApp:
             controls, text=self._t("app.settings.history.cancel_query"),
             command=self._cancel_historical_event_query, state="disabled")
         self.historical_event_cancel_button.pack(side="right")
+        self.historical_event_retry_button = ttk.Button(
+            controls, text=self._t("app.settings.history.retry_remaining"),
+            command=self._retry_historical_event_preparation, state="disabled")
+        self.historical_event_retry_button.pack(side="right", padx=(6, 0))
         self._historical_control_hints = (
             _LocalizedControlHint(
                 self.historical_event_refresh_button,
@@ -3409,11 +3415,43 @@ class B518LogSolutionApp:
         self._historical_query_inflight_range = date_range
         self._historical_query_status_key = "app.settings.history.querying"
         self._historical_query_status_parameters = {}
+        self.historical_event_retry_button.configure(state="disabled")
         self.historical_event_cancel_button.configure(state="normal")
         self._refresh_historical_query_status()
         self._schedule_historical_query_poll(
             window, self._historical_query_view_generation, generation)
         return "break"
+
+    def _retry_historical_event_preparation(self) -> None:
+        result = self._historical_query_result
+        if (result is None or not result.preparation_complete or
+                result.preparation_error is None):
+            return
+        try:
+            generation = self._historical_query_service.retry_preparation(result)
+        except HistoricalEventSnapshotUnavailable as error:
+            self._historical_query_status_key = (
+                "app.settings.history.snapshot_unavailable")
+            self._historical_query_status_parameters = {"reason": str(error)}
+            self._refresh_historical_query_status()
+            self._refresh_historical_event_window()
+            return
+        except (RuntimeError, ValueError) as error:
+            self._historical_query_status_key = "app.settings.history.preparation_failed"
+            self._historical_query_status_parameters = {"reason": str(error)}
+            self._refresh_historical_query_status()
+            self._refresh_historical_event_window()
+            return
+        self._historical_query_generation = generation
+        self._historical_query_inflight_range = result.date_range
+        self._historical_query_status_key = "app.settings.history.preparation_retrying"
+        self._historical_query_status_parameters = {}
+        self.historical_event_retry_button.configure(state="disabled")
+        self.historical_event_cancel_button.configure(state="normal")
+        self._refresh_historical_query_status()
+        self._schedule_historical_query_poll(
+            self.historical_event_window, self._historical_query_view_generation,
+            generation)
 
     def _cancel_historical_event_query(self) -> None:
         generation = self._historical_query_generation
@@ -3429,6 +3467,24 @@ class B518LogSolutionApp:
         self._historical_query_status_key = "app.settings.history.query_cancelled"
         self._historical_query_status_parameters = {}
         self._refresh_historical_query_status()
+        result = self._historical_query_result
+        if result is not None and not result.preparation_complete:
+            self._schedule_ui(
+                50, self._refresh_cancelled_preparation_state,
+                result, self._historical_query_view_generation)
+        else:
+            self._refresh_historical_event_window()
+
+    def _refresh_cancelled_preparation_state(self, result, view_generation) -> None:
+        if view_generation != self._historical_query_view_generation:
+            return
+        if not result.preparation_complete:
+            self._schedule_ui(
+                50, self._refresh_cancelled_preparation_state,
+                result, view_generation)
+            return
+        if result is self._historical_query_result:
+            self._refresh_historical_event_window()
 
     def _schedule_historical_query_poll(self, window, view_generation, generation) -> None:
         self._historical_query_after_id = self._schedule_ui(
@@ -3481,6 +3537,7 @@ class B518LogSolutionApp:
                     self._historical_query_status_key = ""
                     self._historical_query_status_parameters = {}
                 self._refresh_historical_query_status()
+                self._refresh_historical_event_window()
                 return
             previous_result = self._historical_query_result
             self._cancel_historical_event_detail()
@@ -3504,10 +3561,14 @@ class B518LogSolutionApp:
         elif completion is not None:
             if completion.result is None and self._historical_query_result is not None and \
                     self._historical_query_result.date_range == completion.date_range:
-                self._historical_query_status_key = "app.settings.history.query_failed"
+                self._historical_query_status_key = (
+                    "app.settings.history.snapshot_unavailable"
+                    if isinstance(completion.error, HistoricalEventSnapshotUnavailable) else
+                    "app.settings.history.preparation_failed")
                 self._historical_query_status_parameters = {
                     "reason": str(completion.error)}
                 self._refresh_historical_query_status()
+                self._refresh_historical_event_window()
                 return
             self._historical_query_status_key = "app.settings.history.query_failed"
             self._historical_query_status_parameters = {
@@ -3611,6 +3672,16 @@ class B518LogSolutionApp:
                 state="normal" if self._historical_query_page_number < page_count else "disabled")
         self.historical_event_cancel_button.configure(
             text=self._t("app.settings.history.cancel_query"))
+        result = self._historical_query_result
+        retryable = (result is not None and result.preparation_complete and
+                     result.preparation_error is not None and
+                     result.prepared_count < result.total_count and
+                     not isinstance(result.preparation_error,
+                                    HistoricalEventSnapshotUnavailable))
+        self.historical_event_retry_button.configure(
+            text=self._t("app.settings.history.retry_remaining"),
+            state="normal" if retryable and self._historical_query_generation is None
+            else "disabled")
         self.historical_event_refresh_button.configure(
             text="🔍 {}".format(self._t("app.settings.history.search")))
         for hint in self._historical_control_hints:
@@ -3987,6 +4058,7 @@ class B518LogSolutionApp:
         self.historical_event_detail_heading = None
         self.historical_event_refresh_button = None
         self.historical_event_cancel_button = None
+        self.historical_event_retry_button = None
         self.historical_previous_button = None
         self.historical_next_button = None
         self.historical_page_label = None

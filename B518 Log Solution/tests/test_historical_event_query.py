@@ -17,6 +17,7 @@ from historical_event_query import (HistoricalEventDateError, HistoricalEventDat
                                     HistoricalEventQueryResult,
                                     HistoricalEventDetailService,
                                     HistoricalEventQueryService,
+                                    HistoricalEventSnapshotUnavailable,
                                     parse_historical_event_date_range,
                                     query_historical_events,
                                     recent_historical_event_date_range)
@@ -485,6 +486,238 @@ class HistoricalEventQueryTests(unittest.TestCase):
                 if result is not None:
                     result.close()
                 service.shutdown()
+
+    def test_retry_resumes_only_remaining_rows_from_the_same_fixed_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            audit_path = self._write_fixed_audit(
+                sessions, "round-resume-fixed-version",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat()
+                 for sequence in range(1, 702)])
+            original_bytes = audit_path.read_bytes()
+            index_path = root / "history-index.sqlite3"
+            day = HistoricalEventDateRange(date(2026, 10, 13), date(2026, 10, 13))
+            service = HistoricalEventQueryService(sessions, None, index_path=index_path)
+            result = None
+            try:
+                original_prepare = historical_event_query._prepare_remaining_query_batches
+                calls = []
+
+                def fail_after_one_batch(snapshot, cancellation_event, batch_size=100):
+                    calls.append(snapshot)
+                    rows = snapshot._read_unprepared_summaries(
+                        snapshot.prepared_count, 100)
+                    snapshot._persist_prepared_rows(rows)
+                    raise OSError("controlled second batch failure")
+
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=fail_after_one_batch):
+                    generation = service.submit(day)
+                    initial = None
+                    deadline = time.monotonic() + 5
+                    while initial is None and time.monotonic() < deadline:
+                        initial = service.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    result = initial.result
+                    self.assertEqual(result.total_count, 701)
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = service.take_result(generation)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                    self.assertTrue(completion.succeeded, completion.error)
+                    self.assertIs(completion.result, result)
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(result.prepared_count, 600)
+                    self.assertEqual(result.get_page(6).events[0].sequence, 201)
+                    with self.assertRaises(
+                            historical_event_query.HistoricalEventPageNotReady):
+                        result.get_page(7)
+
+                new_record = {
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": "round-resume-fixed-version", "sequence": 702,
+                    "kind": "round_ready", "message": "new after query",
+                    "observed_at": datetime(2026, 10, 13, 0, 11, 42,
+                                             tzinfo=timezone.utc).isoformat(),
+                    "elapsed_seconds": 702.0, "display_position": None,
+                    "detail": {"raw_diagnostic": "new version only"},
+                }
+                with audit_path.open("ab") as source:
+                    source.write((json.dumps(new_record) + "\n").encode("utf-8"))
+
+                retry = service.retry_preparation(result)
+                completion = None
+                deadline = time.monotonic() + 5
+                while completion is None and time.monotonic() < deadline:
+                    completion = service.take_result(retry)
+                    if completion is None:
+                        time.sleep(0.005)
+                self.assertIsNotNone(completion)
+                self.assertTrue(completion.succeeded, completion.error)
+                self.assertIs(completion.result, result)
+                self.assertTrue(result.preparation_complete)
+                self.assertIsNone(result.preparation_error)
+                self.assertEqual(result.prepared_count, 701)
+                all_rows = tuple(
+                    event for page_number in range(1, result.page_count + 1)
+                    for event in result.get_page(page_number).events)
+                self.assertEqual(len(all_rows), 701)
+                self.assertEqual(all_rows[0].sequence, 701)
+                self.assertEqual(all_rows[-1].sequence, 1)
+                self.assertNotIn("round:round-resume-fixed-version:702",
+                                 {event.key for event in all_rows})
+                self.assertEqual(
+                    result.get_detail("round:round-resume-fixed-version:701").raw_record[
+                        "detail"]["raw_diagnostic"], "original 701")
+                self.assertEqual(calls, [result])
+                self.assertEqual(audit_path.read_bytes(),
+                                 original_bytes + (json.dumps(new_record) + "\n").encode())
+            finally:
+                service.shutdown()
+                if result is not None:
+                    result.close()
+
+    def test_retry_refuses_to_recreate_a_missing_query_index(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-missing-query-index",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat()
+                 for sequence in range(1, 502)])
+            index_path = root / "history-index.sqlite3"
+            service = HistoricalEventQueryService(sessions, None, index_path=index_path)
+            result = None
+            try:
+                def fail_remaining(snapshot, cancellation_event, batch_size=100):
+                    raise OSError("controlled later batch failure")
+
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=fail_remaining):
+                    generation = service.submit(HistoricalEventDateRange(
+                        date(2026, 10, 13), date(2026, 10, 13)))
+                    initial = None
+                    deadline = time.monotonic() + 5
+                    while initial is None and time.monotonic() < deadline:
+                        initial = service.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    result = initial.result
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = service.take_result(generation)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                self.assertTrue(index_path.is_file())
+                index_path.unlink()
+                retry = service.retry_preparation(result)
+                completion = None
+                deadline = time.monotonic() + 5
+                while completion is None and time.monotonic() < deadline:
+                    completion = service.take_result(retry)
+                    if completion is None:
+                        time.sleep(0.005)
+                self.assertIsNotNone(completion)
+                self.assertFalse(completion.succeeded)
+                self.assertIsInstance(completion.error,
+                                      HistoricalEventSnapshotUnavailable)
+                self.assertIsInstance(result.preparation_error,
+                                      HistoricalEventSnapshotUnavailable)
+                self.assertFalse(index_path.exists())
+                self.assertEqual(result.prepared_count, 500)
+                self.assertEqual(result.get_page(1).events[0].sequence, 501)
+                result.close()
+                self.assertFalse(index_path.exists())
+            finally:
+                service.shutdown()
+                if result is not None:
+                    result.close()
+
+    def test_new_query_cancels_retry_without_releasing_the_displayed_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            self._write_fixed_audit(
+                sessions, "round-cancel-resume",
+                [(datetime(2026, 10, 13, tzinfo=timezone.utc) +
+                  timedelta(seconds=sequence)).isoformat()
+                 for sequence in range(1, 502)])
+            index_path = root / "history-index.sqlite3"
+            service = HistoricalEventQueryService(sessions, None, index_path=index_path)
+            result = None
+            entered_retry = threading.Event()
+            release_retry = threading.Event()
+            try:
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=OSError("controlled first attempt failure")):
+                    generation = service.submit(HistoricalEventDateRange(
+                        date(2026, 10, 13), date(2026, 10, 13)))
+                    initial = None
+                    deadline = time.monotonic() + 5
+                    while initial is None and time.monotonic() < deadline:
+                        initial = service.take_initial_result(generation)
+                        if initial is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(initial)
+                    result = initial.result
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = service.take_result(generation)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+
+                def blocked_retry(_snapshot, cancellation_event, batch_size=100):
+                    entered_retry.set()
+                    if not release_retry.wait(5):
+                        raise OSError("retry gate timed out")
+                    if cancellation_event.is_set():
+                        raise RuntimeError("historical event query cancelled")
+
+                empty_day = HistoricalEventDateRange(date(2026, 10, 14),
+                                                     date(2026, 10, 14))
+                with unittest.mock.patch.object(
+                        historical_event_query, "_prepare_remaining_query_batches",
+                        side_effect=blocked_retry):
+                    retry = service.retry_preparation(result)
+                    self.assertTrue(entered_retry.wait(2))
+                    newer = service.submit(empty_day)
+                    release_retry.set()
+                    completion = None
+                    deadline = time.monotonic() + 5
+                    while completion is None and time.monotonic() < deadline:
+                        completion = service.take_result(newer)
+                        if completion is None:
+                            time.sleep(0.005)
+                    self.assertIsNotNone(completion)
+                    self.assertTrue(completion.succeeded, completion.error)
+                    newer_result = completion.result
+                self.assertIsNone(service.take_result(retry))
+                self.assertEqual(result.get_page(1).events[0].sequence, 501)
+                self.assertFalse(result._closed)
+                self.assertTrue(result.preparation_complete)
+                self.assertIsInstance(result.preparation_error, RuntimeError)
+                newer_result.close()
+            finally:
+                release_retry.set()
+                service.shutdown()
+                if result is not None:
+                    result.close()
 
     def test_replacing_query_keeps_transferred_snapshot_alive(self):
         with tempfile.TemporaryDirectory() as temporary:
