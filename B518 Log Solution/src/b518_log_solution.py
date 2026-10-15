@@ -89,7 +89,7 @@ ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
 DETAIL_ROWS_VISIBLE = 7
-WINDOW_FIXED_HEIGHT = 513
+WINDOW_FIXED_HEIGHT = 600
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -771,21 +771,27 @@ class B518LogSolutionApp:
         self.retry_save_button.pack(side="right")
         round_save_controls = ttk.Frame(controls)
         round_save_controls.pack(fill="x", pady=(5, 0))
+        round_save_controls.columnconfigure(0, weight=1)
+        round_save_controls.columnconfigure(1, minsize=140)
         self.unsaved_round_count = ttk.Label(round_save_controls, text="未保存輪次 0")
-        self.unsaved_round_count.pack(side="left")
+        self.unsaved_round_count.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.unsaved_round_choice = tk.StringVar(master=self.root, value="")
         self.unsaved_round_picker = ttk.Combobox(
             round_save_controls, textvariable=self.unsaved_round_choice,
-            state="readonly", width=26,
+            state="readonly", width=1,
         )
-        self.unsaved_round_picker.pack(side="left", fill="x", expand=True, padx=(5, 4))
+        self.unsaved_round_picker.grid(row=1, column=0, sticky="ew", padx=(0, 4))
         self.unsaved_round_retry_button = ttk.Button(
             round_save_controls, text="重試所選", command=self.retry_selected_round, state="disabled")
-        self.unsaved_round_retry_button.pack(side="right")
+        self.unsaved_round_retry_button.grid(row=1, column=1, sticky="ew")
         round_detail_controls = ttk.Frame(controls)
         round_detail_controls.pack(fill="x", pady=(3, 0))
-        self.unsaved_round_detail = ttk.Label(round_detail_controls, text="", anchor="w", wraplength=270)
-        self.unsaved_round_detail.pack(side="left", fill="x", expand=True)
+        round_detail_controls.columnconfigure(0, weight=1)
+        round_detail_controls.columnconfigure(1, minsize=140)
+        round_detail_controls.rowconfigure(0, minsize=54)
+        self.unsaved_round_detail = ttk.Label(
+            round_detail_controls, text="", anchor="w", width=1, wraplength=210)
+        self.unsaved_round_detail.grid(row=0, column=0, sticky="ew", padx=(0, 4))
         self._unsaved_round_ids = {}
         self.unsaved_round_picker.bind("<<ComboboxSelected>>", self._update_selected_round_retry)
         self.archive_status_label = self.unsaved_round_detail
@@ -794,19 +800,22 @@ class B518LogSolutionApp:
             text="輪次：未完整保存 0 · 完整保存 0 · 可信封存 0")
         self.archive_retry_button = ttk.Button(
             round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
-        self.archive_retry_button.pack(side="right")
+        self.archive_retry_button.grid(row=0, column=1, sticky="ew")
         app_event_controls = ttk.Frame(controls)
         app_event_controls.pack(fill="x", pady=(4, 0))
-        self.app_event_status_label = ttk.Label(app_event_controls, text="")
+        app_event_controls.columnconfigure(0, weight=1)
+        app_event_controls.columnconfigure(1, minsize=140)
+        self.app_event_status_label = ttk.Label(
+            app_event_controls, text="", width=1, wraplength=210)
         self.language_refresh_banner = self.app_event_status_label
-        self.app_event_status_label.pack(side="left", fill="x", expand=True)
+        self.app_event_status_label.grid(row=0, column=0, rowspan=2, sticky="ew", padx=(0, 4))
         self.language_refresh_retry_button = ttk.Button(
             app_event_controls, text=self._t("language.refresh.retry"),
             command=self.retry_language_refresh, state="disabled")
-        self.language_refresh_retry_button.pack(side="right", padx=(4, 0))
+        self.language_refresh_retry_button.grid(row=1, column=1, sticky="ew", pady=(3, 0))
         self.app_diagnostics_button = ttk.Button(
             app_event_controls, text=self._t("app.diagnostic.heading"), command=self.open_app_diagnostics)
-        self.app_diagnostics_button.pack(side="right")
+        self.app_diagnostics_button.grid(row=0, column=1, sticky="ew")
         self._render_rows()
         self._apply_main_language()
         self._refresh_app_event_status()

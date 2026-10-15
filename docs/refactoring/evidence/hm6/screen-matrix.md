@@ -14,4 +14,4 @@
 | 一般提示／Escape | `test_hm5_long_notice_stays_scrollable_and_fixed_across_languages`；`general-notice-en.png`、`general-notice-zh-TW.png` | 160行診斷可捲動，確認鈕焦點及中英幾何保持；Escape 關閉。 |
 | 原生檔案對話框 | HMI 規格 A10／HM6 ticket 排除逐 App 淺色承諾；HM2 測例透過隔離 Temp 路徑實際使用 Import／Export | 保留 macOS 原生外觀與既有操作，不把原生視窗納入 App 自有樣式矩陣。 |
 
-所有擷取均為目標 App 原生視窗的 Quartz 截圖，不含整個桌面背景；系統原生標題列沿用 macOS Dark 外觀，App 自有內容固定淺色。
+所有擷取均為目標 App 原生視窗的 Quartz 截圖，不含整個桌面背景。根目錄截圖為實際 macOS Dark 外觀，`system-light/` 中同名截圖為使用者切換至 Light 後的實際 Aqua 驗收；App 自有內容在兩種系統外觀下均固定淺色，原生標題列跟隨系統。主頁證據另包括六個完整底部操作按鈕的 bounds，中英逐項一致。
