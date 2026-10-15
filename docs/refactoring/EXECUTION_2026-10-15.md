@@ -25,14 +25,20 @@
 | #50 | QP3 | `codex/qp3-20261015` | `61dccbc088dab9e48a643c711d49c74d2abb520f` | integrated at `e59a343`; fixed-base Standards/Spec reviews clean; 64 query/language + 2 true-Tk integrated checks passed; closed after acceptance |
 | #51 | QP4 | `codex/qp4-20261015` | `61dccbc088dab9e48a643c711d49c74d2abb520f` | integrated at `7627bd6`; 63 query/language + 3 true-Tk integration checks passed; fixed-base Spec review clean; Standards review clean through implementation, remaining commits were tests/docs only; closed after acceptance |
 | #52 | QP5 | `codex/qp5-20261015` | `f4fa96812ee5bae6cde33fb90de174ab0ab5ad2b` | integrated at `990a3d8`; 58 query/storage + 3 true-Tk lifecycle checks passed on ticket and integration branches; fixed-base scope/standards review clean; closed after acceptance |
-| #53 | QP6 | `codex/qp6-20261015` | `990a3d87193035e9dc235fb8f765267fdd8f820a` | ready; unblocked after #52 acceptance; worktree creation pending |
+| #53 | QP6 | `codex/qp6-20261015` | `990a3d87193035e9dc235fb8f765267fdd8f820a` | integrated at `362c235`; fixed-base review, benchmark evidence, true-Tk and final integration regression passed; closed after acceptance |
 | #54 | HM1 | `codex/hm1-20261015` | `31d08141add7bf9a936e701d99f193455bf40ede` | integrated at `a429138`; closed after acceptance |
 | #55 | HM2 | `codex/hm2-20261015` | `53ccf8577440d1b04e4da2403a6bbe9f30fa68e6` | integrated at `c80ddb8`; closed after acceptance |
 | #56 | HM3 | `codex/hm3-20261015` | `0a877eb8dbb97e60fdf7e6309080019f06de69d2` | integrated at `b513c78`; closed after acceptance |
 | #57 | HM4 | `codex/hm4-20261015` | `b513c78981159ac1fbfbd67c797ddfcf93ab5080` | integrated at `62e027f`; fixed-base dual-axis review clean; 107 related non-Tk and 2 true-Tk integration checks passed; closed after acceptance |
 | #58 | HM5 | `codex/hm5-20261015` | `eda24aae7eac0197650ea7273b17870e7bc03e2d` | integrated at `2665485`; fixed-base standards/spec review clean; 90 related integration tests + 2 true-Tk checks passed; closed after acceptance |
-| #59 | HM6 | `codex/hm6-20261015` | `c9b19934462acdda7cddd62012fc4b76b5b99fbc` | in progress; found/fixing clipped home controls and language-shifting profile fields; final matrix/regression pending |
+| #59 | HM6 | `codex/hm6-20261015` | `c9b19934462acdda7cddd62012fc4b76b5b99fbc` | integrated at `e7e8d4c`; 18 true-Tk + 57 related + 493 full-suite cases (1 H8 fixture skip) passed; fixed-base Standards clean; Light-system desktop evidence still pending final #47 acceptance |
+
+## Final integration gate — 2026-10-15
+
+- Final integration HEAD after HM6 merge: `e7e8d4c58cf1f6835d90c56df529a1a7b1b94d0c`.
+- `scripts/run_tests.py` on the integration branch: 493 tests passed, 1 skipped because the optional H8 capacity fixture is not present. The same result passed on the HM6 ticket worktree.
+- Final review fixed point: `3517e75a794d1b9ba45c3bc17633f6b9abbfb405`. Standards review found no documented-standard violations or actionable baseline smells. Spec review found the 42 QP and 45 HMI story matrices and integration behavior covered; actual Light-system Aqua desktop evidence remains outstanding. Current host is Dark and the app-process appearance override was incompatible with this Tk build. Parent #46 can close after this gate; parent #47 and merge back to `B518-Log-Solution` remain pending the Light-system desktop check.
 
 ## QP6 integration note
 
-QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The five true-Tk acceptance tests also passed on the integration branch in the interactive Aqua slot (13.552s); the initial non-escalated shell attempt aborted before test setup because it lacked desktop permission. The full final integration regression and dual-axis review remain mandatory before merging to `B518-Log-Solution` or closing parent #46/#47.
+QP6 merge commit: `362c235dbae526dcf99189e78b38e85647d2de06`. The combined query/display/capacity/retention/language/monitoring regression passed 166 tests on the integration branch. The five true-Tk acceptance tests also passed on the integration branch in the interactive Aqua slot (13.552s); the initial non-escalated shell attempt aborted before test setup because it lacked desktop permission. The final integration regression and fixed-base dual-axis review are recorded below; parent #46 is complete, while parent #47 awaits Light-system desktop evidence.
