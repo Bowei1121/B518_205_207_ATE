@@ -9212,6 +9212,154 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_retry_resumes_fixed_snapshot_and_keeps_reading_page(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root_path = Path(temporary)
+            session_root = root_path / "sessions"
+            audit_path = session_root / "resume-round" / "audit.jsonl"
+            audit_path.parent.mkdir(parents=True)
+            round_record = {
+                "record_type": "round", "schema_version": 1,
+                "round_id": "resume-round", "station": "FCT", "config": {},
+                "time_contract": {},
+            }
+            records = [round_record]
+            for sequence in range(1, 702):
+                records.append({
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": "resume-round", "sequence": sequence,
+                    "kind": "round_ready", "message": "original event {}".format(sequence),
+                    "observed_at": "2026-10-13T08:{:02d}:{:02d}+00:00".format(
+                        (sequence // 60) % 60, sequence % 60),
+                    "elapsed_seconds": float(sequence), "display_position": None,
+                    "detail": {"raw_diagnostic": "fixed detail {}".format(sequence)},
+                })
+            audit_path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records),
+                encoding="utf-8")
+            source_before = audit_path.read_bytes()
+
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=session_root,
+                app_event_path=root_path / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                app.historical_start_var.set("2026-10-13")
+                app.historical_end_var.set("2026-10-13")
+                def fail_after_batch(result, cancellation_event, batch_size=100):
+                    rows = result._read_unprepared_summaries(
+                        result.prepared_count, 100)
+                    result._persist_prepared_rows(rows)
+                    raise OSError("controlled retry gate failure")
+
+                with patch.object(historical_event_query,
+                                  "_prepare_remaining_query_batches",
+                                  side_effect=fail_after_batch):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.wait_for_ui(root, lambda:
+                                     app._historical_query_status_key ==
+                                     "app.settings.history.preparation_failed")
+                result = app._historical_query_result
+                self.assertIsNotNone(result)
+                self.assertEqual(result.total_count, 701)
+                self.assertEqual(result.prepared_count, 600)
+                self.assertEqual(app._historical_query_page_number, 1)
+                self.assertEqual(str(app.historical_event_retry_button.cget("state")),
+                                 "normal")
+                first_page_key = app._historical_event_records[0].key
+                self.click_tk_listbox_row(root, app.historical_event_list, 0)
+                self.wait_for_ui(root, lambda:
+                                 app._historical_event_selected_detail is not None)
+                selected_detail = app._historical_event_selected_detail
+                self.assertEqual(selected_detail.key, first_page_key)
+                app._show_historical_event_page(5)
+                self.wait_for_ui(root, lambda: app._historical_page_request_id is None and
+                                 app._historical_query_page_number == 5)
+                self.click_tk_listbox_row(root, app.historical_event_list, 0)
+                selected_key = app._historical_event_selected_key
+                self.wait_for_ui(root, lambda:
+                                 app._historical_event_selected_detail is not None and
+                                 app._historical_event_selected_detail.key == selected_key)
+                app._select_language(ENGLISH)
+                root.update()
+                self.assertIn("Retry remaining pages",
+                              app.historical_event_retry_button.cget("text"))
+
+                retry_entered = threading.Event()
+                release_retry = threading.Event()
+
+                def cancel_gated_retry(_result, cancellation_event, batch_size=100):
+                    retry_entered.set()
+                    if not release_retry.wait(5):
+                        raise OSError("controlled retry cancellation gate timed out")
+                    if cancellation_event.is_set():
+                        raise RuntimeError("historical event query cancelled")
+
+                with patch.object(historical_event_query,
+                                  "_prepare_remaining_query_batches",
+                                  side_effect=cancel_gated_retry):
+                    self.click_tk_widget(root, app.historical_event_retry_button)
+                    self.assertTrue(retry_entered.wait(2))
+                    self.click_tk_widget(root, app.historical_event_cancel_button)
+                    self.assertEqual(app._historical_query_status_key,
+                                     "app.settings.history.query_cancelled")
+                    release_retry.set()
+                    self.wait_for_ui(
+                        root, lambda: result.preparation_complete and
+                        str(app.historical_event_retry_button.cget("state")) == "normal")
+                self.assertEqual(result.prepared_count, 600)
+                self.assertIsInstance(result.preparation_error, RuntimeError)
+                self.assertEqual(app._historical_query_page_number, 5)
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+
+                appended = {
+                    "record_type": "event", "schema_version": 1,
+                    "round_id": "resume-round", "sequence": 702,
+                    "kind": "round_ready", "message": "new after query",
+                    "observed_at": "2026-10-13T23:59:59+00:00",
+                    "elapsed_seconds": 702.0, "display_position": None,
+                    "detail": {"raw_diagnostic": "new source version"},
+                }
+                with audit_path.open("ab") as source:
+                    source.write((json.dumps(appended) + "\n").encode("utf-8"))
+
+                self.click_tk_widget(root, app.historical_event_retry_button)
+                self.wait_for_ui(root, lambda: app._historical_query_generation is None and
+                                 result.preparation_complete and
+                                 result.preparation_error is None)
+                self.assertIs(app._historical_query_result, result)
+                self.assertEqual(result.total_count, 701)
+                self.assertEqual(result.prepared_count, 701)
+                self.assertEqual(app._historical_query_page_number, 5)
+                self.assertEqual(app._historical_event_selected_key, selected_key)
+                self.assertEqual(app._historical_event_selected_detail.key, selected_key)
+                self.assertEqual(app.historical_query_status.cget("text"),
+                                 "701 events found for 2026-10-13 through 2026-10-13.")
+                self.assertEqual(
+                    result.get_detail("round:resume-round:701").raw_record["detail"][
+                        "raw_diagnostic"], "fixed detail 701")
+                self.assertEqual(audit_path.read_bytes(),
+                                 source_before + (json.dumps(appended) + "\n").encode())
+                self.assertNotIn("round:resume-round:702", {
+                    event.key for page in range(1, result.page_count + 1)
+                    for event in result.get_page(page).events})
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                self.assertIn("共找到 701 筆事件", app.historical_query_status.cget("text"))
+            finally:
+                if "release_retry" in locals():
+                    release_retry.set()
+                app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped(self):
         from audit_records import AuditEvent, RoundAuditStore
 
