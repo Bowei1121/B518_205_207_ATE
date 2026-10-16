@@ -1,0 +1,155 @@
+[
+  {
+    "label": "dark-baseline",
+    "system_appearance": "dark",
+    "toplevel_background": "systemWindowBody",
+    "path": "dark-baseline-en.png",
+    "window": {
+      "title": "Notifications and Recovery",
+      "geometry": "900x620+101+88",
+      "size": [
+        900,
+        620
+      ],
+      "controls": {
+        "notebook": [
+          12,
+          12,
+          876,
+          596
+        ],
+        "acknowledge": [
+          687,
+          562,
+          189,
+          34
+        ],
+        "save_retry": [
+          12,
+          12,
+          1,
+          1
+        ],
+        "archive_retry": [
+          12,
+          12,
+          1,
+          1
+        ]
+      },
+      "native_bounds": {
+        "X": 101.0,
+        "Y": 88.0,
+        "Width": 900.0,
+        "Height": 648.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1296
+      },
+      "screenshot": "dark-baseline-en.png"
+    }
+  },
+  {
+    "label": "light-after-dark",
+    "system_appearance": "light",
+    "toplevel_background": "systemWindowBody",
+    "path": "light-after-dark-en.png",
+    "window": {
+      "title": "Notifications and Recovery",
+      "geometry": "900x620+101+88",
+      "size": [
+        900,
+        620
+      ],
+      "controls": {
+        "notebook": [
+          12,
+          12,
+          876,
+          596
+        ],
+        "acknowledge": [
+          687,
+          562,
+          189,
+          34
+        ],
+        "save_retry": [
+          12,
+          12,
+          1,
+          1
+        ],
+        "archive_retry": [
+          12,
+          12,
+          1,
+          1
+        ]
+      },
+      "native_bounds": {
+        "X": 101.0,
+        "Y": 88.0,
+        "Width": 900.0,
+        "Height": 648.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1296
+      },
+      "screenshot": "light-after-dark-en.png"
+    }
+  },
+  {
+    "label": "dark-after-light",
+    "system_appearance": "dark",
+    "toplevel_background": "systemWindowBody",
+    "path": "dark-after-light-en.png",
+    "window": {
+      "title": "Notifications and Recovery",
+      "geometry": "900x620+101+88",
+      "size": [
+        900,
+        620
+      ],
+      "controls": {
+        "notebook": [
+          12,
+          12,
+          876,
+          596
+        ],
+        "acknowledge": [
+          687,
+          562,
+          189,
+          34
+        ],
+        "save_retry": [
+          12,
+          12,
+          1,
+          1
+        ],
+        "archive_retry": [
+          12,
+          12,
+          1,
+          1
+        ]
+      },
+      "native_bounds": {
+        "X": 101.0,
+        "Y": 88.0,
+        "Width": 900.0,
+        "Height": 648.0
+      },
+      "image_pixels": {
+        "width": 1800,
+        "height": 1296
+      },
+      "screenshot": "dark-after-light-en.png"
+    }
+  }
+]

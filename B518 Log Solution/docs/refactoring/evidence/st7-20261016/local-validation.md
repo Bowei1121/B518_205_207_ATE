@@ -27,3 +27,9 @@ The transition did not alter pending work or trigger actions: the interactive ru
 
 - On the merged ST7 integration commit, Python 3.8 `py_compile` passed for the application and UI test module; `git diff --check` passed; all 8 language-catalog tests passed.
 - A focused real-Tk replay of `test_recovery_window_outer_surface_uses_the_app_light_palette` could not reach the test body: Python aborted in `tkinter.Tk.__init__` from `LogSolutionUiTests.setUpClass`, so unittest reported no result. The prior appearance-helper replay also failed during Tk/AppKit startup as recorded above. No further system-appearance changes were made during merger verification.
+
+## Final-review baseline reproduction attempt
+
+- To address the final spec review's request for direct before-fix evidence, the original ST6 integration version `77d15fb` was launched in a separate clean checkout with a real `B518LogSolutionApp` and the real Recovery `Toplevel`. While that same window stayed mapped, the system was changed Dark → Light → Dark; macOS preference reads confirmed each state and the original Dark state was restored.
+- Actual window-only native screenshots, bounds, and mode records are in [`baseline-reproduction-attempt/`](baseline-reproduction-attempt/). The window was 900×620 Tk points / 1800×1296 captured pixels, and the `Toplevel` reported Aqua's `systemWindowBody` background throughout.
+- Visual inspection did **not** reproduce the reported dark/repainted Recovery surface: the app-owned content and gutters appeared light in all three baseline frames. This establishes that the reported symptom was not reproduced in this run; it does not establish the root cause or invalidate the user's report. The implementation still explicitly enforces the specified fixed-light surface. The system appearance was confirmed Dark after the run.

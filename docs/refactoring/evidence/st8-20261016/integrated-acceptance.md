@@ -87,6 +87,7 @@
 - ST2：真 Tk toolbar keyboard、12 conflict + 1 alarm lifecycle、Logo 缺失／損壞及 KVM bounds；真滑鼠實際開啟語言選單與選取，真鍵盤測取消／選取。對應 ST2 acceptance notes。
 - ST3–ST6：沿用各票記錄的真 Tk/Aqua 行為及各自測試結果；包含滑鼠與鍵盤提示、停用 no-op、人工裁決／警報、歷史 query 狀態轉換、Settings 原生 chooser Cancel、保存／封存重試及取消關閉。沒有以各票程式檔案數或 widget 存在取代驗收。
 - ST7：使用者實際操作 macOS 外觀；同一個已開 Recovery 視窗於 Dark／Light、兩分頁、兩語擷取完整畫面，並已恢復起初 Dark。成功互動結果及畫面有效；capture-helper hardening 後 replay 在 AppKit 建立 Tk application menu 時 abort，unittest 沒有進入測試本體，**不列通過**。完整 Light/Dark 原生畫面與此限制見 ST7 `local-validation.md`。
+- 最終審查另在修復前整合版 `77d15fb` 的獨立乾淨工作樹，以真正 App 的同一恢復視窗完成 Dark→Light→Dark 基線重現嘗試；三張單獨視窗原生截圖、bounds 及系統模式讀回紀錄位於 ST7 `baseline-reproduction-attempt/`。內容在三個模式畫面都呈淺色，原先回報的深色／重繪症狀本次**未能重現**，因此根因仍未確定；不能把此次結果說成重現或根因證明。系統外觀最後讀回 Dark。
 - ST8 在此整合工作樹重跑：`PYTHONPATH=src:tests python3 -m unittest test_language_catalog test_kvm_display_contract` **15 tests OK**；Python 3.8 `py_compile` 通過 `b518_log_solution.py`、`localized_notice.py`、UI 與 Slot 測試模組；`git diff --check` 及故事／證據檔案完整性檢查通過（故事 1–52 各一列，清單計數 41）。不再改系統外觀，也不啟動數小時歷史容量效能測試。各票真桌面有效證據維持為其原提交所產生，ST8 不重拍無缺漏的畫面。
 
 使用者於 2026-10-16 檢視 [游標移開後保留焦點框](../../../../B518%20Log%20Solution/docs/refactoring/evidence/st3-20261016/st3-main-focus-mouse-out-en.png) 與 [淺藍懸停及焦點框](../../../../B518%20Log%20Solution/docs/refactoring/evidence/st3-20261016/st3-main-hover-en.png) 的真正 App 畫面對照，明確選擇保留目前樣式。
