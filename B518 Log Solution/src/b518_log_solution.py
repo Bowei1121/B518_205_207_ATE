@@ -348,6 +348,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_language_retry_button = None
         self.app_diagnostics_close_button = None
         self._app_diagnostics_records = ()
         self._unregister_settings_language_receiver = None
@@ -580,6 +581,12 @@ class B518LogSolutionApp:
         self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
                                                     ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
+        self.style.configure("Link.TButton", background=LIGHT_BACKGROUND, foreground="#0759a5",
+                             padding=(2, 1), borderwidth=0, underline=True)
+        self.style.map("Link.TButton", foreground=[("active", "#003f7d"),
+                                                     ("disabled", "#777777")],
+                       background=[("active", LIGHT_BACKGROUND),
+                                   ("focus", "#dbeafe")])
         self.style.configure("TEntry", fieldbackground=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              insertcolor=TEXT_COLOUR)
         self.style.map("TEntry", fieldbackground=[("disabled", "#e5e7eb")],
@@ -798,59 +805,26 @@ class B518LogSolutionApp:
         self.retry_save_button = ttk.Button(save_controls, text="重試保存", command=self.retry_saves,
                                             state="disabled")
         self.retry_save_button.pack(side="right")
-        round_save_controls = ttk.Frame(controls)
-        round_save_controls.pack(fill="x", pady=(5, 0))
-        round_save_controls.columnconfigure(0, weight=1)
-        round_save_controls.columnconfigure(1, minsize=140)
-        self.unsaved_round_count = ttk.Label(round_save_controls, text="未保存輪次 0")
-        self.unsaved_round_count.grid(row=0, column=0, columnspan=2, sticky="ew")
-        self.unsaved_round_choice = tk.StringVar(master=self.root, value="")
-        self.unsaved_round_picker = ttk.Combobox(
-            round_save_controls, textvariable=self.unsaved_round_choice,
-            state="readonly", width=1,
-        )
-        self.unsaved_round_picker.grid(row=1, column=0, sticky="ew", padx=(0, 4))
-        self.unsaved_round_retry_button = ttk.Button(
-            round_save_controls, text="重試所選", command=self.retry_selected_round, state="disabled")
-        self.unsaved_round_retry_button.grid(row=1, column=1, sticky="ew")
-        round_detail_controls = ttk.Frame(controls)
-        round_detail_controls.pack(fill="x", pady=(3, 0))
-        round_detail_controls.columnconfigure(0, weight=1)
-        round_detail_controls.columnconfigure(1, minsize=140)
-        round_detail_controls.rowconfigure(0, minsize=54)
-        self.unsaved_round_detail = ttk.Label(
-            round_detail_controls, text="", anchor="w", width=1, wraplength=210)
-        self.unsaved_round_detail.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self._unsaved_round_ids = {}
-        self.unsaved_round_picker.bind("<<ComboboxSelected>>", self._update_selected_round_retry)
-        self.archive_status_label = self.unsaved_round_detail
-        self.archive_round_detail = self.unsaved_round_detail
-        self.archive_status_label.configure(
-            text="輪次：未完整保存 0 · 完整保存 0 · 可信封存 0")
-        self.archive_retry_button = ttk.Button(
-            round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
-        self.archive_retry_button.grid(row=0, column=1, sticky="ew")
         app_event_controls = ttk.Frame(controls)
-        app_event_controls.pack(fill="x", pady=(4, 0))
-        app_event_controls.columnconfigure(0, weight=1)
-        app_event_controls.columnconfigure(1, minsize=140)
-        self.app_event_status_label = ttk.Label(
-            app_event_controls, text="", width=1, wraplength=210)
-        self.language_refresh_banner = self.app_event_status_label
-        self.app_event_status_label.grid(row=0, column=0, rowspan=2, sticky="ew", padx=(0, 4))
-        self.language_refresh_retry_button = ttk.Button(
-            app_event_controls, text=self._t("language.refresh.retry"),
-            command=self.retry_language_refresh, state="disabled")
-        self.language_refresh_retry_button.grid(row=1, column=1, sticky="ew", pady=(3, 0))
+        app_event_controls.pack(fill="x", pady=(5, 0))
+        self.app_event_status_label = ttk.Label(app_event_controls, text="", width=1, anchor="w")
+        self.app_event_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.app_diagnostics_button = ttk.Button(
-            app_event_controls, text=self._t("app.diagnostic.heading"), command=self.open_app_diagnostics)
-        self.app_diagnostics_button.grid(row=0, column=1, sticky="ew")
+            app_event_controls, text=self._t("app.diagnostic.heading"),
+            command=self.open_app_diagnostics, style="Link.TButton")
+        self.app_diagnostics_button.pack(side="right")
+        self.app_diagnostics_button.bind(
+            "<Return>", self._open_app_diagnostics_from_keyboard, add="+")
         self._render_rows()
         self._apply_main_language()
         self._refresh_app_event_status()
 
     def _t(self, message_id: str, **parameters: object) -> str:
         return translate(message_id, self.current_language, **parameters)
+
+    def _open_app_diagnostics_from_keyboard(self, _event=None):
+        self.open_app_diagnostics()
+        return "break"
 
     def _set_main_monitor_state(self, message_id: str, **parameters: object) -> None:
         self._monitor_state_message = message_id
@@ -876,18 +850,14 @@ class B518LogSolutionApp:
         self.start_button.configure(text=self._t("main.start_monitor"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
-        self.unsaved_round_retry_button.configure(text=self._t("main.retry_selected"))
-        self.archive_retry_button.configure(text=self._t("main.retry_archive"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
-        self.language_refresh_retry_button.configure(text=self._t("language.refresh.retry"))
+        self._apply_main_app_status()
         self._set_main_monitor_state(self._monitor_state_message,
                                      **self._monitor_state_parameters)
         self._render_conflict_review_button()
         self._render_round_alarm_button()
         self._render_station_title()
         self._render_save_status()
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
         self._refresh_main_round_labels()
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
@@ -926,15 +896,11 @@ class B518LogSolutionApp:
                 return
 
         if failures:
-            names = ", ".join(sorted({name() if callable(name) else name
-                                      for name, _reason in failures.values()}))
-            configure_if_alive(
-                self.app_event_status_label,
-                text=self._t("language.refresh.failed", windows=names))
-            configure_if_alive(self.language_refresh_retry_button,
+            configure_if_alive(self.app_diagnostics_language_retry_button,
                                state="disabled" if self._closing_ui else "normal")
+            self._apply_main_app_status()
         else:
-            configure_if_alive(self.language_refresh_retry_button, state="disabled")
+            configure_if_alive(self.app_diagnostics_language_retry_button, state="disabled")
             self._refresh_app_event_status(update_diagnostics=False)
         for _token, (name, reason) in newly_failed.items():
             try:
@@ -1190,9 +1156,8 @@ class B518LogSolutionApp:
             text = self._t("app.save.pending", count=status.pending_count)
         else:
             text = self._t("app.save.complete")
-        if update_main and self.app_event_status_label and self.app_event_status_label.winfo_exists():
-            if not self._language_refresh_failures:
-                self.app_event_status_label.configure(text=text)
+        if update_main:
+            self._apply_main_app_status(status)
         if (update_diagnostics and self.app_diagnostics_status
                 and self.app_diagnostics_status.winfo_exists()):
             self.app_diagnostics_status.configure(text=text)
@@ -1207,6 +1172,28 @@ class B518LogSolutionApp:
                 and self.app_diagnostics_retry_button.winfo_exists()):
             self.app_diagnostics_retry_button.configure(
                 state="normal" if status.status == "failed" else "disabled")
+        if (update_diagnostics and self.app_diagnostics_language_retry_button
+                and self.app_diagnostics_language_retry_button.winfo_exists()):
+            self.app_diagnostics_language_retry_button.configure(
+                state="normal" if self._language_refresh_failures and
+                not self._closing_ui else "disabled")
+
+    def _apply_main_app_status(self, status=None) -> None:
+        """Show one short App state while keeping unresolved faults visible."""
+        if not self.app_event_status_label or not self.app_event_status_label.winfo_exists():
+            return
+        if self._language_refresh_failures:
+            message_id = "main.app_status.text_failed"
+        else:
+            status = status or self.rounds.app_event_status()
+            if status is None:
+                return
+            message_id = {
+                "failed": "main.app_status.save_failed",
+                "saving": "main.app_status.saving",
+                "complete": "main.app_status.saved",
+            }.get(status.status, "main.app_status.save_failed")
+        self.app_event_status_label.configure(text=self._t(message_id))
 
     def _refresh_app_event_records(self, force: bool = False) -> None:
         if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
@@ -1240,6 +1227,9 @@ class B518LogSolutionApp:
         window.title(self._t("app.diagnostic.heading"))
         if self.app_diagnostics_retry_button is not None:
             self.app_diagnostics_retry_button.configure(text=self._t("app.diagnostic.retry"))
+        if self.app_diagnostics_language_retry_button is not None:
+            self.app_diagnostics_language_retry_button.configure(
+                text=self._t("language.refresh.retry"))
         if self.app_diagnostics_close_button is not None:
             self.app_diagnostics_close_button.configure(text=self._t("app.diagnostic.close"))
         self._refresh_app_event_status(update_main=False)
@@ -1367,6 +1357,10 @@ class B518LogSolutionApp:
             footer_row, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
             width=22, state="disabled")
         self.app_diagnostics_retry_button.pack(side="left", padx=6)
+        self.app_diagnostics_language_retry_button = ttk.Button(
+            footer_row, text=self._t("language.refresh.retry"),
+            command=self.retry_language_refresh, state="disabled")
+        self.app_diagnostics_language_retry_button.pack(side="left", padx=6)
         self.app_diagnostics_close_button = ttk.Button(
             footer_row, text=self._t("app.diagnostic.close"),
             command=self._close_app_diagnostics_window, width=12)
@@ -1396,6 +1390,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_language_retry_button = None
         self.app_diagnostics_close_button = None
         self._selected_app_event_id = None
 
@@ -1447,8 +1442,8 @@ class B518LogSolutionApp:
             return
         state = "disabled" if self._closing_ui else "normal"
         self.language_button.configure(state=state)
-        if hasattr(self, "language_refresh_retry_button"):
-            self.language_refresh_retry_button.configure(
+        if self.app_diagnostics_language_retry_button is not None:
+            self.app_diagnostics_language_retry_button.configure(
                 state="normal" if self._language_refresh_failures and not self._closing_ui
                 else "disabled")
         if hasattr(self, "language_menu"):
@@ -1586,110 +1581,12 @@ class B518LogSolutionApp:
             self._render_save_status()
             self.retry_save_button.configure(state="disabled")
 
-    def retry_selected_round(self) -> None:
-        """Retry the operator-selected current-run round without blocking Tk."""
-        if getattr(self, "_closing_ui", False):
-            return
-        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        if round_id and self.rounds.retry_saves(round_id):
-            self.unsaved_round_retry_button.configure(state="disabled")
-
     @staticmethod
     def _recovery_summary(diagnostic):
         # Full raw evidence remains available in the scrollable recovery details.
         text = str(diagnostic)
         first_line = text.splitlines()[0] if text else ""
         return first_line[:120] + ("…" if first_line != text or len(first_line) > 120 else "")
-
-    def _update_selected_round_retry(self, _event=None) -> None:
-        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        snapshot = self.rounds.round_snapshot(round_id) if round_id else None
-        state = "normal" if (not getattr(self, "_closing_ui", False) and snapshot is not None and
-                              snapshot.save_state == "failed") else "disabled"
-        self.unsaved_round_retry_button.configure(state=state)
-        if snapshot is None:
-            self.unsaved_round_detail.configure(text="")
-        elif snapshot.save_errors:
-            self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], self._recovery_summary(snapshot.save_errors[0])))
-        else:
-            self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], self._t(save_state_message_id(snapshot.save_state))))
-
-    def _refresh_unsaved_rounds(self) -> None:
-        """Render all protected rounds by identity, separate from the active result board."""
-        if not hasattr(self, "unsaved_round_picker"):
-            return
-        snapshots = self.rounds.unsaved_rounds()
-        current_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        labels = []
-        mapping = {}
-        for snapshot in snapshots:
-            label = "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10],
-                                           self._t(save_state_message_id(snapshot.save_state)))
-            mapping[label] = snapshot.round_id
-            labels.append(label)
-        self._unsaved_round_ids = mapping
-        self.unsaved_round_picker.configure(values=labels)
-        selected = next((label for label, round_id in mapping.items() if round_id == current_id), "")
-        if not selected and labels:
-            failed_round_id = next((snapshot.round_id for snapshot in snapshots
-                                    if snapshot.save_state == "failed"), None)
-            selected = next((label for label, round_id in mapping.items()
-                             if round_id == failed_round_id), labels[0])
-        self.unsaved_round_choice.set(selected)
-        self.unsaved_round_count.configure(text=self._t("main.unsaved_rounds", count=len(snapshots)))
-        self._update_selected_round_retry()
-
-    def _refresh_archive_statuses(self) -> None:
-        """Show current-run save and archive states without disk work in Tk."""
-        if not hasattr(self, "archive_retry_button"):
-            return
-        statuses = self.rounds.archive_statuses()
-        unsaved = sum(status.save_state != "complete" for status in statuses)
-        saved = sum(status.save_state == "complete" and not status.cleanup_eligible
-                    for status in statuses)
-        archived = sum(status.cleanup_eligible for status in statuses)
-        summary = self._t("main.archive_summary", unsaved=unsaved, saved=saved, archived=archived)
-        selected_round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        unsaved_status = next((status for status in statuses
-                               if status.round_id == selected_round_id and status.save_state != "complete"), None)
-        if unsaved_status is None:
-            unsaved_status = next((status for status in statuses if status.save_state != "complete"), None)
-        retryable = [status for status in statuses
-                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
-        archived_status = next((status for status in statuses if status.cleanup_eligible), None)
-        detail_status = unsaved_status or (retryable[0] if retryable else archived_status)
-        detail = ""
-        if detail_status is not None:
-            state = (self._t("main.archived") if detail_status.cleanup_eligible else
-                     self._t("main.archive_protected") if detail_status.save_state == "complete" else
-                     self._t(save_state_message_id(detail_status.save_state)))
-            reason = (self._retention_reason_detail(detail_status.reason_message)
-                      if detail_status.reason_message is not None else
-                      self._retention_reason_detail(detail_status.message))
-            if detail_status.save_state == "failed":
-                snapshot = self.rounds.round_snapshot(detail_status.round_id)
-                if (detail_status.reason_message is None and snapshot is not None and
-                        snapshot.save_errors):
-                    reason = snapshot.save_errors[-1]
-            if detail_status.cleanup_eligible:
-                reason = str(detail_status.archived_at)
-            detail = " · {} · {}{}".format(
-                detail_status.round_id, state, "：" + self._recovery_summary(reason) if reason else "")
-        self.archive_status_label.configure(text=summary + detail)
-        self.archive_retry_button.configure(
-            state="normal" if retryable and not self._closing_ui else "disabled")
-
-    def retry_selected_archive(self) -> None:
-        if self._closing_ui:
-            return
-        retryable = [status.round_id for status in self.rounds.archive_statuses()
-                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
-        if retryable:
-            self.archive_retry_button.configure(state="disabled")
-            for round_id in retryable:
-                self.rounds.retry_archival(round_id)
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)
@@ -1972,8 +1869,6 @@ class B518LogSolutionApp:
             pass
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
         self._refresh_app_event_status()
         self._refresh_app_event_records()
         self.rounds.poll_retention_schedule(self.profile_store.retention_days)
@@ -2000,7 +1895,7 @@ class B518LogSolutionApp:
             if event.round_id != self.active_round_id:
                 if event.event.kind in {"audit_write_failed", "save_recovered"}:
                     self._log(event.event.message, event.event.localized_message, event.round_id)
-                self._refresh_unsaved_rounds()
+                self._refresh_recovery_center()
                 return
             captured = next((item for item in getattr(snapshot, "events", ())
                              if item.round_id == event.round_id and
@@ -4849,8 +4744,7 @@ class B518LogSolutionApp:
             self._close_window.destroy()
         self._close_window = None
         self._apply_round_snapshot(self.rounds.snapshot())
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
+        self._refresh_recovery_center()
 
     def _finish_close(self) -> None:
         if self._close_window and self._close_window.winfo_exists():

@@ -22,6 +22,14 @@ from tkinter import font as tkfont, ttk
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+try:
+    import Quartz
+    from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+except ImportError:  # macOS desktop-only acceptance helper
+    Quartz = None
+    NSApplicationActivateIgnoringOtherApps = None
+    NSRunningApplication = None
+
 from b518_log_solution import (
     B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
     KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
@@ -285,6 +293,213 @@ class LogSolutionUiTests(unittest.TestCase):
         app.language_menu.invoke(index)
         root.update()
 
+    def diagnostics_language_retry(self, app):
+        if app.app_diagnostics_window is None or not app.app_diagnostics_window.winfo_exists():
+            app.open_app_diagnostics()
+        return app.app_diagnostics_language_retry_button
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hf4_dashboard_uses_compact_status_and_diagnostic_entry(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.app_diagnostics_button.winfo_ismapped())
+
+                def visible_texts(parent):
+                    values = []
+                    for child in parent.winfo_children():
+                        if not child.winfo_viewable():
+                            continue
+                        if "text" in child.keys():
+                            values.append(str(child.cget("text")))
+                        values.extend(visible_texts(child))
+                    return values
+
+                main_text = visible_texts(root)
+                self.assertNotIn("Retry Selected", main_text)
+                self.assertNotIn("Retry Archive", main_text)
+                self.assertNotIn("Retry Text", main_text)
+                self.assertNotIn("重試所選", main_text)
+                self.assertNotIn("重試封存", main_text)
+                self.assertNotIn("重試文字", main_text)
+                self.assertEqual(app.app_event_status_label.cget("text"), "App events saved")
+                self.assertLessEqual(root.winfo_width(), WINDOW_WIDTH)
+
+                root.focus_force()
+                app.app_diagnostics_button.focus_set()
+                root.update()
+                self.assertIs(root.focus_get(), app.app_diagnostics_button)
+                app.app_diagnostics_button.event_generate("<KeyPress-Return>")
+                root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+                self.assertTrue(app.app_diagnostics_language_retry_button.winfo_viewable())
+                self.assertTrue(app.app_diagnostics_retry_button.winfo_viewable())
+                self.assertEqual(app.app_diagnostics_window.title(),
+                                 app._t("app.diagnostic.heading"))
+                self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                self.assertGreater(app.kvm_results.winfo_height(), 0)
+                app._close_app_diagnostics_window()
+                root.update()
+
+                root.focus_force()
+                app.app_diagnostics_button.focus_set()
+                root.update()
+                app.app_diagnostics_button.event_generate("<KeyPress-space>")
+                app.app_diagnostics_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+                app._close_app_diagnostics_window()
+                root.update()
+
+                self.assertIsNotNone(Quartz, "native macOS input support is unavailable")
+                root.lift()
+                root.focus_force()
+                NSRunningApplication.currentApplication().activateWithOptions_(
+                    NSApplicationActivateIgnoringOtherApps)
+                activation_deadline = time.monotonic() + .3
+                while time.monotonic() < activation_deadline:
+                    root.update()
+                    time.sleep(.01)
+                point = (app.app_diagnostics_button.winfo_rootx() +
+                         app.app_diagnostics_button.winfo_width() // 2,
+                         app.app_diagnostics_button.winfo_rooty() +
+                         app.app_diagnostics_button.winfo_height() // 2)
+                for event_kind in (Quartz.kCGEventMouseMoved,
+                                   Quartz.kCGEventLeftMouseDown,
+                                   Quartz.kCGEventLeftMouseUp):
+                    Quartz.CGEventPost(
+                        Quartz.kCGSessionEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            None, event_kind, point, Quartz.kCGMouseButtonLeft))
+                    deadline = time.monotonic() + .12
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.01)
+                mouse_opened_diagnostics = (
+                    app.app_diagnostics_window is not None and
+                    app.app_diagnostics_window.winfo_viewable())
+                if not mouse_opened_diagnostics:
+                    # Keep functional keyboard acceptance independent from Aqua
+                    # refusing to activate this test process for native pointer input.
+                    app.app_diagnostics_button.focus_set()
+                    app.app_diagnostics_button.event_generate("<KeyPress-Return>")
+                    root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 app._t("main.app_status.saved"))
+                self.assertEqual(app.app_diagnostics_button.cget("text"), "App 診斷")
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+
+                fail_refresh = [True]
+                receiver = ttk.Label(root, text="untranslated")
+
+                def refresh_receiver():
+                    if fail_refresh[0]:
+                        raise RuntimeError("injected dashboard text failure")
+                    receiver.configure(text="已更新")
+
+                unregister = app.register_language_receiver(
+                    "Controlled window", refresh_receiver, receiver.winfo_exists)
+                app._select_language(ENGLISH)
+                root.update()
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 "Text refresh failed")
+                self.assertEqual(str(app.app_diagnostics_language_retry_button.cget("state")),
+                                 "normal")
+                self.wait_for_ui(root, lambda: any(
+                    event.get("localized_message", {}).get("message_id") ==
+                    "app.language.refresh_failed"
+                    for event in app._app_diagnostics_records))
+                failure = next(event for event in app.rounds.app_event_records()
+                               if event.get("localized_message", {}).get("message_id") ==
+                               "app.language.refresh_failed")
+                failure_index = next(index for index, event in enumerate(
+                    app._app_diagnostics_records) if event["event_id"] == failure["event_id"])
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(failure_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                failure_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("injected dashboard text failure", failure_detail)
+                self.assertIn("app.language.refresh_failed", failure_detail)
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    for language, key in ((ENGLISH, "en"),
+                                          (TRADITIONAL_CHINESE, "zh-TW")):
+                        app._select_language(language)
+                        root.update()
+                        failure_index = next(index for index, event in enumerate(
+                            app._app_diagnostics_records)
+                            if event["event_id"] == failure["event_id"])
+                        app.app_diagnostics_list.selection_clear(0, "end")
+                        app.app_diagnostics_list.selection_set(failure_index)
+                        app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                        root.update()
+                        self.assertIn("injected dashboard text failure",
+                                      app.app_diagnostics_detail.get("1.0", "end-1c"))
+                        self.assertTrue(app.app_diagnostics_language_retry_button.winfo_viewable())
+                        self.assertEqual(str(app.app_diagnostics_language_retry_button[
+                            "state"]), "normal")
+                        capture_tk_window_evidence(
+                            app.app_diagnostics_window,
+                            "hf4-diagnostics-language-failure", key, {
+                                "diagnostic_list": app.app_diagnostics_list,
+                                "raw_diagnostic": app.app_diagnostics_detail,
+                                "retry_language": app.app_diagnostics_language_retry_button,
+                                "retry_app_events": app.app_diagnostics_retry_button,
+                            })
+                fail_refresh[0] = False
+                app.app_diagnostics_language_retry_button.invoke()
+                self.wait_for_ui(root, lambda: str(
+                    app.app_diagnostics_language_retry_button.cget("state")) == "disabled")
+                self.assertEqual(receiver.cget("text"), "已更新")
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 app._t("main.app_status.saved"))
+                unregister()
+
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    for language, key in ((ENGLISH, "en"),
+                                          (TRADITIONAL_CHINESE, "zh-TW")):
+                        app._select_language(language)
+                        root.update()
+                        self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                         app.app_diagnostics_button.winfo_viewable())
+                        capture_tk_window_evidence(root, "hf4-home", key, {
+                            "status": app.app_event_status_label,
+                            "diagnostics": app.app_diagnostics_button,
+                            "KVM": app.kvm_results,
+                            "start": app.start_button,
+                        })
+                    write_tk_bounds_evidence("hf4-home-status-diagnostics", {
+                        "window_width": root.winfo_width(),
+                        "KVM_position": [app.kvm_results.winfo_x(),
+                                         app.kvm_results.winfo_y(),
+                                         app.kvm_results.winfo_width(),
+                                         app.kvm_results.winfo_height()],
+                        "diagnostic_click": (
+                            "native click opened App diagnostics" if mouse_opened_diagnostics
+                            else "BLOCKED: Aqua did not activate this process; Return opened diagnostics"
+                        ),
+                    })
+            finally:
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app._close_app_diagnostics_window()
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                root.destroy()
+
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed(self):
@@ -317,9 +532,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(button.winfo_viewable())
 
                 footer_buttons = (
-                    app.stop_button, app.retry_save_button,
-                    app.unsaved_round_retry_button, app.archive_retry_button,
-                    app.app_diagnostics_button, app.language_refresh_retry_button,
+                    app.stop_button, app.retry_save_button, app.app_diagnostics_button,
                 )
                 footer_bounds = []
                 for language in (ENGLISH, TRADITIONAL_CHINESE):
@@ -365,10 +578,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "monitor_state": app.monitor_state,
                                 "stop": app.stop_button,
                                 "retry_save": app.retry_save_button,
-                                "retry_selected": app.unsaved_round_retry_button,
-                                "retry_archive": app.archive_retry_button,
+                                "app_status": app.app_event_status_label,
                                 "diagnostics": app.app_diagnostics_button,
-                                "retry_text": app.language_refresh_retry_button,
                                 "kvm": app.kvm_results,
                                 "kvm_state_marker": app.kvm_state_marker,
                                 "kvm_layout_marker": app.kvm_layout_marker,
@@ -771,8 +982,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.language_menu.invoke(chinese)
                 root.update()
                 self.assertEqual(other.cget("text"), "繁體中文")
-                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
-                self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 failed = next(record for record in app.rounds.app_event_records()
                               if record["localized_message"]["message_id"] ==
                               "app.language.refresh_failed")
@@ -809,17 +1019,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("app.language.refresh_failed",
                               app.app_diagnostics_detail.get("1.0", "end-1c"))
             fail_refresh[0] = True
-            app.language_refresh_retry_button.invoke()
+            self.diagnostics_language_retry(app).invoke()
             root.update()
-            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
-            self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "normal")
+            self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
             self.assertEqual(app.project_label.cget("text"), "專案")
             self.assertEqual(failed_window.cget("text"), "Not translated")
             failed_window.destroy()
             app._language_refresh_notifications.notify()
             root.update()
-            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
-            self.assertNotIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "disabled")
+            self.assertNotEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
             unregister()
             unregister_failed()
         finally:
@@ -1102,7 +1312,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                  "主畫面: main text refresh failed")
                 self.assertNotIn("round_id", diagnostic)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 self.assertIn("diagnostic journal unavailable",
                               app.rounds.app_event_status().error)
 
@@ -3221,12 +3431,15 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 app.rounds = rounds
-                self.assertIn("0 unsaved", app.archive_status_label.cget("text"))
+                app.round_alarm_button.invoke()
+                self.wait_for_ui(root, lambda: app.recovery_window is not None and
+                                 app.recovery_window.winfo_viewable())
+                self.assertEqual(app.recovery_archive_list.get(0), "No tracked rounds")
                 started = rounds.start("FCT", OneResultMonitor, run_async=False)
                 app.active_round_id = started.round_id
                 app._apply_round_snapshot(rounds.snapshot())
-                app._refresh_archive_statuses()
-                self.assertIn("1 unsaved", app.archive_status_label.cget("text"))
+                app._refresh_recovery_center()
+                self.assertIn(started.round_id[:10], app.recovery_archive_list.get(0))
 
                 import round_archival
                 original_replace = round_archival.os.replace
@@ -3239,14 +3452,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch.object(round_archival.os, "replace", side_effect=fail_archive_replace):
                     rounds.poll_once()
                     def archive_failure_visible():
-                        app._refresh_archive_statuses()
+                        app._refresh_recovery_center()
                         return (rounds.archive_status(started.round_id).status == "failed" and
-                                str(app.archive_retry_button["state"]) == "normal" and
-                                "temporary archive fault" in app.archive_round_detail.cget("text"))
+                                str(app.recovery_archive_retry_button["state"]) == "normal" and
+                                "temporary archive fault" in
+                                app.recovery_archive_detail.get("1.0", "end-1c"))
                     self.wait_for(archive_failure_visible)
                     self.assertEqual(rounds.archive_status(started.round_id).reason_message["message_id"],
                                      "app.settings.retention.reason.archive.write_failed")
-                    self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
+                    self.assertIn("temporary archive fault",
+                                  app.recovery_archive_detail.get("1.0", "end-1c"))
                     second = rounds.start("FCT", OneResultMonitor, run_async=False)
                     app.active_round_id = second.round_id
                     rounds.poll_once()
@@ -3263,8 +3478,10 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.recovery_archive_retry_button.cget("text").lower())
 
                 self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
-                self.assertIn("無法寫入可信輪次封存資訊", app.archive_status_label.cget("text"))
-                self.assertIn("temporary archive fault", app.archive_status_label.cget("text"))
+                self.assertIn("無法寫入可信輪次封存資訊",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
+                self.assertIn("temporary archive fault",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
                 for language in (TRADITIONAL_CHINESE, ENGLISH):
                     self.select_language_from_menu(app, root, language)
                     capture_recovery_evidence(app, "hf2-archive-failure", language,
@@ -3293,10 +3510,11 @@ class LogSolutionUiTests(unittest.TestCase):
                     capture_recovery_evidence(app, "hf2-archive-recovered", language,
                         {"archive_retry": app.recovery_archive_retry_button})
                 self.select_language_from_menu(app, root, ENGLISH)
-                app._refresh_archive_statuses()
-                self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
-                self.assertIn("Trusted Archive", app.archive_round_detail.cget("text"))
-                self.assertIn("2026-10-07T10:00:00+08:00", app.archive_round_detail.cget("text"))
+                app._refresh_recovery_center()
+                recovered_detail = app.recovery_archive_detail.get("1.0", "end-1c")
+                self.assertIn(started.round_id, recovered_detail)
+                self.assertIn("Trusted Archive", recovered_detail)
+                self.assertIn("2026-10-07T10:00:00+08:00", recovered_detail)
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
             finally:
                 root.destroy()
@@ -3588,9 +3806,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.recovery_save_retry_button.invoke()
                     self.assertEqual(len(attempts), 1)
                     release_retry.set()
-                    self.assertTrue(pump_until(
-                        lambda: coordinator.round_snapshot(previous.round_id) is None and
-                        previous.round_id not in app._unsaved_round_ids.values()))
+                self.assertTrue(pump_until(
+                        lambda: coordinator.round_snapshot(previous.round_id) is None))
 
                 rebuilt = read_round_audit(monitors[0].session.path / "audit.jsonl")
                 probe = [event for event in rebuilt["events"]
@@ -3602,7 +3819,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(coordinator.snapshot().round_id, current.round_id)
                 self.assertTrue(all(result.status == "WAITING"
                                     for result in coordinator.snapshot().results))
-                self.assertNotIn(previous.round_id, app._unsaved_round_ids.values())
             finally:
                 coordinator.stop()
                 coordinator.flush_audit()
@@ -6562,10 +6778,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIs(app.app_diagnostics_window, diagnostics_window)
                 self.assertIs(app.historical_event_window, history_window)
                 self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
-                self.assertIn("設定", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 self.assertIn("App 診斷", app.app_diagnostics_window.title())
                 self.assertIn("事件", app.historical_event_heading.cget("text"))
-                self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
+                self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "normal")
 
                 path = app.app_events.path
                 self.wait_for(lambda: app.rounds.app_event_status().complete)
@@ -6580,14 +6796,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(failure["event_id"],
                               [record["event_id"] for record in disk_records])
 
-                app.language_refresh_retry_button.event_generate("<ButtonPress-1>")
-                app.language_refresh_retry_button.event_generate("<ButtonRelease-1>")
+                self.diagnostics_language_retry(app).event_generate("<ButtonPress-1>")
+                self.diagnostics_language_retry(app).event_generate("<ButtonRelease-1>")
                 root.update()
                 self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                 self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
-                self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                  "disabled")
-                self.assertEqual(app.language_refresh_banner.cget("text"),
+                self.assertEqual(app.app_event_status_label.cget("text"),
                                  app.app_event_status_label.cget("text"))
             finally:
                 if app.historical_event_window and app.historical_event_window.winfo_exists():
@@ -6673,20 +6889,22 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(history_window.title() ==
                                      app._t("app.settings.history.title"),
                                      "history" not in failed_views)
-                    self.assertNotEqual(app.language_refresh_banner.cget("text"), "")
-                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "文字更新失敗" if language == TRADITIONAL_CHINESE
+                                     else "Text refresh failed")
+                    self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                      "normal")
 
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                     self.assertEqual(diagnostics_window.title(),
                                      app._t("app.diagnostic.heading"))
                     self.assertEqual(history_window.title(),
                                      app._t("app.settings.history.title"))
                     self.assertEqual(app.profile_editor_project.get(), "Preserve this draft")
-                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                    self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                      "disabled")
-                    self.assertEqual(app.language_refresh_banner.cget("text"),
+                    self.assertEqual(app.app_event_status_label.cget("text"),
                                      app.app_event_status_label.cget("text"))
             finally:
                 if app.historical_event_window and app.historical_event_window.winfo_exists():
@@ -9139,19 +9357,18 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn("已達設定的整輪監控時間上限",
                                   app.recovery_alarm_detail.get("1.0", "end-1c"))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
-                    self.assertIn("同輪結果衝突",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                     self.assertIn("確認整輪警報", app.round_alarm_ack_button.cget("text"))
                     self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                     select_language("English")
                     self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
-                    self.assertIn("Same-Round Result Conflict",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
 
                 inject_conflict_failure[0] = False
                 select_language("繁體中文")
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 self.assertIs(app.conflict_window, conflict_window)
                 self.assertIs(app.round_alarm_window, alarm_window)
                 self.assertIs(app.recovery_window, recovery_window)
@@ -9170,7 +9387,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     "@0,0", "@0,0 + 100 chars"))
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
                 original_alarm_refresh = app._refresh_round_alarm_language
@@ -9186,20 +9403,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("English")
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("Round Monitoring Timeout",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
                     self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                     select_language("繁體中文")
                     self.assertEqual(conflict_window.title(), "同輪結果衝突")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("整輪監控逾時",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
 
                 inject_alarm_failure[0] = False
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 self.assertIs(app.round_alarm_window, alarm_window)
                 self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
                 inject_conflict_failure[0] = True
@@ -9209,22 +9425,22 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("English")
                     self.assertEqual(conflict_window.title(), "同輪結果衝突")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("Same-Round Result Conflict", app.language_refresh_banner.cget("text"))
-                    self.assertIn("Round Monitoring Timeout", app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
                     diagnostic_events = app.app_events.records
                     ui_tick = []
                     root.after(350, lambda: ui_tick.append(True))
                     pump_until(lambda: bool(ui_tick))
                     self.assertEqual(app.app_events.records, diagnostic_events)
                     inject_conflict_failure[0] = False
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                    self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "normal")
                     inject_alarm_failure[0] = False
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
-                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                    self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                     self.assertIs(app.conflict_window, conflict_window)
                     self.assertIs(app.round_alarm_window, alarm_window)
                     self.assertEqual(audit_path.read_bytes(), before_refresh)
@@ -9303,22 +9519,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
                 self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
-                failure_banner = app.language_refresh_banner.cget("text")
-                self.assertIn("同輪結果衝突", failure_banner)
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                failure_banner = app.app_event_status_label.cget("text")
+                self.assertEqual(failure_banner, "文字更新失敗")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 closing_records = app.app_events.records
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 root.after(0, app.retry_language_refresh)
                 root.update()
-                self.assertEqual(app.language_refresh_banner.cget("text"), failure_banner)
+                self.assertEqual(app.app_event_status_label.cget("text"), failure_banner)
                 self.assertEqual(app.app_events.records, closing_records)
                 app._close_cancel_button.invoke()
                 root.update()
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "normal")
                 self.assertTrue(rounds.snapshot().collection_stopped)
                 self.assertEqual(rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
-                click(app.language_refresh_retry_button)
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                click(self.diagnostics_language_retry(app))
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
                 app._select_language(ENGLISH)
