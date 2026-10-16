@@ -31,7 +31,7 @@ except ImportError:  # macOS desktop-only acceptance helper
     NSRunningApplication = None
 
 from b518_log_solution import (
-    B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
+    APP_VERSION, B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
     KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
@@ -521,7 +521,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                         app.stop_button.winfo_reqheight())
                 self.assertGreaterEqual(app.retry_save_button.winfo_height(),
                                         app.retry_save_button.winfo_reqheight())
-                self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
+                self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V{}".format(APP_VERSION))
                 self.assertEqual(app.company_logo.width(), 137)
                 self.assertEqual(app.company_logo.height(), 35)
                 for button, glyph in ((app.settings_button, "⚙️"),
@@ -751,7 +751,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._set_main_monitor_state("monitor.awaiting_conflicts", count=20)
                     app._select_language(TRADITIONAL_CHINESE)
                     root.update_idletasks()
-                    self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
+                    self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V{}".format(APP_VERSION))
                     self.assertIn("20", app.monitor_state.cget("text"))
                     self.assertEqual(app.review_count.cget("text"), "20")
                     self.assertEqual(bounds(toolbar), toolbar_bounds)
@@ -760,13 +760,18 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.project.set("SAMPLE")
                     app.station.set("BT")
                     app._render_main_title()
-                    self.assertEqual(root.title(), "SAMPLE BT ATE Log Solution-V0.1.0")
+                    self.assertEqual(root.title(), "SAMPLE BT ATE Log Solution-V{}".format(APP_VERSION))
                     app._set_main_monitor_state("monitor.idle")
                     self.assertEqual(app.monitor_state.cget("text"), "待命")
 
-                scratch_button = ttk.Button(root)
+                # The HMI is deliberately fixed-size. Give this disposable
+                # control its own mapped host rather than packing it below an
+                # already full main window, where Aqua drops Enter events.
+                scratch_host = tk.Toplevel(root)
+                scratch_button = ttk.Button(scratch_host)
                 scratch_button.pack()
                 scratch_hint = _LocalizedControlHint(scratch_button, lambda: "Scratch")
+                self.wait_for_ui(root, lambda: scratch_button.winfo_viewable())
                 scratch_button.event_generate("<Enter>")
                 self.wait_for_ui(root, lambda: scratch_hint._window is not None)
                 scratch_window = scratch_hint._window
@@ -774,6 +779,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertIsNone(scratch_hint._widget)
                 self.assertFalse(scratch_window.winfo_exists())
+                scratch_host.destroy()
             finally:
                 if "original_snapshot" in locals():
                     app.rounds.snapshot = original_snapshot
@@ -832,13 +838,12 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertNotIn(root.focus_get(), controls[:4])
                     app.round_alarm_button.focus_force()
                     root.update()
-                    try:
-                        app.round_alarm_button.event_generate("<KeyPress-ISO_Left_Tab>")
-                    except tk.TclError as error:
-                        self.assertIn("ISO_Left_Tab", str(error))
+                    if root.tk.call("tk", "windowingsystem") == "aqua":
+                        app.round_alarm_button.event_generate("<Shift-KeyPress-Tab>")
                     else:
-                        root.update()
-                        self.assertIs(root.focus_get(), app.review_button)
+                        app.round_alarm_button.event_generate("<KeyPress-ISO_Left_Tab>")
+                    root.update()
+                    self.assertIs(root.focus_get(), app.review_button)
                     # Review remains unavailable even when reached for orientation.
                     self.assertTrue(app.review_button.instate(["disabled"]))
                     app.review_button.event_generate("<KeyPress-space>")
@@ -5897,6 +5902,42 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.app_events.stop()
                 root.destroy()
                 self.assertEqual(close_status, "complete", app.rounds.close_status())
+
+    def test_main_title_preserves_build_version_through_language_and_station_changes(self):
+        root = tk.Tk()
+        with patch("b518_log_solution.APP_VERSION", "9.8.7"):
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+            try:
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    app._select_language(language)
+                    for station in ("FCT", "BT"):
+                        app.station.set(station)
+                        app._render_main_title()
+                        self.assertEqual(root.title(),
+                                         "B518 {} ATE Log Solution-V9.8.7".format(station))
+            finally:
+                root.destroy()
+
+    def test_fixed_hmi_geometry_survives_mapping_and_capacity_changes(self):
+        root = tk.Tk()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        try:
+            self.wait_for_ui(root, lambda: root.winfo_ismapped())
+            for capacity in (2, 10, 20, 2):
+                with self.subTest(capacity=capacity), patch.object(
+                        app, "_display_capacity", return_value=capacity):
+                    app._render_rows()
+                    self.wait_for_ui(root, lambda:
+                        root.winfo_width() == WINDOW_WIDTH and
+                        root.winfo_height() == window_height(capacity, root.winfo_screenheight()))
+                    self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                    self.assertEqual(root.winfo_height(),
+                                     window_height(capacity, root.winfo_screenheight()))
+                    self.assertEqual(tuple(map(int, root.resizable())), (0, 0))
+                    self.assertEqual((app.kvm_state_marker.winfo_x(),
+                                      app.kvm_state_marker.winfo_y()), (278, 0))
+        finally:
+            root.destroy()
 
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \
@@ -11344,6 +11385,10 @@ class LogSolutionUiTests(unittest.TestCase):
                                  app.historical_event_detail.get("1.0", "end"))
                 selected_key = app._historical_event_selected_key
                 selected_detail = app._historical_event_selected_detail
+                # Text estimates wrapped-line heights lazily for long raw
+                # diagnostics. Complete its display metrics before taking a
+                # precise reading-position baseline for the language switch.
+                app.historical_event_detail.count("1.0", "end", "update", "ypixels")
                 app.historical_event_detail.yview_moveto(0.4)
                 app.historical_event_list.yview_moveto(0.35)
                 app.historical_event_list.xview_moveto(0.35)
