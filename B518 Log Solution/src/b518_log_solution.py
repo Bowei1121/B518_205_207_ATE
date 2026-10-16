@@ -435,6 +435,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_retry_button = None
         self.app_diagnostics_language_retry_button = None
         self.app_diagnostics_close_button = None
+        self._app_diagnostics_hints = ()
         self._app_diagnostics_records = ()
         self._unregister_settings_language_receiver = None
         self._unregister_app_diagnostics_language_receiver = None
@@ -1381,6 +1382,24 @@ class B518LogSolutionApp:
             self.app_diagnostics_language_retry_button.configure(
                 state="normal" if self._language_refresh_failures and
                 not self._closing_ui else "disabled")
+        if update_diagnostics:
+            for hint in self._app_diagnostics_hints:
+                hint.refresh()
+
+    def _app_diagnostic_save_hint(self) -> str:
+        status = self.rounds.app_event_status()
+        if status is not None and status.status == "failed":
+            return self._t("app.diagnostic.retry_hint.enabled")
+        if status is not None and status.status == "saving":
+            return self._t("app.diagnostic.retry_hint.saving")
+        return self._t("app.diagnostic.retry_hint.idle")
+
+    def _app_diagnostic_language_hint(self) -> str:
+        if self._closing_ui:
+            return self._t("app.diagnostic.language_retry_hint.closing")
+        if self._language_refresh_failures:
+            return self._t("app.diagnostic.language_retry_hint.enabled")
+        return self._t("app.diagnostic.language_retry_hint.idle")
 
     def _apply_main_app_status(self, status=None) -> None:
         """Show one short App state while keeping unresolved faults visible."""
@@ -1436,6 +1455,8 @@ class B518LogSolutionApp:
                 text=self._t("language.refresh.retry"))
         if self.app_diagnostics_close_button is not None:
             self.app_diagnostics_close_button.configure(text=self._t("app.diagnostic.close"))
+        for hint in self._app_diagnostics_hints:
+            hint.refresh()
         self._refresh_app_event_status(update_main=False)
         self._render_app_diagnostics_records(self._app_diagnostics_records)
 
@@ -1569,6 +1590,16 @@ class B518LogSolutionApp:
             footer_row, text=self._t("app.diagnostic.close"),
             command=self._close_app_diagnostics_window, width=12)
         self.app_diagnostics_close_button.pack(side="right")
+        self._app_diagnostics_hints = (
+            _LocalizedControlHint(
+                self.app_diagnostics_retry_button, self._app_diagnostic_save_hint),
+            _LocalizedControlHint(
+                self.app_diagnostics_language_retry_button,
+                self._app_diagnostic_language_hint),
+            _LocalizedControlHint(
+                self.app_diagnostics_close_button,
+                lambda: self._t("app.diagnostic.close_hint")),
+        )
         self.app_diagnostics_history = ttk.Label(footer, text="", wraplength=840, justify="left")
         self.app_diagnostics_history.pack(fill="x", pady=(5, 0))
         window.protocol("WM_DELETE_WINDOW", self._close_app_diagnostics_window)
@@ -1584,6 +1615,9 @@ class B518LogSolutionApp:
     def _on_app_diagnostics_destroy(self, event) -> None:
         if event.widget is not self.app_diagnostics_window:
             return
+        for hint in self._app_diagnostics_hints:
+            hint.close()
+        self._app_diagnostics_hints = ()
         unregister = self._unregister_app_diagnostics_language_receiver
         self._unregister_app_diagnostics_language_receiver = None
         if unregister is not None:
@@ -1662,6 +1696,8 @@ class B518LogSolutionApp:
             self.app_diagnostics_language_retry_button.configure(
                 state="normal" if self._language_refresh_failures and not self._closing_ui
                 else "disabled")
+        for hint in self._app_diagnostics_hints:
+            hint.refresh()
         if hasattr(self, "language_menu"):
             for index in range(self.language_menu.index("end") + 1):
                 self.language_menu.entryconfigure(index, state=state)
@@ -4283,10 +4319,19 @@ class B518LogSolutionApp:
                 lambda: self._t("app.settings.history.search_hint")),
             _LocalizedControlHint(
                 self.historical_previous_button,
-                lambda: self._t("app.settings.history.previous_page_hint")),
+                self._historical_previous_hint),
             _LocalizedControlHint(
                 self.historical_next_button,
-                lambda: self._t("app.settings.history.next_page_hint")),
+                self._historical_next_hint),
+            _LocalizedControlHint(
+                self.historical_event_cancel_button,
+                self._historical_cancel_hint),
+            _LocalizedControlHint(
+                self.historical_event_retry_button,
+                self._historical_retry_hint),
+            _LocalizedControlHint(
+                self.historical_event_list,
+                self._historical_event_list_hint),
         )
         self._refresh_historical_event_window()
         window.protocol("WM_DELETE_WINDOW", self._close_historical_event_window)
@@ -4299,6 +4344,56 @@ class B518LogSolutionApp:
 
     def _historical_range_mode_keys(self):
         return ("today", "last7", "last30", "last90", "single", "custom")
+
+    def _historical_cancel_hint(self) -> str:
+        key = ("app.settings.history.cancel_hint.running"
+               if self._historical_query_generation is not None else
+               "app.settings.history.cancel_hint.idle")
+        return self._t(key)
+
+    def _historical_retry_hint(self) -> str:
+        result = self._historical_query_result
+        retryable = (result is not None and result.preparation_complete and
+                     result.preparation_error is not None and
+                     result.prepared_count < result.total_count and
+                     not isinstance(result.preparation_error,
+                                    HistoricalEventSnapshotUnavailable))
+        if self._historical_query_generation is not None:
+            key = "app.settings.history.retry_hint.running"
+        elif retryable:
+            key = "app.settings.history.retry_hint.ready"
+        else:
+            key = "app.settings.history.retry_hint.unavailable"
+        return self._t(key)
+
+    def _historical_previous_hint(self) -> str:
+        result = self._historical_query_result
+        page = (self._historical_diagnostic_page_number
+                if self._historical_showing_diagnostics else
+                self._historical_query_page_number)
+        if result is None or page <= 1 or self._historical_page_request_id is not None:
+            return self._t("app.settings.history.previous_page_hint.disabled")
+        return self._t("app.settings.history.previous_page_hint")
+
+    def _historical_next_hint(self) -> str:
+        result = self._historical_query_result
+        if result is None or self._historical_page_request_id is not None:
+            return self._t("app.settings.history.next_page_hint.disabled")
+        if self._historical_showing_diagnostics:
+            page_count = max(1, (result.diagnostic_count + result.page_size - 1) //
+                             result.page_size)
+            has_next = self._historical_diagnostic_page_number < page_count
+        else:
+            has_next = self._historical_query_page_number < result.page_count
+        key = ("app.settings.history.next_page_hint" if has_next else
+               "app.settings.history.next_page_hint.disabled")
+        return self._t(key)
+
+    def _historical_event_list_hint(self) -> str:
+        result = self._historical_query_result
+        if result is not None and result.diagnostic_count:
+            return self._t("app.settings.history.diagnostic_list_hint")
+        return self._t("app.settings.history.event_list_hint")
 
     def _historical_range_mode_labels(self):
         return tuple(self._t("app.settings.history.mode." + key)
@@ -4375,6 +4470,8 @@ class B518LogSolutionApp:
         self._historical_query_status_parameters = {}
         self.historical_event_retry_button.configure(state="disabled")
         self.historical_event_cancel_button.configure(state="normal")
+        for hint in self._historical_control_hints:
+            hint.refresh()
         self._refresh_historical_query_status()
         self._schedule_historical_query_poll(
             window, self._historical_query_view_generation, generation)
@@ -4406,6 +4503,8 @@ class B518LogSolutionApp:
         self._historical_query_status_parameters = {}
         self.historical_event_retry_button.configure(state="disabled")
         self.historical_event_cancel_button.configure(state="normal")
+        for hint in self._historical_control_hints:
+            hint.refresh()
         self._refresh_historical_query_status()
         self._schedule_historical_query_poll(
             self.historical_event_window, self._historical_query_view_generation,
@@ -4422,6 +4521,8 @@ class B518LogSolutionApp:
         self._historical_query_after_id = None
         if self.historical_event_cancel_button is not None:
             self.historical_event_cancel_button.configure(state="disabled")
+        for hint in self._historical_control_hints:
+            hint.refresh()
         self._historical_query_status_key = "app.settings.history.query_cancelled"
         self._historical_query_status_parameters = {}
         self._refresh_historical_query_status()
