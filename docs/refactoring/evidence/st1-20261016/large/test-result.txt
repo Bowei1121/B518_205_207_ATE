@@ -1,0 +1,7 @@
+test_st1_ten_rows_and_small_window_keep_all_slots_reachable (test_slot_toolbar_st1.SlotViewportTests) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 22.521s
+
+OK
+Restored native display: 1440x900
