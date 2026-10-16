@@ -49,6 +49,6 @@ Framework 對照將 interpreter 換成 Python.org Framework3.8 的 python3。截
 
 新增 `scripts/run_macos_desktop.sh` 避免(base)的PATH默默選到故障runtime，優先已安裝Python.org Framework，支援PYTHON_BIN明確指定並列印interpreter。README改以此啟動。正式3.12 build流程維持；本機未安裝3.12，不宣稱驗證過它。
 
-Framework真App原生單擊設定→關設定→鈴鐺→專案→機型，加入native active/keyWindow觀測後，四個獨立process皆4/4成功。前三份原始JSON在 `keyboard-fix/native-app-attempt-{3,4,5}.json`。最初未量keyWindow的一輪鈴鐺未收事件；保留此觀察，沒有據此盲改視窗焦點。實驗不是使用者用launcher親手複驗，HF1保持開啟，等待此複驗。
+Framework真App原生單擊設定→關設定→鈴鐺→專案→機型，加入native active/keyWindow觀測後，四個獨立process皆4/4成功。前三份原始JSON在 `keyboard-fix/native-app-attempt-{3,4,5}.json`。最初未量keyWindow的一輪鈴鐺未收事件；保留此觀察，沒有據此盲改視窗焦點。上述為真正App桌面證據；既有Conda啟動方式的限制仍存在，受驗證的入口為Framework launcher。由整合審查依規格判斷結案；不額外要求使用者批准launcher。
 
 未驗環境：打包App、其他MacOS/Python組合、工廠硬體/KVM影像辨識。此票分支不包含後續HF3～HF7，也沒有關閉任何Issue。
