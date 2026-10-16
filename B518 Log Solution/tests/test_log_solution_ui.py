@@ -383,7 +383,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._select_language(ENGLISH)
                 app.settings_notebook.select(0)
                 root.update()
+                capture_settings("st4-settings-configuration", "en")
+                app.settings_notebook.select(1)
+                root.update()
                 capture_settings("st4-settings-events", "en")
+                app.settings_notebook.select(2)
+                root.update()
                 capture_settings("st4-settings-retention", "en")
 
                 app._open_recovery_center()
