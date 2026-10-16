@@ -1,0 +1,25 @@
+test_platform_probe (test_log_solution_ui.LogSolutionUiTests.test_platform_probe) ... initial 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+update0 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+update1 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+update2 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+update3 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+update4 362x679+1082+32 362 679 362 (72, 1) (1470, 819)
+explicit0 362x679+20+103 362 679 362 (72, 1) (1470, 819)
+explicit1 362x679+20+103 362 679 362 (72, 1) (1470, 819)
+explicit2 362x679+20+103 362 679 362 (72, 1) (1470, 819)
+constraints0 362x679+20+103 362 679 362 (376, 855) (376, 855)
+constraints1 362x679+20+103 362 679 362 (376, 855) (376, 855)
+constraints2 362x679+20+103 362 679 362 (376, 855) (376, 855)
+BIND <KeyPress-Tab>
+KEY Tab 65289 805306377 1
+FOCUS .!toplevel.!frame.!frame.!frame3.!button EXPECTED .!toplevel.!frame.!frame.!frame3.!button
+BIND <KeyPress-ISO_Left_Tab> if {"[4381938112_toolbar_focus_previous %# %b %f %h %k %s %t %w %x %y %A %E %K %N %W %T %X %Y %D]" == "break"} break
+
+KEY ?? 0 4278190080 0
+FOCUS .!toplevel.!frame.!frame.!button2 EXPECTED .!toplevel.!frame.!frame.!frame3.!button
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.941s
+
+OK

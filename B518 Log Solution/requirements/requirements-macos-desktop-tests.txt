@@ -1,0 +1,5 @@
+# Native window capture and rendered-pixel assertions used by the Tk build gate.
+# These Python 3.12 universal2 wheels support macOS 10.13 and newer.
+pyobjc-core==11.1
+pyobjc-framework-Cocoa==11.1
+pyobjc-framework-Quartz==11.1
