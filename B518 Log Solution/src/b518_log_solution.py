@@ -120,6 +120,7 @@ class _LocalizedControlHint:
         self._window = None
         self._label = None
         self._bindings = []
+        self._global_motion_binding = None
         for sequence, callback in (
                 ("<Enter>", self._on_enter), ("<FocusIn>", self._on_focus_in),
                 ("<Leave>", self._on_leave), ("<FocusOut>", self._on_focus_out)):
@@ -133,6 +134,8 @@ class _LocalizedControlHint:
                 binding_id = widget.bind(sequence, self._hide, add="+")
                 self._bindings.append((sequence, binding_id))
         self._destroy_binding = widget.bind("<Destroy>", self._on_destroy, add="+")
+        self._global_motion_binding = widget.bind_all("<Motion>", self._on_global_motion,
+                                                       add="+")
 
     def _disabled(self, widget) -> bool:
         try:
@@ -158,6 +161,9 @@ class _LocalizedControlHint:
         try:
             if self._label is not None and self._label.winfo_exists():
                 self._label.configure(text=self._text_provider())
+                self._window.update_idletasks()
+                self._position_window(widget, self._window)
+                self._window.lift()
         except tk.TclError:
             self._hide()
 
@@ -172,6 +178,12 @@ class _LocalizedControlHint:
                     widget.unbind(sequence, binding_id)
                 except tk.TclError:
                     pass
+        if self._global_motion_binding:
+            try:
+                self._remove_global_motion_binding(widget)
+            except tk.TclError:
+                pass
+            self._global_motion_binding = None
         if self._destroy_binding:
             try:
                 widget.unbind("<Destroy>", self._destroy_binding)
@@ -217,18 +229,25 @@ class _LocalizedControlHint:
                 relief="solid", padx=6, pady=3, wraplength=320)
             label.pack()
             window.update_idletasks()
-            x = widget.winfo_rootx()
-            y = widget.winfo_rooty() + widget.winfo_height() + 3
-            if y + window.winfo_reqheight() > widget.winfo_screenheight():
-                y = widget.winfo_rooty() - window.winfo_reqheight() - 3
-            x = min(max(2, x), max(2, widget.winfo_screenwidth() -
-                                   window.winfo_reqwidth() - 2))
-            window.geometry("+{}+{}".format(x, max(2, y)))
             self._window = window
             self._label = label
+            self._position_window(widget, window)
+            window.lift()
             type(self)._visible_hint = self
         except tk.TclError:
             self._hide()
+
+    @staticmethod
+    def _position_window(widget, window) -> None:
+        x = widget.winfo_rootx()
+        y = widget.winfo_rooty() + widget.winfo_height() + 3
+        owner = widget.winfo_toplevel()
+        owner_bottom = owner.winfo_rooty() + owner.winfo_height()
+        if y + window.winfo_reqheight() > min(widget.winfo_screenheight(), owner_bottom):
+            y = widget.winfo_rooty() - window.winfo_reqheight() - 3
+        x = min(max(2, x), max(2, widget.winfo_screenwidth() -
+                               window.winfo_reqwidth() - 2))
+        window.geometry("+{}+{}".format(x, max(2, y)))
 
     def _hide(self, _event=None) -> None:
         self._cancel_after()
@@ -247,6 +266,40 @@ class _LocalizedControlHint:
     def _on_enter(self, event=None) -> None:
         self._pointer_inside = True
         self._schedule(event)
+
+    def _on_global_motion(self, event=None) -> None:
+        """Allow pointer hints on disabled ttk controls, which omit Enter events."""
+        widget = self._widget
+        if widget is None or event is None or not self._disabled(widget):
+            return
+        try:
+            inside = (widget.winfo_rootx() <= event.x_root <
+                      widget.winfo_rootx() + widget.winfo_width() and
+                      widget.winfo_rooty() <= event.y_root <
+                      widget.winfo_rooty() + widget.winfo_height())
+            if inside and not self._pointer_inside:
+                self._pointer_inside = True
+                self._schedule(event)
+            elif not inside and self._pointer_inside:
+                self._pointer_inside = False
+                if not self._focused:
+                    self._hide(event)
+        except tk.TclError:
+            self._hide(event)
+
+    def _remove_global_motion_binding(self, widget) -> None:
+        binding_id = self._global_motion_binding
+        if not binding_id:
+            return
+        command = '%sif {"[%s %s]" == "break"} break\n' % (
+            "", binding_id, widget._subst_format_str)
+        script = str(widget.tk.call("bind", "all", "<Motion>"))
+        if command in script:
+            widget.tk.call("bind", "all", "<Motion>", script.replace(command, ""))
+        try:
+            widget.deletecommand(binding_id)
+        except tk.TclError:
+            pass
 
     def _on_focus_in(self, event=None) -> None:
         self._focused = True
@@ -277,8 +330,14 @@ class _LocalizedControlHint:
     def _on_destroy(self, event) -> None:
         if event.widget is self._widget:
             self._hide()
+            if self._global_motion_binding:
+                try:
+                    self._remove_global_motion_binding(self._widget)
+                except tk.TclError:
+                    pass
             self._bindings.clear()
             self._destroy_binding = None
+            self._global_motion_binding = None
             self._widget = None
             self._menu = None
 
@@ -428,6 +487,8 @@ class B518LogSolutionApp:
         self._historical_query_inflight_range: Optional[HistoricalEventDateRange] = None
         self.app_event_status_label = None
         self.settings_window: Optional[tk.Toplevel] = None
+        self._settings_button_hints = {}
+        self._settings_button_ids = {}
         self.settings_log: Optional[tk.Text] = None
         self._settings_text_widgets: list[tuple[tk.Widget, str]] = []
         self._settings_tab_ids: list[str] = []
@@ -457,6 +518,7 @@ class B518LogSolutionApp:
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._rendered_alarm_view_state = None
         self.recovery_window: Optional[tk.Toplevel] = None
+        self._recovery_control_hints = {}
         self.recovery_tabs: Optional[ttk.Notebook] = None
         self.recovery_alarm_list: Optional[tk.Listbox] = None
         self.recovery_alarm_detail: Optional[tk.Text] = None
@@ -1088,7 +1150,27 @@ class B518LogSolutionApp:
         widget = ttk.Button(parent, text=self._t(message_id), command=command,
                             width=widths.get(message_id, 20))
         self._settings_text_widgets.append((widget, message_id))
+        self._settings_button_ids[widget] = message_id
+        self._settings_button_hints[widget] = _LocalizedControlHint(
+            widget, lambda message_id=message_id: self._settings_hint_text(message_id))
         return widget
+
+    def _settings_hint_text(self, message_id: str) -> str:
+        hint_ids = {
+            "app.settings.profile.choose_directory": "app.settings.hint.profile.choose_directory",
+            "app.settings.profile.load": "app.settings.hint.profile.load",
+            "app.settings.profile.validate": "app.settings.hint.profile.validate",
+            "app.settings.profile.apply": "app.settings.hint.profile.apply",
+            "app.settings.profile.import": "app.settings.hint.profile.import",
+            "app.settings.profile.export": "app.settings.hint.profile.export",
+            "app.settings.profile.reload": "app.settings.hint.profile.reload",
+            "app.settings.profile.cancel": "app.settings.hint.profile.cancel",
+            "app.settings.session.open": "app.settings.hint.session.open",
+            "app.settings.history.open": "app.settings.hint.history.open",
+            "app.settings.retention.save": "app.settings.hint.retention.save",
+            "app.settings.retention.cleanup.retry": "app.settings.hint.retention.cleanup.retry",
+        }
+        return self._t(hint_ids[message_id])
 
     @staticmethod
     def _settings_scrollable_tab(parent: ttk.Frame) -> ttk.Frame:
@@ -1152,6 +1234,8 @@ class B518LogSolutionApp:
             self.retention_status.set(self._t(message_id, **parameters))
         self._refresh_retention_cleanup_status()
         self._refresh_event_log()
+        for hint in self._settings_button_hints.values():
+            hint.refresh()
 
     def _restore_captured_round_messages_for_display(self) -> None:
         """Reuse captured round messages when an early callback reached the UI first."""
@@ -2857,6 +2941,11 @@ class B518LogSolutionApp:
                 command=self._acknowledge_recovery_alarm,
             )
             self.recovery_alarm_ack_button.grid(row=1, column=0, sticky="e", pady=(12, 0))
+            self._recovery_control_hints = {
+                self.recovery_alarm_ack_button: _LocalizedControlHint(
+                    self.recovery_alarm_ack_button,
+                    lambda: self._recovery_hint_text("acknowledge")),
+            }
 
             recovery = ttk.Frame(self.recovery_tabs, padding=10)
             recovery.columnconfigure(0, weight=1, uniform="recovery-columns")
@@ -2916,6 +3005,14 @@ class B518LogSolutionApp:
                 command=self._retry_recovery_archives,
             )
             self.recovery_archive_retry_button.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+            self._recovery_control_hints.update({
+                self.recovery_save_retry_button: _LocalizedControlHint(
+                    self.recovery_save_retry_button,
+                    lambda: self._recovery_hint_text("retry_save")),
+                self.recovery_archive_retry_button: _LocalizedControlHint(
+                    self.recovery_archive_retry_button,
+                    lambda: self._recovery_hint_text("retry_archive")),
+            })
             window.bind("<Destroy>", self._on_recovery_center_destroy, add="+")
             self._unregister_recovery_language_receiver = self.register_language_receiver(
                 lambda: self._t("recovery.title"),
@@ -2946,6 +3043,9 @@ class B518LogSolutionApp:
         self.recovery_archive_retry_button = None
         self.recovery_archive_list = None
         self.recovery_archive_heading = None
+        for hint in self._recovery_control_hints.values():
+            hint.close()
+        self._recovery_control_hints = {}
         self._recovery_alarm_ids = []
         self._recovery_save_ids = []
         self._recovery_archive_ids = []
@@ -2960,6 +3060,8 @@ class B518LogSolutionApp:
         self.recovery_archive_heading.configure(text=self._t("recovery.archive_heading"))
         self.recovery_save_retry_button.configure(text=self._t("main.retry_selected"))
         self.recovery_archive_retry_button.configure(text=self._t("main.retry_archive"))
+        for hint in self._recovery_control_hints.values():
+            hint.refresh()
         self._refresh_recovery_center()
 
     def _refresh_recovery_center(self) -> None:
@@ -2967,6 +3069,46 @@ class B518LogSolutionApp:
             return
         self._refresh_recovery_alarms()
         self._refresh_recovery_saves_and_archives()
+        for hint in self._recovery_control_hints.values():
+            hint.refresh()
+
+    def _recovery_hint_text(self, action: str) -> str:
+        if action == "acknowledge":
+            base = "recovery.hint.acknowledge"
+            identity = self._recovery_selected_alarm
+            if self._closing_ui:
+                reason = "closing"
+            elif identity is None:
+                reason = "no_alarm"
+            else:
+                snapshot = self.rounds.round_snapshot(identity[0])
+                alarm = snapshot.round_alarm if snapshot is not None else None
+                if alarm is None or alarm.acknowledged_at:
+                    reason = "alarm_acknowledged"
+                elif not snapshot.round_alarm_ready:
+                    reason = "alarm_pending"
+                else:
+                    reason = None
+        elif action == "retry_save":
+            base = "recovery.hint.retry_save"
+            if self._closing_ui:
+                reason = "closing"
+            elif self._recovery_selected_save is None:
+                reason = "no_failed_save"
+            else:
+                snapshot = self.rounds.round_snapshot(self._recovery_selected_save)
+                reason = ("save_not_failed" if snapshot is None or
+                          snapshot.save_state != "failed" else None)
+        else:
+            base = "recovery.hint.retry_archive"
+            retryable = any(
+                status.status in {"failed", "protected"} and status.save_state == "complete"
+                for status in self.rounds.archive_statuses())
+            reason = ("closing" if self._closing_ui else
+                      None if retryable else "no_archives")
+        if reason is not None:
+            return "{} {}".format(self._t(base), self._t("recovery.hint.disabled." + reason))
+        return self._t(base)
 
     def _refresh_recovery_alarms(self) -> None:
         snapshots = []
@@ -3291,6 +3433,8 @@ class B518LogSolutionApp:
         self.settings_window = dialog
         self._settings_text_widgets = []
         self._settings_tab_ids = []
+        self._settings_button_hints = {}
+        self._settings_button_ids = {}
         dialog.configure(background=LIGHT_BACKGROUND)
         dialog.title(self._t("app.settings.title"))
         dialog.geometry("720x620")
