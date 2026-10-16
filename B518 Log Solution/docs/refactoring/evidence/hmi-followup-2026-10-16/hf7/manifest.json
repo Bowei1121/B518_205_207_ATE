@@ -1,0 +1,224 @@
+{
+  "acceptance": "HF7 integrated native Aqua/Tk acceptance",
+  "date": "2026-10-16",
+  "runtime": {
+    "python": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+    "python_version": "3.8.10",
+    "tcl_tk": "8.6",
+    "platform": "macOS Aqua"
+  },
+  "results": [
+    {
+      "test": "test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed",
+      "result": "passed",
+      "count": "1/1",
+      "seconds": 7.702
+    },
+    {
+      "test_group": "remaining 11 focused native Tk UI cases",
+      "result": "10 passed, 1 failed",
+      "seconds": 31.239,
+      "failure": "test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar: root.focus_get() was None at assertion line 825"
+    },
+    {
+      "test": "test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar",
+      "result": "passed in isolated rerun",
+      "count": "1/1",
+      "seconds": 2.803
+    },
+    {
+      "test_group": "test_kvm_display_contract",
+      "result": "passed",
+      "count": "7/7",
+      "seconds": 0.001
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "close-progress-en.png",
+      "sha256": "90c3b5951b83c2466691dbbff862134565883af9317f88983abf6966aefdd4ee"
+    },
+    {
+      "file": "close-progress-zh-TW.png",
+      "sha256": "b5ad1d8fa6ead6c1af0099dab223983be0611e6d781b4d4552781335be736357"
+    },
+    {
+      "file": "hf2-alarm-acknowledged-en.png",
+      "sha256": "19c4c68f5f94ed0162d9e4de92dc963b0fa9654c6833ee0c4b1e798086a7f35f"
+    },
+    {
+      "file": "hf2-alarm-acknowledged-zh-TW.png",
+      "sha256": "55101671620771c283da6bfc58ab8ac124f40a4d71093a856ee6d15ad4bdb410"
+    },
+    {
+      "file": "hf2-alarm-pending-en.png",
+      "sha256": "2fbb98e139f4d3b973bee82927b607e375eb283a48958b9eb3441f0dd9fcdeea"
+    },
+    {
+      "file": "hf2-alarm-pending-zh-TW.png",
+      "sha256": "78907746d75a1afb19132c53eee31d7e93f6e994e892655a38594d06a11c70ef"
+    },
+    {
+      "file": "hf2-archive-failure-en.png",
+      "sha256": "e93274cd12fbe3dc67d986711cdaf421a9540a39f06ea6a535ecdb359f104587"
+    },
+    {
+      "file": "hf2-archive-failure-zh-TW.png",
+      "sha256": "4db68fab32d59a2eba02ad0be15ddd42e36bcf51d7bf36811a5cb260c2b79743"
+    },
+    {
+      "file": "hf2-archive-recovered-en.png",
+      "sha256": "350b02c7aa743653ec56303fdf30f35e0e5404f8606f256dcbda179ec281d7dd"
+    },
+    {
+      "file": "hf2-archive-recovered-zh-TW.png",
+      "sha256": "6002a9cfd3e06cf66b35e990d624c45126de70d50bf60216e3f7d98fd04a3b90"
+    },
+    {
+      "file": "hf2-list-reading-en.png",
+      "sha256": "509959e843d24515bd6a708d35c915d1b66d20a6ed6e69031525fbf190d1c43b"
+    },
+    {
+      "file": "hf2-list-reading-zh-TW.png",
+      "sha256": "f28ec6cc2c9d021cf0042dd4bc9b2e90e5759521a6be0ac68674a57eeffb39e4"
+    },
+    {
+      "file": "hf2-session-recovered-en.png",
+      "sha256": "dc90c34d99afe83dc74a67fec2be5463c2123681f4011c003acc5a627f26e750"
+    },
+    {
+      "file": "hf2-session-recovered-zh-TW.png",
+      "sha256": "62a86c23bf617daecd84c44c25100a1d0ad20222a8546d92233d4159d829686d"
+    },
+    {
+      "file": "hf3-archive-failure-en.png",
+      "sha256": "721cf8f3ff0b68b1890dd7b65e1d69be53fff7d5a8cad3723fd78b7c2d57ee8d"
+    },
+    {
+      "file": "hf3-archive-failure-zh-TW.png",
+      "sha256": "0195a991b1060af7346b7c08f8a8a7a915a7939e976488dd376692b806e724a3"
+    },
+    {
+      "file": "hf3-archive-recovery-en.png",
+      "sha256": "248fc8416b69a8f683fcbaf1dbf9e49e98c6352bf2b968a492f2fe4e55916c3c"
+    },
+    {
+      "file": "hf3-archive-recovery-zh-TW.png",
+      "sha256": "e2f02576906316cfb6203535a2cb7167089c047d932fb52a46e081ad82f661f6"
+    },
+    {
+      "file": "hf3-count-two-en.png",
+      "sha256": "c957bd602ed0c9357e9ef093ab9c9eb9648858fa79fee44ecd6add508be07724"
+    },
+    {
+      "file": "hf3-count-two-zh-TW.png",
+      "sha256": "2ad9b34bc6480afb55bd0429c27a0882b7a48928ec932c5d9444b8c3cc9f871e"
+    },
+    {
+      "file": "hf3-one-save-failure-en.png",
+      "sha256": "314afb7f3bbb7c0a3a3784bfba0f91bd099153d153cf13708424f8cd1d90c69f"
+    },
+    {
+      "file": "hf3-one-save-failure-zh-TW.png",
+      "sha256": "32f358a0418c6ce99cdad13642e62e7a0a0cfdc50a579a2379e517bb2ddca4e3"
+    },
+    {
+      "file": "hf3-twelve-save-rounds-en.png",
+      "sha256": "19341b37c84cff23a49224aff621795cc2d529ddd4e4028c73203df4b189e596"
+    },
+    {
+      "file": "hf3-twelve-save-rounds-zh-TW.png",
+      "sha256": "c7ecf13746caf3eb3ea4abe1cb220c7b540d4347ff92f958befd81224a9b70f8"
+    },
+    {
+      "file": "hf3-zero-en.png",
+      "sha256": "cd5415938d627d7f8ddf6231b5fdc1c731dd7583f05d43114bc8a223def8fe30"
+    },
+    {
+      "file": "hf3-zero-zh-TW.png",
+      "sha256": "97119be1323c27dae89b619245bb14be75ffec87df28fc6dd19547f01b62a4e0"
+    },
+    {
+      "file": "hf4-diagnostics-language-failure-en.png",
+      "sha256": "3ddf386232d565665e0cf9864dc65c59c59248526c883549e7d0be72316fc23a"
+    },
+    {
+      "file": "hf4-diagnostics-language-failure-zh-TW.png",
+      "sha256": "10fcb9b9913df702f11bff6631be309e9ef3126ce6d46d1e88694de194897216"
+    },
+    {
+      "file": "hf4-home-en.png",
+      "sha256": "f93858eb4da70bb3df1581ae47dfa31eb5387eaa06cc0a44ea66ff3bc33c1f5f"
+    },
+    {
+      "file": "hf4-home-zh-TW.png",
+      "sha256": "0b1fe488729a7a94a4ea9c5fb26fd2eeb962dda0348568f3f765a7b5bca90f74"
+    },
+    {
+      "file": "hf5-settings-en.png",
+      "sha256": "4ab723312ee28ef71bd7436502eef9a577cd969894ac264ea47f878c920419f6"
+    },
+    {
+      "file": "hf5-settings-zh-TW.png",
+      "sha256": "8c646b58ce4c0fdcfd55158f104e9360ec067924cf4d493a615ac12dae93afae"
+    },
+    {
+      "file": "hf6-cleanup-empty-en.png",
+      "sha256": "172f916299f81f9d7eec06dfbcc4b5b0a0abe97a3b9bbd4892ac4ea130ec69c6"
+    },
+    {
+      "file": "hf6-cleanup-empty-zh-TW.png",
+      "sha256": "a3deb004bfa92d7904d95a72954da5398bf619b67abcb9130f1ab3b3f8b3e742"
+    },
+    {
+      "file": "hf6-cleanup-render-en.png",
+      "sha256": "928837d5c1ba0f103f6ebb4e7d5b381b0cd8ab1eed0d3276fd17c0795f1d1ebb"
+    },
+    {
+      "file": "hf6-cleanup-render-zh-TW.png",
+      "sha256": "0d1341a976f9edf9628453018702095c94cccc3ed9bbf4cccd25ad531bdbd5c2"
+    },
+    {
+      "file": "main-page-en.png",
+      "sha256": "f93858eb4da70bb3df1581ae47dfa31eb5387eaa06cc0a44ea66ff3bc33c1f5f"
+    },
+    {
+      "file": "main-page-zh-TW.png",
+      "sha256": "0b1fe488729a7a94a4ea9c5fb26fd2eeb962dda0348568f3f765a7b5bca90f74"
+    },
+    {
+      "file": "toolbar-focus-bell-en.png",
+      "sha256": "768409f9a4ec5f0ae784afd983fabc59c6258cadaff15713057e4b5801c6401b"
+    },
+    {
+      "file": "toolbar-focus-bell-zh-TW.png",
+      "sha256": "ede64e2f7370d5544f52fd9173964fc61eec9060b8eb0251f5c7b91dc7b373a7"
+    },
+    {
+      "file": "toolbar-focus-language-en.png",
+      "sha256": "634905d28c5128e3166c36ec12854d7ecdefaf87f178d56f4ee45aecaa34e0ee"
+    },
+    {
+      "file": "toolbar-focus-language-zh-TW.png",
+      "sha256": "17df068e1922512d4bd09ee457e7937d220de38ba01b3dc2f89fc131f1ec1c14"
+    },
+    {
+      "file": "toolbar-focus-review-en.png",
+      "sha256": "d7c39b469c3186d5ebeb889fc4a154ae3c8e0a0bf98ea13ba8c54a6dd09788cd"
+    },
+    {
+      "file": "toolbar-focus-review-zh-TW.png",
+      "sha256": "f72d52fb58911531508b7a9e64dc37ac67892dd06305a06dcf228585dbdf76af"
+    },
+    {
+      "file": "toolbar-focus-settings-en.png",
+      "sha256": "5751cdfc2ac2d47736122436c94f2961ad393131bcf7971f22e94a5758fd60a2"
+    },
+    {
+      "file": "toolbar-focus-settings-zh-TW.png",
+      "sha256": "0b549f2e6e7946fa6988d9c880c7e39d52587286eda4ff10cba2bdaf953ff556"
+    }
+  ],
+  "bounds_file": "window-bounds.json",
+  "scope_note": "Used selected regression tests and prior HF1-HF6 evidence; did not run full suite or long historical performance tests."
+}

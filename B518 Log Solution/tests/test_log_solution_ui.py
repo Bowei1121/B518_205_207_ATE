@@ -22,6 +22,14 @@ from tkinter import font as tkfont, ttk
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+try:
+    import Quartz
+    from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+except ImportError:  # macOS desktop-only acceptance helper
+    Quartz = None
+    NSApplicationActivateIgnoringOtherApps = None
+    NSRunningApplication = None
+
 from b518_log_solution import (
     B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
     KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
@@ -37,6 +45,7 @@ from monitoring_round import (
 import audit_records
 import app_event_store
 import historical_event_query
+import monitoring_round
 import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
@@ -220,6 +229,44 @@ def capture_tk_window_evidence(window, key, language, widgets):
     return record
 
 
+def capture_recovery_evidence(app, key, language, widgets):
+    # Give Aqua's compositor a frame after tab/language/status updates.
+    deadline = time.monotonic() + .16
+    while time.monotonic() < deadline:
+        app.root.update()
+        time.sleep(.01)
+    for control in widgets.values():
+        assert control.winfo_rootx() >= app.recovery_window.winfo_rootx()
+        assert control.winfo_rootx() + control.winfo_width() <= (
+            app.recovery_window.winfo_rootx() + app.recovery_window.winfo_width())
+        assert control.winfo_rooty() + control.winfo_height() <= (
+            app.recovery_window.winfo_rooty() + app.recovery_window.winfo_height())
+    record = capture_tk_window_evidence(app.recovery_window, key, language, widgets)
+    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+        output = Path(os.environ["B518_TK_EVIDENCE_DIR"]) / "hf2-window-bounds.json"
+        records = json.loads(output.read_text()) if output.exists() else {}
+        records[key + "-" + language] = record
+        output.write_text(json.dumps(records, ensure_ascii=False, indent=2))
+    return record
+
+
+def capture_main_badge_evidence(app, key, language, widgets):
+    root = app.root
+    root.deiconify()
+    root.lift()
+    root.focus_force()
+    deadline = time.monotonic() + .18
+    while time.monotonic() < deadline:
+        root.update()
+        time.sleep(.01)
+    if not root.winfo_ismapped():
+        raise AssertionError("main App window is not mapped for badge evidence")
+    record = capture_tk_window_evidence(root, key, language, widgets)
+    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+        write_tk_bounds_evidence(key + "-" + language, record)
+    return record
+
+
 def write_tk_bounds_evidence(key, value):
     evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
     if not evidence_value:
@@ -246,6 +293,213 @@ class LogSolutionUiTests(unittest.TestCase):
         app.language_menu.invoke(index)
         root.update()
 
+    def diagnostics_language_retry(self, app):
+        if app.app_diagnostics_window is None or not app.app_diagnostics_window.winfo_exists():
+            app.open_app_diagnostics()
+        return app.app_diagnostics_language_retry_button
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hf4_dashboard_uses_compact_status_and_diagnostic_entry(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.app_diagnostics_button.winfo_ismapped())
+
+                def visible_texts(parent):
+                    values = []
+                    for child in parent.winfo_children():
+                        if not child.winfo_viewable():
+                            continue
+                        if "text" in child.keys():
+                            values.append(str(child.cget("text")))
+                        values.extend(visible_texts(child))
+                    return values
+
+                main_text = visible_texts(root)
+                self.assertNotIn("Retry Selected", main_text)
+                self.assertNotIn("Retry Archive", main_text)
+                self.assertNotIn("Retry Text", main_text)
+                self.assertNotIn("重試所選", main_text)
+                self.assertNotIn("重試封存", main_text)
+                self.assertNotIn("重試文字", main_text)
+                self.assertEqual(app.app_event_status_label.cget("text"), "App events saved")
+                self.assertLessEqual(root.winfo_width(), WINDOW_WIDTH)
+
+                root.focus_force()
+                app.app_diagnostics_button.focus_set()
+                root.update()
+                self.assertIs(root.focus_get(), app.app_diagnostics_button)
+                app.app_diagnostics_button.event_generate("<KeyPress-Return>")
+                root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+                self.assertTrue(app.app_diagnostics_language_retry_button.winfo_viewable())
+                self.assertTrue(app.app_diagnostics_retry_button.winfo_viewable())
+                self.assertEqual(app.app_diagnostics_window.title(),
+                                 app._t("app.diagnostic.heading"))
+                self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
+                self.assertGreater(app.kvm_results.winfo_height(), 0)
+                app._close_app_diagnostics_window()
+                root.update()
+
+                root.focus_force()
+                app.app_diagnostics_button.focus_set()
+                root.update()
+                app.app_diagnostics_button.event_generate("<KeyPress-space>")
+                app.app_diagnostics_button.event_generate("<KeyRelease-space>")
+                root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+                app._close_app_diagnostics_window()
+                root.update()
+
+                self.assertIsNotNone(Quartz, "native macOS input support is unavailable")
+                root.lift()
+                root.focus_force()
+                NSRunningApplication.currentApplication().activateWithOptions_(
+                    NSApplicationActivateIgnoringOtherApps)
+                activation_deadline = time.monotonic() + .3
+                while time.monotonic() < activation_deadline:
+                    root.update()
+                    time.sleep(.01)
+                point = (app.app_diagnostics_button.winfo_rootx() +
+                         app.app_diagnostics_button.winfo_width() // 2,
+                         app.app_diagnostics_button.winfo_rooty() +
+                         app.app_diagnostics_button.winfo_height() // 2)
+                for event_kind in (Quartz.kCGEventMouseMoved,
+                                   Quartz.kCGEventLeftMouseDown,
+                                   Quartz.kCGEventLeftMouseUp):
+                    Quartz.CGEventPost(
+                        Quartz.kCGSessionEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            None, event_kind, point, Quartz.kCGMouseButtonLeft))
+                    deadline = time.monotonic() + .12
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.01)
+                mouse_opened_diagnostics = (
+                    app.app_diagnostics_window is not None and
+                    app.app_diagnostics_window.winfo_viewable())
+                if not mouse_opened_diagnostics:
+                    # Keep functional keyboard acceptance independent from Aqua
+                    # refusing to activate this test process for native pointer input.
+                    app.app_diagnostics_button.focus_set()
+                    app.app_diagnostics_button.event_generate("<KeyPress-Return>")
+                    root.update()
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 app._t("main.app_status.saved"))
+                self.assertEqual(app.app_diagnostics_button.cget("text"), "App 診斷")
+                self.assertTrue(app.app_diagnostics_window.winfo_viewable())
+
+                fail_refresh = [True]
+                receiver = ttk.Label(root, text="untranslated")
+
+                def refresh_receiver():
+                    if fail_refresh[0]:
+                        raise RuntimeError("injected dashboard text failure")
+                    receiver.configure(text="已更新")
+
+                unregister = app.register_language_receiver(
+                    "Controlled window", refresh_receiver, receiver.winfo_exists)
+                app._select_language(ENGLISH)
+                root.update()
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 "Text refresh failed")
+                self.assertEqual(str(app.app_diagnostics_language_retry_button.cget("state")),
+                                 "normal")
+                self.wait_for_ui(root, lambda: any(
+                    event.get("localized_message", {}).get("message_id") ==
+                    "app.language.refresh_failed"
+                    for event in app._app_diagnostics_records))
+                failure = next(event for event in app.rounds.app_event_records()
+                               if event.get("localized_message", {}).get("message_id") ==
+                               "app.language.refresh_failed")
+                failure_index = next(index for index, event in enumerate(
+                    app._app_diagnostics_records) if event["event_id"] == failure["event_id"])
+                app.app_diagnostics_list.selection_clear(0, "end")
+                app.app_diagnostics_list.selection_set(failure_index)
+                app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                failure_detail = app.app_diagnostics_detail.get("1.0", "end-1c")
+                self.assertIn("injected dashboard text failure", failure_detail)
+                self.assertIn("app.language.refresh_failed", failure_detail)
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    for language, key in ((ENGLISH, "en"),
+                                          (TRADITIONAL_CHINESE, "zh-TW")):
+                        app._select_language(language)
+                        root.update()
+                        failure_index = next(index for index, event in enumerate(
+                            app._app_diagnostics_records)
+                            if event["event_id"] == failure["event_id"])
+                        app.app_diagnostics_list.selection_clear(0, "end")
+                        app.app_diagnostics_list.selection_set(failure_index)
+                        app.app_diagnostics_list.event_generate("<<ListboxSelect>>")
+                        root.update()
+                        self.assertIn("injected dashboard text failure",
+                                      app.app_diagnostics_detail.get("1.0", "end-1c"))
+                        self.assertTrue(app.app_diagnostics_language_retry_button.winfo_viewable())
+                        self.assertEqual(str(app.app_diagnostics_language_retry_button[
+                            "state"]), "normal")
+                        capture_tk_window_evidence(
+                            app.app_diagnostics_window,
+                            "hf4-diagnostics-language-failure", key, {
+                                "diagnostic_list": app.app_diagnostics_list,
+                                "raw_diagnostic": app.app_diagnostics_detail,
+                                "retry_language": app.app_diagnostics_language_retry_button,
+                                "retry_app_events": app.app_diagnostics_retry_button,
+                            })
+                fail_refresh[0] = False
+                app.app_diagnostics_language_retry_button.invoke()
+                self.wait_for_ui(root, lambda: str(
+                    app.app_diagnostics_language_retry_button.cget("state")) == "disabled")
+                self.assertEqual(receiver.cget("text"), "已更新")
+                self.assertEqual(app.app_event_status_label.cget("text"),
+                                 app._t("main.app_status.saved"))
+                unregister()
+
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    for language, key in ((ENGLISH, "en"),
+                                          (TRADITIONAL_CHINESE, "zh-TW")):
+                        app._select_language(language)
+                        root.update()
+                        self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                         app.app_diagnostics_button.winfo_viewable())
+                        capture_tk_window_evidence(root, "hf4-home", key, {
+                            "status": app.app_event_status_label,
+                            "diagnostics": app.app_diagnostics_button,
+                            "KVM": app.kvm_results,
+                            "start": app.start_button,
+                        })
+                    write_tk_bounds_evidence("hf4-home-status-diagnostics", {
+                        "window_width": root.winfo_width(),
+                        "KVM_position": [app.kvm_results.winfo_x(),
+                                         app.kvm_results.winfo_y(),
+                                         app.kvm_results.winfo_width(),
+                                         app.kvm_results.winfo_height()],
+                        "diagnostic_click": (
+                            "native click opened App diagnostics" if mouse_opened_diagnostics
+                            else "BLOCKED: Aqua did not activate this process; Return opened diagnostics"
+                        ),
+                    })
+            finally:
+                if app.app_diagnostics_window and app.app_diagnostics_window.winfo_exists():
+                    app._close_app_diagnostics_window()
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                root.destroy()
+
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed(self):
@@ -259,7 +513,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app_event_path=Path(temporary) / "app-events.json",
             )
             try:
-                root.update_idletasks()
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.retry_save_button.winfo_height() > 1)
                 self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
                 self.assertGreaterEqual(root.winfo_height(), root.winfo_reqheight())
                 self.assertGreaterEqual(app.stop_button.winfo_height(),
@@ -269,18 +524,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(root.title(), "B518 FCT ATE Log Solution-V0.1.0")
                 self.assertEqual(app.company_logo.width(), 137)
                 self.assertEqual(app.company_logo.height(), 35)
-                for button, icon in ((app.settings_button, "settings"),
-                                     (app.review_button, "review"),
-                                     (app.round_alarm_button, "alarm"),
-                                     (app.language_button, "language")):
-                    self.assertEqual(button.cget("text"), "")
-                    self.assertIn(str(app.toolbar_icons[icon]), button.cget("image"))
+                for button, glyph in ((app.settings_button, "⚙️"),
+                                      (app.review_button, "⚠️"),
+                                      (app.round_alarm_button, "🔔"),
+                                      (app.language_button, "🌐")):
+                    self.assertEqual(button.cget("text"), glyph)
                     self.assertTrue(button.winfo_viewable())
 
                 footer_buttons = (
-                    app.stop_button, app.retry_save_button,
-                    app.unsaved_round_retry_button, app.archive_retry_button,
-                    app.app_diagnostics_button, app.language_refresh_retry_button,
+                    app.stop_button, app.retry_save_button, app.app_diagnostics_button,
                 )
                 footer_bounds = []
                 for language in (ENGLISH, TRADITIONAL_CHINESE):
@@ -326,10 +578,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "monitor_state": app.monitor_state,
                                 "stop": app.stop_button,
                                 "retry_save": app.retry_save_button,
-                                "retry_selected": app.unsaved_round_retry_button,
-                                "retry_archive": app.archive_retry_button,
+                                "app_status": app.app_event_status_label,
                                 "diagnostics": app.app_diagnostics_button,
-                                "retry_text": app.language_refresh_retry_button,
                                 "kvm": app.kvm_results,
                                 "kvm_state_marker": app.kvm_state_marker,
                                 "kvm_layout_marker": app.kvm_layout_marker,
@@ -391,7 +641,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     (app.language_button, app._toolbar_hints[1],
                      "Select language (current: English)"),
                     (app.round_alarm_button, app._toolbar_hints[2],
-                     "Round Alarm (Awaiting Review)"),
+                     "Notifications and Recovery"),
                     (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
                 )
                 for widget, hint, expected in tooltip_expectations:
@@ -480,9 +730,9 @@ class LogSolutionUiTests(unittest.TestCase):
                         "<ButtonRelease-1>", x=app.round_alarm_button.winfo_width() // 2,
                         y=app.round_alarm_button.winfo_height() // 2)
                     root.update()
-                    self.assertIsNotNone(app.round_alarm_window)
-                    self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
-                    app.round_alarm_window.destroy()
+                    self.assertIsNotNone(app.recovery_window)
+                    self.assertEqual(app.recovery_window.title(), "Notifications and Recovery")
+                    app.recovery_window.destroy()
 
                 conflicts = tuple(SimpleNamespace() for _ in range(20))
                 snapshot = SimpleNamespace(
@@ -543,6 +793,90 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            try:
+                self.wait_for_ui(root, lambda: app.project_choice.winfo_ismapped())
+                geometry_widgets = (app.settings_button, app.review_group,
+                                    app.round_alarm_button, app.language_button,
+                                    app.kvm_results, app.kvm_state_marker, app.kvm_layout_marker,
+                                    *app.kvm_result_blocks.values())
+                def geometry():
+                    return tuple((widget.winfo_x(), widget.winfo_y(),
+                                  widget.winfo_width(), widget.winfo_height())
+                                 for widget in geometry_widgets)
+                baseline = geometry()
+                for language, key in ((ENGLISH, "en"), (TRADITIONAL_CHINESE, "zh-TW")):
+                    app._select_language(language)
+                    root.update()
+                    controls = (app.settings_button, app.review_button,
+                                app.round_alarm_button, app.language_button, app.project_choice)
+                    app.settings_button.focus_force()
+                    root.update()
+                    for source, target in zip(controls, controls[1:]):
+                        source.event_generate("<KeyPress-Tab>")
+                        root.update()
+                        self.assertIs(root.focus_get(), target)
+                    for source, target in zip(reversed(controls), reversed(controls[:-1])):
+                        source.event_generate("<KeyPress-Tab>", state=1)
+                        root.update()
+                        self.assertIs(root.focus_get(), target)
+                    app.settings_button.event_generate("<KeyPress-Tab>", state=1)
+                    root.update()
+                    self.assertNotIn(root.focus_get(), controls[:4])
+                    app.round_alarm_button.focus_force()
+                    root.update()
+                    try:
+                        app.round_alarm_button.event_generate("<KeyPress-ISO_Left_Tab>")
+                    except tk.TclError as error:
+                        self.assertIn("ISO_Left_Tab", str(error))
+                    else:
+                        root.update()
+                        self.assertIs(root.focus_get(), app.review_button)
+                    # Review remains unavailable even when reached for orientation.
+                    self.assertTrue(app.review_button.instate(["disabled"]))
+                    app.review_button.event_generate("<KeyPress-space>")
+                    app.review_button.event_generate("<KeyRelease-space>")
+                    root.update()
+                    self.assertIsNone(app.conflict_window)
+                    for name, control in zip(("settings", "review", "bell", "language"), controls):
+                        control.focus_force()
+                        root.update()
+                        self.assertEqual(geometry(), baseline)
+                        self.assertEqual(sorted(controls[:4], key=lambda widget: widget.winfo_rootx()),
+                                         list(controls[:4]))
+                        capture_tk_window_evidence(root, "toolbar-focus-" + name, key,
+                                                   {"focused": control})
+                app.open_settings()
+                root.update()
+                children = []
+                def collect(widget):
+                    for child in widget.winfo_children():
+                        children.append(child)
+                        collect(child)
+                collect(app.settings_window)
+                entry = next(widget for widget in children
+                             if isinstance(widget, ttk.Entry) and widget.winfo_viewable())
+                entry.focus_force()
+                self.wait_for_ui(root, lambda: root.focus_get() is entry)
+                entry.event_generate("<KeyPress-Tab>")
+                root.update()
+                self.assertIs(root.focus_get().winfo_toplevel(), app.settings_window)
+                app._close_settings()
+            finally:
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_hm1_logo_normal_missing_and_corrupt_keep_fixed_slot_without_dialog(self):
         with TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
@@ -567,7 +901,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         app_event_path=temporary_path / (state + "-events.json"),
                     )
                     try:
-                        root.update_idletasks()
+                        self.wait_for_ui(root, lambda: app.company_logo_slot.winfo_ismapped() and
+                                         app.company_logo_slot.winfo_width() > 1)
                         slot_bounds = (app.company_logo_slot.winfo_x(),
                                        app.company_logo_slot.winfo_y(),
                                        app.company_logo_slot.winfo_width(),
@@ -647,8 +982,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.language_menu.invoke(chinese)
                 root.update()
                 self.assertEqual(other.cget("text"), "繁體中文")
-                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
-                self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 failed = next(record for record in app.rounds.app_event_records()
                               if record["localized_message"]["message_id"] ==
                               "app.language.refresh_failed")
@@ -685,17 +1019,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("app.language.refresh_failed",
                               app.app_diagnostics_detail.get("1.0", "end-1c"))
             fail_refresh[0] = True
-            app.language_refresh_retry_button.invoke()
+            self.diagnostics_language_retry(app).invoke()
             root.update()
-            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
-            self.assertIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "normal")
+            self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
             self.assertEqual(app.project_label.cget("text"), "專案")
             self.assertEqual(failed_window.cget("text"), "Not translated")
             failed_window.destroy()
             app._language_refresh_notifications.notify()
             root.update()
-            self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "disabled")
-            self.assertNotIn("Diagnostics window", app.language_refresh_banner.cget("text"))
+            self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "disabled")
+            self.assertNotEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
             unregister()
             unregister_failed()
         finally:
@@ -978,7 +1312,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                  "主畫面: main text refresh failed")
                 self.assertNotIn("round_id", diagnostic)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertIn("主畫面", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 self.assertIn("diagnostic journal unavailable",
                               app.rounds.app_event_status().error)
 
@@ -1800,15 +2134,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._profile_changed()
                 root.update()
                 self.assertEqual(app.current_language, DEFAULT_LANGUAGE)
-                self.assertEqual(app.language_button.cget("text"), "")
-                self.assertEqual(app.language_button.cget("image"), str(app.toolbar_icons["language"]))
+                self.assertEqual(app.language_button.cget("text"), "🌐")
                 self.assertEqual(
                     [app.language_menu.entrycget(index, "label")
                      for index in range(app.language_menu.index("end") + 1)],
                     ["English", "繁體中文"],
                 )
                 self.assertEqual(app.language_choice.get(), ENGLISH)
-                self.assertEqual(app.settings_button.cget("text"), "")
+                self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "Project")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
                 self.assertLessEqual(
@@ -1892,8 +2225,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(0.01)
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                self.assertEqual(app.language_button.cget("text"), "")
-                self.assertEqual(app.settings_button.cget("text"), "")
+                self.assertEqual(app.language_button.cget("text"), "🌐")
+                self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
                 self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
@@ -2415,6 +2748,133 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_cleanup_summary_is_visibly_drawn_in_the_real_settings_window(self):
+        with TemporaryDirectory() as temporary:
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                app.settings_window.geometry("720x620")
+                app.settings_notebook.select(2)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status
+                              in {"complete", "failed"})
+                app._refresh_retention_cleanup_status()
+                summary = app.retention_cleanup_text
+                summary.tag_add("sel", "1.0", "1.4")
+                reading_position = summary.index("@0,0")
+                stable_detail = summary.get("1.0", "end-1c")
+                deadline = time.monotonic() + .8
+                while time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.01)
+                self.assertEqual(summary.get("1.0", "end-1c"), stable_detail)
+                self.assertEqual(summary.index("@0,0"), reading_position)
+                self.assertEqual(tuple(map(str, summary.tag_ranges("sel"))),
+                                 ("1.0", "1.4"))
+                end = time.monotonic() + .3
+                while time.monotonic() < end:
+                    root.update()
+                    time.sleep(.01)
+
+                evidence_dir = os.environ.get(
+                    "B518_TK_EVIDENCE_DIR", str(Path(temporary) / "hf6-rendered"))
+                with patch.dict(os.environ, {"B518_TK_EVIDENCE_DIR": evidence_dir}):
+                    capture = capture_tk_window_evidence(
+                        app.settings_window, "hf6-cleanup-render", "en",
+                        {"summary": app.retention_cleanup_text})
+                    self.assertIn("cleanup", summary.get("1.0", "end-1c").lower())
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    app._refresh_retention_cleanup_status()
+                    self.assertIn("清理", app.retention_cleanup_text.get("1.0", "end-1c"))
+                    chinese_capture = capture_tk_window_evidence(
+                        app.settings_window, "hf6-cleanup-render", "zh-TW",
+                        {"summary": app.retention_cleanup_text})
+                    empty_captures = {}
+                    idle_status = SimpleNamespace(
+                        status="idle", message="", reason_message=None)
+                    with patch.object(app.rounds, "retention_cleanup_status",
+                                      return_value=idle_status), \
+                            patch.object(app.rounds, "retention_cleanup_summaries",
+                                         return_value=()):
+                        self.select_language_from_menu(app, root, ENGLISH)
+                        app._refresh_retention_cleanup_status()
+                        self.assertEqual(summary.get("1.0", "end-1c"),
+                                         "Background cleanup has not run.")
+                        empty_captures["empty-en"] = capture_tk_window_evidence(
+                            app.settings_window, "hf6-cleanup-empty", "en",
+                            {"summary": summary})
+                        self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                        app._refresh_retention_cleanup_status()
+                        self.assertEqual(summary.get("1.0", "end-1c"), "背景清理尚未執行。")
+                        empty_captures["empty-zh-TW"] = capture_tk_window_evidence(
+                            app.settings_window, "hf6-cleanup-empty", "zh-TW",
+                            {"summary": summary})
+                    (Path(evidence_dir) / "hf6-window-bounds.json").write_text(
+                        json.dumps({"en": capture, "zh-TW": chinese_capture,
+                                    **empty_captures},
+                                   ensure_ascii=False, indent=2), encoding="utf-8")
+                    from AppKit import NSData, NSBitmapImageRep
+
+                    image_path = Path(evidence_dir) / capture["screenshot"]
+                    bitmap = NSBitmapImageRep.imageRepWithData_(
+                        NSData.dataWithContentsOfFile_(str(image_path)))
+                    width = bitmap.pixelsWide()
+                    height = bitmap.pixelsHigh()
+                    scale = width / capture["native_bounds"]["Width"]
+                    x, y, widget_width, _widget_height = capture["controls"]["summary"]
+                    top_bar = height / scale - app.settings_window.winfo_height()
+                    data = bitmap.bitmapData()
+                    bytes_per_pixel = bitmap.bitsPerPixel() // 8
+                    bytes_per_row = bitmap.bytesPerRow()
+                    x0 = int((x + 2) * scale)
+                    x1 = int((x + min(widget_width, 160)) * scale)
+                    y0 = int((y + top_bar + 3) * scale)
+                    y1 = int((y + top_bar + 24) * scale)
+                    visible_ink_pixels = 0
+                    for row in range(y0, min(y1, height)):
+                        for column in range(x0, min(x1, width)):
+                            offset = row * bytes_per_row + column * bytes_per_pixel
+                            if min(data[offset:offset + 3]) < 128:
+                                visible_ink_pixels += 1
+                self.assertGreater(
+                    visible_ink_pixels, 100,
+                    "cleanup summary text exists in Tk but is not visible in the native window",
+                )
+                summary.configure(state="normal")
+                summary.delete("1.0", "end")
+                summary.insert("1.0", "\\n".join(
+                    "Long cleanup diagnostic line {}: preserved evidence.".format(index)
+                    for index in range(80)))
+                summary.configure(state="disabled")
+                summary.yview_moveto(1.0)
+                root.update()
+                self.assertLess(summary.yview()[0], 1.0)
+                self.assertGreater(app.retention_cleanup_scrollbar.winfo_height(), 0)
+                app._refresh_retention_cleanup_status()
+                root.update()
+                self.assertEqual(summary.get("1.0", "end-1c"), app.retention_cleanup_status.get())
+                self.assertGreaterEqual(summary.yview()[0], 0.0)
+                self.assertLessEqual(summary.yview()[1], 1.0)
+                app._close_settings()
+                app.open_settings()
+                app.settings_notebook.select(2)
+                root.update()
+                self.assertTrue(app.retention_cleanup_text.get("1.0", "end-1c").strip())
+                self.assertTrue(app.retention_cleanup_scrollbar.winfo_ismapped())
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_app_event_cleanup_failure_is_visible_and_retryable(self):
         with TemporaryDirectory() as temporary:
             root_path = Path(temporary)
@@ -2568,6 +3028,507 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_real_tk_notification_badge_stays_until_alarm_is_acknowledged(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=session_root)
+            elapsed = [0.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=session_root)
+            app.rounds = rounds
+            monitors = []
+
+            class AlarmMonitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                                     session_root=session_root, monotonic=lambda: elapsed[0],
+                                     async_session_writes=True, round_timeout_seconds=1)
+                    monitors.append(self)
+
+                def poll_once(self):
+                    pass
+
+            try:
+                badge_text = lambda: app.notification_badge.itemcget(
+                    app._notification_badge_label, "text")
+                self.assertEqual(badge_text(), "")
+                started = rounds.start("FCT", AlarmMonitor, run_async=False,
+                                       round_timeout_seconds=1, capacity=1)
+                self.wait_for_ui(root, lambda: app._pending_notification_count() == 0)
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                self.wait_for_ui(root, lambda: rounds.snapshot().round_alarm_ready)
+                monitor = monitors[0]
+                original_open = Path.open
+                write_attempts = {monitor.session.path: 0}
+                failure_limits = {monitor.session.path: 3}
+
+                def fail_round_event_append(path, mode="r", *args, **kwargs):
+                    if path.name == "events.log" and path.parent in failure_limits and mode == "a":
+                        write_attempts[path.parent] += 1
+                        if write_attempts[path.parent] <= failure_limits[path.parent]:
+                            raise OSError("HF3 controlled Session write failure")
+                    return original_open(path, mode, *args, **kwargs)
+
+                with patch.object(Path, "open", fail_round_event_append):
+                    monitor.session.enqueue_event("HF3 notification lifecycle probe")
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.wait_for_ui(root, lambda: badge_text() == "2")
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-count-two", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+
+                    bell_left = app.round_alarm_button.winfo_rootx()
+                    bell_right = bell_left + app.round_alarm_button.winfo_width()
+                    badge_left = app.notification_badge.winfo_rootx()
+                    badge_y = app.notification_badge.winfo_height() // 2
+                    outside_x = min(app.notification_badge.winfo_width() - 2,
+                                    bell_right - badge_left + 3)
+                    self.assertGreaterEqual(badge_left + outside_x, bell_right)
+                    app.notification_badge.event_generate(
+                        "<ButtonRelease-1>", x=outside_x, y=badge_y)
+                    root.update()
+                    self.assertTrue(app.recovery_window is None or
+                                    not app.recovery_window.winfo_viewable())
+                    inside_x = max(1, min(app.notification_badge.winfo_width() - 2,
+                                          bell_right - badge_left - 2))
+                    app.notification_badge.event_generate(
+                        "<ButtonRelease-1>", x=inside_x, y=badge_y)
+                    root.update()
+                    self.assertIsNotNone(app.recovery_window)
+                    self.assertTrue(app.recovery_window.winfo_viewable())
+                    app.recovery_window.withdraw()
+                    self.assertEqual(badge_text(), "2")
+                    app.recovery_alarm_ack_button.invoke()
+                    self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
+                    self.wait_for_ui(root, lambda: badge_text() == "1")
+
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.assertEqual(badge_text(), "1")
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        app.recovery_window.withdraw()
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-one-save-failure", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+
+                    second_started = rounds.start("FCT", AlarmMonitor, run_async=False,
+                                                   round_timeout_seconds=1, capacity=1)
+                    second_monitor = monitors[1]
+                    write_attempts[second_monitor.session.path] = 0
+                    failure_limits[second_monitor.session.path] = 1
+                    second_monitor.session.enqueue_event("HF3 second-round write failure")
+                    self.wait_for_ui(root, lambda:
+                                     rounds.snapshot().save_state == "failed")
+                    rounds.stop()
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    # Build ten additional independently failed rounds through the
+                    # coordinator/session lifecycle so the real badge proves it is
+                    # not capped at a single digit.
+                    additional_round_ids = []
+                    for index in range(10):
+                        started_extra = rounds.start(
+                            "FCT", AlarmMonitor, run_async=False,
+                            round_timeout_seconds=1, capacity=1)
+                        extra_monitor = monitors[-1]
+                        write_attempts[extra_monitor.session.path] = 0
+                        failure_limits[extra_monitor.session.path] = 1
+                        extra_monitor.session.enqueue_event(
+                            "HF3 multi-digit failure {}".format(index + 1))
+                        self.wait_for_ui(root, lambda round_id=started_extra.round_id:
+                                         rounds.round_snapshot(round_id).save_state == "failed")
+                        rounds.stop()
+                        additional_round_ids.append(started_extra.round_id)
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 12)
+                    app.recovery_window.withdraw()
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.wait_for_ui(root, lambda: badge_text() == "12")
+                        capture_main_badge_evidence(app, "hf3-twelve-save-rounds", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+                    app.recovery_window.deiconify()
+                    app.recovery_window.lift()
+
+                    first_index = app._recovery_save_ids.index(started.round_id)
+                    app.recovery_save_list.selection_clear(0, "end")
+                    app.recovery_save_list.selection_set(first_index)
+                    app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                    root.update()
+
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: write_attempts[monitor.session.path] >= 2 and
+                                     rounds.round_snapshot(started.round_id).save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertEqual(badge_text(), "12")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: write_attempts[monitor.session.path] >= 3 and
+                                     rounds.round_snapshot(started.round_id).save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertEqual(badge_text(), "12")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda:
+                                     app._pending_notification_count() == 11)
+                    second_index = app._recovery_save_ids.index(second_started.round_id)
+                    app.recovery_save_list.selection_clear(0, "end")
+                    app.recovery_save_list.selection_set(second_index)
+                    app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                    root.update()
+                    original_archive_write = monitoring_round.write_round_archive
+                    archive_failure = [True]
+
+                    def fail_one_archive(audit_path, session_path, archived_at, **kwargs):
+                        if (kwargs.get("expected_round_id") == second_started.round_id and
+                                archive_failure[0]):
+                            archive_failure[0] = False
+                            raise OSError("HF3 controlled archive write failure")
+                        return original_archive_write(
+                            audit_path, session_path, archived_at, **kwargs)
+
+                    with patch("monitoring_round.write_round_archive", fail_one_archive):
+                        app.recovery_save_retry_button.invoke()
+                        self.wait_for_ui(
+                            root,
+                            lambda: (rounds.archive_status(second_started.round_id).status == "failed" and
+                                     rounds.archive_status(second_started.round_id).save_state == "complete"),
+                        )
+                        self.assertEqual(app._pending_notification_count(), 11)
+                        app.recovery_window.withdraw()
+                        for language in (ENGLISH, TRADITIONAL_CHINESE):
+                            self.select_language_from_menu(app, root, language)
+                            capture_main_badge_evidence(
+                                app, "hf3-archive-failure", language,
+                                {"bell": app.round_alarm_button,
+                                 "badge": app.notification_badge})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+                        archive = rounds.archive_status(second_started.round_id)
+                        if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            archive_record = {
+                                "round_id": second_started.round_id,
+                                "status": archive.status,
+                                "save_state": archive.save_state,
+                                "message": archive.message,
+                                "notification_count": app._pending_notification_count(),
+                            }
+                            (Path(os.environ["B518_TK_EVIDENCE_DIR"]) /
+                             "hf3-archive-failure-status.json").write_text(
+                                json.dumps(archive_record, ensure_ascii=False, indent=2))
+                        app.recovery_tabs.select(1)
+                        self.wait_for_ui(root, lambda:
+                                         second_started.round_id in app._recovery_archive_ids)
+                        archive_index = app._recovery_archive_ids.index(second_started.round_id)
+                        app.recovery_archive_list.selection_clear(0, "end")
+                        app.recovery_archive_list.selection_set(archive_index)
+                        app.recovery_archive_list.event_generate("<<ListboxSelect>>")
+                        root.update()
+                        self.assertEqual(str(app.recovery_archive_retry_button["state"]), "normal")
+                        for language in (ENGLISH, TRADITIONAL_CHINESE):
+                            self.select_language_from_menu(app, root, language)
+                            capture_recovery_evidence(
+                                app, "hf3-archive-recovery", language,
+                                {"archive-list": app.recovery_archive_list,
+                                 "archive-detail": app.recovery_archive_detail,
+                                 "archive-retry": app.recovery_archive_retry_button})
+                    app.recovery_archive_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 10)
+                    failure_limits.clear()
+                    for round_id in additional_round_ids:
+                        snapshot = rounds.round_snapshot(round_id)
+                        if snapshot is not None and snapshot.save_state == "failed":
+                            self.assertTrue(rounds.retry_saves(round_id))
+                        archive = rounds.archive_status(round_id)
+                        if archive is not None:
+                            rounds.retry_archival(round_id)
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 0,
+                                     timeout=30)
+                    self.wait_for_ui(root, lambda: app.notification_badge.winfo_manager() == "")
+                    self.assertFalse(app.notification_badge.winfo_ismapped())
+                    self.assertEqual(badge_text(), "")
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        app.recovery_window.withdraw()
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-zero", language,
+                                                    {"bell": app.round_alarm_button})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+                    self.assertEqual(app._pending_notification_count(), 0)
+            finally:
+                rounds.stop()
+                rounds.request_close()
+                self.wait_for(lambda: rounds.close_status().status == "complete")
+                app.hotkey.close()
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
+    def test_recovery_zero_alarm_language_and_reopen_preserve_tab(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=Path(temporary) / "sessions")
+            try:
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                app.round_alarm_button.invoke()
+                root.update()
+                for language, expected in ((ENGLISH, "Acknowledge Round Alarm"),
+                                            (TRADITIONAL_CHINESE, "確認整輪警報")):
+                    self.select_language_from_menu(app, root, language)
+                    self.assertEqual(app.recovery_alarm_ack_button.cget("text"), expected)
+                    self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
+                    capture_recovery_evidence(app, "hf2-zero-alarm", language,
+                        {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    capture_recovery_evidence(app, "hf2-zero-recovery", language,
+                        {"save_retry": app.recovery_save_retry_button,
+                         "archive_retry": app.recovery_archive_retry_button})
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    app.recovery_tabs.select(0)
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    def test_recovery_archive_list_preserves_selection_and_scroll_across_poll_language_reopen(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            rounds = RoundCoordinator(app.events.put, audit_root=session_root)
+            app.rounds = rounds
+            counter = [0]
+
+            class Monitor(BaseMonitor):
+                def __init__(self, callback):
+                    counter[0] += 1
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                        session_root=session_root, now=lambda:
+                        datetime(2026, 10, 16, 8, 0) + timedelta(seconds=counter[0]))
+
+                def poll_once(self):
+                    self.set_result(1, "PASS", "HF2-SCROLL", "controlled.csv")
+
+            try:
+                for _ in range(24):
+                    started = rounds.start("FCT", Monitor, run_async=False, capacity=1)
+                    app.active_round_id = started.round_id
+                    rounds.poll_once()
+                    self.wait_for_ui(root, lambda:
+                        rounds.archive_status(started.round_id).cleanup_eligible)
+                app.round_alarm_button.invoke()
+                app.recovery_tabs.select(1)
+                app.recovery_window.geometry("760x520")
+                root.update()
+                self.assertEqual(app.recovery_archive_list.size(), 24)
+                app.recovery_archive_list.selection_clear(0, "end")
+                app.recovery_archive_list.selection_set(17)
+                app.recovery_archive_list.event_generate("<<ListboxSelect>>")
+                app.recovery_archive_list.yview_moveto(.5)
+                root.update()
+                selected_id = app._recovery_archive_ids[17]
+                reading = app.recovery_archive_list.yview()
+                self.assertGreater(reading[0], 0)
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    until = time.monotonic() + .7
+                    while time.monotonic() < until:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertEqual(app.recovery_archive_list.curselection(), (17,))
+                    self.assertIn(selected_id, app.recovery_archive_detail.get("1.0", "end"))
+                    self.assertEqual(app.recovery_archive_list.yview(), reading)
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(app.recovery_archive_list.yview(), reading)
+                    capture_recovery_evidence(app, "hf2-list-reading", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
+            finally:
+                rounds.stop()
+                rounds.flush_audit()
+                rounds.flush_session()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            session_root = Path(temporary) / "sessions"
+            historical = SessionStore("untracked-history", {}, session_root)
+            historical.enqueue_event("historical sentinel")
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            elapsed = [0.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=session_root)
+            app.rounds = rounds
+            holders = []
+
+            class Monitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                                     session_root=session_root, monotonic=lambda: elapsed[0],
+                                     async_session_writes=True, round_timeout_seconds=1)
+                    holders.append(self)
+
+                def poll_once(self):
+                    pass
+
+            try:
+                started = rounds.start("FCT", Monitor, run_async=False,
+                                       round_timeout_seconds=1, capacity=1)
+                app.active_round_id = started.round_id
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                self.wait_for_ui(root, lambda: rounds.snapshot().round_alarm_ready)
+                monitor = holders[0]
+                self.assertTrue(rounds.flush_audit())
+                self.assertTrue(rounds.flush_session())
+                alarm = rounds.snapshot().round_alarm
+                app.round_alarm_button.invoke()
+                root.update()
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.get("1.0", "end"))
+                    self.assertIn(started.round_id, app.recovery_alarm_detail.get("1.0", "end"))
+                    self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "normal")
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    capture_recovery_evidence(app, "hf2-alarm-pending", language,
+                        {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                original_open = Path.open
+                attempts = [0]
+
+                def fail_session_open(path, mode="r", *args, **kwargs):
+                    if path == monitor.session.path / "events.log" and mode == "a":
+                        attempts[0] += 1
+                        if attempts[0] <= 2:
+                            raise OSError("controlled Session events fault")
+                    return original_open(path, mode, *args, **kwargs)
+
+                original_write = audit_records.os.write
+                recovery_failures = [0]
+
+                def fail_recovery_event_once(descriptor, content):
+                    if b'"kind": "save_recovered"' in content and not recovery_failures[0]:
+                        recovery_failures[0] += 1
+                        raise OSError("recovery audit event is not yet durable")
+                    return original_write(descriptor, content)
+
+                with patch.object(Path, "open", fail_session_open), \
+                        patch.object(audit_records.os, "write", side_effect=fail_recovery_event_once):
+                    monitor.session.enqueue_event("hf2 unique session probe")
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed")
+                    app.recovery_alarm_ack_button.invoke()
+                    self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
+                    self.assertEqual(rounds.snapshot().save_state, "failed")
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
+                        capture_recovery_evidence(app, "hf2-alarm-acknowledged", language,
+                            {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    self.assertNotIn("untracked-history", app.recovery_archive_list.get(0, "end"))
+                    self.assertEqual(len(app._recovery_archive_ids), 1)
+                    self.assertIn("controlled Session events fault",
+                                  app.recovery_save_detail.get("1.0", "end"))
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: recovery_failures[0] == 1 and
+                                     rounds.snapshot().save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertFalse(rounds.archive_status(started.round_id).cleanup_eligible)
+                    self.assertFalse(read_round_audit(monitor.session.path / "audit.jsonl")["audit_complete"])
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "complete")
+                self.assertTrue(rounds.flush_session())
+                self.assertTrue(rounds.flush_audit())
+                records = [json.loads(line) for line in
+                           (monitor.session.path / "events.log").read_text().splitlines()]
+                self.assertEqual(sum(item["message"] == "hf2 unique session probe"
+                                     for item in records), 1)
+                rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                stream_header, stream_events = audit_records.iter_round_audit_events(
+                    monitor.session.path / "audit.jsonl")
+                self.assertTrue(stream_header["audit_complete"])
+                self.assertEqual(list(stream_events), rebuilt["events"])
+                # Recovered does not waive missing records or a later failure.
+                rows = [json.loads(line) for line in
+                        (monitor.session.path / "audit.jsonl").read_text().splitlines()]
+                corrupt = Path(temporary) / "corrupt-audit.jsonl"
+                variants = [rows[:2] + rows[3:],
+                            [item for item in rows if item.get("kind") != "save_recovered"]]
+                later_failure = dict(rows[-1], sequence=rows[-1]["sequence"] + 1,
+                                     kind="session_write_failed")
+                variants.append(rows + [later_failure])
+                for records_variant in variants:
+                    corrupt.write_text("\n".join(json.dumps(item) for item in records_variant) + "\n")
+                    self.assertFalse(read_round_audit(corrupt)["audit_complete"])
+                    stream_header, stream_events = audit_records.iter_round_audit_events(corrupt)
+                    self.assertFalse(stream_header["audit_complete"])
+                    list(stream_events)
+
+                self.assertEqual([item["sequence"] for item in rebuilt["events"]],
+                                 list(range(1, len(rebuilt["events"]) + 1)))
+                self.assertEqual(rounds.snapshot().save_state, "complete")
+                self.assertTrue(any(item["kind"] == "save_recovered"
+                                    for item in rebuilt["events"]))
+                self.assertEqual(sum(item["kind"] == "round_alarm_acknowledged"
+                                     for item in rebuilt["events"]), 1)
+                self.assertTrue((historical.path / "events.log").exists())
+                self.wait_for_ui(root, lambda: rounds.archive_status(started.round_id).cleanup_eligible)
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-session-recovered", language,
+                        {"save_retry": app.recovery_save_retry_button})
+
+                app.close()
+                self.wait_for(lambda: rounds.close_status().status == "complete")
+
+            finally:
+                rounds.stop()
+                rounds.flush_audit()
+                rounds.flush_session()
+                app.hotkey.close()
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
     def test_real_tk_distinguishes_unsaved_saved_and_archived_round_states(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -2578,11 +3539,14 @@ class LogSolutionUiTests(unittest.TestCase):
             now = datetime(2026, 10, 7, 10, 0, tzinfo=timezone(timedelta(hours=8)))
             rounds = RoundCoordinator(app.events.put, audit_root=session_root, wall_clock=lambda: now)
 
+            monitors = []
+
             class OneResultMonitor(BaseMonitor):
                 def __init__(self, callback):
                     super().__init__("FCT", {}, (1,), callback=callback, session_root=session_root,
-                                     now=lambda: now)
+                                     now=lambda: now + timedelta(seconds=len(monitors)))
                     self.done = False
+                    monitors.append(self)
 
                 def poll_once(self):
                     if not self.done:
@@ -2594,12 +3558,15 @@ class LogSolutionUiTests(unittest.TestCase):
 
             try:
                 app.rounds = rounds
-                self.assertIn("0 unsaved", app.archive_status_label.cget("text"))
+                app.round_alarm_button.invoke()
+                self.wait_for_ui(root, lambda: app.recovery_window is not None and
+                                 app.recovery_window.winfo_viewable())
+                self.assertEqual(app.recovery_archive_list.get(0), "No tracked rounds")
                 started = rounds.start("FCT", OneResultMonitor, run_async=False)
                 app.active_round_id = started.round_id
                 app._apply_round_snapshot(rounds.snapshot())
-                app._refresh_archive_statuses()
-                self.assertIn("1 unsaved", app.archive_status_label.cget("text"))
+                app._refresh_recovery_center()
+                self.assertIn(started.round_id[:10], app.recovery_archive_list.get(0))
 
                 import round_archival
                 original_replace = round_archival.os.replace
@@ -2612,29 +3579,69 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch.object(round_archival.os, "replace", side_effect=fail_archive_replace):
                     rounds.poll_once()
                     def archive_failure_visible():
-                        app._refresh_archive_statuses()
+                        app._refresh_recovery_center()
                         return (rounds.archive_status(started.round_id).status == "failed" and
-                                str(app.archive_retry_button["state"]) == "normal" and
-                                "temporary archive fault" in app.archive_round_detail.cget("text"))
+                                str(app.recovery_archive_retry_button["state"]) == "normal" and
+                                "temporary archive fault" in
+                                app.recovery_archive_detail.get("1.0", "end-1c"))
                     self.wait_for(archive_failure_visible)
                     self.assertEqual(rounds.archive_status(started.round_id).reason_message["message_id"],
                                      "app.settings.retention.reason.archive.write_failed")
-                    self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
+                    self.assertIn("temporary archive fault",
+                                  app.recovery_archive_detail.get("1.0", "end-1c"))
+                    second = rounds.start("FCT", OneResultMonitor, run_async=False)
+                    app.active_round_id = second.round_id
+                    rounds.poll_once()
+                    self.wait_for_ui(root, lambda:
+                        rounds.archive_status(second.round_id).status == "failed")
+
+                app.round_alarm_button.invoke()
+                root.update()
+                app.recovery_tabs.select(1)
+                app._refresh_recovery_center()
+                self.assertIn("temporary archive fault",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
+                self.assertIn("all eligible archives (2)",
+                              app.recovery_archive_retry_button.cget("text").lower())
 
                 self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
-                self.assertIn("無法寫入可信輪次封存資訊", app.archive_status_label.cget("text"))
-                self.assertIn("temporary archive fault", app.archive_status_label.cget("text"))
-                self.select_language_from_menu(app, root, ENGLISH)
+                self.assertIn("無法寫入可信輪次封存資訊",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
+                self.assertIn("temporary archive fault",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
+                for language in (TRADITIONAL_CHINESE, ENGLISH):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-archive-failure", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
 
-                app.archive_retry_button.invoke()
+                app.recovery_archive_retry_button.invoke()
                 self.wait_for_ui(root, lambda:
                     rounds.archive_status(started.round_id).status == "archived" and
+                    rounds.archive_status(second.round_id).status == "archived" and
                     app.status_rows[1]["status"].cget("text") == "PASS")
 
-                app._refresh_archive_statuses()
-                self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
-                self.assertIn("Trusted Archive", app.archive_round_detail.cget("text"))
-                self.assertIn("2026-10-07T10:00:00+08:00", app.archive_round_detail.cget("text"))
+                self.wait_for_ui(root, lambda: "Trusted Archive" in
+                                 app.recovery_archive_detail.get("1.0", "end"))
+                self.assertNotIn("not recognized", app.recovery_archive_detail.get("1.0", "end"))
+                self.assertIn("2026-10-07T10:00:00+08:00",
+                              app.recovery_archive_detail.get("1.0", "end"))
+                for monitor in monitors:
+                    archive_file = monitor.session.path / "round-archive.json"
+                    self.assertTrue(archive_file.exists())
+                    rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                    self.assertTrue(rebuilt["audit_complete"])
+                    event_ids = [event["sequence"] for event in rebuilt["events"]]
+                    self.assertEqual(len(event_ids), len(set(event_ids)))
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-archive-recovered", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
+                self.select_language_from_menu(app, root, ENGLISH)
+                app._refresh_recovery_center()
+                recovered_detail = app.recovery_archive_detail.get("1.0", "end-1c")
+                self.assertIn(started.round_id, recovered_detail)
+                self.assertIn("Trusted Archive", recovered_detail)
+                self.assertIn("2026-10-07T10:00:00+08:00", recovered_detail)
                 self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
             finally:
                 root.destroy()
@@ -2702,7 +3709,9 @@ class LogSolutionUiTests(unittest.TestCase):
                         write_number[0] += 1
                         if write_number[0] == 1:
                             failed.set()
-                            raise OSError("temporary disk fault")
+                            raise OSError("temporary disk fault\n" + "\n".join(
+                                "diagnostic evidence {:03d}: long raw disk error".format(i)
+                                for i in range(80)))
                         if write_number[0] == 2:
                             retry_entered.set()
                             release_retry.wait(2)
@@ -2721,28 +3730,66 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(any("temporary disk fault" in line for line in app.event_lines))
                     coordinator.stop()
 
-                    app.retry_save_button.invoke()
+                    self.assertEqual(str(app.round_alarm_button["state"]), "normal")
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertTrue(app.recovery_window.winfo_exists())
+                    self.assertIsNone(coordinator.snapshot().round_alarm)
+                    self.assertIn("temporary disk fault",
+                                  app.recovery_save_detail.get("1.0", "end-1c"))
+                    app.recovery_tabs.select(1)
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        root.update()
+                        capture_recovery_evidence(app, "hf2-save-failure", language,
+                            {"save_retry": app.recovery_save_retry_button,
+                             "archive_retry": app.recovery_archive_retry_button})
+                        self.assertLessEqual(app.recovery_save_retry_button.winfo_rooty() +
+                            app.recovery_save_retry_button.winfo_height(),
+                            app.recovery_window.winfo_rooty() + app.recovery_window.winfo_height())
+                    self.select_language_from_menu(app, root, ENGLISH)
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    app.recovery_save_detail.yview_moveto(0.6)
+                    root.update()
+                    reading = app.recovery_save_detail.index("@0,0")
+                    self.assertGreater(int(reading.split(".")[0]), 1)
+                    until = time.monotonic() + .7
+                    while time.monotonic() < until:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    self.select_language_from_menu(app, root, ENGLISH)
+
+                    app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
-                    self.assertEqual(str(app.retry_save_button["state"]), "disabled")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.retry_save_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertEqual(write_number[0], 2)
                     release_retry.set()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "failed" or
-                           str(app.retry_save_button["state"]) != "normal") and time.monotonic() < deadline:
+                           str(app.recovery_save_retry_button["state"]) != "normal") and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
                     self.assertEqual(coordinator.snapshot().save_state, "failed")
-                    self.assertEqual(str(app.retry_save_button["state"]), "normal")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "normal")
                     ui_tick.clear()
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.retry_save_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "complete" or
                            "Saved Completely" not in app.save_status.cget("text")) and time.monotonic() < deadline:
@@ -2852,17 +3899,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 current = coordinator.start("FCT", create, run_async=False, capacity=1)
                 app.active_round_id = current.round_id
                 app._apply_round_snapshot(current)
-                app._refresh_unsaved_rounds()
-                self.assertEqual(
-                    app._unsaved_round_ids[app.unsaved_round_choice.get()], previous.round_id,
-                )
-                label = next(label for label, round_id in app._unsaved_round_ids.items()
-                             if round_id == previous.round_id)
-                app.unsaved_round_choice.set(label)
-                app._update_selected_round_retry()
-                self.assertEqual(str(app.unsaved_round_retry_button["state"]), "normal")
+                app.round_alarm_button.invoke()
+                app.recovery_tabs.select(1)
+                root.update()
+                previous_index = app._recovery_save_ids.index(previous.round_id)
+                app.recovery_save_list.selection_clear(0, "end")
+                app.recovery_save_list.selection_set(previous_index)
+                app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertEqual(str(app.recovery_save_retry_button["state"]), "normal")
                 self.assertIn("temporary previous round UI fault",
-                              app.unsaved_round_detail.cget("text"))
+                              app.recovery_save_detail.get("1.0", "end-1c"))
 
                 retry_entered = threading.Event()
                 release_retry = threading.Event()
@@ -2876,19 +3923,18 @@ class LogSolutionUiTests(unittest.TestCase):
                     return original_write(descriptor, content)
 
                 with patch.object(audit_records.os, "write", side_effect=pause_old_retry):
-                    app.unsaved_round_retry_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
-                    self.assertEqual(str(app.unsaved_round_retry_button["state"]), "disabled")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.unsaved_round_retry_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertEqual(len(attempts), 1)
                     release_retry.set()
-                    self.assertTrue(pump_until(
-                        lambda: coordinator.round_snapshot(previous.round_id) is None and
-                        previous.round_id not in app._unsaved_round_ids.values()))
+                self.assertTrue(pump_until(
+                        lambda: coordinator.round_snapshot(previous.round_id) is None))
 
                 rebuilt = read_round_audit(monitors[0].session.path / "audit.jsonl")
                 probe = [event for event in rebuilt["events"]
@@ -2900,7 +3946,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(coordinator.snapshot().round_id, current.round_id)
                 self.assertTrue(all(result.status == "WAITING"
                                     for result in coordinator.snapshot().results))
-                self.assertNotIn(previous.round_id, app._unsaved_round_ids.values())
             finally:
                 coordinator.stop()
                 coordinator.flush_audit()
@@ -5860,10 +6905,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIs(app.app_diagnostics_window, diagnostics_window)
                 self.assertIs(app.historical_event_window, history_window)
                 self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
-                self.assertIn("設定", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 self.assertIn("App 診斷", app.app_diagnostics_window.title())
                 self.assertIn("事件", app.historical_event_heading.cget("text"))
-                self.assertEqual(str(app.language_refresh_retry_button.cget("state")), "normal")
+                self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")), "normal")
 
                 path = app.app_events.path
                 self.wait_for(lambda: app.rounds.app_event_status().complete)
@@ -5878,14 +6923,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn(failure["event_id"],
                               [record["event_id"] for record in disk_records])
 
-                app.language_refresh_retry_button.event_generate("<ButtonPress-1>")
-                app.language_refresh_retry_button.event_generate("<ButtonRelease-1>")
+                self.diagnostics_language_retry(app).event_generate("<ButtonPress-1>")
+                self.diagnostics_language_retry(app).event_generate("<ButtonRelease-1>")
                 root.update()
                 self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                 self.assertEqual(app.profile_editor_project.get(), "Keep this draft")
-                self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                  "disabled")
-                self.assertEqual(app.language_refresh_banner.cget("text"),
+                self.assertEqual(app.app_event_status_label.cget("text"),
                                  app.app_event_status_label.cget("text"))
             finally:
                 if app.historical_event_window and app.historical_event_window.winfo_exists():
@@ -5971,20 +7016,22 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(history_window.title() ==
                                      app._t("app.settings.history.title"),
                                      "history" not in failed_views)
-                    self.assertNotEqual(app.language_refresh_banner.cget("text"), "")
-                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "文字更新失敗" if language == TRADITIONAL_CHINESE
+                                     else "Text refresh failed")
+                    self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                      "normal")
 
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(settings_window.title(), app._t("app.settings.title"))
                     self.assertEqual(diagnostics_window.title(),
                                      app._t("app.diagnostic.heading"))
                     self.assertEqual(history_window.title(),
                                      app._t("app.settings.history.title"))
                     self.assertEqual(app.profile_editor_project.get(), "Preserve this draft")
-                    self.assertEqual(str(app.language_refresh_retry_button.cget("state")),
+                    self.assertEqual(str(self.diagnostics_language_retry(app).cget("state")),
                                      "disabled")
-                    self.assertEqual(app.language_refresh_banner.cget("text"),
+                    self.assertEqual(app.app_event_status_label.cget("text"),
                                      app.app_event_status_label.cget("text"))
             finally:
                 if app.historical_event_window and app.historical_event_window.winfo_exists():
@@ -6988,7 +8035,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             return found
                     return None
 
-                choose_button = find_button(app.settings_window, "Choose Local Folder")
+                choose_button = find_button(app.settings_window, "📂 Browse")
                 import_button = find_button(app.settings_window, "Import Configuration")
                 export_button = find_button(app.settings_window, "Export Configuration")
                 self.assertIsNotNone(choose_button)
@@ -7071,7 +8118,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(outside, [],
                                  "Settings controls extend beyond the window: {}".format(outside))
                 self.assertTrue(any(isinstance(widget, ttk.Button) and
-                                    widget.cget("text") == "Choose Local Folder"
+                                    widget.cget("text") == "📂 Browse"
                                     for widget in visible_controls))
                 app.settings_notebook.select(app.settings_notebook.tabs()[2])
                 root.update()
@@ -7115,6 +8162,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 window = app.settings_window
                 window.geometry("680x560")
                 app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
                 app.profile_editor_project.set("HM2-DRAFT")
                 app.profile_editor_capacity.set("17")
                 long_path = "/deployment/" + ("long-directory/" * 12) + "final-results.csv"
@@ -7320,6 +8368,149 @@ class LogSolutionUiTests(unittest.TestCase):
                     import_button.event_generate("<KeyRelease-space>")
                     root.update()
                 self.assertIn("Configuration validated, imported", app.profile_editor_status.get())
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                    "complete", "failed"
+                })
+                self.wait_for_archive_checks(app.rounds)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_profile_editor_uses_three_equal_action_columns_and_browse_label(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                window = app.settings_window
+                window.geometry("680x560")
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
+
+                def button_for(message_id):
+                    return next(widget for widget, key in app._settings_text_widgets
+                                if key == message_id)
+
+                choose = button_for("app.settings.profile.choose_directory")
+                self.assertEqual(choose.cget("text"), "📂 Browse")
+                app.profile_editor_project.set("DRAFT-PROJECT")
+                app.profile_editor_paths["active"].set("/before/chooser")
+                original_dialog_path = app.profile_editor_paths["active"].get()
+                with patch("b518_log_solution.filedialog.askdirectory",
+                           return_value="/selected/logs") as chooser:
+                    choose.invoke()
+                self.assertEqual(chooser.call_args.kwargs["parent"], window)
+                self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
+                self.assertEqual(chooser.call_args.kwargs["mustexist"], True)
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                with patch("b518_log_solution.filedialog.askdirectory", return_value=""):
+                    choose.invoke()
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                selected_dialog_path = app.profile_editor_paths["active"].get()
+
+                row_ids = (
+                    ("app.settings.profile.load", "app.settings.profile.validate",
+                     "app.settings.profile.apply"),
+                    ("app.settings.profile.import", "app.settings.profile.export",
+                     "app.settings.profile.reload"),
+                )
+                action_font = tkfont.Font(
+                    root=root, font=app.style.lookup("ProfileAction.TButton", "font"))
+                measured = []
+                action_buttons = []
+                for ids in row_ids:
+                    buttons = [button_for(key) for key in ids]
+                    action_buttons.extend(buttons)
+                    for button in buttons:
+                        self.assertLessEqual(action_font.measure(button.cget("text")) + 16,
+                                             button.winfo_width(),
+                                             "Action label is clipped: {} ({}/{})".format(
+                                                 button.cget("text"),
+                                                 action_font.measure(button.cget("text")),
+                                                 button.winfo_width()))
+                    bounds = [(button.winfo_rootx(), button.winfo_rooty(),
+                               button.winfo_width(), button.winfo_height())
+                              for button in buttons]
+                    widths = [item[2] for item in bounds]
+                    self.assertLessEqual(max(widths) - min(widths), 1, bounds)
+                    self.assertEqual(len({item[1] for item in bounds}), 1, bounds)
+                    self.assertEqual(len({item[3] for item in bounds}), 1, bounds)
+                    gaps = [bounds[index + 1][0] -
+                            (bounds[index][0] + bounds[index][2]) for index in range(2)]
+                    self.assertLessEqual(max(gaps) - min(gaps), 1, bounds)
+                    measured.append(bounds)
+                cancel = button_for("app.settings.profile.cancel")
+                self.assertGreater(cancel.winfo_rooty(), measured[1][0][1])
+                self.assertGreaterEqual(
+                    cancel.winfo_rootx(),
+                    measured[1][2][0] + measured[1][2][2] - cancel.winfo_width())
+                self.assertTrue(cancel.winfo_viewable())
+                self.assertLessEqual(cancel.winfo_rooty() + cancel.winfo_height(),
+                                     window.winfo_rooty() + window.winfo_height())
+                action_buttons.append(cancel)
+                left_edge = window.winfo_rootx()
+                right_edge = left_edge + window.winfo_width()
+                self.assertTrue(all(button.winfo_viewable() and
+                                    button.winfo_rootx() >= left_edge and
+                                    button.winfo_rootx() + button.winfo_width() <= right_edge
+                                    for button in action_buttons),
+                                [(button.cget("text"), button.winfo_rootx(),
+                                  button.winfo_width()) for button in action_buttons])
+
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                self.assertEqual(choose.cget("text"), "📂 瀏覽")
+                self.assertEqual(app.profile_editor_project.get(), "DRAFT-PROJECT")
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                self.assertEqual(button_for("app.settings.profile.cancel").winfo_rootx(),
+                                 cancel.winfo_rootx())
+                evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
+                if evidence_root:
+                    captures = {}
+                    for key, language in (("en", "en"),
+                                          ("zh-TW", TRADITIONAL_CHINESE)):
+                        app._select_language(language)
+                        root.update()
+                        captures[key] = capture_tk_window_evidence(
+                            window, "hf5-settings", key, {
+                                "browse": choose,
+                                "load": button_for("app.settings.profile.load"),
+                                "validate": button_for("app.settings.profile.validate"),
+                                "apply": button_for("app.settings.profile.apply"),
+                                "import": button_for("app.settings.profile.import"),
+                                "export": button_for("app.settings.profile.export"),
+                                "reload": button_for("app.settings.profile.reload"),
+                                "cancel": button_for("app.settings.profile.cancel"),
+                            })
+                    behavior = {
+                        "folder_dialog": {
+                            "parent_is_settings_window": True,
+                            "mustexist": chooser.call_args.kwargs["mustexist"],
+                            "selected_path": "/selected/logs",
+                            "draft_path_after_selection": selected_dialog_path,
+                            "draft_path_before_dialog": original_dialog_path,
+                            "draft_path_after_cancel": selected_dialog_path,
+                            "draft_project_after_language_change": app.profile_editor_project.get(),
+                            "active_path_after_language_change":
+                                app.profile_editor_paths["active"].get(),
+                        }
+                    }
+                    (Path(evidence_root) / "hf5-settings-bounds.json").write_text(
+                        json.dumps({"rows": measured, "captures": captures,
+                                    "behavior": behavior},
+                                   ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             finally:
                 app._close_settings()
                 app.rounds.request_close()
@@ -8389,6 +9580,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 conflict_window = app.conflict_window
                 alarm_window = app.round_alarm_window
                 conflict_id = rounds.snapshot().pending_conflicts[0].conflict_id
+                alarm = rounds.snapshot().round_alarm
+                app.round_alarm_button.invoke()
+                root.update()
+                recovery_window = app.recovery_window
+                self.assertTrue(recovery_window.winfo_exists())
+                self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.get("1.0", "end-1c"))
+                self.assertIn("configured round monitoring limit",
+                              app.recovery_alarm_detail.get("1.0", "end-1c"))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 app.conflict_list.selection_set(0)
                 app.conflict_list.activate(0)
                 conflict_window.geometry("{}x{}".format(*conflict_window.minsize()))
@@ -8424,22 +9624,25 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("繁體中文")
                     self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
+                    self.assertEqual(recovery_window.title(), "通知與恢復")
+                    self.assertIn("已達設定的整輪監控時間上限",
+                                  app.recovery_alarm_detail.get("1.0", "end-1c"))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
-                    self.assertIn("同輪結果衝突",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                     self.assertIn("確認整輪警報", app.round_alarm_ack_button.cget("text"))
                     self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                     select_language("English")
                     self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
-                    self.assertIn("Same-Round Result Conflict",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
 
                 inject_conflict_failure[0] = False
                 select_language("繁體中文")
                 self.assertEqual(app.current_language, TRADITIONAL_CHINESE)
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 self.assertIs(app.conflict_window, conflict_window)
                 self.assertIs(app.round_alarm_window, alarm_window)
+                self.assertIs(app.recovery_window, recovery_window)
                 self.assertEqual(conflict_window.title(), "同輪結果衝突")
                 self.assertEqual(alarm_window.title(), "整輪監控逾時")
                 self.assertEqual(app._conflict_ids[app.conflict_list.curselection()[0]],
@@ -8455,7 +9658,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     "@0,0", "@0,0 + 100 chars"))
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
                 original_alarm_refresh = app._refresh_round_alarm_language
@@ -8471,20 +9674,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("English")
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("Round Monitoring Timeout",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
                     self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                     select_language("繁體中文")
                     self.assertEqual(conflict_window.title(), "同輪結果衝突")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("整輪監控逾時",
-                                  app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
 
                 inject_alarm_failure[0] = False
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 self.assertIs(app.round_alarm_window, alarm_window)
                 self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 self.assertEqual(audit_path.read_bytes(), before_refresh)
 
                 inject_conflict_failure[0] = True
@@ -8494,22 +9696,22 @@ class LogSolutionUiTests(unittest.TestCase):
                     select_language("English")
                     self.assertEqual(conflict_window.title(), "同輪結果衝突")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertIn("Same-Round Result Conflict", app.language_refresh_banner.cget("text"))
-                    self.assertIn("Round Monitoring Timeout", app.language_refresh_banner.cget("text"))
+                    self.assertEqual(app.app_event_status_label.cget("text"),
+                                     "Text refresh failed")
                     diagnostic_events = app.app_events.records
                     ui_tick = []
                     root.after(350, lambda: ui_tick.append(True))
                     pump_until(lambda: bool(ui_tick))
                     self.assertEqual(app.app_events.records, diagnostic_events)
                     inject_conflict_failure[0] = False
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
-                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                    self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "normal")
                     inject_alarm_failure[0] = False
-                    click(app.language_refresh_retry_button)
+                    click(self.diagnostics_language_retry(app))
                     self.assertEqual(alarm_window.title(), "Round Monitoring Timeout")
-                    self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                    self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                     self.assertIs(app.conflict_window, conflict_window)
                     self.assertIs(app.round_alarm_window, alarm_window)
                     self.assertEqual(audit_path.read_bytes(), before_refresh)
@@ -8588,22 +9790,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
                 self.assertIn("取消關閉後即可切換", app._close_language_reason_label.cget("text"))
-                failure_banner = app.language_refresh_banner.cget("text")
-                self.assertIn("同輪結果衝突", failure_banner)
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                failure_banner = app.app_event_status_label.cget("text")
+                self.assertEqual(failure_banner, "文字更新失敗")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 closing_records = app.app_events.records
-                click(app.language_refresh_retry_button)
+                click(self.diagnostics_language_retry(app))
                 root.after(0, app.retry_language_refresh)
                 root.update()
-                self.assertEqual(app.language_refresh_banner.cget("text"), failure_banner)
+                self.assertEqual(app.app_event_status_label.cget("text"), failure_banner)
                 self.assertEqual(app.app_events.records, closing_records)
                 app._close_cancel_button.invoke()
                 root.update()
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "normal")
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "normal")
                 self.assertTrue(rounds.snapshot().collection_stopped)
                 self.assertEqual(rounds.snapshot().pending_conflicts[0].conflict_id, conflict_id)
-                click(app.language_refresh_retry_button)
-                self.assertEqual(str(app.language_refresh_retry_button["state"]), "disabled")
+                click(self.diagnostics_language_retry(app))
+                self.assertEqual(str(self.diagnostics_language_retry(app)["state"]), "disabled")
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
                 app._select_language(ENGLISH)

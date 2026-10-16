@@ -1,0 +1,23 @@
+{
+  "trace": "docs/refactoring/evidence/hmi-followup-2026-10-16/keyboard-fix/launcher-smoke/input-trace.jsonl",
+  "runtime": {
+    "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+    "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]",
+    "tk_patchlevel": "8.6.8",
+    "tk_windowing_system": "aqua",
+    "macos": "15.7.9"
+  },
+  "event_counts": {
+    "runtime": 1,
+    "heartbeat": 3,
+    "<FocusIn>": 3,
+    "normal_close_requested": 1,
+    "<FocusOut>": 2,
+    "root_destroyed": 1,
+    "finished": 1
+  },
+  "max_heartbeat_interval_ms": 202.79,
+  "commands": [],
+  "normal_close_completed": true,
+  "interpretation": "Human input trace; no automatic defect/pass verdict."
+}

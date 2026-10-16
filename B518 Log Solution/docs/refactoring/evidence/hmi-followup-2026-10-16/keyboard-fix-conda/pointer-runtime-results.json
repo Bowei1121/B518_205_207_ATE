@@ -1,0 +1,8 @@
+{
+  "scope": "standalone ttk.Button, no product UI or tooltip",
+  "delivery": "Quartz session event tap move, down, up at widget center; first bindtag observes pointer",
+  "anaconda_python3": {"executable": "/opt/anaconda3/bin/python3", "tk": "8.6.12", "events": [], "callbacks": 0},
+  "anaconda_pythonw": {"executable": "/opt/anaconda3/bin/python", "tk": "8.6.12", "events": [], "callbacks": 0},
+  "framework_python3": {"executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3", "tk": "8.6.8", "events": ["ButtonPress-1", "ButtonRelease-1"], "callbacks": 1},
+  "interpretation": "runtime-dependent difference reproduced in minimal control; product mouse defect remains open; keyboard tests do not prove native clicks"
+}

@@ -1,0 +1,48 @@
+{
+  "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+  "tk": "8.6.8",
+  "results": {
+    "settings_button": true,
+    "round_alarm_button": true,
+    "project_choice": true,
+    "machine_choice": true
+  },
+  "raw_events": [
+    {
+      "before": "settings_button",
+      "active": true,
+      "key": "B518 FCT ATE Log Solution-V0.1.0",
+      "focus": "."
+    },
+    {
+      "event": "<ButtonPress-1>",
+      "widget": ".!frame.!frame.!button"
+    },
+    {
+      "event": "<ButtonRelease-1>",
+      "widget": ".!frame.!frame.!button"
+    },
+    {
+      "before": "round_alarm_button",
+      "active": true,
+      "key": "B518 FCT ATE Log Solution-V0.1.0",
+      "focus": ".!frame.!frame.!button"
+    },
+    {
+      "event": "<ButtonPress-1>",
+      "widget": ".!frame.!frame.!button2"
+    },
+    {
+      "event": "<ButtonRelease-1>",
+      "widget": ".!frame.!frame.!button2"
+    },
+    {
+      "event": "<ButtonPress-1>",
+      "widget": ".!frame.!frame2.!combobox"
+    },
+    {
+      "event": "<ButtonPress-1>",
+      "widget": ".!frame.!frame2.!combobox2"
+    }
+  ]
+}

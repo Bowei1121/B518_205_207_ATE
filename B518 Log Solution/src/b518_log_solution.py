@@ -98,46 +98,13 @@ STATUS_COLOURS = {
 }
 UNAVAILABLE_COLOUR = "#000000"
 KVM_BLOCK_COUNT = 20
-TOOLBAR_ICON_ROWS = {
-    "settings": (
-        "...##...##...", "..###...###..", "..###.##.###..", ".############.",
-        "##.########.##", "##.##....##.##", "...##....##...", "...##....##...",
-        "##.##....##.##", "##.########.##", ".############.", "..###.##.###..",
-        "..###...###..", "...##...##...",
-    ),
-    "review": (
-        ".......##.......", "......####......", ".....######.....", "....########....",
-        "...##########...", "..############..", ".##############.", "################",
-        "################", ".......##.......", ".......##.......", ".......##.......",
-        ".......##.......", ".......##.......", ".......##.......", ".......##.......",
-    ),
-    "alarm": (
-        ".......####.......", "......######......", ".....########.....", "....##########....",
-        "...############...", "...############...", "..##############..", "..##############..",
-        "..##############..", "..##############..", "...############...", "...############...",
-        "....##########....", ".....########......", "......######.......", "....############..",
-        "...#############..", "..##############...", ".################..", "##################",
-    ),
-    "language": (
-        ".....########.....", "...############...", "..##############..", ".################.",
-        "##################", "####...##...######", "###....##....#####", "##.....##.....####",
-        "##.....##.....####", "##.....##.....####", "###....##....#####", "####...##...######",
-        "##################", ".################.", "..##############..", "...############...",
-        ".....########.....",
-    ),
+TOOLBAR_ICON_GLYPHS = {
+    "settings": "⚙️",
+    "review": "⚠️",
+    "language": "🌐",
+    "alarm": "🔔",
 }
-
-
-def toolbar_icon(master: tk.Misc, name: str) -> tk.PhotoImage:
-    """Build stable monochrome toolbar artwork without platform emoji fonts."""
-    rows = TOOLBAR_ICON_ROWS[name]
-    width = max(map(len, rows))
-    image = tk.PhotoImage(master=master, width=width, height=len(rows))
-    for y, row in enumerate(rows):
-        for x, pixel in enumerate(row):
-            if pixel == "#":
-                image.put(TEXT_COLOUR, (x, y))
-    return image
+TOOLBAR_ICON_FONT = ("Apple Color Emoji", 15)
 
 
 class _LocalizedControlHint:
@@ -381,6 +348,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_language_retry_button = None
         self.app_diagnostics_close_button = None
         self._app_diagnostics_records = ()
         self._unregister_settings_language_receiver = None
@@ -464,6 +432,26 @@ class B518LogSolutionApp:
         self.round_alarm_close_button: Optional[ttk.Button] = None
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._rendered_alarm_view_state = None
+        self.recovery_window: Optional[tk.Toplevel] = None
+        self.recovery_tabs: Optional[ttk.Notebook] = None
+        self.recovery_alarm_list: Optional[tk.Listbox] = None
+        self.recovery_alarm_detail: Optional[tk.Text] = None
+        self.recovery_alarm_ack_button: Optional[ttk.Button] = None
+        self.recovery_save_list: Optional[tk.Listbox] = None
+        self.recovery_save_heading: Optional[ttk.Label] = None
+        self.recovery_save_detail: Optional[tk.Text] = None
+        self.recovery_save_retry_button: Optional[ttk.Button] = None
+        self.recovery_archive_detail: Optional[tk.Text] = None
+        self.recovery_archive_retry_button: Optional[ttk.Button] = None
+        self.recovery_archive_list: Optional[tk.Listbox] = None
+        self.recovery_archive_heading: Optional[ttk.Label] = None
+        self._recovery_archive_ids: list[str] = []
+        self._recovery_selected_archive: Optional[str] = None
+        self._recovery_alarm_ids: list[tuple[str, str]] = []
+        self._recovery_save_ids: list[str] = []
+        self._recovery_selected_alarm: Optional[tuple[str, str]] = None
+        self._recovery_selected_save: Optional[str] = None
+        self._unregister_recovery_language_receiver = None
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
@@ -577,19 +565,31 @@ class B518LogSolutionApp:
                        foreground=[("selected", TEXT_COLOUR), ("active", TEXT_COLOUR)])
         self.style.configure("TButton", background="#e5e7eb", foreground=TEXT_COLOUR,
                              padding=(10, 6), borderwidth=1)
+        self.style.configure("ProfileAction.TButton", background="#e5e7eb",
+                             foreground=TEXT_COLOUR, font=("Helvetica", 11),
+                             padding=(6, 4), borderwidth=1)
         self.style.map("TButton", background=[("active", "#d1d5db"), ("pressed", "#cbd5e1"),
                                                ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
-                             foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0)
-        self.style.map("Toolbar.TButton", background=[("active", "#e5e7eb"),
+                             foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
+                             focuscolor="#2563eb", focusthickness=2,
+                             font=TOOLBAR_ICON_FONT)
+        self.style.map("Toolbar.TButton", background=[("focus", "#bfdbfe"),
+                                                        ("active", "#e5e7eb"),
                                                         ("pressed", "#d1d5db"),
                                                         ("disabled", LIGHT_BACKGROUND)])
         self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
                                                     ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
+        self.style.configure("Link.TButton", background=LIGHT_BACKGROUND, foreground="#0759a5",
+                             padding=(2, 1), borderwidth=0, underline=True)
+        self.style.map("Link.TButton", foreground=[("active", "#003f7d"),
+                                                     ("disabled", "#777777")],
+                       background=[("active", LIGHT_BACKGROUND),
+                                   ("focus", "#dbeafe")])
         self.style.configure("TEntry", fieldbackground=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              insertcolor=TEXT_COLOUR)
         self.style.map("TEntry", fieldbackground=[("disabled", "#e5e7eb")],
@@ -603,29 +603,60 @@ class B518LogSolutionApp:
                        selectforeground=[("readonly", TEXT_COLOUR)])
         self.style.configure("TSeparator", background="#9ca3af")
 
+    def _bind_toolbar_reverse_alias(self, control):
+        try:
+            control.bind("<KeyPress-ISO_Left_Tab>", self._toolbar_focus_previous)
+        except tk.TclError:
+            # Aqua Tk does not define the X11 ISO_Left_Tab keysym.
+            pass
+
+    def _toolbar_focus_previous(self, event):
+        previous = event.widget.tk_focusPrev()
+        if previous is not None:
+            previous.focus_set()
+        return "break"
+
     def _build(self) -> None:
         body = tk.Frame(self.root, background=LIGHT_BACKGROUND, padx=8, pady=8)
         body.pack(fill="both", expand=True)
         header = tk.Frame(body, background=LIGHT_BACKGROUND, height=35)
         header.pack(fill="x")
         header.pack_propagate(False)
-        self.toolbar_icons = {name: toolbar_icon(self.root, name) for name in TOOLBAR_ICON_ROWS}
         self._toolbar_hints = []
+        # Single-glyph widths leave room for the existing review count at 376px.
         self.settings_button = ttk.Button(
-            header, image=self.toolbar_icons["settings"], command=self.open_settings,
-            style="Toolbar.TButton", takefocus=True,
+            header, text=TOOLBAR_ICON_GLYPHS["settings"], width=1,
+            command=self.open_settings, style="Toolbar.TButton", takefocus=True,
         )
         self.settings_button.pack(side="left", padx=(0, 3))
         self._toolbar_hints.append(_LocalizedControlHint(self.settings_button,
                                                  lambda: self._t("main.settings")))
         self._build_company_identity(header)
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
+        self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
+        self.review_button = ttk.Button(
+            self.review_group, text=TOOLBAR_ICON_GLYPHS["review"], width=1,
+            command=self._open_conflict_review, style="Toolbar.TButton", state="disabled",
+            takefocus=True,
+        )
+        self.review_button.pack(side="left")
+        self.review_count = tk.Label(
+            self.review_group, text="0", width=8, anchor="center",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            font=("Helvetica", 10, "bold"),
+        )
+        self.review_count.pack(side="left", padx=(1, 0))
+        self.round_alarm_button = ttk.Button(
+            header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=1,
+            command=self._open_recovery_center, style="Toolbar.TButton",
+            takefocus=True,
+        )
         self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
         self.language_button = tk.Menubutton(
-            header, image=self.toolbar_icons["language"],
+            header, text=TOOLBAR_ICON_GLYPHS["language"], width=2,
             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
             activebackground="#e5e7eb", relief="flat", borderwidth=0,
-            takefocus=True,
+            takefocus=True, font=TOOLBAR_ICON_FONT,
         )
         self.language_menu = tk.Menu(self.language_button, tearoff=False)
         for language, native_name in LANGUAGE_OPTIONS:
@@ -635,36 +666,42 @@ class B518LogSolutionApp:
             )
         self.language_button.configure(menu=self.language_menu)
         self.language_button.pack(side="right", padx=(2, 0))
+        self.round_alarm_button.pack(side="right")
+        self.review_group.pack(side="right", padx=(2, 2))
+        self.notification_badge = tk.Canvas(
+            header, width=18, height=18, background=LIGHT_BACKGROUND,
+            highlightthickness=0, borderwidth=0, takefocus=False,
+        )
+        self._notification_badge_oval = self.notification_badge.create_oval(
+            1, 1, 17, 17, fill="#dc2626", outline="#dc2626")
+        self._notification_badge_label = self.notification_badge.create_text(
+            9, 9, text="", fill="#ffffff", font=("Helvetica", 9, "bold"))
+        self.notification_badge.bind("<ButtonRelease-1>", self._relay_notification_badge_click)
+        self._notification_badge_count = None
+        self._notification_badge_header = header
+        self._notification_badge_place_pending = False
+        header.bind("<Configure>", self._schedule_notification_badge_place, add="+")
+        self._schedule_notification_badge_place()
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.language_button, lambda: self._t(
-                "main.language", current_language=language_name(self.current_language))))
-
-        self.round_alarm_button = ttk.Button(
-            header, image=self.toolbar_icons["alarm"], command=self._open_round_alarm,
-            style="Toolbar.TButton", state="disabled", takefocus=True,
-        )
-        self.round_alarm_button.pack(side="right")
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.round_alarm_button, lambda: self._t(self._round_alarm_hint_id())))
-        self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
-        self.review_group.pack(side="right", padx=(2, 2))
-        self.review_button = ttk.Button(
-            self.review_group, image=self.toolbar_icons["review"], command=self._open_conflict_review,
-            style="Toolbar.TButton", state="disabled", takefocus=True,
-        )
-        self.review_button.pack(side="left")
-        self.review_count = tk.Label(
-            self.review_group, text="0", width=8, anchor="center",
-            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-            font=("Helvetica", 10, "bold"),
-        )
-        self.review_count.pack(side="left", padx=(1, 0))
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.review_button, lambda: self._t("main.review_count",
-                                                count=self._pending_conflict_count())))
+        self.language_button.bind("<FocusIn>", lambda event:
+                                  self.language_button.configure(background="#bfdbfe"))
+        self.language_button.bind("<FocusOut>", lambda event:
+                                  self.language_button.configure(background=LIGHT_BACKGROUND))
+        self._toolbar_hints.extend((
+            _LocalizedControlHint(self.language_button, lambda: self._t(
+                "main.language", current_language=language_name(self.current_language))),
+            _LocalizedControlHint(self.round_alarm_button, lambda: self._t("recovery.title")),
+            _LocalizedControlHint(self.review_button, lambda: self._t(
+                "main.review_count", count=self._pending_conflict_count())),
+        ))
+        # Tk's traversal follows creation order; keep it aligned with the row.
+        # Aqua emits Shift+Tab rather than the generic Tk ISO_Left_Tab mapping.
+        for control in (self.settings_button, self.review_button,
+                        self.round_alarm_button, self.language_button):
+            control.bind("<Shift-KeyPress-Tab>", self._toolbar_focus_previous)
+            self._bind_toolbar_reverse_alias(control)
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
         selection.pack(fill="x", pady=(3, 3))
@@ -675,6 +712,8 @@ class B518LogSolutionApp:
         self.project_choice = ttk.Combobox(selection, textvariable=self.project, state="readonly", width=10,
                                            values=self.profiles.projects)
         self.project_choice.grid(row=0, column=1, sticky="ew", padx=(5, 12))
+        self.project_choice.bind("<Shift-KeyPress-Tab>", self._toolbar_focus_previous)
+        self._bind_toolbar_reverse_alias(self.project_choice)
         self.project_choice.bind("<<ComboboxSelected>>", self._project_changed)
         self.machine_label = ttk.Label(selection, text="機型")
         self.machine_label.grid(row=1, column=0, sticky="w")
@@ -769,59 +808,26 @@ class B518LogSolutionApp:
         self.retry_save_button = ttk.Button(save_controls, text="重試保存", command=self.retry_saves,
                                             state="disabled")
         self.retry_save_button.pack(side="right")
-        round_save_controls = ttk.Frame(controls)
-        round_save_controls.pack(fill="x", pady=(5, 0))
-        round_save_controls.columnconfigure(0, weight=1)
-        round_save_controls.columnconfigure(1, minsize=140)
-        self.unsaved_round_count = ttk.Label(round_save_controls, text="未保存輪次 0")
-        self.unsaved_round_count.grid(row=0, column=0, columnspan=2, sticky="ew")
-        self.unsaved_round_choice = tk.StringVar(master=self.root, value="")
-        self.unsaved_round_picker = ttk.Combobox(
-            round_save_controls, textvariable=self.unsaved_round_choice,
-            state="readonly", width=1,
-        )
-        self.unsaved_round_picker.grid(row=1, column=0, sticky="ew", padx=(0, 4))
-        self.unsaved_round_retry_button = ttk.Button(
-            round_save_controls, text="重試所選", command=self.retry_selected_round, state="disabled")
-        self.unsaved_round_retry_button.grid(row=1, column=1, sticky="ew")
-        round_detail_controls = ttk.Frame(controls)
-        round_detail_controls.pack(fill="x", pady=(3, 0))
-        round_detail_controls.columnconfigure(0, weight=1)
-        round_detail_controls.columnconfigure(1, minsize=140)
-        round_detail_controls.rowconfigure(0, minsize=54)
-        self.unsaved_round_detail = ttk.Label(
-            round_detail_controls, text="", anchor="w", width=1, wraplength=210)
-        self.unsaved_round_detail.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self._unsaved_round_ids = {}
-        self.unsaved_round_picker.bind("<<ComboboxSelected>>", self._update_selected_round_retry)
-        self.archive_status_label = self.unsaved_round_detail
-        self.archive_round_detail = self.unsaved_round_detail
-        self.archive_status_label.configure(
-            text="輪次：未完整保存 0 · 完整保存 0 · 可信封存 0")
-        self.archive_retry_button = ttk.Button(
-            round_detail_controls, text="重試封存", command=self.retry_selected_archive, state="disabled")
-        self.archive_retry_button.grid(row=0, column=1, sticky="ew")
         app_event_controls = ttk.Frame(controls)
-        app_event_controls.pack(fill="x", pady=(4, 0))
-        app_event_controls.columnconfigure(0, weight=1)
-        app_event_controls.columnconfigure(1, minsize=140)
-        self.app_event_status_label = ttk.Label(
-            app_event_controls, text="", width=1, wraplength=210)
-        self.language_refresh_banner = self.app_event_status_label
-        self.app_event_status_label.grid(row=0, column=0, rowspan=2, sticky="ew", padx=(0, 4))
-        self.language_refresh_retry_button = ttk.Button(
-            app_event_controls, text=self._t("language.refresh.retry"),
-            command=self.retry_language_refresh, state="disabled")
-        self.language_refresh_retry_button.grid(row=1, column=1, sticky="ew", pady=(3, 0))
+        app_event_controls.pack(fill="x", pady=(5, 0))
+        self.app_event_status_label = ttk.Label(app_event_controls, text="", width=1, anchor="w")
+        self.app_event_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.app_diagnostics_button = ttk.Button(
-            app_event_controls, text=self._t("app.diagnostic.heading"), command=self.open_app_diagnostics)
-        self.app_diagnostics_button.grid(row=0, column=1, sticky="ew")
+            app_event_controls, text=self._t("app.diagnostic.heading"),
+            command=self.open_app_diagnostics, style="Link.TButton")
+        self.app_diagnostics_button.pack(side="right")
+        self.app_diagnostics_button.bind(
+            "<Return>", self._open_app_diagnostics_from_keyboard, add="+")
         self._render_rows()
         self._apply_main_language()
         self._refresh_app_event_status()
 
     def _t(self, message_id: str, **parameters: object) -> str:
         return translate(message_id, self.current_language, **parameters)
+
+    def _open_app_diagnostics_from_keyboard(self, _event=None):
+        self.open_app_diagnostics()
+        return "break"
 
     def _set_main_monitor_state(self, message_id: str, **parameters: object) -> None:
         self._monitor_state_message = message_id
@@ -847,18 +853,14 @@ class B518LogSolutionApp:
         self.start_button.configure(text=self._t("main.start_monitor"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
-        self.unsaved_round_retry_button.configure(text=self._t("main.retry_selected"))
-        self.archive_retry_button.configure(text=self._t("main.retry_archive"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
-        self.language_refresh_retry_button.configure(text=self._t("language.refresh.retry"))
+        self._apply_main_app_status()
         self._set_main_monitor_state(self._monitor_state_message,
                                      **self._monitor_state_parameters)
         self._render_conflict_review_button()
         self._render_round_alarm_button()
         self._render_station_title()
         self._render_save_status()
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
         self._refresh_main_round_labels()
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
@@ -897,15 +899,11 @@ class B518LogSolutionApp:
                 return
 
         if failures:
-            names = ", ".join(sorted({name() if callable(name) else name
-                                      for name, _reason in failures.values()}))
-            configure_if_alive(
-                self.app_event_status_label,
-                text=self._t("language.refresh.failed", windows=names))
-            configure_if_alive(self.language_refresh_retry_button,
+            configure_if_alive(self.app_diagnostics_language_retry_button,
                                state="disabled" if self._closing_ui else "normal")
+            self._apply_main_app_status()
         else:
-            configure_if_alive(self.language_refresh_retry_button, state="disabled")
+            configure_if_alive(self.app_diagnostics_language_retry_button, state="disabled")
             self._refresh_app_event_status(update_diagnostics=False)
         for _token, (name, reason) in newly_failed.items():
             try:
@@ -965,7 +963,7 @@ class B518LogSolutionApp:
 
     def _settings_button(self, parent, message_id: str, command):
         widths = {
-            "app.settings.profile.choose_directory": 20,
+            "app.settings.profile.choose_directory": 12,
             "app.settings.profile.load": 25,
             "app.settings.profile.validate": 19,
             "app.settings.profile.apply": 18,
@@ -1085,9 +1083,7 @@ class B518LogSolutionApp:
             self._toolbar_hints[3].refresh()
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
-        self.round_alarm_button.configure(
-            state="normal" if alarm_pending and snapshot.round_alarm_ready else "disabled",
-        )
+        self.round_alarm_button.configure(state="normal")
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
         if alarm_pending and conflicts:
@@ -1163,9 +1159,8 @@ class B518LogSolutionApp:
             text = self._t("app.save.pending", count=status.pending_count)
         else:
             text = self._t("app.save.complete")
-        if update_main and self.app_event_status_label and self.app_event_status_label.winfo_exists():
-            if not self._language_refresh_failures:
-                self.app_event_status_label.configure(text=text)
+        if update_main:
+            self._apply_main_app_status(status)
         if (update_diagnostics and self.app_diagnostics_status
                 and self.app_diagnostics_status.winfo_exists()):
             self.app_diagnostics_status.configure(text=text)
@@ -1180,6 +1175,28 @@ class B518LogSolutionApp:
                 and self.app_diagnostics_retry_button.winfo_exists()):
             self.app_diagnostics_retry_button.configure(
                 state="normal" if status.status == "failed" else "disabled")
+        if (update_diagnostics and self.app_diagnostics_language_retry_button
+                and self.app_diagnostics_language_retry_button.winfo_exists()):
+            self.app_diagnostics_language_retry_button.configure(
+                state="normal" if self._language_refresh_failures and
+                not self._closing_ui else "disabled")
+
+    def _apply_main_app_status(self, status=None) -> None:
+        """Show one short App state while keeping unresolved faults visible."""
+        if not self.app_event_status_label or not self.app_event_status_label.winfo_exists():
+            return
+        if self._language_refresh_failures:
+            message_id = "main.app_status.text_failed"
+        else:
+            status = status or self.rounds.app_event_status()
+            if status is None:
+                return
+            message_id = {
+                "failed": "main.app_status.save_failed",
+                "saving": "main.app_status.saving",
+                "complete": "main.app_status.saved",
+            }.get(status.status, "main.app_status.save_failed")
+        self.app_event_status_label.configure(text=self._t(message_id))
 
     def _refresh_app_event_records(self, force: bool = False) -> None:
         if not self.app_diagnostics_window or not self.app_diagnostics_window.winfo_exists():
@@ -1213,6 +1230,9 @@ class B518LogSolutionApp:
         window.title(self._t("app.diagnostic.heading"))
         if self.app_diagnostics_retry_button is not None:
             self.app_diagnostics_retry_button.configure(text=self._t("app.diagnostic.retry"))
+        if self.app_diagnostics_language_retry_button is not None:
+            self.app_diagnostics_language_retry_button.configure(
+                text=self._t("language.refresh.retry"))
         if self.app_diagnostics_close_button is not None:
             self.app_diagnostics_close_button.configure(text=self._t("app.diagnostic.close"))
         self._refresh_app_event_status(update_main=False)
@@ -1340,6 +1360,10 @@ class B518LogSolutionApp:
             footer_row, text=self._t("app.diagnostic.retry"), command=self.retry_app_event_saves,
             width=22, state="disabled")
         self.app_diagnostics_retry_button.pack(side="left", padx=6)
+        self.app_diagnostics_language_retry_button = ttk.Button(
+            footer_row, text=self._t("language.refresh.retry"),
+            command=self.retry_language_refresh, state="disabled")
+        self.app_diagnostics_language_retry_button.pack(side="left", padx=6)
         self.app_diagnostics_close_button = ttk.Button(
             footer_row, text=self._t("app.diagnostic.close"),
             command=self._close_app_diagnostics_window, width=12)
@@ -1369,6 +1393,7 @@ class B518LogSolutionApp:
         self.app_diagnostics_status = None
         self.app_diagnostics_history = None
         self.app_diagnostics_retry_button = None
+        self.app_diagnostics_language_retry_button = None
         self.app_diagnostics_close_button = None
         self._selected_app_event_id = None
 
@@ -1420,8 +1445,8 @@ class B518LogSolutionApp:
             return
         state = "disabled" if self._closing_ui else "normal"
         self.language_button.configure(state=state)
-        if hasattr(self, "language_refresh_retry_button"):
-            self.language_refresh_retry_button.configure(
+        if self.app_diagnostics_language_retry_button is not None:
+            self.app_diagnostics_language_retry_button.configure(
                 state="normal" if self._language_refresh_failures and not self._closing_ui
                 else "disabled")
         if hasattr(self, "language_menu"):
@@ -1559,103 +1584,12 @@ class B518LogSolutionApp:
             self._render_save_status()
             self.retry_save_button.configure(state="disabled")
 
-    def retry_selected_round(self) -> None:
-        """Retry the operator-selected current-run round without blocking Tk."""
-        if getattr(self, "_closing_ui", False):
-            return
-        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        if round_id and self.rounds.retry_saves(round_id):
-            self.unsaved_round_retry_button.configure(state="disabled")
-
-    def _update_selected_round_retry(self, _event=None) -> None:
-        round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        snapshot = self.rounds.round_snapshot(round_id) if round_id else None
-        state = "normal" if (not getattr(self, "_closing_ui", False) and snapshot is not None and
-                              snapshot.save_state == "failed") else "disabled"
-        self.unsaved_round_retry_button.configure(state=state)
-        if snapshot is None:
-            self.unsaved_round_detail.configure(text="")
-        elif snapshot.save_errors:
-            self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], snapshot.save_errors[0]))
-        else:
-            self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], self._t(save_state_message_id(snapshot.save_state))))
-
-    def _refresh_unsaved_rounds(self) -> None:
-        """Render all protected rounds by identity, separate from the active result board."""
-        if not hasattr(self, "unsaved_round_picker"):
-            return
-        snapshots = self.rounds.unsaved_rounds()
-        current_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        labels = []
-        mapping = {}
-        for snapshot in snapshots:
-            label = "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10],
-                                           self._t(save_state_message_id(snapshot.save_state)))
-            mapping[label] = snapshot.round_id
-            labels.append(label)
-        self._unsaved_round_ids = mapping
-        self.unsaved_round_picker.configure(values=labels)
-        selected = next((label for label, round_id in mapping.items() if round_id == current_id), "")
-        if not selected and labels:
-            failed_round_id = next((snapshot.round_id for snapshot in snapshots
-                                    if snapshot.save_state == "failed"), None)
-            selected = next((label for label, round_id in mapping.items()
-                             if round_id == failed_round_id), labels[0])
-        self.unsaved_round_choice.set(selected)
-        self.unsaved_round_count.configure(text=self._t("main.unsaved_rounds", count=len(snapshots)))
-        self._update_selected_round_retry()
-
-    def _refresh_archive_statuses(self) -> None:
-        """Show current-run save and archive states without disk work in Tk."""
-        if not hasattr(self, "archive_retry_button"):
-            return
-        statuses = self.rounds.archive_statuses()
-        unsaved = sum(status.save_state != "complete" for status in statuses)
-        saved = sum(status.save_state == "complete" and not status.cleanup_eligible
-                    for status in statuses)
-        archived = sum(status.cleanup_eligible for status in statuses)
-        summary = self._t("main.archive_summary", unsaved=unsaved, saved=saved, archived=archived)
-        selected_round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
-        unsaved_status = next((status for status in statuses
-                               if status.round_id == selected_round_id and status.save_state != "complete"), None)
-        if unsaved_status is None:
-            unsaved_status = next((status for status in statuses if status.save_state != "complete"), None)
-        retryable = [status for status in statuses
-                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
-        archived_status = next((status for status in statuses if status.cleanup_eligible), None)
-        detail_status = unsaved_status or (retryable[0] if retryable else archived_status)
-        detail = ""
-        if detail_status is not None:
-            state = (self._t("main.archived") if detail_status.cleanup_eligible else
-                     self._t("main.archive_protected") if detail_status.save_state == "complete" else
-                     self._t(save_state_message_id(detail_status.save_state)))
-            reason = (self._retention_reason_detail(detail_status.reason_message)
-                      if detail_status.reason_message is not None else
-                      self._retention_reason_detail(detail_status.message))
-            if detail_status.save_state == "failed":
-                snapshot = self.rounds.round_snapshot(detail_status.round_id)
-                if (detail_status.reason_message is None and snapshot is not None and
-                        snapshot.save_errors):
-                    reason = snapshot.save_errors[-1]
-            if detail_status.cleanup_eligible:
-                reason = str(detail_status.archived_at)
-            detail = " · {} · {}{}".format(
-                detail_status.round_id, state, "：" + reason if reason else "")
-        self.archive_status_label.configure(text=summary + detail)
-        self.archive_retry_button.configure(
-            state="normal" if retryable and not self._closing_ui else "disabled")
-
-    def retry_selected_archive(self) -> None:
-        if self._closing_ui:
-            return
-        retryable = [status.round_id for status in self.rounds.archive_statuses()
-                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
-        if retryable:
-            self.archive_retry_button.configure(state="disabled")
-            for round_id in retryable:
-                self.rounds.retry_archival(round_id)
+    @staticmethod
+    def _recovery_summary(diagnostic):
+        # Full raw evidence remains available in the scrollable recovery details.
+        text = str(diagnostic)
+        first_line = text.splitlines()[0] if text else ""
+        return first_line[:120] + ("…" if first_line != text or len(first_line) > 120 else "")
 
     def _set_kvm_result_block(self, slot: int, status: str) -> None:
         block = self.kvm_result_blocks.get(slot)
@@ -1938,8 +1872,6 @@ class B518LogSolutionApp:
             pass
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
         self._refresh_app_event_status()
         self._refresh_app_event_records()
         self.rounds.poll_retention_schedule(self.profile_store.retention_days)
@@ -1966,7 +1898,7 @@ class B518LogSolutionApp:
             if event.round_id != self.active_round_id:
                 if event.event.kind in {"audit_write_failed", "save_recovered"}:
                     self._log(event.event.message, event.event.localized_message, event.round_id)
-                self._refresh_unsaved_rounds()
+                self._refresh_recovery_center()
                 return
             captured = next((item for item in getattr(snapshot, "events", ())
                              if item.round_id == event.round_id and
@@ -2517,6 +2449,7 @@ class B518LogSolutionApp:
                     self._round_alarm_window_identity[0] != snapshot.round_id and
                     self.round_alarm_window and self.round_alarm_window.winfo_exists()):
                 self.round_alarm_window.withdraw()
+            self._refresh_recovery_center()
             return
         identity = (alarm.round_id, alarm.alarm_id)
         if identity != getattr(self, "_shown_round_alarm_identity", None):
@@ -2525,23 +2458,494 @@ class B518LogSolutionApp:
             view_state = (alarm, snapshot.round_alarm_ready)
             if view_state != self._rendered_alarm_view_state:
                 self._render_round_alarm(alarm)
+        self._refresh_recovery_center()
 
     def _render_round_alarm_button(self, snapshot=None) -> None:
         if not hasattr(self, "round_alarm_button"):
             return
-        snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
-        alarm = snapshot.round_alarm if snapshot else None
-        if alarm is None:
-            self.round_alarm_button.configure(state="disabled")
-            if len(getattr(self, "_toolbar_hints", ())) > 2:
-                self._toolbar_hints[2].refresh()
-            return
-        pending = not alarm.acknowledged_at
-        self.round_alarm_button.configure(
-            state="normal" if pending and snapshot.round_alarm_ready else "disabled",
-        )
+        self.round_alarm_button.configure(state="normal")
+        self._refresh_notification_badge()
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
+
+    def _pending_notification_count(self) -> int:
+        """Project unresolved alarms and save/archive failures into the bell count."""
+        if not hasattr(self, "rounds"):
+            return 0
+        alarm_ids = set()
+        failed_round_ids = set()
+        previously_failed = getattr(self, "_notification_failed_round_ids", set())
+        statuses = self.rounds.archive_statuses()
+        for status in statuses:
+            snapshot = self.rounds.round_snapshot(status.round_id)
+            if snapshot is not None:
+                alarm = snapshot.round_alarm
+                if alarm is not None and not alarm.acknowledged_at:
+                    alarm_ids.add((alarm.round_id, alarm.alarm_id))
+                if (snapshot.save_state == "failed" or
+                        (snapshot.retry_in_progress and snapshot.save_errors)):
+                    failed_round_ids.add(snapshot.round_id)
+            if ((snapshot is not None and (
+                    snapshot.save_state == "failed" or
+                    (snapshot.retry_in_progress and snapshot.save_errors))) or
+                    status.status == "failed"):
+                previously_failed.add(status.round_id)
+            if status.cleanup_eligible or status.status == "protected":
+                previously_failed.discard(status.round_id)
+            if status.status == "failed" or (
+                    status.round_id in previously_failed and
+                    status.status == "saving"):
+                failed_round_ids.add(status.round_id)
+        self._notification_failed_round_ids = previously_failed
+        for snapshot in self.rounds.unsaved_rounds():
+            if (snapshot.save_state == "failed" or
+                    (snapshot.retry_in_progress and snapshot.save_errors)):
+                failed_round_ids.add(snapshot.round_id)
+        return len(alarm_ids) + len(failed_round_ids)
+
+    def _refresh_notification_badge(self) -> None:
+        if not hasattr(self, "notification_badge"):
+            return
+        count = self._pending_notification_count()
+        if count == self._notification_badge_count:
+            return
+        self._notification_badge_count = count
+        if count == 0:
+            self.notification_badge.itemconfigure(self._notification_badge_label, text="")
+            self.notification_badge.place_forget()
+            return
+        label = str(count)
+        font = tkfont.Font(root=self.root, family="Helvetica", size=9, weight="bold")
+        diameter = max(18, font.measure(label) + 8)
+        self.notification_badge.configure(width=diameter, height=diameter)
+        self.notification_badge.coords(self._notification_badge_oval,
+                                       1, 1, diameter - 1, diameter - 1)
+        self.notification_badge.coords(self._notification_badge_label,
+                                       diameter / 2, diameter / 2)
+        self.notification_badge.itemconfigure(self._notification_badge_label, text=label)
+        self._schedule_notification_badge_place()
+
+    def _schedule_notification_badge_place(self, _event=None) -> None:
+        if self._notification_badge_place_pending:
+            return
+        self._notification_badge_place_pending = True
+        try:
+            self.root.after_idle(self._place_notification_badge)
+        except tk.TclError:
+            self._notification_badge_place_pending = False
+
+    def _place_notification_badge(self) -> None:
+        self._notification_badge_place_pending = False
+        if (self._notification_badge_count in (None, 0) or
+                not self.round_alarm_button.winfo_exists()):
+            return
+        # Float at the bell's upper-right without requesting space in the packed toolbar.
+        self.notification_badge.place(
+            x=self.round_alarm_button.winfo_x() + self.round_alarm_button.winfo_width() - 7,
+            y=self.round_alarm_button.winfo_y() - 3,
+        )
+
+    def _relay_notification_badge_click(self, event):
+        # The badge is decorative; relay only coordinates inside the bell's original hit box.
+        button = self.round_alarm_button
+        x = event.x_root - button.winfo_rootx()
+        y = event.y_root - button.winfo_rooty()
+        if 0 <= x < button.winfo_width() and 0 <= y < button.winfo_height():
+            button.invoke()
+        return "break"
+
+    @staticmethod
+    def _recovery_detail_widget(parent):
+        frame = ttk.Frame(parent)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        detail = tk.Text(frame, wrap="word", height=8, width=1, state="disabled",
+                         background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                         font=("TkDefaultFont", MAIN_FONT_SIZE), relief="flat")
+        detail.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=detail.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        detail.configure(yscrollcommand=scrollbar.set)
+        return frame, detail
+
+    @staticmethod
+    def _set_recovery_detail(widget, text):
+        if widget.get("1.0", "end-1c") == text:
+            return
+        reading = widget.index("@0,0")
+        selection = widget.tag_ranges("sel")
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        if selection:
+            widget.tag_add("sel", *selection)
+        widget.configure(state="disabled")
+        widget.yview(reading)
+
+    @staticmethod
+    def _set_recovery_list(widget, rows):
+        if widget.get(0, "end") == tuple(rows):
+            return
+        position = widget.yview()[0]
+        widget.delete(0, "end")
+        for row in rows:
+            widget.insert("end", row)
+        widget.yview_moveto(position)
+
+    def _open_recovery_center(self) -> None:
+        """Open the current-run alarm, save, and archive recovery center."""
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            window = tk.Toplevel(self.root)
+            self.recovery_window = window
+            window.title(self._t("recovery.title"))
+            window.geometry("900x620")
+            window.minsize(760, 520)
+            window.transient(self.root)
+            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            self.recovery_tabs = ttk.Notebook(window)
+            self.recovery_tabs.pack(fill="both", expand=True, padx=12, pady=12)
+
+            alarms = ttk.Frame(self.recovery_tabs, padding=10)
+            alarms.columnconfigure(1, weight=1)
+            alarms.rowconfigure(0, weight=1)
+            self.recovery_tabs.add(alarms, text=self._t("recovery.alarms"))
+            alarm_list_frame = ttk.Frame(alarms)
+            alarm_list_frame.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+            alarm_list_frame.rowconfigure(0, weight=1)
+            self.recovery_alarm_list = tk.Listbox(
+                alarm_list_frame, width=34, exportselection=False,
+                background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                selectbackground="#1d4ed8", selectforeground="#ffffff",
+            )
+            self.recovery_alarm_list.grid(row=0, column=0, sticky="nsew")
+            alarm_scrollbar = ttk.Scrollbar(
+                alarm_list_frame, orient="vertical", command=self.recovery_alarm_list.yview)
+            alarm_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_alarm_list.configure(yscrollcommand=alarm_scrollbar.set)
+            self.recovery_alarm_list.bind("<<ListboxSelect>>", self._select_recovery_alarm)
+            alarm_detail = ttk.Frame(alarms)
+            alarm_detail.columnconfigure(0, weight=1)
+            alarm_detail.rowconfigure(0, weight=1)
+            alarm_detail.grid(row=0, column=1, sticky="nsew")
+            alarm_text_frame, self.recovery_alarm_detail = self._recovery_detail_widget(alarm_detail)
+            alarm_text_frame.grid(row=0, column=0, sticky="nsew")
+            self.recovery_alarm_ack_button = ttk.Button(
+                alarm_detail, text=self._t("alarm.button.acknowledge"),
+                command=self._acknowledge_recovery_alarm,
+            )
+            self.recovery_alarm_ack_button.grid(row=1, column=0, sticky="e", pady=(12, 0))
+
+            recovery = ttk.Frame(self.recovery_tabs, padding=10)
+            recovery.columnconfigure(0, weight=1, uniform="recovery-columns")
+            recovery.columnconfigure(1, weight=1, uniform="recovery-columns")
+            recovery.rowconfigure(1, weight=1)
+            recovery.rowconfigure(2, weight=2)
+            self.recovery_tabs.add(recovery, text=self._t("recovery.saves_archives"))
+            self.recovery_save_heading = ttk.Label(
+                recovery, text=self._t("recovery.unsaved_heading"), width=1, wraplength=330)
+            self.recovery_save_heading.grid(
+                row=0, column=0, sticky="ew", padx=(0, 8), pady=(0, 5))
+            self.recovery_archive_heading = ttk.Label(
+                recovery, text=self._t("recovery.archive_heading"), width=1, wraplength=330)
+            self.recovery_archive_heading.grid(
+                row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 5))
+            save_list_frame = ttk.Frame(recovery)
+            save_list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+            save_list_frame.rowconfigure(0, weight=1)
+            save_list_frame.columnconfigure(0, weight=1)
+            self.recovery_save_list = tk.Listbox(
+                save_list_frame, exportselection=False, background=FIELD_BACKGROUND,
+                foreground=TEXT_COLOUR, selectbackground="#1d4ed8",
+                selectforeground="#ffffff",
+            )
+            self.recovery_save_list.grid(row=0, column=0, sticky="nsew")
+            save_scrollbar = ttk.Scrollbar(
+                save_list_frame, orient="vertical", command=self.recovery_save_list.yview)
+            save_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_save_list.configure(yscrollcommand=save_scrollbar.set)
+            self.recovery_save_list.bind("<<ListboxSelect>>", self._select_recovery_save)
+            archive_list_frame = ttk.Frame(recovery)
+            archive_list_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+            archive_list_frame.rowconfigure(0, weight=1)
+            archive_list_frame.columnconfigure(0, weight=1)
+            self.recovery_archive_list = tk.Listbox(
+                archive_list_frame, exportselection=False, background=FIELD_BACKGROUND,
+                foreground=TEXT_COLOUR, selectbackground="#1d4ed8",
+                selectforeground="#ffffff",
+            )
+            self.recovery_archive_list.grid(row=0, column=0, sticky="nsew")
+            archive_scrollbar = ttk.Scrollbar(
+                archive_list_frame, orient="vertical", command=self.recovery_archive_list.yview)
+            archive_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_archive_list.configure(yscrollcommand=archive_scrollbar.set)
+            self.recovery_archive_list.bind("<<ListboxSelect>>", self._select_recovery_archive)
+            save_text_frame, self.recovery_save_detail = self._recovery_detail_widget(recovery)
+            save_text_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=8)
+            archive_text_frame, self.recovery_archive_detail = self._recovery_detail_widget(recovery)
+            archive_text_frame.grid(row=2, column=1, sticky="nsew", padx=(8, 0), pady=8)
+            self.recovery_save_retry_button = ttk.Button(
+                recovery, text=self._t("main.retry_selected"),
+                command=self._retry_recovery_save,
+            )
+            self.recovery_save_retry_button.grid(row=3, column=0, sticky="ew", padx=(0, 8))
+            self.recovery_archive_retry_button = ttk.Button(
+                recovery, text=self._t("main.retry_archive"),
+                command=self._retry_recovery_archives,
+            )
+            self.recovery_archive_retry_button.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+            window.bind("<Destroy>", self._on_recovery_center_destroy, add="+")
+            self._unregister_recovery_language_receiver = self.register_language_receiver(
+                lambda: self._t("recovery.title"),
+                self._refresh_recovery_center_language,
+                window.winfo_exists,
+            )
+        self._refresh_recovery_center()
+        self.recovery_window.deiconify()
+        self.recovery_window.lift()
+
+    def _on_recovery_center_destroy(self, event) -> None:
+        if event.widget is not self.recovery_window:
+            return
+        unregister = self._unregister_recovery_language_receiver
+        self._unregister_recovery_language_receiver = None
+        if unregister is not None:
+            unregister()
+        self.recovery_window = None
+        self.recovery_tabs = None
+        self.recovery_alarm_list = None
+        self.recovery_alarm_detail = None
+        self.recovery_alarm_ack_button = None
+        self.recovery_save_list = None
+        self.recovery_save_heading = None
+        self.recovery_save_detail = None
+        self.recovery_save_retry_button = None
+        self.recovery_archive_detail = None
+        self.recovery_archive_retry_button = None
+        self.recovery_archive_list = None
+        self.recovery_archive_heading = None
+        self._recovery_alarm_ids = []
+        self._recovery_save_ids = []
+        self._recovery_archive_ids = []
+
+    def _refresh_recovery_center_language(self) -> None:
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            return
+        self.recovery_window.title(self._t("recovery.title"))
+        self.recovery_tabs.tab(0, text=self._t("recovery.alarms"))
+        self.recovery_tabs.tab(1, text=self._t("recovery.saves_archives"))
+        self.recovery_save_heading.configure(text=self._t("recovery.unsaved_heading"))
+        self.recovery_archive_heading.configure(text=self._t("recovery.archive_heading"))
+        self.recovery_save_retry_button.configure(text=self._t("main.retry_selected"))
+        self.recovery_archive_retry_button.configure(text=self._t("main.retry_archive"))
+        self._refresh_recovery_center()
+
+    def _refresh_recovery_center(self) -> None:
+        if not self.recovery_window or not self.recovery_window.winfo_exists():
+            return
+        self._refresh_recovery_alarms()
+        self._refresh_recovery_saves_and_archives()
+
+    def _refresh_recovery_alarms(self) -> None:
+        snapshots = []
+        for status in self.rounds.archive_statuses():
+            snapshot = self.rounds.round_snapshot(status.round_id)
+            if snapshot is not None and snapshot.round_alarm is not None:
+                snapshots.append(snapshot)
+        alarms = [(snapshot, snapshot.round_alarm) for snapshot in snapshots]
+        selected = self._recovery_selected_alarm
+        self._recovery_alarm_ids = [(alarm.round_id, alarm.alarm_id) for _, alarm in alarms]
+        alarm_rows = []
+        selected_index = None
+        for index, (snapshot, alarm) in enumerate(alarms):
+            status = self._t("recovery.acknowledged" if alarm.acknowledged_at
+                             else "recovery.pending")
+            alarm_rows.append(
+                "{} · {} · {}".format(snapshot.station, alarm.round_id[:10], status))
+            if (alarm.round_id, alarm.alarm_id) == selected:
+                selected_index = index
+        self._set_recovery_list(self.recovery_alarm_list,
+                                alarm_rows or [self._t("recovery.no_alarms")])
+        if not alarms:
+            self._set_recovery_detail(self.recovery_alarm_detail, self._t("recovery.no_alarms_detail"))
+            self.recovery_alarm_ack_button.configure(
+                text=self._t("alarm.button.acknowledge"), state="disabled")
+            self._recovery_selected_alarm = None
+            return
+        if selected_index is None:
+            selected_index = next((i for i, (_, alarm) in enumerate(alarms)
+                                   if not alarm.acknowledged_at), 0)
+        if self.recovery_alarm_list.curselection() != (selected_index,):
+            self.recovery_alarm_list.selection_clear(0, "end")
+            self.recovery_alarm_list.selection_set(selected_index)
+        self.recovery_alarm_list.activate(selected_index)
+        self._recovery_selected_alarm = self._recovery_alarm_ids[selected_index]
+        self._render_recovery_alarm(alarms[selected_index][0], alarms[selected_index][1])
+
+    def _select_recovery_alarm(self, _event=None) -> None:
+        selected = self.recovery_alarm_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_alarm_ids):
+            return
+        self._recovery_selected_alarm = self._recovery_alarm_ids[selected[0]]
+        snapshot = self.rounds.round_snapshot(self._recovery_selected_alarm[0])
+        if snapshot is not None:
+            self._render_recovery_alarm(snapshot, snapshot.round_alarm)
+
+    def _render_recovery_alarm(self, snapshot, alarm) -> None:
+        if alarm is None:
+            return
+        pending = not alarm.acknowledged_at
+        status_id = ("alarm.status.preparation_pending" if pending and not snapshot.round_alarm_ready
+                    else "alarm.status.pending" if pending else "alarm.status.acknowledged")
+        reason = next((item.event.detail.get("reason") for item in snapshot.events
+                       if item.event.kind == "round_alarm_created" and
+                       item.event.detail.get("alarm_id") == alarm.alarm_id), "round_deadline")
+        detail = self._t(
+            "alarm.body", round_label=self._t("alarm.round"), round_id=alarm.round_id,
+            alarm_label=self._t("alarm.identity"), alarm_id=alarm.alarm_id,
+            created_label=self._t("alarm.created_at"), created_at=alarm.created_at,
+            status="{}\n{}\n{}: {}".format(
+                self._t(status_id), self._t("alarm.status.conflict_note"),
+                self._t("recovery.reason"), self._t("alarm.reason." + str(reason))),
+        )
+        self._set_recovery_detail(self.recovery_alarm_detail, detail)
+        self.recovery_alarm_ack_button.configure(
+            text=self._t("alarm.button.acknowledged" if not pending else "alarm.button.acknowledge"),
+            state="normal" if pending and snapshot.round_alarm_ready and not self._closing_ui
+            else "disabled",
+        )
+
+    def _acknowledge_recovery_alarm(self) -> None:
+        identity = self._recovery_selected_alarm
+        if identity is None or self._closing_ui:
+            return
+        self.rounds.acknowledge_round_alarm(*identity)
+        self._refresh_round_alarm()
+        self._refresh_conflict_review()
+
+    def _refresh_recovery_saves_and_archives(self) -> None:
+        statuses = self.rounds.archive_statuses()
+        unsaved = self.rounds.unsaved_rounds()
+        previous_save = self._recovery_selected_save
+        self._recovery_save_ids = [snapshot.round_id for snapshot in unsaved]
+        save_rows = []
+        selected_save_index = None
+        for index, snapshot in enumerate(unsaved):
+            state = self._t(save_state_message_id(snapshot.save_state))
+            save_rows.append(
+                "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10], state))
+            if snapshot.round_id == previous_save:
+                selected_save_index = index
+        self._set_recovery_list(self.recovery_save_list,
+                                save_rows or [self._t("recovery.no_unsaved")])
+        if unsaved:
+            if selected_save_index is None:
+                selected_save_index = next((i for i, item in enumerate(unsaved)
+                                            if item.save_state == "failed"), 0)
+            if self.recovery_save_list.curselection() != (selected_save_index,):
+                self.recovery_save_list.selection_clear(0, "end")
+                self.recovery_save_list.selection_set(selected_save_index)
+            self.recovery_save_list.activate(selected_save_index)
+            self._recovery_selected_save = self._recovery_save_ids[selected_save_index]
+            self._render_recovery_save(unsaved[selected_save_index])
+        else:
+            self._recovery_selected_save = None
+            self._set_recovery_detail(self.recovery_save_detail, self._t("recovery.no_unsaved_detail"))
+            self.recovery_save_retry_button.configure(state="disabled")
+
+        previous_archive = self._recovery_selected_archive
+        self._recovery_archive_ids = [status.round_id for status in statuses]
+        archive_rows = []
+        selected_archive_index = None
+        for index, status in enumerate(statuses):
+            state_id = ("main.archived" if status.cleanup_eligible else
+                        "main.save.failed" if status.save_state == "failed" else
+                        "main.archive_protected" if status.status == "protected" else
+                        "main.archive_waiting" if status.status in {"waiting", "saving"} else
+                        "main.archive_failed")
+            archive_rows.append(
+                "{} · {} · {}".format(status.station, status.round_id[:10], self._t(state_id)))
+            if status.round_id == previous_archive:
+                selected_archive_index = index
+        self._set_recovery_list(self.recovery_archive_list,
+                                archive_rows or [self._t("recovery.no_rounds")])
+        if statuses:
+            if selected_archive_index is None:
+                selected_archive_index = next((i for i, status in enumerate(statuses)
+                                               if status.status in {"failed", "protected"}), 0)
+            if self.recovery_archive_list.curselection() != (selected_archive_index,):
+                self.recovery_archive_list.selection_clear(0, "end")
+                self.recovery_archive_list.selection_set(selected_archive_index)
+            self.recovery_archive_list.activate(selected_archive_index)
+            self._recovery_selected_archive = self._recovery_archive_ids[selected_archive_index]
+            self._render_recovery_archive(statuses[selected_archive_index])
+        else:
+            self._recovery_selected_archive = None
+            self._set_recovery_detail(self.recovery_archive_detail, self._t("recovery.no_rounds_detail"))
+        retryable = [status for status in statuses
+                     if status.status in {"failed", "protected"} and status.save_state == "complete"]
+        self.recovery_archive_retry_button.configure(
+            text=self._t("recovery.retry_all_archives", count=len(retryable)),
+            state="normal" if retryable and not self._closing_ui else "disabled")
+
+    def _select_recovery_save(self, _event=None) -> None:
+        selected = self.recovery_save_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_save_ids):
+            return
+        self._recovery_selected_save = self._recovery_save_ids[selected[0]]
+        snapshot = self.rounds.round_snapshot(self._recovery_selected_save)
+        if snapshot is not None:
+            self._render_recovery_save(snapshot)
+
+    def _render_recovery_save(self, snapshot) -> None:
+        if snapshot.save_errors:
+            detail = "{}\n{}".format(self._t("recovery.save_error"), "\n".join(snapshot.save_errors))
+        else:
+            detail = self._t("recovery.save_state_detail", state=self._t(
+                save_state_message_id(snapshot.save_state)))
+        self._set_recovery_detail(self.recovery_save_detail, detail)
+        self.recovery_save_retry_button.configure(
+            state="normal" if snapshot.save_state == "failed" and not self._closing_ui
+            else "disabled")
+
+    def _retry_recovery_save(self) -> None:
+        round_id = self._recovery_selected_save
+        if round_id and not self._closing_ui:
+            self.rounds.retry_saves(round_id)
+            self._refresh_recovery_center()
+
+    def _select_recovery_archive(self, _event=None) -> None:
+        selected = self.recovery_archive_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_archive_ids):
+            return
+        self._recovery_selected_archive = self._recovery_archive_ids[selected[0]]
+        status = self.rounds.archive_status(self._recovery_selected_archive)
+        if status is not None:
+            self._render_recovery_archive(status)
+
+    def _render_recovery_archive(self, status) -> None:
+        state_id = ("main.archived" if status.cleanup_eligible else
+                    "main.save.failed" if status.save_state == "failed" else
+                    "main.archive_protected" if status.status == "protected" else
+                    "main.archive_waiting" if status.status in {"waiting", "saving"} else
+                    "main.archive_failed")
+        reason = (str(status.archived_at) if status.cleanup_eligible else
+                  self._retention_reason_detail(status.reason_message)
+                  if status.reason_message is not None else
+                  self._retention_reason_detail(status.message) if status.message else "")
+        detail = "{} · {}".format(status.round_id, self._t(state_id))
+        if reason:
+            detail += "\n" + reason
+        if status.status == "failed" and status.message:
+            detail += "\n{}: {}".format(self._t("recovery.archive_diagnostic"), status.message)
+        self._set_recovery_detail(self.recovery_archive_detail, detail)
+
+    def _retry_recovery_archives(self) -> None:
+        if self._closing_ui:
+            return
+        for status in self.rounds.archive_statuses():
+            if status.status in {"failed", "protected"} and status.save_state == "complete":
+                self.rounds.retry_archival(status.round_id)
+        self._refresh_recovery_center()
 
     def _refresh_round_alarm_language(self) -> None:
         window = self.round_alarm_window
@@ -2689,7 +3093,17 @@ class B518LogSolutionApp:
         notebook.add(profile_tab, text=self._t(self._settings_tab_ids[0]))
         notebook.add(log_tab, text=self._t(self._settings_tab_ids[1]))
         notebook.add(retention_tab, text=self._t(self._settings_tab_ids[2]))
-        self._build_profile_editor_tab(self._settings_scrollable_tab(profile_tab))
+        profile_tab.columnconfigure(0, weight=1)
+        profile_tab.rowconfigure(0, weight=1)
+        profile_form = ttk.Frame(profile_tab)
+        profile_form.grid(row=0, column=0, sticky="nsew")
+        profile_actions = ttk.Frame(profile_tab, padding=(12, 0, 12, 8), height=172)
+        profile_actions.grid(row=1, column=0, sticky="ew")
+        profile_actions.grid_propagate(False)
+        for column in range(3):
+            profile_actions.columnconfigure(column, weight=1, uniform="profile-actions")
+        self._build_profile_editor_tab(
+            self._settings_scrollable_tab(profile_form), action_parent=profile_actions)
         self._build_log_tab(log_tab)
         self._build_retention_tab(self._settings_scrollable_tab(retention_tab))
         dialog.bind("<Destroy>", self._on_settings_destroy, add="+")
@@ -2735,20 +3149,20 @@ class B518LogSolutionApp:
             parent, "app.settings.retention.cleanup.heading")
         self.retention_cleanup_heading.configure(font=("Helvetica", 10, "bold"))
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
+        cleanup_output = ttk.Frame(parent)
+        cleanup_output.grid(row=5, column=0, columnspan=2, sticky="ew")
+        cleanup_output.columnconfigure(0, weight=1)
         self.retention_cleanup_text = tk.Text(
-            parent, wrap="word", width=1, height=12, state="disabled",
+            cleanup_output, wrap="word", width=1, height=12, state="disabled",
             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
             insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
             selectforeground=TEXT_COLOUR, relief="solid", borderwidth=1,
         )
-        cleanup_output = ttk.Frame(parent)
-        cleanup_output.grid(row=5, column=0, columnspan=2, sticky="ew")
-        cleanup_output.columnconfigure(0, weight=1)
         self.retention_cleanup_scrollbar = ttk.Scrollbar(
             cleanup_output, orient="vertical", command=self.retention_cleanup_text.yview)
         self.retention_cleanup_text.configure(
             yscrollcommand=self.retention_cleanup_scrollbar.set)
-        self.retention_cleanup_text.grid(in_=cleanup_output, row=0, column=0, sticky="nsew")
+        self.retention_cleanup_text.grid(row=0, column=0, sticky="nsew")
         self.retention_cleanup_scrollbar.grid(row=0, column=1, sticky="ns")
         self.retention_retry_button = self._settings_button(
             parent, "app.settings.retention.cleanup.retry", self._retry_retention_cleanup)
@@ -2895,22 +3309,26 @@ class B518LogSolutionApp:
                         latest.app_events.reason_message
                         if latest.app_events.reason_message is not None
                         else latest.app_events.reason))
-        variable.set(detail)
         output = getattr(self, "retention_cleanup_text", None)
         if output is not None and output.winfo_exists():
-            reading_position = output.yview()[0]
-            selection = (output.index("sel.first"), output.index("sel.last")) \
+            if output.get("1.0", "end-1c") == detail:
+                return
+            reading_position = output.index("@0,0")
+            selection = tuple(len(output.get("1.0", index))
+                              for index in output.tag_ranges("sel")) \
                 if output.tag_ranges("sel") else None
             output.configure(state="normal")
             output.delete("1.0", "end")
             output.insert("1.0", detail)
             if selection is not None:
-                try:
-                    output.tag_add("sel", *selection)
-                except tk.TclError:
-                    pass
-            output.yview_moveto(reading_position)
+                length = len(output.get("1.0", "end-1c"))
+                start, end = (min(max(0, offset), length) for offset in selection)
+                if start < end:
+                    output.tag_add("sel", "1.0 + {} chars".format(start),
+                                   "1.0 + {} chars".format(end))
+            output.yview(reading_position)
             output.configure(state="disabled")
+        variable.set(detail)
 
     def _retention_reason_detail(self, reason: object) -> str:
         """Render a localized outer reason and retain its complete source evidence."""
@@ -2929,7 +3347,8 @@ class B518LogSolutionApp:
             return "{}\n{}\n{}".format(presentation.text, details, diagnostic)
         return "{}\n{}".format(presentation.text, details)
 
-    def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
+    def _build_profile_editor_tab(self, parent: ttk.Frame,
+                                  action_parent: Optional[ttk.Frame] = None) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""
         try:
             profile = self.profiles.get(self.project.get(), self.station.get())
@@ -3004,26 +3423,40 @@ class B518LogSolutionApp:
                 row=row, column=column, sticky="w", padx=(12, 0) if column else 0, pady=4)
             ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
                 row=row, column=column + 1, sticky="ew", padx=6, pady=4)
-        status_frame = ttk.Frame(parent, height=72)
-        status_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(10, 6))
+        actions = action_parent or parent
+        status_frame = ttk.Frame(actions, height=48)
+        status_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(2, 2))
         status_frame.grid_propagate(False)
-        ttk.Label(status_frame, textvariable=self.profile_editor_status, wraplength=600,
-                  foreground=TEXT_COLOUR).pack(fill="both", expand=True)
-        edit_actions = ttk.Frame(parent)
-        edit_actions.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(8, 0))
-        for message_id, action in (("app.settings.profile.load", self._load_profile_editor_selection),
-                                   ("app.settings.profile.validate", self._validate_profile_editor),
-                                   ("app.settings.profile.apply", self._apply_profile_editor),
-                                   ("app.settings.profile.cancel", self._cancel_profile_editor)):
-            self._settings_button(edit_actions, message_id, action).pack(side="left", padx=(0, 6))
-        file_actions = ttk.Frame(parent)
-        file_actions.grid(row=13, column=0, columnspan=4, sticky="ew", pady=(6, 0))
-        for message_id, action in (("app.settings.profile.import", self._import_profiles),
-                                   ("app.settings.profile.export", self._export_profiles),
-                                   ("app.settings.profile.reload", self._reload_profiles)):
-            self._settings_button(file_actions, message_id, action).pack(side="left", padx=(0, 6))
+        ttk.Label(status_frame, textvariable=self.profile_editor_status, wraplength=650,
+                  foreground=TEXT_COLOUR, anchor="w").pack(fill="both", expand=True)
+        action_rows = (
+            (("app.settings.profile.load", self._load_profile_editor_selection),
+             ("app.settings.profile.validate", self._validate_profile_editor),
+             ("app.settings.profile.apply", self._apply_profile_editor)),
+            (("app.settings.profile.import", self._import_profiles),
+             ("app.settings.profile.export", self._export_profiles),
+             ("app.settings.profile.reload", self._reload_profiles)),
+        )
+        for row_offset, action_specs in enumerate(action_rows):
+            action_row = ttk.Frame(actions)
+            action_row.grid(row=1 + row_offset, column=0, columnspan=3,
+                            sticky="ew", pady=(2 if row_offset == 0 else 1, 0))
+            for column, (message_id, action) in enumerate(action_specs):
+                action_row.columnconfigure(column, weight=1, uniform="profile-actions")
+                button = self._settings_button(action_row, message_id, action)
+                button.configure(style="ProfileAction.TButton")
+                button.grid(row=0, column=column, sticky="ew", padx=4, pady=2)
+
+        cancel_row = ttk.Frame(actions)
+        cancel_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(1, 0))
+        for column in range(3):
+            cancel_row.columnconfigure(column, weight=1, uniform="profile-cancel")
+        self._settings_button(
+            cancel_row, "app.settings.profile.cancel", self._cancel_profile_editor
+        ).grid(row=0, column=2, sticky="ew", padx=4, pady=2)
         parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(11, weight=1)
+        if action_parent is None:
+            parent.rowconfigure(11, weight=1)
 
     @staticmethod
     def _mapping_text(mapping) -> str:
@@ -4343,8 +4776,7 @@ class B518LogSolutionApp:
             self._close_window.destroy()
         self._close_window = None
         self._apply_round_snapshot(self.rounds.snapshot())
-        self._refresh_unsaved_rounds()
-        self._refresh_archive_statuses()
+        self._refresh_recovery_center()
 
     def _finish_close(self) -> None:
         if self._close_window and self._close_window.winfo_exists():

@@ -1,0 +1,12 @@
+{"seconds": 0.7535, "kind": "runtime", "executable": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3", "python": "3.8.10 (v3.8.10:3d8993a744, May  3 2021, 08:55:58) \n[Clang 6.0 (clang-600.0.57)]", "tk_patchlevel": "8.6.8", "tk_windowing_system": "aqua", "macos": "15.7.9"}
+{"seconds": 1.0582, "kind": "heartbeat", "interval_ms": 83.72, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 1.2598, "kind": "<FocusIn>", "widget": ".", "focus": ".", "toolbar": false}
+{"seconds": 1.2655, "kind": "heartbeat", "interval_ms": 202.79, "focus": ".", "hints": [false, false, false, false], "active": true, "key_window": 69161}
+{"seconds": 5.9739, "kind": "normal_close_requested"}
+{"seconds": 6.0112, "kind": "<FocusOut>", "widget": ".", "focus": "None", "toolbar": false}
+{"seconds": 6.0114, "kind": "<FocusIn>", "widget": ".!toplevel", "focus": ".!toplevel", "toolbar": false}
+{"seconds": 6.0482, "kind": "heartbeat", "interval_ms": 52.38, "focus": ".!toplevel", "hints": [false, false, false, false], "active": true, "key_window": 69171}
+{"seconds": 6.1314, "kind": "<FocusIn>", "widget": ".", "focus": ".", "toolbar": false}
+{"seconds": 6.2756, "kind": "<FocusOut>", "widget": ".", "focus": "None", "toolbar": false}
+{"seconds": 6.328, "kind": "root_destroyed"}
+{"seconds": 6.3845, "kind": "finished"}

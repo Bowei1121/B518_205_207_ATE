@@ -1,0 +1,69 @@
+{"seconds": 1.584, "kind": "heartbeat", "interval_ms": 127.52, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 3.8258, "kind": "<FocusIn>", "widget": ".", "focus": ".", "toolbar": false}
+{"seconds": 3.8263, "kind": "heartbeat", "interval_ms": 292.06, "focus": ".", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 5.1116, "kind": "heartbeat", "interval_ms": 50.48, "focus": ".", "hints": [true, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 6.1362, "kind": "heartbeat", "interval_ms": 62.9, "focus": ".", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 7.3113, "kind": "heartbeat", "interval_ms": 50.63, "focus": ".", "hints": [false, false, true, false], "active": true, "key_window": 68681}
+{"seconds": 8.1473, "kind": "heartbeat", "interval_ms": 74.87, "focus": ".", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 8.9554, "kind": "heartbeat", "interval_ms": 50.5, "focus": ".", "hints": [true, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 9.1751, "kind": "heartbeat", "interval_ms": 66.88, "focus": ".", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 9.6233, "kind": "<FocusIn>", "widget": ".!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 9.6234, "kind": "<FocusIn>", "widget": ".!frame.!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 9.6237, "kind": "<FocusIn>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 9.6518, "kind": "heartbeat", "interval_ms": 63.97, "focus": ".!frame.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 10.1452, "kind": "heartbeat", "interval_ms": 50.45, "focus": ".!frame.!frame.!button", "hints": [true, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 10.7131, "kind": "command_start", "control": "settings"}
+{"seconds": 10.7366, "kind": "command_end", "control": "settings", "duration_ms": 23.52}
+{"seconds": 10.7368, "kind": "<KeyPress-space>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 10.982, "kind": "<FocusOut>", "widget": ".!frame.!frame.!button", "focus": ".!toplevel5", "toolbar": true}
+{"seconds": 10.9822, "kind": "<FocusOut>", "widget": ".!frame.!frame", "focus": ".!toplevel5", "toolbar": false}
+{"seconds": 10.9825, "kind": "<FocusOut>", "widget": ".!frame", "focus": ".!toplevel5", "toolbar": false}
+{"seconds": 10.9826, "kind": "<FocusOut>", "widget": ".", "focus": ".!toplevel5", "toolbar": false}
+{"seconds": 10.9827, "kind": "<FocusIn>", "widget": ".!toplevel5", "focus": ".!toplevel5", "toolbar": false}
+{"seconds": 10.9868, "kind": "heartbeat", "interval_ms": 249.49, "focus": ".!toplevel5", "hints": [false, false, false, false], "active": true, "key_window": 68697}
+{"seconds": 13.0665, "kind": "<FocusIn>", "widget": ".", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 13.0667, "kind": "<FocusIn>", "widget": ".!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 13.0669, "kind": "<FocusIn>", "widget": ".!frame.!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 13.0671, "kind": "<FocusIn>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 13.0673, "kind": "heartbeat", "interval_ms": 210.07, "focus": ".!frame.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 13.5661, "kind": "heartbeat", "interval_ms": 59.97, "focus": ".!frame.!frame.!button", "hints": [true, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 13.8922, "kind": "heartbeat", "interval_ms": 65.06, "focus": ".!frame.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 14.1171, "kind": "<ButtonPress-1>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 14.2506, "kind": "command_start", "control": "settings"}
+{"seconds": 14.2599, "kind": "command_end", "control": "settings", "duration_ms": 9.24}
+{"seconds": 14.26, "kind": "<ButtonRelease-1>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 14.4333, "kind": "<FocusOut>", "widget": ".!frame.!frame.!button", "focus": ".!toplevel7", "toolbar": true}
+{"seconds": 14.4334, "kind": "<FocusOut>", "widget": ".!frame.!frame", "focus": ".!toplevel7", "toolbar": false}
+{"seconds": 14.4335, "kind": "<FocusOut>", "widget": ".!frame", "focus": ".!toplevel7", "toolbar": false}
+{"seconds": 14.4336, "kind": "<FocusOut>", "widget": ".", "focus": ".!toplevel7", "toolbar": false}
+{"seconds": 14.4337, "kind": "<FocusIn>", "widget": ".!toplevel7", "focus": ".!toplevel7", "toolbar": false}
+{"seconds": 14.4439, "kind": "heartbeat", "interval_ms": 183.54, "focus": ".!toplevel7", "hints": [false, false, false, false], "active": true, "key_window": 68701}
+{"seconds": 15.4321, "kind": "<FocusOut>", "widget": ".!toplevel7", "focus": "None", "toolbar": false}
+{"seconds": 15.4323, "kind": "heartbeat", "interval_ms": 110.75, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 23.0902, "kind": "heartbeat", "interval_ms": 153.56, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 23.9459, "kind": "heartbeat", "interval_ms": 176.39, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 43.721, "kind": "<FocusIn>", "widget": ".!toplevel7", "focus": ".!toplevel7", "toolbar": false}
+{"seconds": 43.7235, "kind": "heartbeat", "interval_ms": 173.17, "focus": ".!toplevel7", "hints": [false, false, false, false], "active": true, "key_window": 68701}
+{"seconds": 44.3105, "kind": "<ButtonPress-1>", "widget": ".!toplevel7.!notebook", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 44.3107, "kind": "<FocusIn>", "widget": ".!toplevel7.!notebook", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 44.3107, "kind": "<FocusIn>", "widget": ".!toplevel7.!notebook.!frame2", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 44.3108, "kind": "<FocusIn>", "widget": ".!toplevel7.!notebook.!frame2.!frame", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 44.3109, "kind": "<FocusIn>", "widget": ".!toplevel7.!notebook.!frame2.!frame.!button", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 44.3517, "kind": "heartbeat", "interval_ms": 50.62, "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68701}
+{"seconds": 44.4059, "kind": "<ButtonRelease-1>", "widget": ".!toplevel7.!notebook", "focus": ".!toplevel7.!notebook.!frame2.!frame.!button", "toolbar": false}
+{"seconds": 45.7236, "kind": "<FocusIn>", "widget": ".", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 45.7238, "kind": "<FocusIn>", "widget": ".!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 45.724, "kind": "<FocusIn>", "widget": ".!frame.!frame", "focus": ".!frame.!frame.!button", "toolbar": false}
+{"seconds": 45.7241, "kind": "<FocusIn>", "widget": ".!frame.!frame.!button", "focus": ".!frame.!frame.!button", "toolbar": true}
+{"seconds": 45.7243, "kind": "heartbeat", "interval_ms": 221.81, "focus": ".!frame.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 46.2516, "kind": "heartbeat", "interval_ms": 50.92, "focus": ".!frame.!frame.!button", "hints": [true, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 46.4064, "kind": "heartbeat", "interval_ms": 52.34, "focus": ".!frame.!frame.!button", "hints": [false, false, false, false], "active": true, "key_window": 68681}
+{"seconds": 46.4556, "kind": "normal_close_requested"}
+{"seconds": 46.5614, "kind": "<FocusOut>", "widget": ".!frame.!frame.!button", "focus": ".!toplevel9", "toolbar": true}
+{"seconds": 46.5616, "kind": "<FocusOut>", "widget": ".!frame.!frame", "focus": ".!toplevel9", "toolbar": false}
+{"seconds": 46.5617, "kind": "<FocusOut>", "widget": ".!frame", "focus": ".!toplevel9", "toolbar": false}
+{"seconds": 46.5617, "kind": "<FocusOut>", "widget": ".", "focus": ".!toplevel9", "toolbar": false}
+{"seconds": 46.5618, "kind": "<FocusIn>", "widget": ".!toplevel9", "focus": ".!toplevel9", "toolbar": false}
+{"seconds": 46.5893, "kind": "heartbeat", "interval_ms": 182.82, "focus": ".!toplevel9", "hints": [false, false, false, false], "active": true, "key_window": 68722}
+{"seconds": 46.6779, "kind": "root_destroyed"}
+{"seconds": 46.6871, "kind": "finished"}

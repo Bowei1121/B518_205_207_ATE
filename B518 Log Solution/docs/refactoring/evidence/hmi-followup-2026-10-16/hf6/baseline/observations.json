@@ -1,0 +1,70 @@
+{
+  "before-first-cleanup-completes": {
+    "title": "Setting",
+    "geometry": "720x620+72+59",
+    "controls": {
+      "text": [
+        26,
+        325,
+        638,
+        166
+      ],
+      "scrollbar": [
+        664,
+        325,
+        15,
+        166
+      ],
+      "heading": [
+        26,
+        306,
+        184,
+        15
+      ]
+    },
+    "text": "Background cleanup complete.\nLatest run 2026-10-16T11:28:11+08:00 · retention 365 days · deleted 0 rounds, retained 0, failed 0 · App events deleted 0, retained 1, failed 0\nCleanup outcome reason: Cleanup result: 0 rounds deleted, 0 retained, 0 failed; App events 0 deleted, 1 retained, 0 failed.\nOriginal cleanup reason: {\"diagnostic\": \"\", \"en\": \"Cleanup result: 0 rounds deleted, 0 retained, 0 failed; App events 0 deleted, 1 retained, 0 failed.\", \"parameters\": {\"app_deleted\": 0, \"app_failed\": 0, \"app_skipped\": 1, \"deleted\": 0, \"failed\": 0, \"skipped\": 0}, \"version\": 1, \"zh-TW\": \"清理結果：刪除 0 輪、保留 0 輪、失敗 0 輪；App 事件刪除 0、保留 1、失敗 0。\"}\nApp event cleanup: not yet expired\nOriginal cleanup reason: {\"diagnostic\": \"\", \"en\": \"not yet expired\", \"parameters\": {}, \"version\": 1, \"zh-TW\": \"尚未到保存期限\"}",
+    "text_size": 789,
+    "yview": [
+      0.0,
+      0.9230769230769231
+    ],
+    "scrollbar": [
+      0.0,
+      0.9230769230769231
+    ]
+  },
+  "after-three-poll-cycles": {
+    "title": "Setting",
+    "geometry": "720x620+72+59",
+    "controls": {
+      "text": [
+        26,
+        325,
+        638,
+        166
+      ],
+      "scrollbar": [
+        664,
+        325,
+        15,
+        166
+      ],
+      "heading": [
+        26,
+        306,
+        184,
+        15
+      ]
+    },
+    "text": "Background cleanup complete.\nLatest run 2026-10-16T11:28:11+08:00 · retention 365 days · deleted 0 rounds, retained 0, failed 0 · App events deleted 0, retained 1, failed 0\nCleanup outcome reason: Cleanup result: 0 rounds deleted, 0 retained, 0 failed; App events 0 deleted, 1 retained, 0 failed.\nOriginal cleanup reason: {\"diagnostic\": \"\", \"en\": \"Cleanup result: 0 rounds deleted, 0 retained, 0 failed; App events 0 deleted, 1 retained, 0 failed.\", \"parameters\": {\"app_deleted\": 0, \"app_failed\": 0, \"app_skipped\": 1, \"deleted\": 0, \"failed\": 0, \"skipped\": 0}, \"version\": 1, \"zh-TW\": \"清理結果：刪除 0 輪、保留 0 輪、失敗 0 輪；App 事件刪除 0、保留 1、失敗 0。\"}\nApp event cleanup: not yet expired\nOriginal cleanup reason: {\"diagnostic\": \"\", \"en\": \"not yet expired\", \"parameters\": {}, \"version\": 1, \"zh-TW\": \"尚未到保存期限\"}",
+    "text_size": 789,
+    "yview": [
+      0.0,
+      0.9230769230769231
+    ],
+    "scrollbar": [
+      0.0,
+      1.0
+    ]
+  }
+}

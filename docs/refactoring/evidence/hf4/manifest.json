@@ -1,0 +1,48 @@
+{
+  "ticket": "HF4 #64",
+  "parent_issue": "#60",
+  "date": "2026-10-16",
+  "timezone": "Asia/Taipei",
+  "source": "User-provided screenshots from the foreground macOS App session",
+  "manual_interactions": [
+    {
+      "language": "English",
+      "action": "The user clicked the App diagnostics link in the main window with the mouse.",
+      "result": "The existing App diagnostics window opened and remained visible alongside the main App window."
+    },
+    {
+      "language": "Traditional Chinese",
+      "action": "The user clicked the App 診斷 link in the main window with the mouse.",
+      "result": "The existing App 診斷 window opened and remained visible alongside the main App window."
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "hf4-english-diagnostics-and-main.png",
+      "original_filename": "截圖 2026-10-16 10.55.58.png",
+      "sha256": "73c8d65cc749a8c331e6022acad583c1b1188fb1ff20d1dd1eb62294817594a3",
+      "pixel_size": "2558x1676",
+      "checks": [
+        "English App diagnostics window is open beside the main App window.",
+        "Main-page status reads App events saved.",
+        "The App diagnostics link is visible at the bottom of the main window.",
+        "The removed unsaved-round picker/retry, archive summary/retry, and home Retry Text controls are not visible.",
+        "KVM result strip, state markers, and result board remain visible."
+      ]
+    },
+    {
+      "file": "hf4-traditional-chinese-diagnostics-and-main.png",
+      "original_filename": "截圖 2026-10-16 10.55.40.png",
+      "sha256": "76e7024d86cc610286f29a1a95706843bb02d1980e93883bf58b6d45658dcf29",
+      "pixel_size": "2564x1684",
+      "checks": [
+        "Traditional Chinese App 診斷 window is open beside the main App window.",
+        "Main-page status reads App 事件已保存.",
+        "The App 診斷 link is visible at the bottom of the main window.",
+        "The removed unsaved-round picker/retry, archive summary/retry, and home Retry Text controls are not visible.",
+        "KVM status template, position markers, and result board remain visible."
+      ]
+    }
+  ],
+  "capture_method": "Screenshots were provided by the user from the visible foreground desktop."
+}

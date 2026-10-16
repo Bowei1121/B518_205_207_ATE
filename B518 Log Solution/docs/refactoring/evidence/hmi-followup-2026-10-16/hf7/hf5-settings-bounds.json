@@ -1,0 +1,196 @@
+{
+  "rows": [
+    [
+      [
+        687,
+        742,
+        201,
+        27
+      ],
+      [
+        896,
+        742,
+        201,
+        27
+      ],
+      [
+        1105,
+        742,
+        202,
+        27
+      ]
+    ],
+    [
+      [
+        687,
+        774,
+        202,
+        27
+      ],
+      [
+        897,
+        774,
+        201,
+        27
+      ],
+      [
+        1106,
+        774,
+        201,
+        27
+      ]
+    ]
+  ],
+  "captures": {
+    "en": {
+      "title": "Setting",
+      "geometry": "680x560+657+312",
+      "size": [
+        680,
+        560
+      ],
+      "controls": {
+        "browse": [
+          499,
+          194,
+          134,
+          34
+        ],
+        "load": [
+          30,
+          402,
+          201,
+          27
+        ],
+        "validate": [
+          239,
+          402,
+          201,
+          27
+        ],
+        "apply": [
+          448,
+          402,
+          202,
+          27
+        ],
+        "import": [
+          30,
+          434,
+          202,
+          27
+        ],
+        "export": [
+          240,
+          434,
+          201,
+          27
+        ],
+        "reload": [
+          449,
+          434,
+          201,
+          27
+        ],
+        "cancel": [
+          448,
+          466,
+          202,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 657.0,
+        "Y": 312.0,
+        "Width": 680.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1360,
+        "height": 1176
+      },
+      "screenshot": "hf5-settings-en.png"
+    },
+    "zh-TW": {
+      "title": "設定",
+      "geometry": "680x560+657+312",
+      "size": [
+        680,
+        560
+      ],
+      "controls": {
+        "browse": [
+          499,
+          194,
+          134,
+          34
+        ],
+        "load": [
+          30,
+          402,
+          201,
+          27
+        ],
+        "validate": [
+          239,
+          402,
+          201,
+          27
+        ],
+        "apply": [
+          448,
+          402,
+          202,
+          27
+        ],
+        "import": [
+          30,
+          434,
+          202,
+          27
+        ],
+        "export": [
+          240,
+          434,
+          201,
+          27
+        ],
+        "reload": [
+          449,
+          434,
+          201,
+          27
+        ],
+        "cancel": [
+          448,
+          466,
+          202,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 657.0,
+        "Y": 312.0,
+        "Width": 680.0,
+        "Height": 588.0
+      },
+      "image_pixels": {
+        "width": 1360,
+        "height": 1176
+      },
+      "screenshot": "hf5-settings-zh-TW.png"
+    }
+  },
+  "behavior": {
+    "folder_dialog": {
+      "parent_is_settings_window": true,
+      "mustexist": true,
+      "selected_path": "/selected/logs",
+      "draft_path_after_selection": "/selected/logs",
+      "draft_path_before_dialog": "/before/chooser",
+      "draft_path_after_cancel": "/selected/logs",
+      "draft_project_after_language_change": "DRAFT-PROJECT",
+      "active_path_after_language_change": "/selected/logs"
+    }
+  }
+}

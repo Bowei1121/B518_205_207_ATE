@@ -181,10 +181,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     for index in (0, 1):
                         app.language_menu.invoke(index)
                         root.update()
-                self.assertIn("衝突", app.language_refresh_banner.cget("text"))
+                self.assertEqual(app.app_event_status_label.cget("text"), "文字更新失敗")
                 self.pump(root, lambda: app.rounds.app_event_status().complete)
-                app.language_refresh_retry_button.event_generate("<ButtonPress-1>")
-                app.language_refresh_retry_button.event_generate("<ButtonRelease-1>")
+                app.app_diagnostics_language_retry_button.event_generate("<ButtonPress-1>")
+                app.app_diagnostics_language_retry_button.event_generate("<ButtonRelease-1>")
                 root.update()
                 self.assertIs(app.conflict_window, conflict_window)
                 self.assertEqual(tuple(app.conflict_list.curselection()), selected_conflicts)

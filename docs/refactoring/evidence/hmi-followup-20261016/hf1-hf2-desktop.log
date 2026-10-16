@@ -1,0 +1,42 @@
+test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests) ... FAIL
+ERROR
+test_real_tk_distinguishes_unsaved_saved_and_archived_round_states (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_retry_button_recovers_disk_record_once_without_blocking_ui (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_conflict_and_alarm_refresh_fail_independently_and_retry_latest_language (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit (test_log_solution_ui.LogSolutionUiTests) ... ok
+
+======================================================================
+ERROR: test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/tests/test_log_solution_ui.py", line 1123, in _destroy_test_windows
+    window.destroy()
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/tkinter/__init__.py", line 2583, in destroy
+    Misc.destroy(self)
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/tkinter/__init__.py", line 640, in destroy
+    self.tk.deletecommand(name)
+_tkinter.TclError: can't delete Tcl command
+
+======================================================================
+FAIL: test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/tests/test_log_solution_ui.py", line 265, in test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed
+    self.assertGreaterEqual(app.stop_button.winfo_height(),
+  File "/Library/Frameworks/Python.framework/Versions/3.8/lib/python3.8/unittest/case.py", line 1316, in assertGreaterEqual
+    self.fail(self._formatMessage(msg, standardMsg))
+AssertionError: 1 not greater than or equal to 36
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/tests/test_log_solution_ui.py", line 534, in test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed
+    self.wait_for_ui(root, lambda: language_hint._window is not None)
+  File "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/tests/test_log_solution_ui.py", line 1384, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+----------------------------------------------------------------------
+Ran 5 tests in 13.738s
+
+FAILED (failures=1, errors=1)
