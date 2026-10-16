@@ -1,6 +1,6 @@
 # HMI 後續實作接續紀錄
 
-目前整合分支：`codex/hmi-followup-20261016`；HF1–HF3 已完成、整合、推送至 Gitea／GitHub，#61–#63 已結案。HF2 由 `e4cd033` 快轉整合至 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4`，HF3 由 `cfc4738` 快轉整合至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`。保留 issue 對帳提交 `63d9ee5`。HF4 已完成實作與真正 App 雙語前景驗收，現正整合與推送；接續 HF5 至 HF7。
+目前整合分支：`codex/hmi-followup-20261016`；HF1–HF4 已完成、整合、推送至 Gitea／GitHub，#61–#64 已結案。HF2 由 `e4cd033` 快轉整合至 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4`，HF3 由 `cfc4738` 快轉至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`，HF4 由 `f502a83` 快轉至 `a5eb259f1a48edd52c2c7f31ccfb98b0fdddb987`。保留 issue 對帳提交 `63d9ee5`。HF5 #65 已完成實作、真正 App 雙語前景驗收及快轉整合，目前正同步雙遠端；接續 HF6、HF7。
 
 歷史診斷階段：五項真正 Aqua Tk 測試曾有 4 通過，toolbar geometry 失敗且 teardown 錯誤；完整輸出見 `evidence/hmi-followup-20261016/hf1-hf2-desktop.log`。後續修復與受影響重驗結果見下文；不抹除原始失敗。
 
@@ -50,8 +50,15 @@
 - HF4 真 Tk、toolbar/KVM 幾何、關閉保存失敗重試、HF2 封存重試、語言刷新失敗／重試、M10 整合測試均通過；`py_compile` 和 `git diff --check` 通過。自動擷取因非 Aqua 前景而產生的黑圖已排除，使用者有效前景證據已取代。工廠／正式打包環境另待驗收。
 - HF4 本地功能與桌面驗收完成；整合／推送與 #64 結案由主協調者同步。下一張 HF5 #65，之後 HF6、HF7；尚未合回主線或清理工作樹。
 
+## HF5 設定按鈕與三等分排列
+
+- HF5 #65 分支 `codex/hf5-settings-layout` 從整合基準 `a5eb259f1a48edd52c2c7f31ccfb98b0fdddb987` 開始，提交 `ae3ad15150c27519c822135c1a13bff5746dda45` 已快轉整合至同一提交。
+- 資料夾選取按鈕改為本地化「📂 瀏覽／📂 Browse」；六個配置操作分成兩排、每排三等分，取消草稿獨立置於下方右側。既有挑選／取消草稿、套用保存、載入、匯入匯出、部署重載及切換語言保留草稿行為。
+- 真正 macOS Aqua App／Python.org Framework 3.8、Tk 8.6 原生視窗完成繁中與英文截圖。原生像素測量確認每排按鈕寬差不超過 1 px、等高等間距、取消草稿按鈕及兩排均在視窗內，英文標籤完整顯示。測試先以舊版像素寬差 104 px 重現 RED，再由真 Tk 測試通過；設定頁相關 UI 8 項、翻譯目錄 8 項、MachineProfile 24 項通過；Python compile 與 diff check 通過。
+- 原生雙語 PNG、視窗 bounds 及行為測量見 [HF5 驗收證據](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf5/README.md)。工廠設備／現場配置仍待現場驗收；尚未合回主線或清理工作樹。
+
 ## 下一步
 
-1. 完成 HF4 文件整合提交並推送至既有 Gitea／GitHub，核對兩端 SHA；主協調者同步 #64 狀態。
-2. 接續 HF5 → HF6 → HF7，不平行修改 Tk。
+1. 確認 HF5 整合分支已推送至既有 Gitea／GitHub 且兩端 SHA 相同，主協調者同步 #65 狀態。
+2. 接續 HF6 → HF7，不平行修改 Tk。
 3. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。

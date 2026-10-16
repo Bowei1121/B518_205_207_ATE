@@ -85,3 +85,10 @@
 - HF4 #64 已完成主頁短狀態與底部診斷入口，移除主頁舊恢復控制區並保留 KVM、狀態標記、位置、關閉保護及恢復中心。功能提交 `58b0208`、人工驗收紀錄 `f31b9ab`、使用者原始雙語畫面 `6df8a82`，整合起點 `f502a83d6bbb37a564d899290e1e83f3bc8f0e4c`。
 - 使用者在真正前景 App 的英文與繁體中文畫面各以滑鼠單擊診斷入口，兩次均成功開啟 App diagnostics／App 診斷。主頁及診斷視窗雙語截圖已保存於 `docs/refactoring/evidence/hf4/` 並檢視；細節及限制見 `evidence/hf4/local-validation.md`。
 - HF4 真 Tk、KVM／toolbar 幾何、HF2 恢復、關閉失敗重試、語言刷新及 M10 整合驗證通過。HF4 整合、雙遠端推送及 #64 同步由主協調者處理；HF5 為下一張。HF5–HF7 尚未完成，七票完成後仍須全分支 code review、合回 `B518-Log-Solution` 並推送兩端。工廠／正式打包環境另列。
+
+## HF5 設定按鈕與三等分排列（2026-10-16）
+
+- HF5 #65 從整合基準 `a5eb259f1a48edd52c2c7f31ccfb98b0fdddb987` 開始，分支 `codex/hf5-settings-layout` 的提交 `ae3ad15150c27519c822135c1a13bff5746dda45` 已快轉整合至 `codex/hmi-followup-20261016`。
+- 「📂 瀏覽／📂 Browse」本地化完成；設定頁六個配置操作分兩排、每排三等分，取消草稿放在下方右側。原生像素測量確認每排按鈕最大寬差 1 px，等高等間距、控制項未超出視窗，英文標籤完整。既有目錄選擇／取消、草稿、保存載入、匯入匯出、部署重載與語言切換保留草稿操作通過回歸。
+- 真正 macOS Aqua App／Framework Python 3.8、Tk 8.6 的中英設定頁截圖與像素 bounds 已提交，見 [HF5 驗收證據](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf5/README.md)。舊布局真 Tk 像素 RED（按鈕寬差 104 px），修正後真 Tk GREEN；受影響 UI 8 項、翻譯 8 項、MachineProfile 24 項通過，compile 與 diff check 通過。
+- HF5 整合分支推送與 #65 議題同步尚由主協調者處理；HF6、HF7 尚待依序實作。正式工廠／打包環境另列；最終七票審查、合併主線與雙遠端推送尚待完成。
