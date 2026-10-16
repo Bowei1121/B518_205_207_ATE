@@ -1,0 +1,878 @@
+{
+  "hf2-alarm-pending-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-alarm-pending-en.png"
+  },
+  "hf2-alarm-pending-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-alarm-pending-zh-TW.png"
+  },
+  "hf2-alarm-acknowledged-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-alarm-acknowledged-en.png"
+  },
+  "hf2-alarm-acknowledged-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-alarm-acknowledged-zh-TW.png"
+  },
+  "hf2-session-recovered-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-session-recovered-en.png"
+  },
+  "hf2-session-recovered-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+106+88",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-session-recovered-zh-TW.png"
+  },
+  "hf2-list-reading-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "760x520+222+204",
+    "size": [
+      760,
+      520
+    ],
+    "controls": {
+      "archive_retry": [
+        388,
+        462,
+        348,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 222.0,
+      "Y": 204.0,
+      "Width": 760.0,
+      "Height": 548.0
+    },
+    "image_pixels": {
+      "width": 1520,
+      "height": 1096
+    },
+    "screenshot": "hf2-list-reading-en.png"
+  },
+  "hf2-list-reading-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "760x520+222+204",
+    "size": [
+      760,
+      520
+    ],
+    "controls": {
+      "archive_retry": [
+        388,
+        462,
+        348,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 222.0,
+      "Y": 204.0,
+      "Width": 760.0,
+      "Height": 548.0
+    },
+    "image_pixels": {
+      "width": 1520,
+      "height": 1096
+    },
+    "screenshot": "hf2-list-reading-zh-TW.png"
+  },
+  "hf2-zero-alarm-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+280+252",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 280.0,
+      "Y": 252.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-zero-alarm-en.png"
+  },
+  "hf2-zero-recovery-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+280+252",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 280.0,
+      "Y": 252.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-zero-recovery-en.png"
+  },
+  "hf2-zero-alarm-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+280+252",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 280.0,
+      "Y": 252.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-zero-alarm-zh-TW.png"
+  },
+  "hf2-zero-recovery-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+280+252",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 280.0,
+      "Y": 252.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-zero-recovery-zh-TW.png"
+  },
+  "st7-dark-before-tab0-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        12,
+        12,
+        1,
+        1
+      ],
+      "archive_retry": [
+        12,
+        12,
+        1,
+        1
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-before-tab0-en.png"
+  },
+  "st7-dark-before-tab1-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-before-tab1-en.png"
+  },
+  "st7-dark-before-tab0-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-before-tab0-zh-TW.png"
+  },
+  "st7-dark-before-tab1-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-before-tab1-zh-TW.png"
+  },
+  "st7-light-open-tab0-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-light-open-tab0-en.png"
+  },
+  "st7-light-open-tab1-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-light-open-tab1-en.png"
+  },
+  "st7-light-open-tab0-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-light-open-tab0-zh-TW.png"
+  },
+  "st7-light-open-tab1-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-light-open-tab1-zh-TW.png"
+  },
+  "st7-dark-after-tab0-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-after-tab0-en.png"
+  },
+  "st7-dark-after-tab1-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-after-tab1-en.png"
+  },
+  "st7-dark-after-tab0-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-after-tab0-zh-TW.png"
+  },
+  "st7-dark-after-tab1-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+72+59",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "notebook": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "acknowledge": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 72.0,
+      "Y": 59.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st7-dark-after-tab1-zh-TW.png"
+  }
+}

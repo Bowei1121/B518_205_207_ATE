@@ -276,11 +276,23 @@ def capture_native_window_with_hint(window, filename):
 
 
 def capture_recovery_evidence(app, key, language, widgets):
-    # Give Aqua's compositor a frame after tab/language/status updates.
-    deadline = time.monotonic() + .16
+    # Language changes and tab selection can leave an Aqua Toplevel's native
+    # backing surface stale for a frame. Raise the actual app window and let
+    # Tk/Aqua render several frames before asking WindowServer for a capture.
+    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+        if NSRunningApplication is not None:
+            NSRunningApplication.currentApplication().activateWithOptions_(
+                NSApplicationActivateIgnoringOtherApps)
+        app.recovery_window.deiconify()
+        app.recovery_window.lift()
+        app.recovery_window.focus_force()
+    deadline = time.monotonic() + (.8 if os.environ.get("B518_TK_EVIDENCE_DIR") else .16)
     while time.monotonic() < deadline:
         app.root.update()
         time.sleep(.01)
+    assert app.recovery_window.winfo_viewable()
+    assert app.recovery_tabs.nametowidget(
+        app.recovery_tabs.select()).winfo_viewable()
     for control in widgets.values():
         assert control.winfo_rootx() >= app.recovery_window.winfo_rootx()
         assert control.winfo_rootx() + control.winfo_width() <= (
@@ -3975,6 +3987,143 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     self.assertEqual(app.recovery_tabs.index("current"), 1)
                     app.recovery_tabs.select(0)
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    def test_recovery_window_outer_surface_uses_the_app_light_palette(self):
+        """The app-owned window gutter stays light regardless of Aqua appearance."""
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=Path(temporary) / "sessions")
+            try:
+                app._open_recovery_center()
+                self.wait_for_ui(root, lambda: app.recovery_window.winfo_viewable())
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.set_language_for_test_setup(app, root, language)
+                    self.assertEqual(app.recovery_window.cget("background"), LIGHT_BACKGROUND)
+                    for tab in (0, 1):
+                        app.recovery_tabs.select(tab)
+                        root.update()
+                        self.assertEqual(app.recovery_window.cget("background"), LIGHT_BACKGROUND)
+                        if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            key = "st7-dark-tab{}".format(tab)
+                            capture_tk_window_evidence(app.recovery_window, key, language, {
+                                "notebook": app.recovery_tabs,
+                                "acknowledge": app.recovery_alarm_ack_button,
+                                "save_retry": app.recovery_save_retry_button,
+                                "archive_retry": app.recovery_archive_retry_button,
+                            })
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_ST7_MANUAL_APPEARANCE") == "1",
+                         "requires user-driven macOS appearance changes")
+    def test_recovery_window_stays_light_during_real_system_appearance_changes(self):
+        """Capture an open real window across user-driven Light/Dark changes."""
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=Path(temporary) / "sessions")
+            evidence_root = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+            original_window = None
+            records = []
+
+            def system_appearance():
+                appearance = subprocess.run(
+                    ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    universal_newlines=True)
+                return "dark" if appearance.returncode == 0 and \
+                    appearance.stdout.strip() == "Dark" else "light"
+
+            def capture(mode):
+                actual_mode = system_appearance()
+                self.assertEqual(actual_mode, mode.split("-")[0])
+                app._refresh_recovery_center()
+                root.update()
+                self.assertEqual(app.recovery_window, original_window)
+                self.assertTrue(app.recovery_window.winfo_viewable())
+                self.assertEqual(app.recovery_window.cget("background"), LIGHT_BACKGROUND)
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.set_language_for_test_setup(app, root, language)
+                    for tab in (0, 1):
+                        app.recovery_tabs.select(tab)
+                        root.update()
+                        self.assertEqual(app.recovery_window.cget("background"), LIGHT_BACKGROUND)
+                        self.assertEqual(app.recovery_tabs.index("current"), tab)
+                        if tab == 0:
+                            self.assertTrue(app.recovery_alarm_ack_button.winfo_viewable())
+                        else:
+                            self.assertTrue(app.recovery_save_heading.winfo_viewable())
+                            self.assertTrue(app.recovery_archive_heading.winfo_viewable())
+                        record = capture_recovery_evidence(app,
+                            "st7-{}-tab{}".format(mode, tab), language, {
+                                "notebook": app.recovery_tabs,
+                                "acknowledge": app.recovery_alarm_ack_button,
+                                "save_retry": app.recovery_save_retry_button,
+                                "archive_retry": app.recovery_archive_retry_button,
+                            })
+                        records.append({"mode": actual_mode, "tab": tab,
+                                        "language": language, **record})
+
+            def wait_for_user(message):
+                ready = threading.Event()
+                deadline = time.monotonic() + 1800
+                print(message, flush=True)
+                reader = threading.Thread(target=lambda: (sys.stdin.readline(), ready.set()),
+                                          daemon=True)
+                reader.start()
+                while not ready.is_set() and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.05)
+                self.assertTrue(ready.is_set(), "timed out waiting for the real appearance change")
+
+            try:
+                initial_mode = system_appearance()
+                original_mode = os.environ.get("B518_ST7_ORIGINAL_APPEARANCE", "dark")
+                self.assertIn(original_mode, {"light", "dark"})
+                app._open_recovery_center()
+                self.wait_for_ui(root, lambda: app.recovery_window.winfo_viewable())
+                original_window = app.recovery_window
+                self.assertEqual(app.recovery_window.cget("background"), LIGHT_BACKGROUND)
+                capture("{}-before".format(initial_mode))
+                if initial_mode == original_mode:
+                    other_mode = "light" if original_mode == "dark" else "dark"
+                    wait_for_user(
+                        "ST7: Switch macOS appearance to {}, then signal this test with Enter."
+                        .format(other_mode.title()))
+                    capture("{}-open".format(other_mode))
+                else:
+                    other_mode = original_mode
+                    wait_for_user(
+                        "ST7: Restore the original macOS {} appearance, then signal this test "
+                        "with Enter.".format(original_mode.title()))
+                    capture("{}-after".format(original_mode))
+                if system_appearance() != original_mode:
+                    wait_for_user(
+                        "ST7: Restore the original macOS {} appearance, then signal this test "
+                        "with Enter.".format(original_mode.title()))
+                    capture("{}-after".format(original_mode))
+                self.assertEqual(system_appearance(), original_mode)
+                self.assertEqual(app._pending_notification_count(), 0)
+                self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
+                self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
+                self.assertEqual(str(app.recovery_archive_retry_button["state"]), "disabled")
+                evidence_root.mkdir(parents=True, exist_ok=True)
+                (evidence_root / "appearance-evidence.json").write_text(
+                    json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+                (evidence_root / "appearance-change-result.txt").write_text(
+                    "The same recovery Toplevel was captured in both real macOS appearance "
+                    "modes while open. Both tabs were captured in English and Traditional "
+                    "Chinese. No alarms were acknowledged; no save or archive retry was "
+                    "invoked. Original system appearance was {} and was restored.\n"
+                    .format(original_mode.title()),
+                    encoding="utf-8")
             finally:
                 app.hotkey.close()
                 root.destroy()
