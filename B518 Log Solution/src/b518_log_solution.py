@@ -434,13 +434,13 @@ class B518LogSolutionApp:
         self.recovery_window: Optional[tk.Toplevel] = None
         self.recovery_tabs: Optional[ttk.Notebook] = None
         self.recovery_alarm_list: Optional[tk.Listbox] = None
-        self.recovery_alarm_detail: Optional[ttk.Label] = None
+        self.recovery_alarm_detail: Optional[tk.Text] = None
         self.recovery_alarm_ack_button: Optional[ttk.Button] = None
         self.recovery_save_list: Optional[tk.Listbox] = None
         self.recovery_save_heading: Optional[ttk.Label] = None
-        self.recovery_save_detail: Optional[ttk.Label] = None
+        self.recovery_save_detail: Optional[tk.Text] = None
         self.recovery_save_retry_button: Optional[ttk.Button] = None
-        self.recovery_archive_detail: Optional[ttk.Label] = None
+        self.recovery_archive_detail: Optional[tk.Text] = None
         self.recovery_archive_retry_button: Optional[ttk.Button] = None
         self.recovery_archive_list: Optional[tk.Listbox] = None
         self.recovery_archive_heading: Optional[ttk.Label] = None
@@ -1580,6 +1580,13 @@ class B518LogSolutionApp:
         if round_id and self.rounds.retry_saves(round_id):
             self.unsaved_round_retry_button.configure(state="disabled")
 
+    @staticmethod
+    def _recovery_summary(diagnostic):
+        # Full raw evidence remains available in the scrollable recovery details.
+        text = str(diagnostic)
+        first_line = text.splitlines()[0] if text else ""
+        return first_line[:120] + ("…" if first_line != text or len(first_line) > 120 else "")
+
     def _update_selected_round_retry(self, _event=None) -> None:
         round_id = self._unsaved_round_ids.get(self.unsaved_round_choice.get())
         snapshot = self.rounds.round_snapshot(round_id) if round_id else None
@@ -1590,7 +1597,7 @@ class B518LogSolutionApp:
             self.unsaved_round_detail.configure(text="")
         elif snapshot.save_errors:
             self.unsaved_round_detail.configure(text="{}：{}".format(
-                snapshot.round_id[:10], snapshot.save_errors[0]))
+                snapshot.round_id[:10], self._recovery_summary(snapshot.save_errors[0])))
         else:
             self.unsaved_round_detail.configure(text="{}：{}".format(
                 snapshot.round_id[:10], self._t(save_state_message_id(snapshot.save_state))))
@@ -1655,7 +1662,7 @@ class B518LogSolutionApp:
             if detail_status.cleanup_eligible:
                 reason = str(detail_status.archived_at)
             detail = " · {} · {}{}".format(
-                detail_status.round_id, state, "：" + reason if reason else "")
+                detail_status.round_id, state, "：" + self._recovery_summary(reason) if reason else "")
         self.archive_status_label.configure(text=summary + detail)
         self.archive_retry_button.configure(
             state="normal" if retryable and not self._closing_ui else "disabled")
@@ -2548,6 +2555,44 @@ class B518LogSolutionApp:
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
 
+    @staticmethod
+    def _recovery_detail_widget(parent):
+        frame = ttk.Frame(parent)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        detail = tk.Text(frame, wrap="word", height=8, width=1, state="disabled",
+                         background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                         font=("TkDefaultFont", MAIN_FONT_SIZE), relief="flat")
+        detail.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=detail.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        detail.configure(yscrollcommand=scrollbar.set)
+        return frame, detail
+
+    @staticmethod
+    def _set_recovery_detail(widget, text):
+        if widget.get("1.0", "end-1c") == text:
+            return
+        reading = widget.index("@0,0")
+        selection = widget.tag_ranges("sel")
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        if selection:
+            widget.tag_add("sel", *selection)
+        widget.configure(state="disabled")
+        widget.yview(reading)
+
+    @staticmethod
+    def _set_recovery_list(widget, rows):
+        if widget.get(0, "end") == tuple(rows):
+            return
+        position = widget.yview()[0]
+        widget.delete(0, "end")
+        for row in rows:
+            widget.insert("end", row)
+        widget.yview_moveto(position)
+
     def _open_recovery_center(self) -> None:
         """Open the current-run alarm, save, and archive recovery center."""
         if not self.recovery_window or not self.recovery_window.winfo_exists():
@@ -2583,10 +2628,8 @@ class B518LogSolutionApp:
             alarm_detail.columnconfigure(0, weight=1)
             alarm_detail.rowconfigure(0, weight=1)
             alarm_detail.grid(row=0, column=1, sticky="nsew")
-            self.recovery_alarm_detail = ttk.Label(
-                alarm_detail, text="", wraplength=560, justify="left", anchor="nw",
-            )
-            self.recovery_alarm_detail.grid(row=0, column=0, sticky="nsew")
+            alarm_text_frame, self.recovery_alarm_detail = self._recovery_detail_widget(alarm_detail)
+            alarm_text_frame.grid(row=0, column=0, sticky="nsew")
             self.recovery_alarm_ack_button = ttk.Button(
                 alarm_detail, text=self._t("alarm.button.acknowledge"),
                 command=self._acknowledge_recovery_alarm,
@@ -2594,18 +2637,19 @@ class B518LogSolutionApp:
             self.recovery_alarm_ack_button.grid(row=1, column=0, sticky="e", pady=(12, 0))
 
             recovery = ttk.Frame(self.recovery_tabs, padding=10)
-            recovery.columnconfigure(0, weight=1)
-            recovery.columnconfigure(1, weight=1)
+            recovery.columnconfigure(0, weight=1, uniform="recovery-columns")
+            recovery.columnconfigure(1, weight=1, uniform="recovery-columns")
             recovery.rowconfigure(1, weight=1)
+            recovery.rowconfigure(2, weight=2)
             self.recovery_tabs.add(recovery, text=self._t("recovery.saves_archives"))
             self.recovery_save_heading = ttk.Label(
-                recovery, text=self._t("recovery.unsaved_heading"))
+                recovery, text=self._t("recovery.unsaved_heading"), width=1, wraplength=330)
             self.recovery_save_heading.grid(
-                row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 5))
+                row=0, column=0, sticky="ew", padx=(0, 8), pady=(0, 5))
             self.recovery_archive_heading = ttk.Label(
-                recovery, text=self._t("recovery.archive_heading"))
+                recovery, text=self._t("recovery.archive_heading"), width=1, wraplength=330)
             self.recovery_archive_heading.grid(
-                row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 5))
+                row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 5))
             save_list_frame = ttk.Frame(recovery)
             save_list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
             save_list_frame.rowconfigure(0, weight=1)
@@ -2636,12 +2680,10 @@ class B518LogSolutionApp:
             archive_scrollbar.grid(row=0, column=1, sticky="ns")
             self.recovery_archive_list.configure(yscrollcommand=archive_scrollbar.set)
             self.recovery_archive_list.bind("<<ListboxSelect>>", self._select_recovery_archive)
-            self.recovery_save_detail = ttk.Label(
-                recovery, text="", wraplength=360, justify="left", anchor="nw")
-            self.recovery_save_detail.grid(row=2, column=0, sticky="ew", padx=(0, 8), pady=8)
-            self.recovery_archive_detail = ttk.Label(
-                recovery, text="", wraplength=360, justify="left", anchor="nw")
-            self.recovery_archive_detail.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=8)
+            save_text_frame, self.recovery_save_detail = self._recovery_detail_widget(recovery)
+            save_text_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=8)
+            archive_text_frame, self.recovery_archive_detail = self._recovery_detail_widget(recovery)
+            archive_text_frame.grid(row=2, column=1, sticky="nsew", padx=(8, 0), pady=8)
             self.recovery_save_retry_button = ttk.Button(
                 recovery, text=self._t("main.retry_selected"),
                 command=self._retry_recovery_save,
@@ -2713,25 +2755,29 @@ class B518LogSolutionApp:
         alarms = [(snapshot, snapshot.round_alarm) for snapshot in snapshots]
         selected = self._recovery_selected_alarm
         self._recovery_alarm_ids = [(alarm.round_id, alarm.alarm_id) for _, alarm in alarms]
-        self.recovery_alarm_list.delete(0, "end")
+        alarm_rows = []
         selected_index = None
         for index, (snapshot, alarm) in enumerate(alarms):
             status = self._t("recovery.acknowledged" if alarm.acknowledged_at
                              else "recovery.pending")
-            self.recovery_alarm_list.insert(
-                "end", "{} · {} · {}".format(snapshot.station, alarm.round_id[:10], status))
+            alarm_rows.append(
+                "{} · {} · {}".format(snapshot.station, alarm.round_id[:10], status))
             if (alarm.round_id, alarm.alarm_id) == selected:
                 selected_index = index
+        self._set_recovery_list(self.recovery_alarm_list,
+                                alarm_rows or [self._t("recovery.no_alarms")])
         if not alarms:
-            self.recovery_alarm_list.insert("end", self._t("recovery.no_alarms"))
-            self.recovery_alarm_detail.configure(text=self._t("recovery.no_alarms_detail"))
-            self.recovery_alarm_ack_button.configure(state="disabled")
+            self._set_recovery_detail(self.recovery_alarm_detail, self._t("recovery.no_alarms_detail"))
+            self.recovery_alarm_ack_button.configure(
+                text=self._t("alarm.button.acknowledge"), state="disabled")
             self._recovery_selected_alarm = None
             return
         if selected_index is None:
             selected_index = next((i for i, (_, alarm) in enumerate(alarms)
                                    if not alarm.acknowledged_at), 0)
-        self.recovery_alarm_list.selection_set(selected_index)
+        if self.recovery_alarm_list.curselection() != (selected_index,):
+            self.recovery_alarm_list.selection_clear(0, "end")
+            self.recovery_alarm_list.selection_set(selected_index)
         self.recovery_alarm_list.activate(selected_index)
         self._recovery_selected_alarm = self._recovery_alarm_ids[selected_index]
         self._render_recovery_alarm(alarms[selected_index][0], alarms[selected_index][1])
@@ -2762,7 +2808,7 @@ class B518LogSolutionApp:
                 self._t(status_id), self._t("alarm.status.conflict_note"),
                 self._t("recovery.reason"), self._t("alarm.reason." + str(reason))),
         )
-        self.recovery_alarm_detail.configure(text=detail)
+        self._set_recovery_detail(self.recovery_alarm_detail, detail)
         self.recovery_alarm_ack_button.configure(
             text=self._t("alarm.button.acknowledged" if not pending else "alarm.button.acknowledge"),
             state="normal" if pending and snapshot.round_alarm_ready and not self._closing_ui
@@ -2782,31 +2828,34 @@ class B518LogSolutionApp:
         unsaved = self.rounds.unsaved_rounds()
         previous_save = self._recovery_selected_save
         self._recovery_save_ids = [snapshot.round_id for snapshot in unsaved]
-        self.recovery_save_list.delete(0, "end")
+        save_rows = []
         selected_save_index = None
         for index, snapshot in enumerate(unsaved):
             state = self._t(save_state_message_id(snapshot.save_state))
-            self.recovery_save_list.insert(
-                "end", "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10], state))
+            save_rows.append(
+                "{} · {} · {}".format(snapshot.station, snapshot.round_id[:10], state))
             if snapshot.round_id == previous_save:
                 selected_save_index = index
+        self._set_recovery_list(self.recovery_save_list,
+                                save_rows or [self._t("recovery.no_unsaved")])
         if unsaved:
             if selected_save_index is None:
                 selected_save_index = next((i for i, item in enumerate(unsaved)
                                             if item.save_state == "failed"), 0)
-            self.recovery_save_list.selection_set(selected_save_index)
+            if self.recovery_save_list.curselection() != (selected_save_index,):
+                self.recovery_save_list.selection_clear(0, "end")
+                self.recovery_save_list.selection_set(selected_save_index)
             self.recovery_save_list.activate(selected_save_index)
             self._recovery_selected_save = self._recovery_save_ids[selected_save_index]
             self._render_recovery_save(unsaved[selected_save_index])
         else:
-            self.recovery_save_list.insert("end", self._t("recovery.no_unsaved"))
             self._recovery_selected_save = None
-            self.recovery_save_detail.configure(text=self._t("recovery.no_unsaved_detail"))
+            self._set_recovery_detail(self.recovery_save_detail, self._t("recovery.no_unsaved_detail"))
             self.recovery_save_retry_button.configure(state="disabled")
 
         previous_archive = self._recovery_selected_archive
         self._recovery_archive_ids = [status.round_id for status in statuses]
-        self.recovery_archive_list.delete(0, "end")
+        archive_rows = []
         selected_archive_index = None
         for index, status in enumerate(statuses):
             state_id = ("main.archived" if status.cleanup_eligible else
@@ -2814,22 +2863,25 @@ class B518LogSolutionApp:
                         "main.archive_protected" if status.status == "protected" else
                         "main.archive_waiting" if status.status in {"waiting", "saving"} else
                         "main.archive_failed")
-            self.recovery_archive_list.insert(
-                "end", "{} · {} · {}".format(status.station, status.round_id[:10], self._t(state_id)))
+            archive_rows.append(
+                "{} · {} · {}".format(status.station, status.round_id[:10], self._t(state_id)))
             if status.round_id == previous_archive:
                 selected_archive_index = index
+        self._set_recovery_list(self.recovery_archive_list,
+                                archive_rows or [self._t("recovery.no_rounds")])
         if statuses:
             if selected_archive_index is None:
                 selected_archive_index = next((i for i, status in enumerate(statuses)
                                                if status.status in {"failed", "protected"}), 0)
-            self.recovery_archive_list.selection_set(selected_archive_index)
+            if self.recovery_archive_list.curselection() != (selected_archive_index,):
+                self.recovery_archive_list.selection_clear(0, "end")
+                self.recovery_archive_list.selection_set(selected_archive_index)
             self.recovery_archive_list.activate(selected_archive_index)
             self._recovery_selected_archive = self._recovery_archive_ids[selected_archive_index]
             self._render_recovery_archive(statuses[selected_archive_index])
         else:
-            self.recovery_archive_list.insert("end", self._t("recovery.no_rounds"))
             self._recovery_selected_archive = None
-            self.recovery_archive_detail.configure(text=self._t("recovery.no_rounds_detail"))
+            self._set_recovery_detail(self.recovery_archive_detail, self._t("recovery.no_rounds_detail"))
         retryable = [status for status in statuses
                      if status.status in {"failed", "protected"} and status.save_state == "complete"]
         self.recovery_archive_retry_button.configure(
@@ -2851,7 +2903,7 @@ class B518LogSolutionApp:
         else:
             detail = self._t("recovery.save_state_detail", state=self._t(
                 save_state_message_id(snapshot.save_state)))
-        self.recovery_save_detail.configure(text=detail)
+        self._set_recovery_detail(self.recovery_save_detail, detail)
         self.recovery_save_retry_button.configure(
             state="normal" if snapshot.save_state == "failed" and not self._closing_ui
             else "disabled")
@@ -2877,15 +2929,16 @@ class B518LogSolutionApp:
                     "main.archive_protected" if status.status == "protected" else
                     "main.archive_waiting" if status.status in {"waiting", "saving"} else
                     "main.archive_failed")
-        reason = (self._retention_reason_detail(status.reason_message)
+        reason = (str(status.archived_at) if status.cleanup_eligible else
+                  self._retention_reason_detail(status.reason_message)
                   if status.reason_message is not None else
-                  self._retention_reason_detail(status.message))
+                  self._retention_reason_detail(status.message) if status.message else "")
         detail = "{} · {}".format(status.round_id, self._t(state_id))
         if reason:
             detail += "\n" + reason
         if status.status == "failed" and status.message:
             detail += "\n{}: {}".format(self._t("recovery.archive_diagnostic"), status.message)
-        self.recovery_archive_detail.configure(text=detail)
+        self._set_recovery_detail(self.recovery_archive_detail, detail)
 
     def _retry_recovery_archives(self) -> None:
         if self._closing_ui:

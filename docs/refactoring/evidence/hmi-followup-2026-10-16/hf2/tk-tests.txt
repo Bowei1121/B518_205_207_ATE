@@ -1,0 +1,13 @@
+test_recovery_archive_list_preserves_selection_and_scroll_across_poll_language_reopen (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_recovery_zero_alarm_language_and_reopen_preserve_tab (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_distinguishes_unsaved_saved_and_archived_round_states (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_retry_button_recovers_disk_record_once_without_blocking_ui (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_can_select_and_retry_previous_round_without_changing_current_board (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_conflict_and_alarm_refresh_fail_independently_and_retry_latest_language (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit (test_log_solution_ui.LogSolutionUiTests) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 56.656s
+
+OK

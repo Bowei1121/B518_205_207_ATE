@@ -220,6 +220,27 @@ def capture_tk_window_evidence(window, key, language, widgets):
     return record
 
 
+def capture_recovery_evidence(app, key, language, widgets):
+    # Give Aqua's compositor a frame after tab/language/status updates.
+    deadline = time.monotonic() + .16
+    while time.monotonic() < deadline:
+        app.root.update()
+        time.sleep(.01)
+    for control in widgets.values():
+        assert control.winfo_rootx() >= app.recovery_window.winfo_rootx()
+        assert control.winfo_rootx() + control.winfo_width() <= (
+            app.recovery_window.winfo_rootx() + app.recovery_window.winfo_width())
+        assert control.winfo_rooty() + control.winfo_height() <= (
+            app.recovery_window.winfo_rooty() + app.recovery_window.winfo_height())
+    record = capture_tk_window_evidence(app.recovery_window, key, language, widgets)
+    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+        output = Path(os.environ["B518_TK_EVIDENCE_DIR"]) / "hf2-window-bounds.json"
+        records = json.loads(output.read_text()) if output.exists() else {}
+        records[key + "-" + language] = record
+        output.write_text(json.dumps(records, ensure_ascii=False, indent=2))
+    return record
+
+
 def write_tk_bounds_evidence(key, value):
     evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
     if not evidence_value:
@@ -2652,6 +2673,252 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    def test_recovery_zero_alarm_language_and_reopen_preserve_tab(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=Path(temporary) / "sessions")
+            try:
+                self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                app.round_alarm_button.invoke()
+                root.update()
+                for language, expected in ((ENGLISH, "Acknowledge Round Alarm"),
+                                            (TRADITIONAL_CHINESE, "確認整輪警報")):
+                    self.select_language_from_menu(app, root, language)
+                    self.assertEqual(app.recovery_alarm_ack_button.cget("text"), expected)
+                    self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
+                    capture_recovery_evidence(app, "hf2-zero-alarm", language,
+                        {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    capture_recovery_evidence(app, "hf2-zero-recovery", language,
+                        {"save_retry": app.recovery_save_retry_button,
+                         "archive_retry": app.recovery_archive_retry_button})
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    app.recovery_tabs.select(0)
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    def test_recovery_archive_list_preserves_selection_and_scroll_across_poll_language_reopen(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            rounds = RoundCoordinator(app.events.put, audit_root=session_root)
+            app.rounds = rounds
+            counter = [0]
+
+            class Monitor(BaseMonitor):
+                def __init__(self, callback):
+                    counter[0] += 1
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                        session_root=session_root, now=lambda:
+                        datetime(2026, 10, 16, 8, 0) + timedelta(seconds=counter[0]))
+
+                def poll_once(self):
+                    self.set_result(1, "PASS", "HF2-SCROLL", "controlled.csv")
+
+            try:
+                for _ in range(24):
+                    started = rounds.start("FCT", Monitor, run_async=False, capacity=1)
+                    app.active_round_id = started.round_id
+                    rounds.poll_once()
+                    self.wait_for_ui(root, lambda:
+                        rounds.archive_status(started.round_id).cleanup_eligible)
+                app.round_alarm_button.invoke()
+                app.recovery_tabs.select(1)
+                app.recovery_window.geometry("760x520")
+                root.update()
+                self.assertEqual(app.recovery_archive_list.size(), 24)
+                app.recovery_archive_list.selection_clear(0, "end")
+                app.recovery_archive_list.selection_set(17)
+                app.recovery_archive_list.event_generate("<<ListboxSelect>>")
+                app.recovery_archive_list.yview_moveto(.5)
+                root.update()
+                selected_id = app._recovery_archive_ids[17]
+                reading = app.recovery_archive_list.yview()
+                self.assertGreater(reading[0], 0)
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    until = time.monotonic() + .7
+                    while time.monotonic() < until:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertEqual(app.recovery_archive_list.curselection(), (17,))
+                    self.assertIn(selected_id, app.recovery_archive_detail.get("1.0", "end"))
+                    self.assertEqual(app.recovery_archive_list.yview(), reading)
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(app.recovery_archive_list.yview(), reading)
+                    capture_recovery_evidence(app, "hf2-list-reading", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
+            finally:
+                rounds.stop()
+                rounds.flush_audit()
+                rounds.flush_session()
+                app.hotkey.close()
+                root.destroy()
+
+    def test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            session_root = Path(temporary) / "sessions"
+            historical = SessionStore("untracked-history", {}, session_root)
+            historical.enqueue_event("historical sentinel")
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey, session_root=session_root)
+            elapsed = [0.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=session_root)
+            app.rounds = rounds
+            holders = []
+
+            class Monitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                                     session_root=session_root, monotonic=lambda: elapsed[0],
+                                     async_session_writes=True, round_timeout_seconds=1)
+                    holders.append(self)
+
+                def poll_once(self):
+                    pass
+
+            try:
+                started = rounds.start("FCT", Monitor, run_async=False,
+                                       round_timeout_seconds=1, capacity=1)
+                app.active_round_id = started.round_id
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                self.wait_for_ui(root, lambda: rounds.snapshot().round_alarm_ready)
+                monitor = holders[0]
+                self.assertTrue(rounds.flush_audit())
+                self.assertTrue(rounds.flush_session())
+                alarm = rounds.snapshot().round_alarm
+                app.round_alarm_button.invoke()
+                root.update()
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.get("1.0", "end"))
+                    self.assertIn(started.round_id, app.recovery_alarm_detail.get("1.0", "end"))
+                    self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "normal")
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    capture_recovery_evidence(app, "hf2-alarm-pending", language,
+                        {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                original_open = Path.open
+                attempts = [0]
+
+                def fail_session_open(path, mode="r", *args, **kwargs):
+                    if path == monitor.session.path / "events.log" and mode == "a":
+                        attempts[0] += 1
+                        if attempts[0] <= 2:
+                            raise OSError("controlled Session events fault")
+                    return original_open(path, mode, *args, **kwargs)
+
+                original_write = audit_records.os.write
+                recovery_failures = [0]
+
+                def fail_recovery_event_once(descriptor, content):
+                    if b'"kind": "save_recovered"' in content and not recovery_failures[0]:
+                        recovery_failures[0] += 1
+                        raise OSError("recovery audit event is not yet durable")
+                    return original_write(descriptor, content)
+
+                with patch.object(Path, "open", fail_session_open), \
+                        patch.object(audit_records.os, "write", side_effect=fail_recovery_event_once):
+                    monitor.session.enqueue_event("hf2 unique session probe")
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed")
+                    app.recovery_alarm_ack_button.invoke()
+                    self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
+                    self.assertEqual(rounds.snapshot().save_state, "failed")
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
+                        capture_recovery_evidence(app, "hf2-alarm-acknowledged", language,
+                            {"acknowledge": app.recovery_alarm_ack_button})
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    self.assertNotIn("untracked-history", app.recovery_archive_list.get(0, "end"))
+                    self.assertEqual(len(app._recovery_archive_ids), 1)
+                    self.assertIn("controlled Session events fault",
+                                  app.recovery_save_detail.get("1.0", "end"))
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: recovery_failures[0] == 1 and
+                                     rounds.snapshot().save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertFalse(rounds.archive_status(started.round_id).cleanup_eligible)
+                    self.assertFalse(read_round_audit(monitor.session.path / "audit.jsonl")["audit_complete"])
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "complete")
+                self.assertTrue(rounds.flush_session())
+                self.assertTrue(rounds.flush_audit())
+                records = [json.loads(line) for line in
+                           (monitor.session.path / "events.log").read_text().splitlines()]
+                self.assertEqual(sum(item["message"] == "hf2 unique session probe"
+                                     for item in records), 1)
+                rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                self.assertTrue(rebuilt["audit_complete"])
+                stream_header, stream_events = audit_records.iter_round_audit_events(
+                    monitor.session.path / "audit.jsonl")
+                self.assertTrue(stream_header["audit_complete"])
+                self.assertEqual(list(stream_events), rebuilt["events"])
+                # Recovered does not waive missing records or a later failure.
+                rows = [json.loads(line) for line in
+                        (monitor.session.path / "audit.jsonl").read_text().splitlines()]
+                corrupt = Path(temporary) / "corrupt-audit.jsonl"
+                variants = [rows[:2] + rows[3:],
+                            [item for item in rows if item.get("kind") != "save_recovered"]]
+                later_failure = dict(rows[-1], sequence=rows[-1]["sequence"] + 1,
+                                     kind="session_write_failed")
+                variants.append(rows + [later_failure])
+                for records_variant in variants:
+                    corrupt.write_text("\n".join(json.dumps(item) for item in records_variant) + "\n")
+                    self.assertFalse(read_round_audit(corrupt)["audit_complete"])
+                    stream_header, stream_events = audit_records.iter_round_audit_events(corrupt)
+                    self.assertFalse(stream_header["audit_complete"])
+                    list(stream_events)
+
+                self.assertEqual([item["sequence"] for item in rebuilt["events"]],
+                                 list(range(1, len(rebuilt["events"]) + 1)))
+                self.assertEqual(rounds.snapshot().save_state, "complete")
+                self.assertTrue(any(item["kind"] == "save_recovered"
+                                    for item in rebuilt["events"]))
+                self.assertEqual(sum(item["kind"] == "round_alarm_acknowledged"
+                                     for item in rebuilt["events"]), 1)
+                self.assertTrue((historical.path / "events.log").exists())
+                self.wait_for_ui(root, lambda: rounds.archive_status(started.round_id).cleanup_eligible)
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-session-recovered", language,
+                        {"save_retry": app.recovery_save_retry_button})
+
+                app.close()
+                self.wait_for(lambda: rounds.close_status().status == "complete")
+
+            finally:
+                rounds.stop()
+                rounds.flush_audit()
+                rounds.flush_session()
+                app.hotkey.close()
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
     def test_real_tk_distinguishes_unsaved_saved_and_archived_round_states(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -2662,11 +2929,14 @@ class LogSolutionUiTests(unittest.TestCase):
             now = datetime(2026, 10, 7, 10, 0, tzinfo=timezone(timedelta(hours=8)))
             rounds = RoundCoordinator(app.events.put, audit_root=session_root, wall_clock=lambda: now)
 
+            monitors = []
+
             class OneResultMonitor(BaseMonitor):
                 def __init__(self, callback):
                     super().__init__("FCT", {}, (1,), callback=callback, session_root=session_root,
-                                     now=lambda: now)
+                                     now=lambda: now + timedelta(seconds=len(monitors)))
                     self.done = False
+                    monitors.append(self)
 
                 def poll_once(self):
                     if not self.done:
@@ -2704,26 +2974,52 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(rounds.archive_status(started.round_id).reason_message["message_id"],
                                      "app.settings.retention.reason.archive.write_failed")
                     self.assertIn("temporary archive fault", app.archive_round_detail.cget("text"))
+                    second = rounds.start("FCT", OneResultMonitor, run_async=False)
+                    app.active_round_id = second.round_id
+                    rounds.poll_once()
+                    self.wait_for_ui(root, lambda:
+                        rounds.archive_status(second.round_id).status == "failed")
 
                 app.round_alarm_button.invoke()
                 root.update()
                 app.recovery_tabs.select(1)
                 app._refresh_recovery_center()
                 self.assertIn("temporary archive fault",
-                              app.recovery_archive_detail.cget("text"))
-                self.assertIn("all eligible archives (1)",
+                              app.recovery_archive_detail.get("1.0", "end-1c"))
+                self.assertIn("all eligible archives (2)",
                               app.recovery_archive_retry_button.cget("text").lower())
 
                 self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
                 self.assertIn("無法寫入可信輪次封存資訊", app.archive_status_label.cget("text"))
                 self.assertIn("temporary archive fault", app.archive_status_label.cget("text"))
-                self.select_language_from_menu(app, root, ENGLISH)
+                for language in (TRADITIONAL_CHINESE, ENGLISH):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-archive-failure", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
 
                 app.recovery_archive_retry_button.invoke()
                 self.wait_for_ui(root, lambda:
                     rounds.archive_status(started.round_id).status == "archived" and
+                    rounds.archive_status(second.round_id).status == "archived" and
                     app.status_rows[1]["status"].cget("text") == "PASS")
 
+                self.wait_for_ui(root, lambda: "Trusted Archive" in
+                                 app.recovery_archive_detail.get("1.0", "end"))
+                self.assertNotIn("not recognized", app.recovery_archive_detail.get("1.0", "end"))
+                self.assertIn("2026-10-07T10:00:00+08:00",
+                              app.recovery_archive_detail.get("1.0", "end"))
+                for monitor in monitors:
+                    archive_file = monitor.session.path / "round-archive.json"
+                    self.assertTrue(archive_file.exists())
+                    rebuilt = read_round_audit(monitor.session.path / "audit.jsonl")
+                    self.assertTrue(rebuilt["audit_complete"])
+                    event_ids = [event["sequence"] for event in rebuilt["events"]]
+                    self.assertEqual(len(event_ids), len(set(event_ids)))
+                for language in (ENGLISH, TRADITIONAL_CHINESE):
+                    self.select_language_from_menu(app, root, language)
+                    capture_recovery_evidence(app, "hf2-archive-recovered", language,
+                        {"archive_retry": app.recovery_archive_retry_button})
+                self.select_language_from_menu(app, root, ENGLISH)
                 app._refresh_archive_statuses()
                 self.assertIn(started.round_id, app.archive_round_detail.cget("text"))
                 self.assertIn("Trusted Archive", app.archive_round_detail.cget("text"))
@@ -2795,7 +3091,9 @@ class LogSolutionUiTests(unittest.TestCase):
                         write_number[0] += 1
                         if write_number[0] == 1:
                             failed.set()
-                            raise OSError("temporary disk fault")
+                            raise OSError("temporary disk fault\n" + "\n".join(
+                                "diagnostic evidence {:03d}: long raw disk error".format(i)
+                                for i in range(80)))
                         if write_number[0] == 2:
                             retry_entered.set()
                             release_retry.wait(2)
@@ -2820,7 +3118,38 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(app.recovery_window.winfo_exists())
                     self.assertIsNone(coordinator.snapshot().round_alarm)
                     self.assertIn("temporary disk fault",
-                                  app.recovery_save_detail.cget("text"))
+                                  app.recovery_save_detail.get("1.0", "end-1c"))
+                    app.recovery_tabs.select(1)
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        root.update()
+                        capture_recovery_evidence(app, "hf2-save-failure", language,
+                            {"save_retry": app.recovery_save_retry_button,
+                             "archive_retry": app.recovery_archive_retry_button})
+                        self.assertLessEqual(app.recovery_save_retry_button.winfo_rooty() +
+                            app.recovery_save_retry_button.winfo_height(),
+                            app.recovery_window.winfo_rooty() + app.recovery_window.winfo_height())
+                    self.select_language_from_menu(app, root, ENGLISH)
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    app.recovery_save_detail.yview_moveto(0.6)
+                    root.update()
+                    reading = app.recovery_save_detail.index("@0,0")
+                    self.assertGreater(int(reading.split(".")[0]), 1)
+                    until = time.monotonic() + .7
+                    while time.monotonic() < until:
+                        root.update()
+                        time.sleep(.01)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    app.recovery_window.withdraw()
+                    app.round_alarm_button.invoke()
+                    root.update()
+                    self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(app.recovery_save_detail.index("@0,0"), reading)
+                    self.select_language_from_menu(app, root, ENGLISH)
+
                     app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
                     self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
@@ -2842,7 +3171,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.retry_save_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     deadline = time.monotonic() + 3
                     while (coordinator.snapshot().save_state != "complete" or
                            "Saved Completely" not in app.save_status.cget("text")) and time.monotonic() < deadline:
@@ -2952,17 +3281,17 @@ class LogSolutionUiTests(unittest.TestCase):
                 current = coordinator.start("FCT", create, run_async=False, capacity=1)
                 app.active_round_id = current.round_id
                 app._apply_round_snapshot(current)
-                app._refresh_unsaved_rounds()
-                self.assertEqual(
-                    app._unsaved_round_ids[app.unsaved_round_choice.get()], previous.round_id,
-                )
-                label = next(label for label, round_id in app._unsaved_round_ids.items()
-                             if round_id == previous.round_id)
-                app.unsaved_round_choice.set(label)
-                app._update_selected_round_retry()
-                self.assertEqual(str(app.unsaved_round_retry_button["state"]), "normal")
+                app.round_alarm_button.invoke()
+                app.recovery_tabs.select(1)
+                root.update()
+                previous_index = app._recovery_save_ids.index(previous.round_id)
+                app.recovery_save_list.selection_clear(0, "end")
+                app.recovery_save_list.selection_set(previous_index)
+                app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertEqual(str(app.recovery_save_retry_button["state"]), "normal")
                 self.assertIn("temporary previous round UI fault",
-                              app.unsaved_round_detail.cget("text"))
+                              app.recovery_save_detail.get("1.0", "end-1c"))
 
                 retry_entered = threading.Event()
                 release_retry = threading.Event()
@@ -2976,14 +3305,14 @@ class LogSolutionUiTests(unittest.TestCase):
                     return original_write(descriptor, content)
 
                 with patch.object(audit_records.os, "write", side_effect=pause_old_retry):
-                    app.unsaved_round_retry_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
-                    self.assertEqual(str(app.unsaved_round_retry_button["state"]), "disabled")
+                    self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
                     self.assertTrue(ui_tick.is_set())
-                    app.unsaved_round_retry_button.invoke()
+                    app.recovery_save_retry_button.invoke()
                     self.assertEqual(len(attempts), 1)
                     release_retry.set()
                     self.assertTrue(pump_until(
@@ -8494,9 +8823,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 recovery_window = app.recovery_window
                 self.assertTrue(recovery_window.winfo_exists())
-                self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.cget("text"))
+                self.assertIn(alarm.alarm_id, app.recovery_alarm_detail.get("1.0", "end-1c"))
                 self.assertIn("configured round monitoring limit",
-                              app.recovery_alarm_detail.cget("text"))
+                              app.recovery_alarm_detail.get("1.0", "end-1c"))
                 self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
                 app.conflict_list.selection_set(0)
                 app.conflict_list.activate(0)
@@ -8535,7 +8864,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(alarm_window.title(), "整輪監控逾時")
                     self.assertEqual(recovery_window.title(), "通知與恢復")
                     self.assertIn("已達設定的整輪監控時間上限",
-                                  app.recovery_alarm_detail.cget("text"))
+                                  app.recovery_alarm_detail.get("1.0", "end-1c"))
                     self.assertEqual(conflict_window.title(), "Same-Round Result Conflict")
                     self.assertIn("同輪結果衝突",
                                   app.language_refresh_banner.cget("text"))

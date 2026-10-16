@@ -23,9 +23,17 @@
 - 已提供 `B518 Log Solution/scripts/run_macos_desktop.sh`，選用已驗證的 Python.org Framework，避免 Terminal 的 Conda PATH；README 已更新。打包 App／其他 runtime 與工廠硬體仍待驗。
 - 整合採 fast-forward，無程式合併修改；整合後只補 diff whitespace 與 Python compile，重用有效桌面證據。
 
+## HF2 完整驗收補修
+
+- 分支 `codex/hf2-acceptance-fix`，基準 `e4cd033`。完整紀錄見 [HF2_RECOVERY_ACCEPTANCE_2026-10-16.md](HF2_RECOVERY_ACCEPTANCE_2026-10-16.md)。
+- 零警報確認按鈕英文化、可捲動長診斷、清單與閱讀位置保留、英文字串欄寬及可信封存成功顯示已修復。
+- 補實際新恢復按鈕人工確認、Session／audit 連續故障再恢復、跨輪保存不換當前結果板、兩輪全部封存等真正 App 操作；80 行 raw 診斷仍完整可讀且背景重試不阻塞介面。
+- 真 Session 故障發現兩種 audit reader 把歷史錯誤永久判不完整，已依後續耐久 `save_recovered` 恢復，仍要求完整連續事件，驗證缺失／無恢復／新失敗全部受保護；恢復事件本身寫入失敗仍阻擋可信封存與正常關閉。
+- Framework 3.8／Tk 8.6.8 真 App 8/8（56.656 秒），保存封存領域 101/101、歷史查詢呈現 74/74，diff whitespace／Python compile 通過。9 類恢復情境雙語原生 PNG、逐項測試輸出與 bounds／hash manifest 已保存。
+- 主頁舊恢復入口全部保留，工廠／正式打包環境仍待驗；本票本機驗收完成，整合推送／GitHub 結案待 merger。
+
 ## 下一步
 
-1. 整合者依完整 HF1 規格審查新 evidence 並同步 #61；未由本次 merger 關閉議題。
-2. HF2 英文零警報確認按鈕仍中文，補「保存與封存」雙語操作證據及完整規格缺項，保持 #62 OPEN。
-3. HF1／HF2 完整驗收且推送後依使用者指定順序 HF3 → HF4 → HF5 → HF6 → HF7；HF3 原生依賴未解除前維持阻擋，不平行修改 Tk。
-4. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。
+1. merger 核對 HF2 成果與證據，正常合併到整合分支並推送既有兩個遠端後同步 #62。
+2. HF1／HF2 完整驗收且推送後依使用者指定順序 HF3 → HF4 → HF5 → HF6 → HF7，不平行修改 Tk。
+3. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。

@@ -418,9 +418,14 @@ def read_round_audit(path: Path) -> dict:
     completion_reason = ""
     alarms = {}
     conflicts = {}
+    save_failure_pending = False
     for event in events:
         kind = event["kind"]
         slot = event.get("display_position")
+        if kind in {"audit_write_failed", "session_write_failed"}:
+            save_failure_pending = True
+        elif kind == "save_recovered":
+            save_failure_pending = False
         if kind == "round_started":
             state = "RUNNING"
         elif kind == "conflict_detected":
@@ -474,8 +479,7 @@ def read_round_audit(path: Path) -> dict:
             "alarms": alarms, "conflicts": conflicts,
             "audit_complete": all(event["sequence"] == index
                                   for index, event in enumerate(events, 1))
-            and not any(event["kind"] in {"audit_write_failed", "session_write_failed"}
-                        for event in events)}
+            and not save_failure_pending}
 
 
 def iter_round_audit_events(path: Path, read_observer=None):
@@ -510,6 +514,7 @@ def iter_round_audit_events(path: Path, read_observer=None):
         previous_sequence = 0
         event_count = 0
         audit_complete = True
+        save_failure_pending = False
         for line in handle:
             if read_observer is not None:
                 read_observer(len(line.encode("utf-8")))
@@ -544,15 +549,18 @@ def iter_round_audit_events(path: Path, read_observer=None):
                     "sn" not in event):
                 raise AuditRecordError("結果事件缺少有效顯示位置、狀態或 SN 欄位")
             event_count += 1
-            if sequence != event_count or event["kind"] in {
-                    "audit_write_failed", "session_write_failed"}:
+            if sequence != event_count:
                 audit_complete = False
+            if event["kind"] in {"audit_write_failed", "session_write_failed"}:
+                save_failure_pending = True
+            elif event["kind"] == "save_recovered":
+                save_failure_pending = False
             previous_sequence = sequence
         after = os.fstat(handle.fileno())
         if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
                 (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
             raise AuditRecordError("輪次紀錄在查詢期間已變更")
-        header["audit_complete"] = audit_complete
+        header["audit_complete"] = audit_complete and not save_failure_pending
         handle.seek(0)
         handle.readline()
     except Exception:

@@ -1,0 +1,50 @@
+{
+  "baseline": "e4cd033a2d98ea7945592017f6ea9a76e5e29fbc",
+  "runtime": "/Library/Frameworks/Python.framework/Versions/3.8/bin/python3",
+  "tk": "8.6.8",
+  "os": "macOS 15.7.9 24G830",
+  "results": {
+    "native_tk": {
+      "tests": 8,
+      "seconds": 56.656,
+      "result": "OK"
+    },
+    "save_archive_domain": {
+      "tests": 101,
+      "seconds": 21.249,
+      "result": "OK"
+    },
+    "historical_query_display": {
+      "tests": 74,
+      "seconds": 28.085,
+      "result": "OK"
+    }
+  },
+  "source_sha256": {
+    "B518 Log Solution/src/b518_log_solution.py": "4fa1bc13a32dae9b95ec79fd3ff19d0a6a5f56bcfef057a2aa1f471f5faa2a60",
+    "B518 Log Solution/src/audit_records.py": "d90bc158351d797f8cae5f2a6aeb88274ab98baf634940bc16daf2cf5d9da578",
+    "B518 Log Solution/tests/test_log_solution_ui.py": "331d8a1d76e5544eeb291d8930e034d9c0e3dea85ec0e6dce18fa5cc67fba228"
+  },
+  "screenshots_sha256": {
+    "close-progress-en.png": "fa378ca2fa23d49878560f1effd079e695e38fdedcdf61568ace8198d7a01523",
+    "close-progress-zh-TW.png": "3bb049959498c6544f0d312155cf86f5d070515e86d473e440d2efa74c0ce7c7",
+    "hf2-alarm-acknowledged-en.png": "76d237fd35c2c17553624a057da1dcfde5cfe9902d57075da5a38b5e40680798",
+    "hf2-alarm-acknowledged-zh-TW.png": "24789d14984293b8f695f657d4341f75ed7ba5beb9818da7710841a565773e51",
+    "hf2-alarm-pending-en.png": "782c05545c1b0d36c1f16c83ecce660efb7f26b109366658bed197582ac376a0",
+    "hf2-alarm-pending-zh-TW.png": "8baaf2bc03f3124dd041b64ce4d8b2650432e9fc79041b39b269e14a34b1325c",
+    "hf2-archive-failure-en.png": "b923e0d2873c67c1f4274ca1e600c6d0cd85dd5563e6d06503497bd2d5c2d3eb",
+    "hf2-archive-failure-zh-TW.png": "419e252172f48ed3f919db371abcb0a641a90f7748808264c37cc6976c8b8ca7",
+    "hf2-archive-recovered-en.png": "69964abdfb7d613a52201acd287ef6fc9344e898ff2c63cf1ae6fbd2691607ff",
+    "hf2-archive-recovered-zh-TW.png": "6c6fa9e105872a0550aee0b70c5e43bb2dec1a95f31c63f208cfb792c01bab67",
+    "hf2-list-reading-en.png": "390a9e84ddf4213c8af3643f1ce9947e59a9000b41e722212bc94cb6db5c63f8",
+    "hf2-list-reading-zh-TW.png": "59f2378b2da5b6d586b59efede43410dbb886f904c1514e4e849a2c0957b112f",
+    "hf2-save-failure-en.png": "88afbfc0b877c244ca227e026529c987ca88f2bda7eb0d491421b06bf9193bf6",
+    "hf2-save-failure-zh-TW.png": "973a0ade31c52e52d9f129a9a283613d25d6960ac52e8707758762e0ff48be47",
+    "hf2-session-recovered-en.png": "54fce4e17d2f6217ce30a8ced35383ef9ad2185559af86089c9531f4a473ce05",
+    "hf2-session-recovered-zh-TW.png": "a873016f8e75f14e994eeef78a3b83ab079584299f126ccae8cc0f291f050819",
+    "hf2-zero-alarm-en.png": "c55488c31270d7435fc574b98b6cd03609aba4d5616dd8f064d7723a8aaebdc7",
+    "hf2-zero-alarm-zh-TW.png": "2b28bc3f0249aac41406b224d750eced8dcdd0255833c554383185a7e4355cec",
+    "hf2-zero-recovery-en.png": "9eeaee6df5fce492135a2c1f87a731fe4ec93d80effce9bb0261c7e9594f3da3",
+    "hf2-zero-recovery-zh-TW.png": "c4495f3d1720fb987cae65e029ea00e43847b38f079bdada50abad832c54d689"
+  }
+}
