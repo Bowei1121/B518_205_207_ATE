@@ -11616,6 +11616,18 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.historical_query_status.cget("text"),
                         app._t("app.settings.history.preparation_failed",
                                reason="controlled later-page failure"))
+                    self.assertEqual(str(app.historical_event_retry_button.cget("state")),
+                                     "normal")
+                    retry_hint = next(
+                        hint for hint in app._historical_control_hints
+                        if hint._widget is app.historical_event_retry_button)
+                    app.historical_event_retry_button.event_generate("<Enter>")
+                    self.wait_for_ui(
+                        root, lambda: retry_hint._window is not None and
+                        retry_hint._window.winfo_exists())
+                    self.assertIn("Retry preparation of the remaining pages",
+                                  retry_hint._label.cget("text"))
+                    retry_hint._hide()
                     self.assertNotIn(app._t("app.settings.history.preparing"),
                                      app.historical_query_status.cget("text"))
                 self.assertEqual(audit_path.read_bytes(), source_bytes)
@@ -12188,7 +12200,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 root.update()
                 self.assertEqual(app._historical_query_page_number, 3)
-                self.assertIsNone(visible_hint_text())
+                self.assertEqual(visible_hint_text(),
+                                 "There is no later results page to show.")
                 focus_next_with_tab(app.historical_previous_button)
                 self.wait_for_ui(root, lambda: visible_hint_text() is not None)
                 self.assertEqual(visible_hint_text(), "Show the previous results page")
@@ -12248,10 +12261,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.historical_event_refresh_button.event_generate("<Enter>")
                 self.wait_for_ui(root, lambda: len(hints()) == 1)
                 hint = hints()[0]
-                self.assertIn("Search the selected date range", hint_text(hint))
+                self.assertTrue(any(
+                    text.startswith("Search the selected date range")
+                    for text in hint_text(hint)))
 
                 self.set_language_for_test_setup(app, root, TRADITIONAL_CHINESE)
-                self.assertIn("查詢所選日期範圍", hint_text(hint))
+                self.assertTrue(any(
+                    text.startswith("查詢所選日期範圍") for text in hint_text(hint)))
                 self.assertEqual(app._historical_query_result, None)
                 self.assertIs(app.historical_event_window, history_window)
 
@@ -12266,6 +12282,147 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(hints(), [])
             finally:
                 app._close_historical_event_window()
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_history_and_diagnostics_controls_explain_current_actions(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(RoundCoordinator, "start_retention_schedule", return_value=None):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                app_event_path=Path(temporary) / "app-events.json")
+            try:
+                self.wait_for(lambda: app.app_events.status().complete)
+                app.open_historical_events()
+                app.open_app_diagnostics()
+                root.update()
+
+                def show_hint(widget):
+                    visible = _LocalizedControlHint._visible_hint
+                    if visible is not None and visible._widget is not widget:
+                        visible._widget.event_generate("<Leave>")
+                        root.update()
+                    widget.event_generate(
+                        "<Motion>", x=max(2, widget.winfo_width() // 2),
+                        y=max(2, widget.winfo_height() // 2), warp=True)
+                    widget.event_generate("<Enter>")
+                    self.wait_for_ui(root, lambda:
+                                     _LocalizedControlHint._visible_hint is not None and
+                                     _LocalizedControlHint._visible_hint._widget is widget and
+                                     _LocalizedControlHint._visible_hint._window is not None)
+                    hint = _LocalizedControlHint._visible_hint
+                    root.update()
+                    return hint._label.cget("text")
+
+                def wait_for_physical_hover(widget, expected_text):
+                    hint = next(item for item in app._historical_control_hints
+                                if item._widget is widget)
+                    hint._hide()
+                    hint._pointer_inside = False
+                    hint._focused = False
+                    app.historical_event_window.lift()
+                    root.update()
+                    x = widget.winfo_rootx() + widget.winfo_width() // 2
+                    y = widget.winfo_rooty() + widget.winfo_height() // 2
+                    print("ST6: historical window foreground; move physical pointer outside, "
+                          "then hover disabled Cancel search at ({}, {}) for 0.5s.".format(
+                              x, y), flush=True)
+                    deadline = time.monotonic() + 90
+                    while time.monotonic() < deadline:
+                        root.update()
+                        if (hint._pointer_inside and hint._window is not None and
+                                hint._window.winfo_exists() and hint._window.winfo_viewable() and
+                                hint._label.cget("text") == expected_text):
+                            return hint._label.cget("text")
+                        time.sleep(0.02)
+                    self.fail("physical hover did not display the disabled Cancel search hint")
+
+                before = (app.historical_start_var.get(), app.historical_end_var.get(),
+                          app._historical_query_generation,
+                          app.historical_event_list.curselection())
+                cancel_hint = (wait_for_physical_hover(
+                    app.historical_event_cancel_button,
+                    "No history search is running, so there is nothing to cancel.")
+                    if os.environ.get("B518_MANUAL_HOVER") == "1" else
+                    show_hint(app.historical_event_cancel_button))
+                self.assertIn("No history search is running", cancel_hint)
+                capture_native_window_with_hint(
+                    app.historical_event_window, "st6-history-cancel-disabled-hint-en.png")
+                self.assertEqual(before, (app.historical_start_var.get(),
+                                          app.historical_end_var.get(),
+                                          app._historical_query_generation,
+                                          app.historical_event_list.curselection()))
+
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                query_entered = threading.Event()
+                release_query = threading.Event()
+
+                def gated_query(*args, **kwargs):
+                    query_entered.set()
+                    if not release_query.wait(5):
+                        raise RuntimeError("controlled history search gate timed out")
+                    raise RuntimeError("controlled history search cancelled")
+
+                app.historical_start_var.set("2099-01-01")
+                app.historical_end_var.set("2099-01-01")
+                with patch("b518_log_solution.query_historical_events",
+                           side_effect=gated_query):
+                    self.click_tk_widget(root, app.historical_event_refresh_button)
+                    self.assertTrue(query_entered.wait(2))
+                    self.wait_for_ui(root, lambda: app._historical_query_generation is not None)
+                    active_cancel_hint = show_hint(app.historical_event_cancel_button)
+                    self.assertIn("取消進行中的歷史查詢", active_cancel_hint)
+                    self.assertIsNotNone(app._historical_query_generation,
+                                         "reading a hint must not cancel the search")
+                    capture_native_window_with_hint(
+                        app.historical_event_window,
+                        "st6-history-cancel-active-hint-zh-TW.png")
+                    app._cancel_historical_event_query()
+                    release_query.set()
+                    self.wait_for_ui(
+                        root, lambda: app._historical_query_status_key ==
+                        "app.settings.history.query_cancelled")
+
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                self.assertIn("沒有進行中的歷史查詢",
+                              _LocalizedControlHint._visible_hint._label.cget("text"))
+                capture_native_window_with_hint(
+                    app.historical_event_window, "st6-history-cancel-disabled-hint-zh-TW.png")
+
+                retry_hint = show_hint(app.historical_event_retry_button)
+                self.assertIn("沒有可重試", retry_hint)
+                capture_native_window_with_hint(
+                    app.historical_event_window, "st6-history-retry-disabled-hint-zh-TW.png")
+                app._select_language(ENGLISH)
+                root.update()
+                diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
+                self.assertIn("There are no App diagnostic save failures", diagnostics_retry_hint)
+                capture_native_window_with_hint(
+                    app.app_diagnostics_window,
+                    "st6-diagnostics-save-retry-disabled-hint-en.png")
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
+                self.assertIn("沒有待重試", diagnostics_retry_hint)
+                capture_native_window_with_hint(
+                    app.app_diagnostics_window,
+                    "st6-diagnostics-save-retry-disabled-hint-zh-TW.png")
+                language_retry_hint = show_hint(app.app_diagnostics_language_retry_button)
+                self.assertIn("沒有待重試", language_retry_hint)
+                close_hint = show_hint(app.app_diagnostics_close_button)
+                self.assertIn("不會修改或移除", close_hint)
+                capture_native_window_with_hint(
+                    app.app_diagnostics_window, "st6-diagnostics-close-hint-zh-TW.png")
+            finally:
+                app._close_historical_event_window()
+                app._close_app_diagnostics_window()
                 app.hotkey.close()
                 root.destroy()
 
