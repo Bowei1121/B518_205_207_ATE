@@ -99,3 +99,9 @@
 - 根因是清理摘要 `Text` 元件建立於另一個 Frame，卻用 `grid(in_=...)` 顯示到後建立的 sibling Frame；Aqua 將 sibling 繪在文字上方造成畫面空白。已將 Text 改為承載 Frame 的直接子元件。相同摘要不再清空重填，修復輪詢期間的 scrollbar／閱讀位置跳動。
 - 原生 macOS Framework Python 3.8.10／Tk 8.6 真 App 驗收：英文及繁中清理摘要和空狀態可見；80 行診斷可捲動；內容更新及語言切換期間閱讀位置與選取穩定；關閉重開設定頁後摘要仍可用。四張真正 Aqua 截圖及 bounds 已納入版控；證據、根因、命令與限制見 [HF6 驗收紀錄](../../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf6/README.md)。
 - 驗證結果：專屬原生 UI 測試 1/1、清理回歸 7/7、輪次保留清理測試 36/36、`git diff --check` 通過。工廠及正式打包環境另待現場驗收；HF7 尚待執行。此時仍未合回 `B518-Log-Solution`。
+
+## HMI 後續改善七票整合驗收現況（2026-10-16）
+
+- HF1–HF7 的程式工作、對應回歸與真正 App 桌面驗收均已完成。HF7 從 `ed9432cd141b0bd1fe65adbada4ab56e4a2a7751` fast-forward 至整合分支 `codex/hmi-followup-20261016` 的 `3d098c41fd2119b19d64691035905bc2a7b5f5f6`；HF7 44 項故事矩陣、46 張中英原生 Aqua 畫面及 bounds／manifest 已提交，詳見 [HF7 驗收報告](evidence/hmi-followup-2026-10-16/hf7/README.md)。
+- HF7 整合測試的焦點測試在 11 項批次中 10 項通過，唯一項於該批次讀到 `focus_get() is None`，隔離重跑 1/1 通過；獨立 KVM 幾何 1/1、KVM 顯示契約 7/7。批次焦點現象已保留於報告，不宣稱批次全綠。HF1–HF6 有效原生驗收及測試證據重用，未無條件重跑長時間歷史效能測試。
+- 尚待最終 code review、修正 review 發現、將整合分支正常合回 `B518-Log-Solution`，確認 Gitea 與 GitHub 推送 SHA 相同，並由主協調者同步子議題／父議題狀態。正式打包版、工廠 KVM 傳輸與現場操作另列待確認，並非本地程式及桌面驗收的替代條件。

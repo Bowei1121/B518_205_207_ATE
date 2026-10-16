@@ -1,6 +1,6 @@
 # HMI 後續實作接續紀錄
 
-目前整合分支：`codex/hmi-followup-20261016`；HF1–HF4 已完成、整合、推送至 Gitea／GitHub，#61–#64 已結案。HF2 由 `e4cd033` 快轉整合至 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4`，HF3 由 `cfc4738` 快轉至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`，HF4 由 `f502a83` 快轉至 `a5eb259f1a48edd52c2c7f31ccfb98b0fdddb987`。保留 issue 對帳提交 `63d9ee5`。HF5 #65 已完成實作、真正 App 雙語前景驗收及快轉整合，目前正同步雙遠端；接續 HF6、HF7。
+目前整合分支：`codex/hmi-followup-20261016`；HF1–HF7 均已完成實作、整合與桌面驗收。HF7 從 `ed9432cd141b0bd1fe65adbada4ab56e4a2a7751` 快轉至 `3d098c41fd2119b19d64691035905bc2a7b5f5f6`，加入 44 項故事矩陣驗收紀錄及 46 張雙語原生 Aqua App 畫面。最後一批 11 項整合 Tk 測試中，toolbar focus 測試單次觀察到 `focus_get() is None`，隔離重跑通過；其餘 10 項通過。此批次競態如實保留於 HF7 報告。HF7 完成後待進行整合分支全量 code review、修正審查發現、合回 `B518-Log-Solution`、雙遠端推送及父議題結案。
 
 歷史診斷階段：五項真正 Aqua Tk 測試曾有 4 通過，toolbar geometry 失敗且 teardown 錯誤；完整輸出見 `evidence/hmi-followup-20261016/hf1-hf2-desktop.log`。後續修復與受影響重驗結果見下文；不抹除原始失敗。
 
@@ -64,8 +64,16 @@
 - 原生 Framework Python 3.8.10／Tk 8.6 真 App 驗收確認英文與繁中摘要及明確空狀態可見、80 行診斷可捲動、重繪與輪詢期間閱讀位置及選取維持、重開設定頁後仍可用。畫面、bounds、根因與命令見 [HF6 桌面驗收證據](../../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf6/README.md)。專屬真 Tk 測試 1/1、HF6／清理錯誤處理整合測試 7/7、輪次清理測試 36/36，`git diff --check` 通過。
 - HF6 工廠／打包環境另待現場確認；HF7 尚待依序執行。此整合不操作 Issue 狀態、不合回主線、不清理 worktree。
 
+## HF7 整體桌面驗收
+
+- HF7 #67 從整合基準 `ed9432cd141b0bd1fe65adbada4ab56e4a2a7751` 開始，分支提交 `691a9de`（44 項故事對照、整合紀錄、bounds 與 manifest）及 `3d098c4`（雙語畫面）已 fast-forward 整合；目前整合 tip 為 `3d098c41fd2119b19d64691035905bc2a7b5f5f6`。
+- macOS 原生 Aqua／Framework Python 3.8.10／Tk 8.6 整合驗收涵蓋 HF1–HF6：工具列 Tab/KVM、徽章、通知確認與恢復、精簡主頁與診斷、設定三等分、清理摘要與閱讀位置、關閉保存契約。保存 46 張雙語原生 App PNG、bounds、manifest 與 44 項故事矩陣，詳見 [HF7 驗收報告](evidence/hmi-followup-2026-10-16/hf7/README.md)。
+- 12 個不同原生測試條件均至少有一次通過：獨立 KVM 幾何 1/1；其餘 11 項批次 10/11，toolbar focus 項在批次執行時 `root.focus_get()` 為 `None`，未觀察到焦點落到錯誤控制項；隔離重跑同一測試 1/1 通過。KVM 顯示契約另 7/7 通過。保留這次批次競態記錄，不將整批描述為全綠。未重跑無關長時間效能測試。
+- 工廠 KVM 傳輸、正式打包版及其他 macOS/Tk 組合仍需現場確認，不阻擋本地程式與原生桌面驗收。整合後續仍需 code review、主線合併與雙遠端推送。
+
 ## 下一步
 
-1. 推送目前整合分支至 Gitea／GitHub 並確認兩端 SHA 相同；主協調者同步 #66 狀態。
-2. 接續 HF7，不平行修改 Tk。
-3. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。
+1. 由主協調者完成 #65–#67 的驗收留言／狀態同步並核實全部子議題完成。
+2. 對整合分支相對固定起始基準執行完整 code review，修正發現並重驗。
+3. 正常合回 `B518-Log-Solution`，推送 Gitea 與 GitHub 並各自讀回驗證相同 SHA；完成後留言並結案 #60。
+4. 保存最終執行紀錄、提交與測試摘要，再清理僅本次建立且已保存工作的 worktree。工廠驗收另列，不代替桌面驗證。
