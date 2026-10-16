@@ -71,3 +71,10 @@
 - Framework Python3.8／Tk8.6.8 真 App 8/8、保存封存領域 101/101、受影響歷史查詢呈現 74/74 通過；20 張繁中／英文原生 PNG 與測試輸出、bounds／hash 已保存並檢視。整合無程式衝突，僅補 diff whitespace 與三檔 compile，重用有效桌面證據。詳見 [HF2 驗收紀錄](HF2_RECOVERY_ACCEPTANCE_2026-10-16.md)。
 - 本次文件提交將正常推送既有 Gitea／GitHub，兩端 SHA 另由主協調者確認並同步 #62；merger 未關 Issue、未合主線、未刪工作樹。下一票 HF3 #63 需原生依賴皆解除，再依序至 HF7，不宣稱後續票已完成。
 - 正式打包 App、工站磁碟／權限／網路位置、實際人工處理及 KVM 傳輸仍需現場確認；Conda Tk 原生滑鼠限制維持 HF1 所記，不假稱修好。
+
+## HF3 通知計數徽章整合（2026-10-16）
+
+- HF3 #63 分支 `codex/hf3-notification-badge`，提交 `93c604d1f29431b2a473697c43c15b23d6b3b4c9`（功能／測試／紀錄）及 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`（12 張原生畫面）；由整合分支 `cfc473827da8b46b028c3fd92beba94b18fc1413` 快轉至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`。
+- 徽章只計尚未確認的整輪警報及有保存／封存異常的不同輪次；同輪多錯只一筆，開啟通知中心不清零，完整確認／恢復後才消失。雙位數徽章清晰且未碰到🌐、待確認數或 KVM；徽章右側外點擊不觸發鈴鐺，原鈴鐺點擊區保留。
+- 真 Aqua Python.org Framework 3.8／Tk 8.6.8，徽章生命週期、HF1 toolbar 幾何／KVM 與 Tab 順序 3/3（15.315 秒）；`git diff --check`、受影響兩檔 `py_compile` 通過。雙語零計數、同輪兩項、12 輪、單輪保存錯誤、封存失敗及恢復畫面和 bounds 已保存並檢視。完整命令與限制見 [HF3 桌面驗收紀錄](../../B518%20Log%20Solution/docs/refactoring/evidence/hf3/local-validation.md)。
+- 工廠產線／正式打包環境仍待現場驗收。HF3 已整合，Issue 結案與遠端推送待主協調者核對；HF4 #64 是下一張，依序完成至 HF7，未合回主線。
