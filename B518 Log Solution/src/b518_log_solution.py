@@ -110,6 +110,8 @@ TOOLBAR_ICON_FONT = ("Apple Color Emoji", 15)
 class _LocalizedControlHint:
     """Show one localized hint for a Tk or ttk control, with owned lifecycle."""
 
+    _visible_hint = None
+
     def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None):
         self._widget = widget
         self._text_provider = text_provider
@@ -119,10 +121,12 @@ class _LocalizedControlHint:
         self._label = None
         self._bindings = []
         for sequence, callback in (
-                ("<Enter>", self._schedule), ("<FocusIn>", self._schedule),
-                ("<Leave>", self._hide), ("<FocusOut>", self._hide)):
+                ("<Enter>", self._on_enter), ("<FocusIn>", self._on_focus_in),
+                ("<Leave>", self._on_leave), ("<FocusOut>", self._on_focus_out)):
             binding_id = widget.bind(sequence, callback, add="+")
             self._bindings.append((sequence, binding_id))
+        self._pointer_inside = False
+        self._focused = False
         if menu is not None:
             for sequence in ("<ButtonPress-1>", "<KeyPress-space>",
                              "<KeyPress-Return>", "<KeyPress-Down>"):
@@ -152,9 +156,7 @@ class _LocalizedControlHint:
         if widget is None:
             return
         try:
-            if self._disabled(widget):
-                self._hide()
-            elif self._label is not None and self._label.winfo_exists():
+            if self._label is not None and self._label.winfo_exists():
                 self._label.configure(text=self._text_provider())
         except tk.TclError:
             self._hide()
@@ -184,8 +186,7 @@ class _LocalizedControlHint:
         if widget is None:
             return
         try:
-            if (not widget.winfo_exists() or self._disabled(widget) or
-                    self._menu_is_posted(widget)):
+            if not widget.winfo_exists() or self._menu_is_posted(widget):
                 self._hide()
                 return
             self._cancel_after()
@@ -199,12 +200,14 @@ class _LocalizedControlHint:
         if widget is None:
             return
         try:
-            if (not widget.winfo_exists() or self._disabled(widget) or
-                    self._menu_is_posted(widget)):
+            if not widget.winfo_exists() or self._menu_is_posted(widget):
                 return
             if self._window is not None and self._window.winfo_exists():
                 self._label.configure(text=self._text_provider())
                 return
+            visible_hint = type(self)._visible_hint
+            if visible_hint is not None and visible_hint is not self:
+                visible_hint._hide()
             window = tk.Toplevel(widget.winfo_toplevel())
             window.overrideredirect(True)
             window.focusmodel("passive")
@@ -223,6 +226,7 @@ class _LocalizedControlHint:
             window.geometry("+{}+{}".format(x, max(2, y)))
             self._window = window
             self._label = label
+            type(self)._visible_hint = self
         except tk.TclError:
             self._hide()
 
@@ -231,12 +235,34 @@ class _LocalizedControlHint:
         window = self._window
         self._window = None
         self._label = None
+        if type(self)._visible_hint is self:
+            type(self)._visible_hint = None
         if window is not None:
             try:
                 if window.winfo_exists():
                     window.destroy()
             except tk.TclError:
                 pass
+
+    def _on_enter(self, event=None) -> None:
+        self._pointer_inside = True
+        self._schedule(event)
+
+    def _on_focus_in(self, event=None) -> None:
+        self._focused = True
+        self._schedule(event)
+
+    def _on_leave(self, event=None) -> None:
+        self._pointer_inside = False
+        if not self._focused:
+            self._hide(event)
+
+    def _on_focus_out(self, event=None) -> None:
+        self._focused = False
+        if self._pointer_inside:
+            self._schedule(event)
+        else:
+            self._hide(event)
 
     def _cancel_after(self) -> None:
         widget = self._widget
@@ -511,6 +537,9 @@ class B518LogSolutionApp:
         for hint in getattr(self, "_toolbar_hints", ()):
             hint.close()
         self._toolbar_hints = ()
+        for hint in getattr(self, "_main_action_hints", {}).values():
+            hint.close()
+        self._main_action_hints = {}
         for after_id in tuple(self._after_ids):
             self._cancel_ui_timer(after_id)
         self._close_after_id = None
@@ -564,7 +593,8 @@ class B518LogSolutionApp:
                                                ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
-                             font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
+                             font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1,
+                             focuscolor="#2563eb", focusthickness=2)
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
                              foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
                              focuscolor="#2563eb", focusthickness=2,
@@ -583,15 +613,20 @@ class B518LogSolutionApp:
                                                                  ("active", "#e5e7eb"),
                                                                  ("pressed", "#d1d5db"),
                                                                  ("disabled", LIGHT_BACKGROUND)])
-        self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
-                                                    ("disabled", "#eeeeee")],
+        self.style.map("Main.TButton", background=[("disabled", "#eeeeee"),
+                                                    ("pressed", "#bfdbfe"),
+                                                    ("active", "#dbeafe"),
+                                                    ("focus", FIELD_BACKGROUND)],
                        foreground=[("disabled", "#777777")])
         self.style.configure("Link.TButton", background=LIGHT_BACKGROUND, foreground="#0759a5",
-                             padding=(2, 1), borderwidth=0, underline=True)
+                             padding=(2, 1), borderwidth=0, underline=True,
+                             focuscolor="#2563eb", focusthickness=2)
         self.style.map("Link.TButton", foreground=[("active", "#003f7d"),
                                                      ("disabled", "#777777")],
-                       background=[("active", LIGHT_BACKGROUND),
-                                   ("focus", "#dbeafe")])
+                       background=[("disabled", LIGHT_BACKGROUND),
+                                   ("pressed", "#bfdbfe"),
+                                   ("active", "#dbeafe"),
+                                   ("focus", LIGHT_BACKGROUND)])
         self.style.configure("TEntry", fieldbackground=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              insertcolor=TEXT_COLOUR)
         self.style.map("TEntry", fieldbackground=[("disabled", "#e5e7eb")],
@@ -637,7 +672,7 @@ class B518LogSolutionApp:
         )
         self.settings_button.pack(side="left", padx=(0, 3))
         self._toolbar_hints.append(_LocalizedControlHint(self.settings_button,
-                                                 lambda: self._t("main.settings")))
+                                                 lambda: self._t("main.hint.settings")))
         self._build_company_identity(header)
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
         self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
@@ -707,13 +742,13 @@ class B518LogSolutionApp:
         self.language_button.bind("<KeyPress-Down>", self._invoke_language_button)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
         self._language_hint = _LocalizedControlHint(self.language_button, lambda: self._t(
-                "main.language", current_language=language_name(self.current_language)),
+                "main.hint.language", current_language=language_name(self.current_language)),
                 menu=self.language_menu)
         self._toolbar_hints.extend((
             self._language_hint,
-            _LocalizedControlHint(self.round_alarm_button, lambda: self._t("recovery.title")),
-            _LocalizedControlHint(self.review_button, lambda: self._t(
-                "main.review_count", count=self._pending_conflict_count())),
+            _LocalizedControlHint(self.round_alarm_button, lambda: self._t(
+                "main.hint.round_alarm")),
+            _LocalizedControlHint(self.review_button, self._main_review_hint_text),
         ))
         # Tk's traversal follows creation order; keep it aligned with the row.
         # Aqua emits Shift+Tab rather than the generic Tk ISO_Left_Tab mapping.
@@ -846,6 +881,16 @@ class B518LogSolutionApp:
         self.app_diagnostics_button.pack(side="right")
         self.app_diagnostics_button.bind(
             "<Return>", self._open_app_diagnostics_from_keyboard, add="+")
+        self._main_action_hints = {
+            self.start_button: _LocalizedControlHint(
+                self.start_button, lambda: self._main_action_hint_text("start")),
+            self.stop_button: _LocalizedControlHint(
+                self.stop_button, lambda: self._main_action_hint_text("stop")),
+            self.retry_save_button: _LocalizedControlHint(
+                self.retry_save_button, lambda: self._main_action_hint_text("retry_save")),
+            self.app_diagnostics_button: _LocalizedControlHint(
+                self.app_diagnostics_button, lambda: self._t("main.hint.diagnostics")),
+        }
         self._render_rows()
         self._apply_main_language()
         self._refresh_app_event_status()
@@ -856,6 +901,42 @@ class B518LogSolutionApp:
     def _open_app_diagnostics_from_keyboard(self, _event=None):
         self.open_app_diagnostics()
         return "break"
+
+    def _main_action_hint_text(self, action: str) -> str:
+        """Describe the current action and its actual availability on the home page."""
+        closing = getattr(self, "_closing_ui", False)
+        if action == "start":
+            if closing:
+                return self._t("main.hint.start.closing")
+            if self._round_is_active():
+                return self._t("main.hint.start.active")
+            return self._t("main.hint.start")
+        if action == "stop":
+            if closing:
+                return self._t("main.hint.stop.closing")
+            if not self._round_is_active():
+                return self._t("main.hint.stop.idle")
+            return self._t("main.hint.stop")
+        if action == "retry_save":
+            if closing:
+                return self._t("main.hint.retry_save.closing")
+            state = getattr(self, "_current_save_state", "waiting")
+            if state == "failed":
+                return self._t("main.hint.retry_save")
+            if state == "saving":
+                return self._t("main.hint.retry_save.saving")
+            return self._t("main.hint.retry_save.none")
+        raise ValueError("unknown main action hint: {}".format(action))
+
+    def _main_review_hint_text(self) -> str:
+        count = self._pending_conflict_count()
+        if count:
+            return self._t("main.hint.review_count", count=count)
+        return self._t("main.hint.review_count.none")
+
+    def _refresh_main_action_hints(self) -> None:
+        for hint in getattr(self, "_main_action_hints", {}).values():
+            hint.refresh()
 
     def _set_main_monitor_state(self, message_id: str, **parameters: object) -> None:
         self._monitor_state_message = message_id
@@ -892,6 +973,7 @@ class B518LogSolutionApp:
         self._restore_captured_round_messages_for_display()
         self._refresh_event_log()
         self._refresh_app_event_status(update_diagnostics=False)
+        self._refresh_main_action_hints()
         for hint in self._toolbar_hints:
             hint.refresh()
 
@@ -1150,6 +1232,7 @@ class B518LogSolutionApp:
     def _render_save_status(self) -> None:
         if hasattr(self, "save_status"):
             self.save_status.configure(text=self._t(save_state_message_id(self._current_save_state)))
+        self._refresh_main_action_hints()
 
     def _record_startup_diagnostics(self) -> None:
         self._record_app_event("app.startup.started")
@@ -1617,6 +1700,7 @@ class B518LogSolutionApp:
         if hasattr(self, "retry_save_button"):
             self.retry_save_button.configure(
                 state="normal" if save_state == "failed" else "disabled")
+        self._refresh_main_action_hints()
         for result in snapshot.results:
             self._set_row(result.slot, result.sn, result.status)
         self._render_layout_marker(self._display_capacity())
@@ -1829,6 +1913,7 @@ class B518LogSolutionApp:
             choice = getattr(self, name, None)
             if choice:
                 choice.configure(state="disabled" if monitoring or getattr(self, "_closing_ui", False) else "readonly")
+        self._refresh_main_action_hints()
 
     def _set_row(self, slot: int, sn: str, status: str) -> None:
         widgets = self.status_rows.get(slot)

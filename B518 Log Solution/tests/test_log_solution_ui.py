@@ -295,6 +295,214 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_main_page_actions_explain_bilingual_behavior_without_invoking(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            errors = []
+            root.report_callback_exception = lambda *error: errors.append(error)
+            try:
+                self.wait_for_ui(root, lambda: app.start_button.winfo_viewable())
+                self.assertIsNone(app.rounds.snapshot())
+                hint_controls = (
+                    (app.start_button, "Start monitoring", "依所選專案"),
+                    (app.stop_button, "Stop collecting", "停止目前監控輪次"),
+                    (app.retry_save_button, "Retry saving", "重試保存先前"),
+                    (app.app_diagnostics_button, "App diagnostics", "開啟 App 診斷"),
+                )
+                for button, expected_en, expected_zh in hint_controls:
+                    hint = app._main_action_hints[button]
+                    button.event_generate("<Enter>")
+                    self.wait_for_ui(root, lambda: hint._window is not None)
+                    self.assertIn(expected_en, hint._label.cget("text"))
+                    self.assertIsNone(app.rounds.snapshot())
+                    button.event_generate("<Leave>")
+                    root.update()
+                    self.assertIsNone(hint._window)
+                    app._select_language(TRADITIONAL_CHINESE)
+                    button.event_generate("<Enter>")
+                    self.wait_for_ui(root, lambda: hint._window is not None)
+                    self.assertIn(expected_zh, hint._label.cget("text"))
+                    self.assertIsNone(app.rounds.snapshot())
+                    button.event_generate("<Leave>")
+                    root.update()
+                    app._select_language(ENGLISH)
+
+                self.assertTrue(app.retry_save_button.instate(("disabled",)))
+                disabled_hint = app._main_action_hints[app.retry_save_button]
+                app.retry_save_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: disabled_hint._window is not None)
+                self.assertIn("No failed save", disabled_hint._label.cget("text"))
+                app.retry_save_button.event_generate("<Leave>")
+                root.update()
+                app._select_language(TRADITIONAL_CHINESE)
+                app.retry_save_button.event_generate("<Enter>")
+                self.wait_for_ui(root, lambda: disabled_hint._window is not None)
+                self.assertIn("目前沒有等待重試", disabled_hint._label.cget("text"))
+                app.retry_save_button.event_generate("<Leave>")
+                root.update()
+                app._select_language(ENGLISH)
+
+                self.assertIsNotNone(Quartz, "native macOS pointer and keyboard input is unavailable")
+                kvm_geometry = (app.kvm_results.winfo_x(), app.kvm_results.winfo_y(),
+                                app.kvm_results.winfo_width(), app.kvm_results.winfo_height())
+                kvm_colours = {slot: widget.cget("background")
+                               for slot, widget in app.kvm_result_blocks.items()}
+                button_controls = (
+                    app.settings_button, app.review_button, app.round_alarm_button,
+                    app.language_button, app.start_button, app.stop_button,
+                    app.retry_save_button, app.app_diagnostics_button,
+                )
+                button_geometry = tuple(
+                    (widget.winfo_x(), widget.winfo_y(),
+                     widget.winfo_width(), widget.winfo_height())
+                    for widget in button_controls)
+                NSRunningApplication.currentApplication().activateWithOptions_(
+                    NSApplicationActivateIgnoringOtherApps)
+                root.attributes("-topmost", True)
+                root.lift()
+                root.focus_force()
+                app.app_diagnostics_button.focus_force()
+                root.update()
+                evidence_dir = os.environ.get("B518_TK_EVIDENCE_DIR")
+                controls = {
+                    "start": app.start_button,
+                    "stop": app.stop_button,
+                    "retry": app.retry_save_button,
+                    "diagnostics": app.app_diagnostics_button,
+                    "kvm": app.kvm_results,
+                }
+                evidence_records = {}
+                if evidence_dir:
+                    evidence_records["diagnostics-focus-en"] = capture_tk_window_evidence(
+                        root, "st3-main-focus-diagnostics", "en", controls)
+
+                def post_key(keycode, shift=False):
+                    flags = Quartz.kCGEventFlagMaskShift if shift else 0
+                    for down in (True, False):
+                        event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
+                        Quartz.CGEventSetFlags(event, flags)
+                        Quartz.CGEventPostToPid(os.getpid(), event)
+                    self.wait_for_ui(root, lambda: root.focus_get() is not None)
+
+                def post_mouse(widget, event_kind, x=None, y=None):
+                    point = (
+                        widget.winfo_rootx() + (widget.winfo_width() // 2 if x is None else x),
+                        widget.winfo_rooty() + (widget.winfo_height() // 2 if y is None else y),
+                    )
+                    Quartz.CGEventPost(
+                        Quartz.kCGSessionEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            None, event_kind, point, Quartz.kCGMouseButtonLeft))
+                    root.update()
+                    time.sleep(.08)
+                    root.update()
+
+                # A real Shift+Tab moves from the diagnostics link to Start; the
+                # focus hint must not move focus or execute its command.
+                post_key(48, shift=True)
+                self.wait_for_ui(root, lambda: root.focus_get() is app.start_button)
+                start_hint = app._main_action_hints[app.start_button]
+                self.wait_for_ui(root, lambda: start_hint._window is not None)
+                hint_window = start_hint._window
+                self.assertIs(root.focus_get(), app.start_button)
+                self.assertIsNone(app.rounds.snapshot())
+
+                if evidence_dir:
+                    evidence_records["start-focus-en"] = capture_tk_window_evidence(
+                        root, "st3-main-focus", "en", controls)
+                app._select_language(TRADITIONAL_CHINESE)
+                self.wait_for_ui(root, lambda: "開始監控" in start_hint._label.cget("text"))
+                self.assertIs(start_hint._window, hint_window)
+                self.assertIsNone(app.rounds.snapshot())
+                if evidence_dir:
+                    evidence_records["start-focus-zh-TW"] = capture_tk_window_evidence(
+                        root, "st3-main-focus", "zh-TW", controls)
+
+                # Moving the physical pointer away cannot dismiss a hint that is
+                # still justified by keyboard focus.
+                post_mouse(app.kvm_results, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: start_hint._window is not None)
+                self.assertIs(root.focus_get(), app.start_button)
+                self.assertIn("開始監控", start_hint._label.cget("text"))
+                if evidence_dir:
+                    app._select_language(ENGLISH)
+                    root.update()
+                    evidence_records["start-focus-mouse-out-en"] = capture_tk_window_evidence(
+                        root, "st3-main-focus-mouse-out", "en", controls)
+                    app._select_language(TRADITIONAL_CHINESE)
+                    root.update()
+
+                # Native pointer hover on the enabled button shows its hint;
+                # pressing then dragging out cancels, so no monitoring starts.
+                post_mouse(app.start_button, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: start_hint._window is not None)
+                self.assertIn("開始監控", start_hint._label.cget("text"))
+                if evidence_dir:
+                    evidence_records["start-hover-zh-TW"] = capture_tk_window_evidence(
+                        root, "st3-main-hover", "zh-TW", controls)
+                    app._select_language(ENGLISH)
+                    root.update()
+                    evidence_records["start-hover-en"] = capture_tk_window_evidence(
+                        root, "st3-main-hover", "en", controls)
+                    app._select_language(TRADITIONAL_CHINESE)
+                    root.update()
+                post_mouse(app.start_button, Quartz.kCGEventLeftMouseDown)
+                self.assertTrue(app.start_button.instate(("pressed",)),
+                                "native mouse-down must expose the pressed button state")
+                if evidence_dir:
+                    capture_tk_window_evidence(root, "st3-main-pressed", "zh-TW", controls)
+                post_mouse(app.rows_canvas, Quartz.kCGEventMouseMoved)
+                post_mouse(app.rows_canvas, Quartz.kCGEventLeftMouseUp)
+                self.assertIsNone(app.rounds.snapshot(), "dragging out must not start monitoring")
+
+                # The disabled Stop control remains hover-readable without
+                # acquiring focus or running its command.
+                disabled_stop_hint = app._main_action_hints[app.stop_button]
+                post_mouse(app.stop_button, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: disabled_stop_hint._window is not None)
+                self.assertIn("停止目前監控輪次", disabled_stop_hint._label.cget("text"))
+                self.assertTrue(app.stop_button.instate(("disabled",)))
+                if evidence_dir:
+                    capture_tk_window_evidence(root, "st3-main-disabled-hover", "zh-TW", controls)
+                post_mouse(app.stop_button, Quartz.kCGEventLeftMouseDown)
+                self.assertFalse(app.stop_button.instate(("pressed",)),
+                                 "disabled controls must not enter the pressed state")
+                post_mouse(app.stop_button, Quartz.kCGEventLeftMouseUp)
+                self.assertIsNone(app.rounds.snapshot(), "a disabled Stop control must not act")
+                self.assertEqual(errors, [])
+                self.assertEqual(
+                    (app.kvm_results.winfo_x(), app.kvm_results.winfo_y(),
+                     app.kvm_results.winfo_width(), app.kvm_results.winfo_height()),
+                    kvm_geometry, "button states must not move the KVM results band")
+                self.assertEqual(
+                    {slot: widget.cget("background")
+                     for slot, widget in app.kvm_result_blocks.items()},
+                    kvm_colours, "button states must not recolour KVM result slots")
+                self.assertEqual(
+                    tuple((widget.winfo_x(), widget.winfo_y(),
+                           widget.winfo_width(), widget.winfo_height())
+                          for widget in button_controls),
+                    button_geometry, "button feedback must not change control geometry")
+                if evidence_dir:
+                    evidence_records["stop-disabled-hover-zh-TW"] = capture_tk_window_evidence(
+                        root, "st3-main-disabled-hover", "zh-TW", controls)
+                    Path(evidence_dir, "st3-window-bounds.json").write_text(
+                        json.dumps(evidence_records, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+                self.assertEqual(errors, [])
+            finally:
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_hf4_dashboard_uses_compact_status_and_diagnostic_entry(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -628,12 +836,14 @@ class LogSolutionUiTests(unittest.TestCase):
                     state="normal")
 
                 tooltip_expectations = (
-                    (app.settings_button, app._toolbar_hints[0], "Settings"),
+                    (app.settings_button, app._toolbar_hints[0],
+                     "Open settings to edit engineer configuration, review events and Sessions, and manage retention."),
                     (app.language_button, app._toolbar_hints[1],
-                     "Select language (current: English)"),
+                     "Open the language list and select a display language. Current: English."),
                     (app.round_alarm_button, app._toolbar_hints[2],
-                     "Notifications and Recovery"),
-                    (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
+                     "Open notifications and recovery for round alarms, save failures, and archive retries. Opening does not acknowledge an alarm or retry work."),
+                    (app.review_button, app._toolbar_hints[3],
+                     "Open conflict review. No conflicts are waiting for a decision."),
                 )
                 for widget, hint, expected in tooltip_expectations:
                     widget.configure(state="normal")
@@ -656,7 +866,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._select_language(TRADITIONAL_CHINESE)
                 self.wait_for_ui(root, lambda:
                                  language_hint_window.winfo_children()[0].cget("text") ==
-                                 "選擇語言（目前：繁體中文）")
+                                 "開啟語言清單並選擇介面語言。目前：繁體中文。")
                 self.assertIs(language_hint._window, language_hint_window)
                 self.assertEqual(sum(hint._window is not None
                                      for hint in app._toolbar_hints), 1)
@@ -685,7 +895,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNotNone(settings_hint._window)
                 self.assertIs(root.focus_get(), app.settings_button,
                               "showing a focus hint must not move keyboard focus")
-                self.assertEqual(settings_hint._window.winfo_children()[0].cget("text"), "Settings")
+                self.assertEqual(
+                    settings_hint._window.winfo_children()[0].cget("text"),
+                    "Open settings to edit engineer configuration, review events and Sessions, and manage retention.")
                 settings_hint._hide()
 
                 app.language_button.focus_force()
