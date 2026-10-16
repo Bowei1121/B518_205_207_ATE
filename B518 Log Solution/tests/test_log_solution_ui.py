@@ -232,6 +232,49 @@ def capture_tk_window_evidence(window, key, language, widgets):
     return record
 
 
+def capture_native_window_with_hint(window, filename):
+    """Capture the real App window and its on-screen tooltip in one native frame."""
+    evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
+    if not evidence_value:
+        return None
+    import Quartz
+    from Foundation import NSURL
+
+    window.lift()
+    for child in window.winfo_children():
+        if isinstance(child, tk.Toplevel) and child.overrideredirect():
+            child.lift()
+    window.update()
+    native_windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    native_window = next((item for item in native_windows
+                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+    if native_window is None:
+        raise AssertionError("missing native window: {}".format(window.title()))
+    bounds = native_window[Quartz.kCGWindowBounds]
+    rect = Quartz.CGRectMake(bounds["X"], bounds["Y"],
+                             bounds["Width"], bounds["Height"])
+    image = Quartz.CGWindowListCreateImage(
+        rect, Quartz.kCGWindowListOptionOnScreenOnly,
+        Quartz.kCGNullWindowID, Quartz.kCGWindowImageDefault)
+    if image is None:
+        raise AssertionError("could not capture native window with hint")
+    output_dir = Path(evidence_value)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / filename
+    destination = Quartz.CGImageDestinationCreateWithURL(
+        NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
+    Quartz.CGImageDestinationAddImage(destination, image, None)
+    if not Quartz.CGImageDestinationFinalize(destination):
+        raise AssertionError("could not write screenshot: {}".format(output))
+    return {"screenshot": filename,
+            "native_bounds": {name: float(bounds[name])
+                              for name in ("X", "Y", "Width", "Height")},
+            "image_pixels": {"width": Quartz.CGImageGetWidth(image),
+                             "height": Quartz.CGImageGetHeight(image)}}
+
+
 def capture_recovery_evidence(app, key, language, widgets):
     # Give Aqua's compositor a frame after tab/language/status updates.
     deadline = time.monotonic() + .16
@@ -1657,16 +1700,38 @@ class LogSolutionUiTests(unittest.TestCase):
             notice = find_notice()
             try:
                 self.assertIsNotNone(notice)
-                app.current_language = TRADITIONAL_CHINESE
-                app._language_refresh_notifications.notify()
-                root.update_idletasks()
                 body = next(widget for widget in notice.winfo_children()
                             if isinstance(widget, ttk.Frame)).winfo_children()
                 text = next(widget for widget in body if isinstance(widget, tk.Text))
                 acknowledge = next(widget for widget in notice.winfo_children()
                                    if isinstance(widget, ttk.Button))
+                acknowledge.event_generate("<Enter>")
+                deadline = time.monotonic() + 2
+                hint_window = None
+                while time.monotonic() < deadline:
+                    root.update()
+                    hint_window = next((child for child in notice.winfo_children()
+                                        if isinstance(child, tk.Toplevel) and
+                                        child.overrideredirect()), None)
+                    if hint_window is not None:
+                        break
+                    time.sleep(.01)
+                self.assertIsNotNone(hint_window)
+                self.assertIn("Acknowledge this message",
+                              hint_window.winfo_children()[0].cget("text"))
+                self.assertIs(root.focus_get(), acknowledge)
+                capture_native_window_with_hint(
+                    notice, "st5-notice-dismiss-hint-en.png")
+                app.current_language = TRADITIONAL_CHINESE
+                app._language_refresh_notifications.notify()
+                root.update_idletasks()
                 observed.extend((notice.title(), text.get("1.0", "end-1c"),
                                  acknowledge.cget("text")))
+                self.assertTrue(hint_window.winfo_exists())
+                self.assertIn("確認並關閉這則訊息",
+                              hint_window.winfo_children()[0].cget("text"))
+                capture_native_window_with_hint(
+                    notice, "st5-notice-dismiss-hint-zh-TW.png")
                 acknowledge.invoke()
             except Exception as error:
                 observed.append(error)
@@ -9700,6 +9765,22 @@ class LogSolutionUiTests(unittest.TestCase):
                             "retry": app._close_retry_button,
                             "cancel": app._close_cancel_button,
                         })
+                    app._close_retry_button.focus_force()
+                    deadline = time.monotonic() + 2
+                    hint_window = None
+                    while time.monotonic() < deadline:
+                        root.update()
+                        hint_window = next((child for child in app._close_window.winfo_children()
+                                            if isinstance(child, tk.Toplevel) and
+                                            child.overrideredirect()), None)
+                        if hint_window is not None:
+                            break
+                        time.sleep(.01)
+                    self.assertIsNotNone(hint_window)
+                    self.assertIn("Retry the required App and round-record saves",
+                                  hint_window.winfo_children()[0].cget("text"))
+                    capture_native_window_with_hint(
+                        app._close_window, "st5-close-retry-enabled-hint-en.png")
 
                     failed_generation = rounds.close_status().generation
                     retry_blocked[0] = True
@@ -9734,6 +9815,22 @@ class LogSolutionUiTests(unittest.TestCase):
                             "retry": app._close_retry_button,
                             "cancel": app._close_cancel_button,
                         })
+                    app._close_retry_button.focus_force()
+                    deadline = time.monotonic() + 2
+                    hint_window = None
+                    while time.monotonic() < deadline:
+                        root.update()
+                        hint_window = next((child for child in app._close_window.winfo_children()
+                                            if isinstance(child, tk.Toplevel) and
+                                            child.overrideredirect()), None)
+                        if hint_window is not None:
+                            break
+                        time.sleep(.01)
+                    self.assertIsNotNone(hint_window)
+                    self.assertIn("重試保存必要的 App 與輪次紀錄",
+                                  hint_window.winfo_children()[0].cget("text"))
+                    capture_native_window_with_hint(
+                        app._close_window, "st5-close-retry-enabled-hint-zh-TW.png")
                     self.assertEqual(captures["en"]["size"],
                                      captures["zh-TW"]["size"])
                     self.assertEqual(captures["en"]["controls"],
@@ -10661,6 +10758,118 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(0.01)
                 self.fail("Timed out while pumping the Tk operator/close flow")
 
+            def hover_hint(widget):
+                from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+
+                NSRunningApplication.runningApplicationWithProcessIdentifier_(
+                    os.getpid()).activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                widget.winfo_toplevel().lift()
+                root.update()
+                point = (widget.winfo_rootx() + widget.winfo_width() // 2,
+                         widget.winfo_rooty() + widget.winfo_height() // 2)
+                if os.environ.get("B518_MANUAL_HOVER") == "1":
+                    hint = app._conflict_action_hints.get(widget)
+                    if hint is not None:
+                        hint._hide()
+                        hint._pointer_inside = False
+                    motion = {"outside": False, "entered": False}
+
+                    def observe_physical_motion(event):
+                        inside = (widget.winfo_rootx() <= event.x_root <
+                                  widget.winfo_rootx() + widget.winfo_width() and
+                                  widget.winfo_rooty() <= event.y_root <
+                                  widget.winfo_rooty() + widget.winfo_height())
+                        if not inside:
+                            motion["outside"] = True
+                        elif motion["outside"]:
+                            motion["entered"] = True
+
+                    root.bind_all("<Motion>", observe_physical_motion, add="+")
+                    print("Move the physical mouse outside the disabled {!r} button, "
+                          "then hover its center at screen point {} for 0.5 seconds."
+                          .format(widget.cget("text"), point), flush=True)
+                    pump_until(lambda: motion["entered"] and any(
+                        child.overrideredirect() and child.winfo_viewable()
+                        for child in widget.winfo_toplevel().winfo_children()
+                        if isinstance(child, tk.Toplevel)), timeout=60)
+                else:
+                    event_source = Quartz.CGEventSourceCreate(
+                        Quartz.kCGEventSourceStateHIDSystemState)
+                    approach = (max(1, point[0] - widget.winfo_width() // 2 - 6), point[1])
+                    Quartz.CGEventPost(
+                        Quartz.kCGHIDEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            event_source, Quartz.kCGEventMouseMoved, approach,
+                            Quartz.kCGMouseButtonLeft))
+                    Quartz.CGEventPost(
+                        Quartz.kCGHIDEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            event_source, Quartz.kCGEventMouseMoved, point,
+                            Quartz.kCGMouseButtonLeft))
+                pump_until(lambda: any(
+                    child.overrideredirect() and child.winfo_viewable()
+                    for child in widget.winfo_toplevel().winfo_children()
+                    if isinstance(child, tk.Toplevel)))
+                hint_window = next(
+                    child
+                    for child in widget.winfo_toplevel().winfo_children()
+                    if isinstance(child, tk.Toplevel) and child.overrideredirect()
+                    and child.winfo_viewable())
+                label = hint_window.winfo_children()[0]
+                self.assertGreater(hint_window.winfo_width(), 0)
+                self.assertGreater(hint_window.winfo_height(), 0)
+                self.assertTrue(label.cget("text"))
+                return label.cget("text")
+
+            def click_native(widget):
+                event_source = Quartz.CGEventSourceCreate(
+                    Quartz.kCGEventSourceStateHIDSystemState)
+                point = (widget.winfo_rootx() + widget.winfo_width() // 2,
+                         widget.winfo_rooty() + widget.winfo_height() // 2)
+                for event_kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+                    Quartz.CGEventPost(
+                        Quartz.kCGHIDEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            event_source, event_kind, point, Quartz.kCGMouseButtonLeft))
+                    root.update()
+
+            def press_and_release_outside(widget, screenshot_name):
+                event_source = Quartz.CGEventSourceCreate(
+                    Quartz.kCGEventSourceStateHIDSystemState)
+                point = (widget.winfo_rootx() + widget.winfo_width() // 2,
+                         widget.winfo_rooty() + widget.winfo_height() // 2)
+                Quartz.CGEventPost(
+                    Quartz.kCGHIDEventTap,
+                    Quartz.CGEventCreateMouseEvent(
+                        event_source, Quartz.kCGEventLeftMouseDown, point,
+                        Quartz.kCGMouseButtonLeft))
+                root.update()
+                capture_native_window_with_hint(
+                    widget.winfo_toplevel(), screenshot_name)
+                outside = (widget.winfo_rootx() + widget.winfo_width() + 10, point[1])
+                Quartz.CGEventPost(
+                    Quartz.kCGHIDEventTap,
+                    Quartz.CGEventCreateMouseEvent(
+                        event_source, Quartz.kCGEventMouseMoved, outside,
+                        Quartz.kCGMouseButtonLeft))
+                Quartz.CGEventPost(
+                    Quartz.kCGHIDEventTap,
+                    Quartz.CGEventCreateMouseEvent(
+                        event_source, Quartz.kCGEventLeftMouseUp, outside,
+                        Quartz.kCGMouseButtonLeft))
+                root.update()
+
+            def press_key(keycode, shift=False):
+                flags = Quartz.kCGEventFlagMaskShift if shift else 0
+                for down in (True, False):
+                    event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
+                    Quartz.CGEventSetFlags(event, flags)
+                    Quartz.CGEventPostToPid(os.getpid(), event)
+                root.update()
+
+            def capture_hover(key, window):
+                return capture_native_window_with_hint(window, key)
+
             def root_is_alive():
                 try:
                     return bool(root.winfo_exists())
@@ -10688,8 +10897,134 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.conflict_window and app.conflict_window.winfo_exists() and
                            app.round_alarm_window and app.round_alarm_window.winfo_exists())
 
+                app._select_language(ENGLISH)
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertEqual(str(app.resolve_conflict_candidate_button["state"]),
+                                 "disabled")
+                disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
+                self.assertIn("Select a pending conflict", disabled_hint)
+                capture_hover("st5-conflict-candidate-disabled-hint-en.png",
+                              app.conflict_window)
+                if os.environ.get("B518_MANUAL_HOVER") == "1":
+                    app._select_language(TRADITIONAL_CHINESE)
+                    root.update()
+                    translated_disabled_hint = next(
+                        child.winfo_children()[0].cget("text")
+                        for child in app.conflict_window.winfo_children()
+                        if isinstance(child, tk.Toplevel) and child.overrideredirect()
+                        and child.winfo_viewable())
+                    self.assertIn("請先選取一筆", translated_disabled_hint)
+                    capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
+                                  app.conflict_window)
+                    click_native(app.resolve_conflict_candidate_button)
+                    self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                    self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                    return
+                click_native(app.resolve_conflict_candidate_button)
+                self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                app.conflict_list.selection_set(0)
+                app.conflict_list.activate(0)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                app.resolve_conflict_original_button.focus_force()
+                press_key(48)
+                pump_until(lambda: app.conflict_window.focus_get() is
+                           app.resolve_conflict_candidate_button)
+                enabled_hint = hover_hint(app.resolve_conflict_candidate_button)
+                self.assertIs(app.conflict_window.focus_get(),
+                              app.resolve_conflict_candidate_button)
+                self.assertIn("accept the captured new candidate", enabled_hint)
+                self.assertNotIn("Select a pending conflict", enabled_hint)
+                capture_hover("st5-conflict-candidate-hint-en.png", app.conflict_window)
+                original_hint = hover_hint(app.resolve_conflict_original_button)
+                self.assertIn("keep the captured original result", original_hint)
+                capture_hover("st5-conflict-original-hint-en.png", app.conflict_window)
+                conflict_close_hint = hover_hint(app.conflict_close_button)
+                self.assertIn("without resolving or removing", conflict_close_hint)
+                press_and_release_outside(
+                    app.conflict_close_button, "st5-conflict-close-pressed-en.png")
+                self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                self.assertTrue(app.conflict_window.winfo_viewable())
+                capture_hover("st5-conflict-close-hint-en.png", app.conflict_window)
+                app.conflict_close_button.invoke()
+                root.update()
+                self.assertFalse(app.conflict_window.winfo_viewable())
+                self.assertFalse(any(isinstance(child, tk.Toplevel) and
+                                     child.overrideredirect()
+                                     for child in app.conflict_window.winfo_children()))
+                self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                app._open_conflict_review()
+                pump_until(lambda: app.conflict_window.winfo_viewable())
+
+                alarm_before_hover = rounds.snapshot().round_alarm.acknowledged_at
+                alarm_hint = hover_hint(app.round_alarm_ack_button)
+                self.assertIn("Manually acknowledge", alarm_hint)
+                capture_hover("st5-round-alarm-acknowledge-hint-en.png",
+                              app.round_alarm_window)
+                self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
+                                 alarm_before_hover)
+                alarm_close_hint = hover_hint(app.round_alarm_close_button)
+                self.assertIn("without acknowledging", alarm_close_hint)
+                self.assertIsNotNone(app.round_alarm_window)
+                capture_hover("st5-round-alarm-close-hint-en.png", app.round_alarm_window)
+                app.round_alarm_close_button.invoke()
+                root.update()
+                self.assertFalse(app.round_alarm_window.winfo_viewable())
+                self.assertFalse(any(isinstance(child, tk.Toplevel) and
+                                     child.overrideredirect()
+                                     for child in app.round_alarm_window.winfo_children()))
+                self.assertFalse(rounds.snapshot().round_alarm.acknowledged_at)
+                app._open_round_alarm()
+                pump_until(lambda: app.round_alarm_window.winfo_viewable())
+                app._select_language(TRADITIONAL_CHINESE)
+                translated_alarm_hint = hover_hint(app.round_alarm_ack_button)
+                self.assertIn("手動確認", translated_alarm_hint)
+                capture_hover("st5-round-alarm-acknowledge-hint-zh-TW.png",
+                              app.round_alarm_window)
+                translated_alarm_close_hint = hover_hint(app.round_alarm_close_button)
+                self.assertIn("不會確認警報", translated_alarm_close_hint)
+                capture_hover("st5-round-alarm-close-hint-zh-TW.png",
+                              app.round_alarm_window)
+                app.conflict_list.selection_clear(0, "end")
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                translated_disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
+                self.assertIn("請先選取一筆", translated_disabled_hint)
+                capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
+                              app.conflict_window)
+                click_native(app.resolve_conflict_candidate_button)
+                self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                app.conflict_list.selection_set(0)
+                app.conflict_list.activate(0)
+                app.conflict_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                translated_conflict_hint = hover_hint(app.resolve_conflict_candidate_button)
+                self.assertIn("人工裁決", translated_conflict_hint)
+                capture_hover("st5-conflict-candidate-hint-zh-TW.png",
+                              app.conflict_window)
+                translated_original_hint = hover_hint(app.resolve_conflict_original_button)
+                self.assertIn("保留已捕捉原結果", translated_original_hint)
+                capture_hover("st5-conflict-original-hint-zh-TW.png", app.conflict_window)
+                translated_conflict_close_hint = hover_hint(app.conflict_close_button)
+                self.assertIn("不會裁決或移除", translated_conflict_close_hint)
+                self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
+                capture_hover("st5-conflict-close-hint-zh-TW.png", app.conflict_window)
+                self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
+                                 alarm_before_hover)
+                app._select_language(ENGLISH)
+
                 app.close()
                 pump_until(lambda: rounds.close_status().status == "waiting")
+                close_retry_hint = hover_hint(app._close_retry_button)
+                self.assertIn("only after a required save fails", close_retry_hint)
+                capture_hover("st5-close-retry-disabled-hint-en.png", app._close_window)
+                click_native(app._close_retry_button)
+                self.assertEqual(rounds.close_status().status, "waiting")
+                cancel_hint = hover_hint(app._close_cancel_button)
+                self.assertIn("Pending save work continues", cancel_hint)
+                capture_hover("st5-close-cancel-hint-en.png", app._close_window)
                 self.assertTrue(root_is_alive())
                 self.assertEqual(str(app.resolve_conflict_original_button["state"]), "normal")
                 self.assertEqual(str(app.round_alarm_ack_button["state"]), "normal")

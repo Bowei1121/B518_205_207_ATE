@@ -15,9 +15,22 @@ https://github.com/Bowei1121/B518_205_207_ATE/issues/68
 - [ ] 提示隨語言及原因變化更新，語言切換遵守關閉保存限制；視窗關閉／控制銷毀／重開後無殘留浮窗或回呼錯誤，原選取與輸入不被清除。
 - [ ] 提供真正 App 兩語畫面與操作證據，明記實測環境，不以私有呼叫次數替代外部行為驗證。
 
-## Blocked by
+## 2026-10-16 本機執行紀錄（進行中）
 
-- https://github.com/Bowei1121/B518_205_207_ATE/issues/71
+- 分支 `codex/st5-adjudication-alert-close-hints` 從整合基準 `c8eb613fb179ad41157e724026d240d0f4c0d0ce` 開始；本次未讀寫 GitHub Issue。
+- 已在共用提示系統加入裁決、警報、關閉保存與確認訊息的雙語效果說明；未選取衝突、警報未就緒／已確認、關閉保存尚未失敗等狀態提供已知原因。沒有更改人工裁決、警報確認、重試／取消或完整保存才關閉的業務流程。
+- TDD 首個真實 Tk 裁決提示測試先以缺少 hover 提示失敗，實作後通過；語言資源測試 8 項通過，`py_compile` 通過。
+- `test_open_notice_receives_language_refresh_and_keeps_modal_acknowledgement` 與 `test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit` 真正 Tk/Aqua 測試通過（2 tests passed）；當次截圖被 macOS Automation 視窗覆蓋，已清除，不能作交付證據。
+- Quartz HID 注入曾移動系統游標座標，但 Tk/Aqua 沒有收到 `<Motion>`，因此自動注入不能證明實際 hover；這是桌面輸入注入限制，不記為產品缺陷或驗收通過。已準備 `B518_MANUAL_HOVER=1` 路徑，讓操作者實體懸停於未選取 conflict 狀態的停用 `Accept New Candidate`，擷取英文提示，保持游標位置切換繁中後擷取更新提示，並確認停用控制不改變衝突／警報狀態。無需授予 System Events 權限：
+
+  ```sh
+  PYTHONPATH=src B518_TK_TESTS=1 B518_MANUAL_HOVER=1 \
+    B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/st5-20261016 \
+    /usr/local/bin/python3.8 -m unittest -v \
+    tests.test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available
+  ```
+
+- 淺藍 hover 與藍色 focus 框仍是試行方向；此票未宣稱視覺核可。工廠環境另列 ST8。
 
 ## 規格對照與共同契約
 
