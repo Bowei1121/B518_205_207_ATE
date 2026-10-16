@@ -172,3 +172,9 @@
 - 使用者檢視真正 App 中英文 hover／focus 畫面後明確選擇保留淺藍 hover 與藍色 focus 框。工廠電腦、產線 KVM／壓縮識別、工廠流程及未覆蓋的 macOS／縮放組合仍需現場驗收；沒有執行無關的長時歷史效能測試。
 - 續作期間使用者要求先不處理 GitHub Issue 問題，因此 #68–#76 未由本次續作更新或關閉。原始 B518 Log Solution 工作樹的未提交主程式／UI 測試及 input-probe／window-bounds 暫稿保留，不納入整合。
 - 整合以正常 fast-forward 推回 `B518-Log-Solution`；推送後 Gitea／GitHub 同為 `e9cfa501b2e072b604c85a7318a24ab774572605`。15 項語言／KVM 測試、4 檔編譯及 `git diff --check` 通過；原工作樹暫稿的五個 SHA-256 與開始前保存值相同。最終對帳文件提交後會再次同步並讀回 refs。
+
+## #75 驗收續作
+
+- 主線 `6fb5b75` 的新一輪真正 Tk 測試 11/11 通過：Dark 下外層淺色、8 項恢復／關閉回歸、同一已開窗 Dark→Light→Dark，以及 Light 下新程序獨立開窗。新雙語兩分頁畫面已擷取；同窗切換與 Light 獨立開窗後均已由使用者還原 Dark，最後實際讀回確認。語言／KVM 另有 15/15 通過。
+- 本次沒有出現先前 AppKit 建窗中止；保留歷史失敗而不推論根因已知。使用者確認原面板變色發生於打包 `.app`，正在等待該 bundle 路徑／版本以補原症狀重現。未降低原驗收條件、未宣稱 #75 全部完成。
+- 續作分支 `codex/st7-final-acceptance-20261016`；證據、逐項判定及最新狀態見 `B518 Log Solution/docs/refactoring/evidence/st7-final-20261016/README.md`。本次只有驗收與證據，沒有產品或測試程式修改。

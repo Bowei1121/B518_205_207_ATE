@@ -1,0 +1,5 @@
+Source: native desktop exec result e0c813 / 1c2276
+Python.org Framework Python 3.8.10 / Tk 8.6
+test_recovery_window_outer_surface_uses_the_app_light_palette ... ok
+Ran 1 test in 4.225s
+OK

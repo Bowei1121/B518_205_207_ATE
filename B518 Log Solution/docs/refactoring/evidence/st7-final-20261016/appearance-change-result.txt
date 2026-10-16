@@ -1,0 +1,1 @@
+The same recovery Toplevel was captured in both real macOS appearance modes while open. Both tabs were captured in English and Traditional Chinese. No alarms were acknowledged; no save or archive retry was invoked. Original system appearance was Dark and was restored.

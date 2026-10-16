@@ -1,0 +1,10 @@
+Desktop Python: /Library/Frameworks/Python.framework/Versions/3.8/bin/python3 | Python 3.8.10 | Tcl/Tk 8.6
+test_recovery_window_stays_light_during_real_system_appearance_changes (test_log_solution_ui.LogSolutionUiTests)
+Capture an open real window across user-driven Light/Dark changes. ... ST7: Switch macOS appearance to Light, then signal this test with Enter.
+ST7: Restore the original macOS Dark appearance, then signal this test with Enter.
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 107.397s
+
+OK

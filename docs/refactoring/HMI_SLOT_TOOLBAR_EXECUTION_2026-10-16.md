@@ -50,3 +50,10 @@
 - 證據與完整重現命令：`docs/refactoring/evidence/st1-20261016/README.md`、兩份矩陣 JSON、兩語原生截圖與測試結果。
 - 工廠顯示器、不同縮放及上位機 KVM 壓縮辨識留作現場驗收；未宣稱完成。待功能分支提交／雙遠端推送及 merger 整合成功後由主代理更新 #69 驗收與狀態。
 - ST1 merger 整合提交：`299a5c25f30984742acf267ade825b90a0dc68cf`。整合後 7 項 KVM 契約與 5 項 Aqua UI 幾何回歸共 12 項全通過；使用 macOS 桌面 wrapper／Python 3.8.10、Tcl/Tk 8.6。sandbox 內先前兩種執行都在測試本體前 exit 134（沒有 Tcl traceback），使用者授權的桌面提升權限執行後通過。Gitea／GitHub integration ref 均讀回 `299a5c25f30984742acf267ade825b90a0dc68cf`。
+
+## #75 最終來源補驗
+
+- 使用者要求驗收 #75。兩端主線讀回 `6fb5b75`，從該提交建立獨立 `codex/st7-final-acceptance-20261016`；原工作樹暫稿不變。
+- 本次 Framework Python 3.8.10／Tk/Aqua、macOS 15.7.9 x86_64 真正測試 11/11 通過：Dark 外層淺色 1/1、恢復與關閉回歸 8/8、同視窗 Dark→Light→Dark 1/1、Light 下新程序獨立開窗 1/1。先前建窗前 AppKit abort 本次未發生，不宣稱其原因已修復。
+- 新的 12 張外觀切換真畫面涵蓋兩分頁與中英文；系統原 Dark 已由使用者還原並讀回。語言／KVM 15/15、Python 3.8 編譯與 diff check 通過。
+- 使用者補充原變色發生在打包 `.app`。目前等待該 bundle 路徑／版本以重現。Light 獨立開窗已補驗通過。未調整第 1／6 項原驗收範圍，#75 不能列全部通過。完整新證據與條件對照見 `B518 Log Solution/docs/refactoring/evidence/st7-final-20261016/README.md`。

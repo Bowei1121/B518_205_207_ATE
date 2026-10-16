@@ -1,5 +1,7 @@
 # ST7 — Recovery window appearance validation
 
+Latest final-source rerun: see [`../st7-final-20261016/README.md`](../st7-final-20261016/README.md). On source `6fb5b75`, 11 real-Tk checks passed, including the previously aborted outer-surface and open-window appearance tests, plus a separate Light cold-open process; the old failures below remain historical failures. The user identified the original problem's launch mode as a packaged `.app`; that bundle/version is still needed for original-symptom reproduction.
+
 Environment: macOS 15.7.9, Python 3.8.10, Tk/Aqua, actual `B518LogSolutionApp` process. The user's original macOS appearance was Dark and was restored after verification.
 
 ## Reproduction and implementation

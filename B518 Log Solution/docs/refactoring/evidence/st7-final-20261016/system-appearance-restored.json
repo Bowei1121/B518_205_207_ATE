@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-10-17T00:01:18.005078+08:00",
+  "original_mode": "dark",
+  "actual_final_mode": "dark",
+  "command": [
+    "defaults",
+    "read",
+    "-g",
+    "AppleInterfaceStyle"
+  ],
+  "stdout": "Dark",
+  "exit_code": 0
+}

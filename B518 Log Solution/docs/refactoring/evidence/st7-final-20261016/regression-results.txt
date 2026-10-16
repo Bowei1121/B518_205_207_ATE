@@ -1,0 +1,16 @@
+Desktop Python: /Library/Frameworks/Python.framework/Versions/3.8/bin/python3 | Python 3.8.10 | Tcl/Tk 8.6
+test_recovery_zero_alarm_language_and_reopen_preserve_tab (test_log_solution_ui.LogSolutionUiTests) ... 2026-10-16 23:49:32.780 Python[91609:905750] TSM AdjustCapsLockLEDForKeyTransitionHandling - _ISSetPhysicalKeyboardCapsLockLED Inhibit
+2026-10-16 23:49:32.825 Python[91609:905750] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+ok
+test_recovery_archive_list_preserves_selection_and_scroll_across_poll_language_reopen (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_distinguishes_unsaved_saved_and_archived_round_states (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_retry_button_recovers_disk_record_once_without_blocking_ui (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_real_tk_can_select_and_retry_previous_round_without_changing_current_board (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_close_waits_responsively_and_cancellation_invalidates_old_completion (test_log_solution_ui.LogSolutionUiTests) ... ok
+test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit (test_log_solution_ui.LogSolutionUiTests) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 47.664s
+
+OK

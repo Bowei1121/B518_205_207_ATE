@@ -1,0 +1,8 @@
+Desktop Python: /Library/Frameworks/Python.framework/Versions/3.8/bin/python3 | Python 3.8.10 | Tcl/Tk 8.6
+test_recovery_window_outer_surface_uses_the_app_light_palette (test_log_solution_ui.LogSolutionUiTests)
+The app-owned window gutter stays light regardless of Aqua appearance. ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 2.212s
+
+OK
