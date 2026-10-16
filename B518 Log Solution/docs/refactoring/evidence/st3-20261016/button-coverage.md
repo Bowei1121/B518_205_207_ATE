@@ -38,6 +38,30 @@ ST3 的共通提示與互動樣式已落地主頁，後續票沿用 `_LocalizedC
 
 ST5 真正指標／鍵盤互動與雙語畫面證據已完成（證據在 `st5-20261016/`）；ST6 的查詢、分頁、取消、診斷入口及 App 診斷按鈕已覆蓋並於 `st6-20261016/` 留存中英真 Tk 畫面。ST8 再核對全清單與既有證據。
 
+## ST8 整合程式實例核對（2026-10-16）
+
+以整合提交 `0d927ae1678795b1394eec8a8a930a106c8b0aba` 的 `src/b518_log_solution.py`、`src/localized_notice.py` 建立點逐項核對，共 **41 個 `ttk.Button` 實例**，另有兩個可點擊 Canvas badge 導回既有工具列入口。下表把前述合併列展開成實際操作，不改變按鈕短標籤：
+
+| 視窗 | 按鈕實例 | 數量 | 雙語提示／動態狀態證據 |
+| --- | --- | ---: | --- |
+| 主頁工具列 | 設定、待確認、警報、語言 | 4 | ST2 toolbar / ST3 coverage；review 的停用原因可讀 |
+| 主頁底部 | 開始監控、停止、重試保存、App 診斷 Link | 4 | ST3 主頁實際 hover/focus/pressed/disabled、雙語目錄 |
+| 設定：路徑 | Active / Final / CaseInfo 三個路徑選擇 | 3 | ST4 動態工廠雙語提示；原生面板 Cancel 保留草稿 |
+| 設定：配置 | 載入、驗證、套用保存、匯入、匯出、重新載入、取消 | 7 | ST4 14 個按鈕全數提示、配置套用／取消回歸 |
+| 設定：其他 | 開啟 Session、瀏覽事件歷史、保存期限、清理重試 | 4 | ST4 setting actions；歷史入口延伸至 ST6 查詢 |
+| App 診斷 | 重試事件保存、重試語言更新、關閉 | 3 | ST6 中英真圖與 disabled reason |
+| 待確認裁決 | 保留原結果、採用新候選、關閉 | 3 | ST5 真滑鼠 hover disabled candidate；no-op |
+| 通知與恢復 | 確認警報、重試選取保存、重試封存 | 3 | ST4/7 中英真圖、人工 ack／retry 回歸 |
+| 整輪警報 | 確認、關閉 | 2 | ST5 確認只由人員觸發，Close 不確認 |
+| 歷史查詢 | 上一頁、下一頁、取消查詢、搜尋、重試後續頁 | 5 | ST6 進行中／停用提示、取消不執行查詢 |
+| 關閉前保存 | 重試、取消關閉 | 2 | ST5 保留失敗視窗、可重試或取消 |
+| App 訊息 | 確認／關閉訊息 | 1 | ST5/7 acknowledge-only 與語言刷新 |
+| **合計** |  | **41** | 共通狀態由 ST3 代表操作驗證；各窗口行為見各票紀錄 |
+
+設定按鈕共 12 個邏輯 message ID，其中 `app.settings.profile.choose_directory` 在三個路徑欄各建立一個實際按鈕，因此實際 14 個。其他 11 個 ID 各建一個。徽章是同入口的點擊代理而不是獨立按鈕語意，不重覆計入 41；🌐 原生 menu items 用現有 Tk Menu 操作，不另算 `ttk.Button`。ST8 故意分開記錄「程式有覆蓋」和「逐一以實體滑鼠操作」：已實體 hover disabled Settings Retry Selected、ST5 Accept New Candidate、ST6 Cancel search；其餘控制沒有逐顆宣稱人工 hover。
+
+全故事／證據逐項索引見 [ST8 整合驗收紀錄](../../../../../docs/refactoring/evidence/st8-20261016/integrated-acceptance.md)。ST7 Light/Dark 交互測試在最後 capture helper 調整後的重跑於 Tk 建立 App menu 時 abort，此為未通過重跑；原成功的真正系統外觀切換、八種完整真實畫面及使用者恢復 Dark 的結果仍照 ST7 記錄引用，不用舊失敗畫面代替。
+
 ## ST4 真實桌面核對
 
 - Settings 的 14 個共用工廠按鈕都建立雙語提示，涵蓋工程師配置載入、驗證、套用、匯入、匯出、重新載入、取消、三個動態路徑瀏覽、Session／歷史入口、保存期限保存及清理重試。
