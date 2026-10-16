@@ -1,6 +1,6 @@
 # HMI 後續實作接續紀錄
 
-目前整合分支：`codex/hmi-followup-20261016`；HF1 已結案，HF2 由 `e4cd033` 快轉整合至 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4`，HF3 由 `cfc4738` 快轉整合至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`。保留 issue 對帳提交 `63d9ee5`。HF2／HF3 Issue 狀態由主協調者在雙遠端推送確認後同步；本文件的保存提交見 Git 歷史。
+目前整合分支：`codex/hmi-followup-20261016`；HF1–HF3 已完成、整合、推送至 Gitea／GitHub，#61–#63 已結案。HF2 由 `e4cd033` 快轉整合至 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4`，HF3 由 `cfc4738` 快轉整合至 `f0a1d6ad830a555130f5b60c8a3ff031b326525d`。保留 issue 對帳提交 `63d9ee5`。HF4 已完成實作與真正 App 雙語前景驗收，現正整合與推送；接續 HF5 至 HF7。
 
 歷史診斷階段：五項真正 Aqua Tk 測試曾有 4 通過，toolbar geometry 失敗且 teardown 錯誤；完整輸出見 `evidence/hmi-followup-20261016/hf1-hf2-desktop.log`。後續修復與受影響重驗結果見下文；不抹除原始失敗。
 
@@ -33,17 +33,25 @@
 - 真 Session 故障發現兩種 audit reader 把歷史錯誤永久判不完整，已依後續耐久 `save_recovered` 恢復，仍要求完整連續事件，驗證缺失／無恢復／新失敗全部受保護；恢復事件本身寫入失敗仍阻擋可信封存與正常關閉。
 - Framework 3.8／Tk 8.6.8 真 App 8/8（56.656 秒），保存封存領域 101/101、歷史查詢呈現 74/74，diff whitespace／Python compile 通過。9 類恢復情境雙語原生 PNG、逐項測試輸出與 bounds／hash manifest 已保存。
 - 主頁舊恢復入口全部保留，工廠／正式打包環境仍待驗；本票本機驗收完成。merger 已快轉整合 `ed31f67`，無程式合併修改，重用以上有效測試及桌面證據；整合後 diff whitespace 與三個變更 Python 檔 compile 均通過。
-- HF1 #61 已完成結案。HF2 推送完成後由主協調者發布驗收結果並核對結案；本 merger 不操作 Issue 狀態。
+- HF1 #61、HF2 #62 已在完整驗收、整合與雙遠端推送後結案；本 merger 不操作 Issue 狀態。
 
 ## HF3 通知計數徽章與整合
 
 - HF3 #63 從整合基準 `cfc473827da8b46b028c3fd92beba94b18fc1413` 開始，提交 `93c604d1f29431b2a473697c43c15b23d6b3b4c9` 實作徽章與回歸、`f0a1d6ad830a555130f5b60c8a3ff031b326525d` 保存 12 張桌面圖；已快轉整合至後者。
 - 尚未確認的整輪警報及有保存／封存異常的不同輪次各計一筆，同輪多個保存錯誤不重複；開啟中心不清除，確認／完整恢復後遞減。雙位數紅底白字徽章未遮住🌐、待確認計數或 KVM；徽章右側外的點擊不誤開鈴鐺，原鈴鐺區仍能操作。
 - 真 Aqua Framework 3.8／Tk 8.6.8 三項測試 3/3（15.315 秒），含徽章生命週期與 HF1 頂列／KVM／Tab 回歸；`git diff --check` 與兩個受影響 Python 檔 `py_compile` 通過。繁中／英文零計數、同輪兩項、12 輪、單輪保存失敗及封存失敗／恢復畫面和 bounds 已保存檢視，完整記錄見 `B518 Log Solution/docs/refactoring/evidence/hf3/local-validation.md`。
-- 工廠產線／正式打包環境仍待現場驗收。HF3 本地程式與桌面驗收完成；遠端推送確認及 #63 結案由主協調者處理。下一票 HF4 #64，依序至 HF7；尚未合主線或清理工作樹。
+- 工廠產線／正式打包環境仍待現場驗收。HF3 已完成雙遠端推送並結案 #63；未合主線或清理工作樹。
+
+## HF4 主頁精簡與診斷入口
+
+- HF4 #64 從整合 tip `f502a83d6bbb37a564d899290e1e83f3bc8f0e4c` 開始，功能提交 `58b0208`，人工驗收紀錄 `f31b9ab`，使用者原始中英畫面 `6df8a82`。
+- 主頁改為短 App 狀態及底部 `App diagnostics`／`App 診斷` 入口，移除舊未保存輪次重試、封存摘要／重試與主頁 Retry Text；完整診斷及恢復仍由既有診斷／通知中心提供。KVM、狀態標記、位置與結果看板保留。
+- 使用者在真正前景 App 的英文及繁體中文畫面各以滑鼠單擊診斷入口一次，均成功開啟診斷視窗。雙語主頁／診斷視窗截圖已保存檢視；細節見 [HF4 桌面驗收紀錄](evidence/hf4/local-validation.md)。
+- HF4 真 Tk、toolbar/KVM 幾何、關閉保存失敗重試、HF2 封存重試、語言刷新失敗／重試、M10 整合測試均通過；`py_compile` 和 `git diff --check` 通過。自動擷取因非 Aqua 前景而產生的黑圖已排除，使用者有效前景證據已取代。工廠／正式打包環境另待驗收。
+- HF4 本地功能與桌面驗收完成；整合／推送與 #64 結案由主協調者同步。下一張 HF5 #65，之後 HF6、HF7；尚未合回主線或清理工作樹。
 
 ## 下一步
 
-1. 本文件保存提交推送至既有 Gitea／GitHub 並核對兩端 SHA 後，主協調者同步 HF2／HF3 驗收與 Issue 狀態。
-2. HF4 #64 開始前確認 HF2 #62 已結案且原生依賴解除，再依序 HF4 → HF5 → HF6 → HF7，不平行修改 Tk。
+1. 完成 HF4 文件整合提交並推送至既有 Gitea／GitHub，核對兩端 SHA；主協調者同步 #64 狀態。
+2. 接續 HF5 → HF6 → HF7，不平行修改 Tk。
 3. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。
