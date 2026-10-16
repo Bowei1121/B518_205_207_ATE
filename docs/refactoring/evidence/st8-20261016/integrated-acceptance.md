@@ -43,8 +43,8 @@
 | 31 | ST3/4/5/6 真測試之離開、焦點、關窗生命週期 | 提示清除與焦點仍在時保留規則通過 |
 | 32 | ST3 tooltip screenshots/catalog；逐票操作效果核對 | 效果與適用快捷鍵有對應文案 |
 | 33 | ST4 disabled retry、ST5 disabled candidate、ST6 disabled cancel 真圖 | 停用按鈕可讀原因但不能執行 |
-| 34 | ST3 Start hover en/zh-TW 真 App 圖 | 淺藍懸停已呈現，屬試行而非核准 |
-| 35 | ST3 focus en/zh-TW、toolbar focus 真 App 圖 | 藍色焦點框已呈現，屬試行而非核准 |
+| 34 | ST3 Start hover en/zh-TW 真 App 圖 | 淺藍懸停已呈現；使用者於 2026-10-16 看過真 App 對照後明確選擇保留 |
+| 35 | ST3 focus en/zh-TW、toolbar focus 真 App 圖 | 藍色焦點框已呈現；使用者於 2026-10-16 看過真 App 對照後明確選擇保留 |
 | 36 | ST3 focus-mouse-out screenshot與互動測試 | 懸停離開後焦點仍保留 |
 | 37 | ST3 pressed screenshot及真滑鼠事件測試 | 按壓有回饋；釋放還原通過 |
 | 38 | ST3 disabled Stop／ST4-6 disabled control 回歸 | 灰色且 no-op |
@@ -60,7 +60,7 @@
 | 48 | ST4/6 語言、分頁、關窗重開保留測試；ST7 archive list | 輸入、選取、捲動位置保留 |
 | 49 | ST1 KVM bounds、ST2 toolbar bounds、ST3 before/after geometry | 固定 marker、格位、狀態色與主頁幾何保留；工廠 KVM 另驗 |
 | 50 | ST2 adjudication；ST4/5 recovery/close-save；ST7 no auto-retry | 人工裁決、人工 ack、save/archive retry、取消關閉與完整保存才關閉回歸通過 |
-| 51 | ST1–ST7 中英真正 App/Tk PNG 索引 | 畫面證據供視覺判斷；淺藍／藍框尚無使用者核可 |
+| 51 | ST1–ST7 中英真正 App/Tk PNG 索引及 ST3 hover／focus 對照 | 使用者已看過繁中／英文樣式畫面，明確核可保留淺藍懸停與藍色焦點框 |
 | 52 | 本檔及 [按鈕清單](../../../../B518%20Log%20Solution/docs/refactoring/evidence/st3-20261016/button-coverage.md) | 主頁、動態設定、通知恢復、裁決、警報、查詢、診斷、關閉及訊息按鈕皆列入 |
 
 ## 全 App 按鈕實例清點
@@ -89,4 +89,6 @@
 - ST7：使用者實際操作 macOS 外觀；同一個已開 Recovery 視窗於 Dark／Light、兩分頁、兩語擷取完整畫面，並已恢復起初 Dark。成功互動結果及畫面有效；capture-helper hardening 後 replay 在 AppKit 建立 Tk application menu 時 abort，unittest 沒有進入測試本體，**不列通過**。完整 Light/Dark 原生畫面與此限制見 ST7 `local-validation.md`。
 - ST8 在此整合工作樹重跑：`PYTHONPATH=src:tests python3 -m unittest test_language_catalog test_kvm_display_contract` **15 tests OK**；Python 3.8 `py_compile` 通過 `b518_log_solution.py`、`localized_notice.py`、UI 與 Slot 測試模組；`git diff --check` 及故事／證據檔案完整性檢查通過（故事 1–52 各一列，清單計數 41）。不再改系統外觀，也不啟動數小時歷史容量效能測試。各票真桌面有效證據維持為其原提交所產生，ST8 不重拍無缺漏的畫面。
 
-未驗證：工廠電腦、產線實機 KVM／壓縮識別容差、工廠資料流程，以及未涵蓋的 macOS／顯示縮放組合。它們屬現場驗收，沒有否定已通過的本機 App 與桌面證據。淺藍懸停、藍色焦點框仍是試行呈現；本紀錄提供畫面，不聲稱使用者已核准。另有 ST7 AppKit replay 啟動限制如上，保留原始錯誤而不冒稱 pass。
+使用者於 2026-10-16 檢視 [游標移開後保留焦點框](../../../../B518%20Log%20Solution/docs/refactoring/evidence/st3-20261016/st3-main-focus-mouse-out-en.png) 與 [淺藍懸停及焦點框](../../../../B518%20Log%20Solution/docs/refactoring/evidence/st3-20261016/st3-main-hover-en.png) 的真正 App 畫面對照，明確選擇保留目前樣式。
+
+未驗證：工廠電腦、產線實機 KVM／壓縮識別容差、工廠資料流程，以及未涵蓋的 macOS／顯示縮放組合。它們屬現場驗收，沒有否定已通過的本機 App 與桌面證據。另有 ST7 AppKit replay 啟動限制如上，保留原始錯誤而不冒稱 pass。
