@@ -1,6 +1,10 @@
 """Optional true-Tk App acceptance for a prepared H8 capacity fixture."""
 
+import gc
 import hashlib
+import subprocess
+import sys
+import textwrap
 import json
 import os
 import shutil
@@ -34,6 +38,48 @@ class _CapacityHotkey:
     os.environ.get("B518_H8_CAPACITY_ROOT"),
     "requires B518_TK_TESTS=1 and a prepared H8 capacity fixture")
 class HistoricalEventCapacityTkTests(unittest.TestCase):
+    def setUp(self):
+        # Nested Tk callbacks form Python cycles even after widgets are gone.
+        # Collect them here on the creating thread after the test returns,
+        # before a following audit writer can trigger background collection.
+        self.addCleanup(gc.collect)
+
+    def test_capacity_scenario_releases_interpreter_before_worker_collection(self):
+        # A native Tcl abort must become a test failure, rather than terminate
+        # the complete build suite. Exercise the real 50k/2.16m scenario.
+        script = textwrap.dedent("""\
+            import gc, threading, tkinter as tk, unittest, weakref
+            from unittest.mock import patch
+            from test_historical_event_capacity_tk import HistoricalEventCapacityTkTests
+            gc.disable()
+            roots = []
+            actual_root = tk.Tk
+            def create_root(*args, **kwargs):
+                root = actual_root(*args, **kwargs)
+                roots.append(weakref.ref(root))
+                return root
+            with patch('tkinter.Tk', side_effect=create_root):
+                suite = unittest.TestSuite([HistoricalEventCapacityTkTests(
+                    'test_real_app_query_remains_responsive_and_matches_disk_baseline')])
+                result = unittest.TextTestRunner(verbosity=2).run(suite)
+                assert result.wasSuccessful(), 'capacity scenario failed'
+                del suite, result
+            assert roots and all(ref() is None for ref in roots), (
+                'Capacity scenario retained a destroyed interpreter')
+            worker = threading.Thread(target=gc.collect)
+            worker.start()
+            worker.join(10)
+            assert not worker.is_alive(), 'worker GC hung'
+        """)
+        environment = dict(os.environ)
+        root = Path(__file__).resolve().parents[1]
+        environment["PYTHONPATH"] = os.pathsep.join(
+            str(root / directory) for directory in ("src", "tests"))
+        completed = subprocess.run(
+            [sys.executable, "-X", "faulthandler", "-c", script],
+            env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     @staticmethod
     def _widget_exists(widget):
         if widget is None:
@@ -208,12 +254,14 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                     last_heartbeat = [None]
 
                     def heartbeat():
+                        nonlocal heartbeat_id
+                        heartbeat_id = None
                         now = time.monotonic()
                         if last_heartbeat[0] is not None:
                             heartbeat_times.append(now - last_heartbeat[0])
                         last_heartbeat[0] = now
                         if root.winfo_exists():
-                            root.after(5, heartbeat)
+                            heartbeat_id = root.after(5, heartbeat)
 
                     heartbeat_id = root.after(5, heartbeat)
                     with patch("b518_log_solution.query_historical_events",
@@ -240,6 +288,14 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                             7200, "{}-event capacity query first page".format(
                                 manifest["event_count"]))
 
+                    # The first page is usable while the fixed snapshot's
+                    # remaining pages are still preparing. Keep pumping Tk
+                    # until the completion status replaces that progress text
+                    # before asserting its final count and submitted range.
+                    self._pump_until(
+                        root, lambda: app.historical_query_status.cget("text") !=
+                        app._t("app.settings.history.preparing"),
+                        7200, "fixed-result preparation completion status")
                     visible_status = app.historical_query_status.cget("text")
                     self.assertIn(str(expected_count), visible_status)
                     self.assertIn(query_range.start.isoformat(), visible_status)
@@ -380,10 +436,8 @@ class HistoricalEventCapacityTkTests(unittest.TestCase):
                     baseline_worker.join(timeout=10)
                 if self._widget_exists(root):
                     if heartbeat_id is not None:
-                        try:
-                            root.after_cancel(heartbeat_id)
-                        except tk.TclError:
-                            pass
+                        root.after_cancel(heartbeat_id)
+                        heartbeat_id = None
                     if app is not None:
                         if app.historical_event_window and \
                                 app.historical_event_window.winfo_exists():

@@ -121,6 +121,15 @@
 - 明記 HF7 批次 10/11、焦點項隔離重跑 1/1 的測試限制；未宣稱重新跑完整產品套件，未將正式打包與工廠環境當成已通過。
 - 本次僅改文件與 GitHub issues；保留未追蹤 input-probe／bounds、所有 worktree 與分支。
 
+## 本機 Python3.12／macOS15 arm64 build 回歸修正
+
+- 使用者在此 Mac 執行 pull --ff-only 與 macOS15 arm64 build，提供503 tests、9 failures／1 error／1 skipped截圖。本機從7a4cca6以指定Python3.12.10／Aqua Tk8.6.16完整重現相同結果（112.549秒），保留VERSION0.1.3與未追蹤spec並先備份。
+- 先前10/12已完成的Tk生命週期／openat修正與374 tests紀錄仍是歷史證據，本次沒有用舊結果代表HMI改版後的完整測試。先前Intel相容性僅做共用程式與build腳本分析，未宣稱Intel實機通過。
+- 確認Aqua固定縮放時拒絕程式geometry及WM預設max高度裁切；修正程式調整期間的resize／minmax／idle後恢復不可手動縮放。Aqua鍵盤改驗真正Shift+Tab，保留非Aqua X11 alias；補齊原生像素測試所需固定PyObjC／Quartz依賴，標題測試改驗實際版本。
+- 新回歸：2→10→20→2精確尺寸與marker、版本在語言／機型切換後保留；啟用5萬筆容量fixture後，另修正非同步完成狀態、heartbeat最新timer與主執行緒GC，新增容量Tk子程序生命週期回歸。保留精確幾何、焦點、原始資料hash與閱讀位置斷言，修正測試臨時控制項映射及長文字排版前置條件。
+- 同一build腳本於隔離副本完整跑 **506 tests，153.666秒，OK，零跳過，exit0**；macOS15.0 arm64 bundle、簽章及ZIP通過。候選V0.1.4留在忽略的dist-validation-20261016目錄，原有VERSION／spec均cmp相同，既有dist產物保留。
+- 根因、回歸前失敗、6張原生雙語畫面與bounds、容量資料一致性及完整build輸出見[本次驗證紀錄](evidence/macos15-build-2026-10-16/validation.md)。本次沒有重新驗收Intel、其他Python／Tk組合或工廠KVM路徑。
+
 ## Slot 與頂列第二輪 HMI 需求確認
 
 - 使用者要求先討論再實作，並已確認 [Slot 表格與頂列徽章改善討論](HMI_SLOT_TOOLBAR_DISCUSSION_2026-10-16.md) 的六項完整方向：淺灰空白區與最多十列、⚠️ 徽章、含 Logo 的頂列對齊及完整徽章空間、精簡地球入口、全 App 按鈕提示與試行狀態配色、通知恢復窗固定淺色修復。

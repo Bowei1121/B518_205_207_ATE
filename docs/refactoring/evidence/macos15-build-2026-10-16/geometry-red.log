@@ -1,0 +1,28 @@
+test_fixed_hmi_geometry_survives_mapping_and_capacity_changes (test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes) ...
+  test_fixed_hmi_geometry_survives_mapping_and_capacity_changes (test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes) (capacity=10) ... FAIL
+  test_fixed_hmi_geometry_survives_mapping_and_capacity_changes (test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes) (capacity=20) ... FAIL
+
+======================================================================
+FAIL: test_fixed_hmi_geometry_survives_mapping_and_capacity_changes (test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes) (capacity=10)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 5910, in test_fixed_hmi_geometry_survives_mapping_and_capacity_changes
+    self.wait_for_ui(root, lambda:
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 1719, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+======================================================================
+FAIL: test_fixed_hmi_geometry_survives_mapping_and_capacity_changes (test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes) (capacity=20)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 5910, in test_fixed_hmi_geometry_survives_mapping_and_capacity_changes
+    self.wait_for_ui(root, lambda:
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 1719, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+----------------------------------------------------------------------
+Ran 1 test in 10.388s
+
+FAILED (failures=2)

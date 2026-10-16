@@ -604,6 +604,11 @@ class B518LogSolutionApp:
         self.style.configure("TSeparator", background="#9ca3af")
 
     def _bind_toolbar_reverse_alias(self, control):
+        # Aqua may accept this X11 keysym in a binding but synthesize it as
+        # keysym "??" with no Shift modifier. Its real reverse traversal is
+        # Shift+Tab, already bound on these controls.
+        if self.root.tk.call("tk", "windowingsystem") == "aqua":
+            return
         try:
             control.bind("<KeyPress-ISO_Left_Tab>", self._toolbar_focus_previous)
         except tk.TclError:
@@ -1663,7 +1668,18 @@ class B518LogSolutionApp:
                                    else KVM_SINGLE_ROW_HEIGHT)
         self.rows_canvas.configure(height=visible_rows * (ROW_HEIGHT + ROW_GAP))
         x = max(self.root.winfo_screenwidth() - width - 12, 0)
-        self.root.geometry("{}x{}+{}+32".format(width, height, x))
+        # Aqua Tk can retain the mapped window's old native size while
+        # resizable(False, False) is set. Apply the programmatic resize with
+        # explicit bounds (the default WM maximum can also clip the HMI), then
+        # restore the fixed-size operator window before returning.
+        self.root.resizable(True, True)
+        try:
+            self.root.minsize(width, height)
+            self.root.maxsize(width, height)
+            self.root.geometry("{}x{}+{}+32".format(width, height, x))
+            self.root.update_idletasks()
+        finally:
+            self.root.resizable(False, False)
 
     def _selected_profile(self) -> MachineProfile:
         if self.profile_error:
