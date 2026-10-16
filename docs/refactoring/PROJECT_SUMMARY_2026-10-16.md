@@ -51,3 +51,13 @@
 - 重新讀回全部 issues，核對 53 張正文、狀態與 completed 原因；標題及標籤不變。105 份文件／版本內容比對一致，39 個實作／整合 SHA 皆在 GitHub 主線祖先。
 - 本次只做議題與文件對帳，未修改產品程式或重跑產品測試，未改原生依賴、分支、worktree、stash 或既有未追蹤證據。
 - 完整對照與既有測試證據見 [GitHub issue 驗收對帳](ISSUE_RECONCILIATION_2026-10-16.md)。
+
+
+## HF1 鍵盤、焦點與原生滑鼠後續修復
+
+- 保留上方歷史失敗與對帳結果；整合分支由 `63d9ee5` 快轉至 `c24c6b3`，包含修正 `7e23f1b`，未覆寫使用者 3 個未追蹤證據檔。
+- 頂列 Tab 改為 ⚙️ → ⚠️ → 🔔 → 🌐，Shift+Tab 反向且可離開頂列；增加可辨識藍色焦點，修正待確認計數寬度，KVM 契約不變。
+- 真 Aqua Framework 與 Conda 受影響測試各 3/3，Conda 鍵盤／選單補充 2/2，KVM 7/7。雙語主頁與四焦點截圖、bounds 均已保存並實際檢視。
+- 滑鼠問題定位於本機 Conda runtime：原生 pointer 在最小 Tk 與真 App 不送達（真 App 四操作 0/4），此限制尚存在。Python.org Framework 真 App 四個獨立程序皆單擊設定／鈴鐺／專案／機型 4/4；已提供 `scripts/run_macos_desktop.sh` 選用已驗證 Framework，README 更新入口。未宣稱打包 App／Python3.12 已驗收。
+- 詳細測試、證據、原始失敗及限制見 `HF1_KEYBOARD_FIX_2026-10-16.md`。整合沒有修改程式，僅補 diff check／compile，不重跑有效桌面測試。
+- HF1 待主協調者完成完整結案審查；HF2 英文零警報按鈕及完整保存／封存雙語操作仍待補。其後依序 HF3～HF7；本次 merger 未關 Issue、未合主線、未清理工作樹。
