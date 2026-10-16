@@ -1,0 +1,36 @@
+{
+  "evidence": "HF6 pre-fix native Aqua cleanup summary reproduction",
+  "captured_at": "2026-10-16",
+  "runtime": {
+    "platform": "macOS Aqua",
+    "python": "Framework Python 3.8.10",
+    "tcl_tk": "8.6"
+  },
+  "observations": "observations.json",
+  "files": [
+    {
+      "file": "hf6-baseline-after-raise-en.png",
+      "sha256": "18c3799c263a44274379d6678e7e8420bc512da73df8ebd3089a351ec6e33591"
+    },
+    {
+      "file": "hf6-baseline-after-three-poll-cycles-en.png",
+      "sha256": "6eb3b669f728411131451a0135ed2865be798b78fa7599fa009e10626a31e1f5"
+    },
+    {
+      "file": "hf6-baseline-before-first-cleanup-completes-en.png",
+      "sha256": "a8e71328fafe0439fbe01d051ddc3f1c07bd988ed817adbba9daeb84ae9c7fa0"
+    },
+    {
+      "file": "hf6-baseline-before-raise-en.png",
+      "sha256": "6eb3b669f728411131451a0135ed2865be798b78fa7599fa009e10626a31e1f5"
+    },
+    {
+      "file": "hf6-baseline-state-disabled-en.png",
+      "sha256": "6eb3b669f728411131451a0135ed2865be798b78fa7599fa009e10626a31e1f5"
+    },
+    {
+      "file": "hf6-baseline-state-normal-en.png",
+      "sha256": "6eb3b669f728411131451a0135ed2865be798b78fa7599fa009e10626a31e1f5"
+    }
+  ]
+}

@@ -2,11 +2,15 @@
 
 ## 修復前重現
 
-- `baseline/hf6-baseline-before-first-cleanup-completes-en.png`（執行機器暫存目錄）：清理摘要文字模型有 789 字元、元件已映射，但原生 Aqua 畫面為空白。
-- `baseline/hf6-baseline-after-three-poll-cycles-en.png`（執行機器暫存目錄）：同一內容經三次既有輪詢後 scrollbar 位置從約 0.923 移至 1.0。
+- [`baseline/hf6-baseline-before-first-cleanup-completes-en.png`](baseline/hf6-baseline-before-first-cleanup-completes-en.png)：清理摘要文字模型有 789 字元、元件已映射，但原生 Aqua 畫面為空白。
+- [`baseline/hf6-baseline-after-three-poll-cycles-en.png`](baseline/hf6-baseline-after-three-poll-cycles-en.png)：同一內容經三次既有輪詢後 scrollbar 位置從約 0.923 移至 1.0。
+- [`baseline/hf6-baseline-before-raise-en.png`](baseline/hf6-baseline-before-raise-en.png) 與 [`baseline/hf6-baseline-after-raise-en.png`](baseline/hf6-baseline-after-raise-en.png)：同一原生視窗在暫時調整繪製層級前後的對照；提高 Text 視窗層級後文字出現。
+- [`baseline/hf6-baseline-state-disabled-en.png`](baseline/hf6-baseline-state-disabled-en.png) 與 [`baseline/hf6-baseline-state-normal-en.png`](baseline/hf6-baseline-state-normal-en.png)：原生 Text 狀態診斷截圖。
+- [`baseline/observations.json`](baseline/observations.json)：截圖對應的文字、元件 bounds、內容長度與 scrollbar/yview 觀察值。
+- [`baseline/manifest.json`](baseline/manifest.json)：原生環境及所有截圖的 SHA-256。
 - 根因已在原生視窗確認：Text 建立在內容 Frame 下，卻用 `grid(in_=cleanup_output)` 放到後建立的 sibling Frame；Aqua 將後建立的 Frame 繪製在 Text 上方。暫時將 Text `raise` 到覆蓋層上方後文字立即顯示。修復已將 Text 直接建立為 `cleanup_output` 子元件。
 
-修復前證據位於執行機器 `/private/tmp/B518-hf6-acceptance/baseline/` 與 `baseline-diagnostic/` 暫存目錄，未複製進版控；其 JSON 與截圖來自真正 Tk/Aqua 視窗。
+修復前英文畫面與診斷證據已隨本目錄納入版控；截圖與 JSON 來自真正 Tk/Aqua 視窗。原生重現擷取為英文設定頁；修復後有內容與空狀態畫面均提供繁中及英文。
 
 ## 修復後畫面
 
