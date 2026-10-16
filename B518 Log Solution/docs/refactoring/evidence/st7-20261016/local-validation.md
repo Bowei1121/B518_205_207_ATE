@@ -22,3 +22,8 @@ The transition did not alter pending work or trigger actions: the interactive ru
 - A replay after capture-helper hardening could not initialize Tk: macOS AppKit terminated Python with `NSInternalInconsistencyException` while Tk was creating its application menu (`NSMenuItem`/`TkSetWindowMenuBar`); unittest produced no test result. This is an environment startup failure, not a passing verification. The already captured complete Light and Dark native screenshots remain the visual acceptance evidence. Python `py_compile` and `git diff --check` pass for the final sources.
 - System mode: Dark → Light while the app was open, then restored to the user's original Dark. Both modes were confirmed from macOS preferences, not inferred from Tk styles.
 - Factory computer, KVM hardware, and other macOS versions/display scaling were not tested.
+
+## Integration-branch verification
+
+- On the merged ST7 integration commit, Python 3.8 `py_compile` passed for the application and UI test module; `git diff --check` passed; all 8 language-catalog tests passed.
+- A focused real-Tk replay of `test_recovery_window_outer_surface_uses_the_app_light_palette` could not reach the test body: Python aborted in `tkinter.Tk.__init__` from `LogSolutionUiTests.setUpClass`, so unittest reported no result. The prior appearance-helper replay also failed during Tk/AppKit startup as recorded above. No further system-appearance changes were made during merger verification.
