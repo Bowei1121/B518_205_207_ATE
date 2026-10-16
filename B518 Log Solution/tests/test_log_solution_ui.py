@@ -2748,6 +2748,133 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_cleanup_summary_is_visibly_drawn_in_the_real_settings_window(self):
+        with TemporaryDirectory() as temporary:
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                app.settings_window.geometry("720x620")
+                app.settings_notebook.select(2)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status
+                              in {"complete", "failed"})
+                app._refresh_retention_cleanup_status()
+                summary = app.retention_cleanup_text
+                summary.tag_add("sel", "1.0", "1.4")
+                reading_position = summary.index("@0,0")
+                stable_detail = summary.get("1.0", "end-1c")
+                deadline = time.monotonic() + .8
+                while time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.01)
+                self.assertEqual(summary.get("1.0", "end-1c"), stable_detail)
+                self.assertEqual(summary.index("@0,0"), reading_position)
+                self.assertEqual(tuple(map(str, summary.tag_ranges("sel"))),
+                                 ("1.0", "1.4"))
+                end = time.monotonic() + .3
+                while time.monotonic() < end:
+                    root.update()
+                    time.sleep(.01)
+
+                evidence_dir = os.environ.get(
+                    "B518_TK_EVIDENCE_DIR", str(Path(temporary) / "hf6-rendered"))
+                with patch.dict(os.environ, {"B518_TK_EVIDENCE_DIR": evidence_dir}):
+                    capture = capture_tk_window_evidence(
+                        app.settings_window, "hf6-cleanup-render", "en",
+                        {"summary": app.retention_cleanup_text})
+                    self.assertIn("cleanup", summary.get("1.0", "end-1c").lower())
+                    self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                    app._refresh_retention_cleanup_status()
+                    self.assertIn("清理", app.retention_cleanup_text.get("1.0", "end-1c"))
+                    chinese_capture = capture_tk_window_evidence(
+                        app.settings_window, "hf6-cleanup-render", "zh-TW",
+                        {"summary": app.retention_cleanup_text})
+                    empty_captures = {}
+                    idle_status = SimpleNamespace(
+                        status="idle", message="", reason_message=None)
+                    with patch.object(app.rounds, "retention_cleanup_status",
+                                      return_value=idle_status), \
+                            patch.object(app.rounds, "retention_cleanup_summaries",
+                                         return_value=()):
+                        self.select_language_from_menu(app, root, ENGLISH)
+                        app._refresh_retention_cleanup_status()
+                        self.assertEqual(summary.get("1.0", "end-1c"),
+                                         "Background cleanup has not run.")
+                        empty_captures["empty-en"] = capture_tk_window_evidence(
+                            app.settings_window, "hf6-cleanup-empty", "en",
+                            {"summary": summary})
+                        self.select_language_from_menu(app, root, TRADITIONAL_CHINESE)
+                        app._refresh_retention_cleanup_status()
+                        self.assertEqual(summary.get("1.0", "end-1c"), "背景清理尚未執行。")
+                        empty_captures["empty-zh-TW"] = capture_tk_window_evidence(
+                            app.settings_window, "hf6-cleanup-empty", "zh-TW",
+                            {"summary": summary})
+                    (Path(evidence_dir) / "hf6-window-bounds.json").write_text(
+                        json.dumps({"en": capture, "zh-TW": chinese_capture,
+                                    **empty_captures},
+                                   ensure_ascii=False, indent=2), encoding="utf-8")
+                    from AppKit import NSData, NSBitmapImageRep
+
+                    image_path = Path(evidence_dir) / capture["screenshot"]
+                    bitmap = NSBitmapImageRep.imageRepWithData_(
+                        NSData.dataWithContentsOfFile_(str(image_path)))
+                    width = bitmap.pixelsWide()
+                    height = bitmap.pixelsHigh()
+                    scale = width / capture["native_bounds"]["Width"]
+                    x, y, widget_width, _widget_height = capture["controls"]["summary"]
+                    top_bar = height / scale - app.settings_window.winfo_height()
+                    data = bitmap.bitmapData()
+                    bytes_per_pixel = bitmap.bitsPerPixel() // 8
+                    bytes_per_row = bitmap.bytesPerRow()
+                    x0 = int((x + 2) * scale)
+                    x1 = int((x + min(widget_width, 160)) * scale)
+                    y0 = int((y + top_bar + 3) * scale)
+                    y1 = int((y + top_bar + 24) * scale)
+                    visible_ink_pixels = 0
+                    for row in range(y0, min(y1, height)):
+                        for column in range(x0, min(x1, width)):
+                            offset = row * bytes_per_row + column * bytes_per_pixel
+                            if min(data[offset:offset + 3]) < 128:
+                                visible_ink_pixels += 1
+                self.assertGreater(
+                    visible_ink_pixels, 100,
+                    "cleanup summary text exists in Tk but is not visible in the native window",
+                )
+                summary.configure(state="normal")
+                summary.delete("1.0", "end")
+                summary.insert("1.0", "\\n".join(
+                    "Long cleanup diagnostic line {}: preserved evidence.".format(index)
+                    for index in range(80)))
+                summary.configure(state="disabled")
+                summary.yview_moveto(1.0)
+                root.update()
+                self.assertLess(summary.yview()[0], 1.0)
+                self.assertGreater(app.retention_cleanup_scrollbar.winfo_height(), 0)
+                app._refresh_retention_cleanup_status()
+                root.update()
+                self.assertEqual(summary.get("1.0", "end-1c"), app.retention_cleanup_status.get())
+                self.assertGreaterEqual(summary.yview()[0], 0.0)
+                self.assertLessEqual(summary.yview()[1], 1.0)
+                app._close_settings()
+                app.open_settings()
+                app.settings_notebook.select(2)
+                root.update()
+                self.assertTrue(app.retention_cleanup_text.get("1.0", "end-1c").strip())
+                self.assertTrue(app.retention_cleanup_scrollbar.winfo_ismapped())
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_app_event_cleanup_failure_is_visible_and_retryable(self):
         with TemporaryDirectory() as temporary:
             root_path = Path(temporary)

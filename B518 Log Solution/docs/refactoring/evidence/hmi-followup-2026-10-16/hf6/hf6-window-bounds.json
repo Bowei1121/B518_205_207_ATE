@@ -1,0 +1,110 @@
+{
+  "en": {
+    "title": "Setting",
+    "geometry": "720x620+106+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "summary": [
+        26,
+        325,
+        638,
+        166
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "hf6-cleanup-render-en.png"
+  },
+  "zh-TW": {
+    "title": "設定",
+    "geometry": "720x620+106+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "summary": [
+        26,
+        325,
+        638,
+        166
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "hf6-cleanup-render-zh-TW.png"
+  },
+  "empty-en": {
+    "title": "Setting",
+    "geometry": "720x620+106+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "summary": [
+        26,
+        325,
+        638,
+        166
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "hf6-cleanup-empty-en.png"
+  },
+  "empty-zh-TW": {
+    "title": "設定",
+    "geometry": "720x620+106+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "summary": [
+        26,
+        325,
+        638,
+        166
+      ]
+    },
+    "native_bounds": {
+      "X": 106.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "hf6-cleanup-empty-zh-TW.png"
+  }
+}

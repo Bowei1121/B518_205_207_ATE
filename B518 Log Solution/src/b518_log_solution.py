@@ -3149,20 +3149,20 @@ class B518LogSolutionApp:
             parent, "app.settings.retention.cleanup.heading")
         self.retention_cleanup_heading.configure(font=("Helvetica", 10, "bold"))
         self.retention_cleanup_heading.grid(row=4, column=0, columnspan=2, sticky="w", pady=(18, 4))
+        cleanup_output = ttk.Frame(parent)
+        cleanup_output.grid(row=5, column=0, columnspan=2, sticky="ew")
+        cleanup_output.columnconfigure(0, weight=1)
         self.retention_cleanup_text = tk.Text(
-            parent, wrap="word", width=1, height=12, state="disabled",
+            cleanup_output, wrap="word", width=1, height=12, state="disabled",
             background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
             insertbackground=TEXT_COLOUR, selectbackground="#dbeafe",
             selectforeground=TEXT_COLOUR, relief="solid", borderwidth=1,
         )
-        cleanup_output = ttk.Frame(parent)
-        cleanup_output.grid(row=5, column=0, columnspan=2, sticky="ew")
-        cleanup_output.columnconfigure(0, weight=1)
         self.retention_cleanup_scrollbar = ttk.Scrollbar(
             cleanup_output, orient="vertical", command=self.retention_cleanup_text.yview)
         self.retention_cleanup_text.configure(
             yscrollcommand=self.retention_cleanup_scrollbar.set)
-        self.retention_cleanup_text.grid(in_=cleanup_output, row=0, column=0, sticky="nsew")
+        self.retention_cleanup_text.grid(row=0, column=0, sticky="nsew")
         self.retention_cleanup_scrollbar.grid(row=0, column=1, sticky="ns")
         self.retention_retry_button = self._settings_button(
             parent, "app.settings.retention.cleanup.retry", self._retry_retention_cleanup)
@@ -3309,22 +3309,26 @@ class B518LogSolutionApp:
                         latest.app_events.reason_message
                         if latest.app_events.reason_message is not None
                         else latest.app_events.reason))
-        variable.set(detail)
         output = getattr(self, "retention_cleanup_text", None)
         if output is not None and output.winfo_exists():
-            reading_position = output.yview()[0]
-            selection = (output.index("sel.first"), output.index("sel.last")) \
+            if output.get("1.0", "end-1c") == detail:
+                return
+            reading_position = output.index("@0,0")
+            selection = tuple(len(output.get("1.0", index))
+                              for index in output.tag_ranges("sel")) \
                 if output.tag_ranges("sel") else None
             output.configure(state="normal")
             output.delete("1.0", "end")
             output.insert("1.0", detail)
             if selection is not None:
-                try:
-                    output.tag_add("sel", *selection)
-                except tk.TclError:
-                    pass
-            output.yview_moveto(reading_position)
+                length = len(output.get("1.0", "end-1c"))
+                start, end = (min(max(0, offset), length) for offset in selection)
+                if start < end:
+                    output.tag_add("sel", "1.0 + {} chars".format(start),
+                                   "1.0 + {} chars".format(end))
+            output.yview(reading_position)
             output.configure(state="disabled")
+        variable.set(detail)
 
     def _retention_reason_detail(self, reason: object) -> str:
         """Render a localized outer reason and retain its complete source evidence."""
