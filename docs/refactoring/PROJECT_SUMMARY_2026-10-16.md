@@ -27,3 +27,16 @@
 - 使用者核可七張票：HF1 #61 圖示、HF2 #62 鈴鐺與恢復、HF3 #63 計數徽章、HF4 #64 主頁精簡與診斷、HF5 #65 設定排列、HF6 #66 清理摘要、HF7 #67 整體驗收。
 - 已設定並讀回驗證 #60 原生子議題及阻擋關係：HF3 ← HF1／HF2；HF4 ← HF2；HF7 ← HF1–HF6。其餘無前置。七票全為 OPEN 及 ready-for-agent；未改父規格正文或關閉父議題。
 - 本機票與 44 項故事覆蓋表位於 [HMI 後續開發票](hmi-followup-tickets/README.md)。這次只有文件及議題操作，尚未修改產品程式或執行產品測試。
+
+
+## HF1／HF2 使用者桌面回報與診斷接續（2026-10-16）
+
+- 整合分支為 `codex/hmi-followup-20261016`；本輪由 `520aababa236aa9acdc5f61f9b0d8de2227a5c1f` 快轉合併診斷工具提交 `f9dfa16440087fb95e4957e5400eba6e5c5a3b12`。
+- 使用者提供真正 App 繁中／英文主頁及零警報恢復視窗截圖，另提供繁中「通知與恢復」tooltip 畫面。圖示可辨識，但回報主頁 Tab 無法聚焦、設定頁可用，從 Terminal 啟動後按鈕需多次點擊才開窗。使用者表示已執行故障注入測試；未提供完整結果，不視作全部通過。
+- HF1 真鍵鼠輸入問題根因尚未確認，未修復；不能以合成事件或通過部分測試替代。先前沙盒內 Tk abort 是環境限制，沙盒外 Aqua Tk 已能真正建窗與執行測試。
+- 英文零警報截圖中的停用確認按鈕仍顯示「確認整輪警報」：HF2 尚有本地化缺項，待修復驗證。
+- 新診斷入口：在 repo 根目錄執行 `python3 "B518 Log Solution/scripts/diagnose_hmi_input.py" --seconds 45`。先關閉舊 App；按文件順序以真鍵鼠測試標題列／Tab／齒輪／鈴鐺，提供 `input-trace.jsonl`、`input-summary.json` 及哪次操作未反應。偏好與輪次寫入隔離暫存資料；不啟動監控。詳細見 `HF1_INPUT_DIAGNOSTIC_2026-10-16.md`。
+- 診斷 helper `py_compile` 成功。沙盒外五項 Aqua Tk 回歸實跑 13.738 秒，4 項通過、toolbar geometry 1 項失敗並有同測試 teardown 錯誤。原始失敗為 stop_button 高度 1 < 36；失敗清理過程 language tooltip 等待逾時，destroy 出現 `can't delete Tcl command`。不得把這次結果報為全綠，也未據此直接修改產品。
+- 通過：未保存／完整保存／封存狀態區分、磁碟紀錄重試、衝突與警報刷新失敗隔離及語言重試、關閉失敗留窗及重試完整稽核。
+- 完整輸出：`evidence/hmi-followup-20261016/hf1-hf2-desktop.log`；關閉保存真正 Aqua 雙語 PNG 與 bounds：`evidence/hmi-followup-20261016/hf1-hf2-aqua-20261016-0905/`。兩張圖已實際檢視，標題、失敗說明、重試與取消關閉均可讀；這些是注入測試畫面，不是 HF1 真鍵鼠通過證據。
+- HF1 #61／HF2 #62 保持 OPEN；HF3 #63 仍被依賴阻擋。不得關閉父規格、合回主線或清理尚在使用的 worktree。
