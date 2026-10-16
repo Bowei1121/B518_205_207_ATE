@@ -92,3 +92,10 @@
 - 「📂 瀏覽／📂 Browse」本地化完成；設定頁六個配置操作分兩排、每排三等分，取消草稿放在下方右側。原生像素測量確認每排按鈕最大寬差 1 px，等高等間距、控制項未超出視窗，英文標籤完整。既有目錄選擇／取消、草稿、保存載入、匯入匯出、部署重載與語言切換保留草稿操作通過回歸。
 - 真正 macOS Aqua App／Framework Python 3.8、Tk 8.6 的中英設定頁截圖與像素 bounds 已提交，見 [HF5 驗收證據](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf5/README.md)。舊布局真 Tk 像素 RED（按鈕寬差 104 px），修正後真 Tk GREEN；受影響 UI 8 項、翻譯 8 項、MachineProfile 24 項通過，compile 與 diff check 通過。
 - HF5 整合分支推送與 #65 議題同步尚由主協調者處理；HF6、HF7 尚待依序實作。正式工廠／打包環境另列；最終七票審查、合併主線與雙遠端推送尚待完成。
+
+## HF6 清理摘要顯示修正（2026-10-16）
+
+- HF6 #66 分支 `codex/hf6-cleanup-summary` 由整合基準 `9cad82fc2b8aa9cfe7c848e218c5d2edb3ec18cd` 開始，提交 `98282394e33740913f11076ecf10520f8b45249f` 已 fast-forward 整合至 `codex/hmi-followup-20261016`。
+- 根因是清理摘要 `Text` 元件建立於另一個 Frame，卻用 `grid(in_=...)` 顯示到後建立的 sibling Frame；Aqua 將 sibling 繪在文字上方造成畫面空白。已將 Text 改為承載 Frame 的直接子元件。相同摘要不再清空重填，修復輪詢期間的 scrollbar／閱讀位置跳動。
+- 原生 macOS Framework Python 3.8.10／Tk 8.6 真 App 驗收：英文及繁中清理摘要和空狀態可見；80 行診斷可捲動；內容更新及語言切換期間閱讀位置與選取穩定；關閉重開設定頁後摘要仍可用。四張真正 Aqua 截圖及 bounds 已納入版控；證據、根因、命令與限制見 [HF6 驗收紀錄](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf6/README.md)。
+- 驗證結果：專屬原生 UI 測試 1/1、清理回歸 7/7、輪次保留清理測試 36/36、`git diff --check` 通過。工廠及正式打包環境另待現場驗收；HF7 尚待執行。此時仍未合回 `B518-Log-Solution`。

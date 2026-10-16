@@ -57,8 +57,15 @@
 - 真正 macOS Aqua App／Python.org Framework 3.8、Tk 8.6 原生視窗完成繁中與英文截圖。原生像素測量確認每排按鈕寬差不超過 1 px、等高等間距、取消草稿按鈕及兩排均在視窗內，英文標籤完整顯示。測試先以舊版像素寬差 104 px 重現 RED，再由真 Tk 測試通過；設定頁相關 UI 8 項、翻譯目錄 8 項、MachineProfile 24 項通過；Python compile 與 diff check 通過。
 - 原生雙語 PNG、視窗 bounds 及行為測量見 [HF5 驗收證據](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf5/README.md)。工廠設備／現場配置仍待現場驗收；尚未合回主線或清理工作樹。
 
+## HF6 清理摘要空白與捲軸跳動
+
+- HF6 #66 分支 `codex/hf6-cleanup-summary` 從整合 tip `9cad82fc2b8aa9cfe7c848e218c5d2edb3ec18cd` 開始，提交 `98282394e33740913f11076ecf10520f8b45249f` 已 fast-forward 整合。原始四張 HF6 Aqua 截圖曾被 `*.png` 忽略規則漏出提交；merger 只以明確路徑強制加入 README/json 引用的四張 PNG。
+- 空白原因已用真正 Aqua 視窗重現：Text 建在內容 Frame，卻透過 `grid(in_=cleanup_output)` 顯示於後建立的 sibling Frame，導致 Aqua 把 Frame 繪在文字上方。修正為直接在承載 Frame 建立 Text；摘要內容未變時不重寫 widget，避免每 150ms 輪詢造成選取及閱讀位置跳動。
+- 原生 Framework Python 3.8.10／Tk 8.6 真 App 驗收確認英文與繁中摘要及明確空狀態可見、80 行診斷可捲動、重繪與輪詢期間閱讀位置及選取維持、重開設定頁後仍可用。畫面、bounds、根因與命令見 [HF6 桌面驗收證據](../B518%20Log%20Solution/docs/refactoring/evidence/hmi-followup-2026-10-16/hf6/README.md)。專屬真 Tk 測試 1/1、HF6／清理錯誤處理整合測試 7/7、輪次清理測試 36/36，`git diff --check` 通過。
+- HF6 工廠／打包環境另待現場確認；HF7 尚待依序執行。此整合不操作 Issue 狀態、不合回主線、不清理 worktree。
+
 ## 下一步
 
-1. 確認 HF5 整合分支已推送至既有 Gitea／GitHub 且兩端 SHA 相同，主協調者同步 #65 狀態。
-2. 接續 HF6 → HF7，不平行修改 Tk。
+1. 推送目前整合分支至 Gitea／GitHub 並確認兩端 SHA 相同；主協調者同步 #66 狀態。
+2. 接續 HF7，不平行修改 Tk。
 3. 七票完成前不合回 `B518-Log-Solution`；工廠驗收另列，不代替桌面驗證。
