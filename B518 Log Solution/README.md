@@ -160,6 +160,8 @@ python3 tools/replay_baseline_samples.py --caseinfo-date 2026-08-21 testdata/ano
 
 指定測試可使用 `python3 scripts/run_tests.py test_monitoring_round`。完整測試包含 Tk 桌面測試，需可使用圖形介面的 macOS 工作階段。
 
+HF4 主頁精簡與 App 診斷入口的雙語前景滑鼠驗收畫面及操作紀錄見[HF4 桌面驗收紀錄](../docs/refactoring/evidence/hf4/local-validation.md)。
+
 Git 根目錄位於上一層；技能設定見 [AGENTS.md](../AGENTS.md)，領域詞彙見 [CONTEXT.md](../CONTEXT.md)，架構決策與重構規格見 [docs](../docs/)。歷史摘要與 ticket 執行紀錄保留當時的檔案位置與命令；目前命令以本節為準。
 
 Ticket 16 將顯示契約更新為 1.1，在頂部加入獨立排數標記（黑白＝一排、白黑＝兩排），四種完成／待確認狀態圖樣不變。App 與上位機須配對更新；新版上位機拒絕缺少排數標記的 1.0 畫面。ATE 僅有 SFC 網路，因此由當地 TE 人工搬入使用者提供的配對版本；上位機內網及自動更新尚未確認。部署步驟見上位機 repo 的 `docs/TICKET16_DEPLOYMENT.md`。
