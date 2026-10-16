@@ -658,6 +658,20 @@ class B518LogSolutionApp:
         self.language_button.pack(side="right", padx=(2, 0))
         self.round_alarm_button.pack(side="right")
         self.review_group.pack(side="right", padx=(2, 2))
+        self.notification_badge = tk.Canvas(
+            header, width=18, height=18, background=LIGHT_BACKGROUND,
+            highlightthickness=0, borderwidth=0, takefocus=False,
+        )
+        self._notification_badge_oval = self.notification_badge.create_oval(
+            1, 1, 17, 17, fill="#dc2626", outline="#dc2626")
+        self._notification_badge_label = self.notification_badge.create_text(
+            9, 9, text="", fill="#ffffff", font=("Helvetica", 9, "bold"))
+        self.notification_badge.bind("<ButtonRelease-1>", self._relay_notification_badge_click)
+        self._notification_badge_count = None
+        self._notification_badge_header = header
+        self._notification_badge_place_pending = False
+        header.bind("<Configure>", self._schedule_notification_badge_place, add="+")
+        self._schedule_notification_badge_place()
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
@@ -2552,8 +2566,95 @@ class B518LogSolutionApp:
         if not hasattr(self, "round_alarm_button"):
             return
         self.round_alarm_button.configure(state="normal")
+        self._refresh_notification_badge()
         if len(getattr(self, "_toolbar_hints", ())) > 2:
             self._toolbar_hints[2].refresh()
+
+    def _pending_notification_count(self) -> int:
+        """Project unresolved alarms and save/archive failures into the bell count."""
+        if not hasattr(self, "rounds"):
+            return 0
+        alarm_ids = set()
+        failed_round_ids = set()
+        previously_failed = getattr(self, "_notification_failed_round_ids", set())
+        statuses = self.rounds.archive_statuses()
+        for status in statuses:
+            snapshot = self.rounds.round_snapshot(status.round_id)
+            if snapshot is not None:
+                alarm = snapshot.round_alarm
+                if alarm is not None and not alarm.acknowledged_at:
+                    alarm_ids.add((alarm.round_id, alarm.alarm_id))
+                if (snapshot.save_state == "failed" or
+                        (snapshot.retry_in_progress and snapshot.save_errors)):
+                    failed_round_ids.add(snapshot.round_id)
+            if ((snapshot is not None and (
+                    snapshot.save_state == "failed" or
+                    (snapshot.retry_in_progress and snapshot.save_errors))) or
+                    status.status == "failed"):
+                previously_failed.add(status.round_id)
+            if status.cleanup_eligible or status.status == "protected":
+                previously_failed.discard(status.round_id)
+            if status.status == "failed" or (
+                    status.round_id in previously_failed and
+                    status.status == "saving"):
+                failed_round_ids.add(status.round_id)
+        self._notification_failed_round_ids = previously_failed
+        for snapshot in self.rounds.unsaved_rounds():
+            if (snapshot.save_state == "failed" or
+                    (snapshot.retry_in_progress and snapshot.save_errors)):
+                failed_round_ids.add(snapshot.round_id)
+        return len(alarm_ids) + len(failed_round_ids)
+
+    def _refresh_notification_badge(self) -> None:
+        if not hasattr(self, "notification_badge"):
+            return
+        count = self._pending_notification_count()
+        if count == self._notification_badge_count:
+            return
+        self._notification_badge_count = count
+        if count == 0:
+            self.notification_badge.itemconfigure(self._notification_badge_label, text="")
+            self.notification_badge.place_forget()
+            return
+        label = str(count)
+        font = tkfont.Font(root=self.root, family="Helvetica", size=9, weight="bold")
+        diameter = max(18, font.measure(label) + 8)
+        self.notification_badge.configure(width=diameter, height=diameter)
+        self.notification_badge.coords(self._notification_badge_oval,
+                                       1, 1, diameter - 1, diameter - 1)
+        self.notification_badge.coords(self._notification_badge_label,
+                                       diameter / 2, diameter / 2)
+        self.notification_badge.itemconfigure(self._notification_badge_label, text=label)
+        self._schedule_notification_badge_place()
+
+    def _schedule_notification_badge_place(self, _event=None) -> None:
+        if self._notification_badge_place_pending:
+            return
+        self._notification_badge_place_pending = True
+        try:
+            self.root.after_idle(self._place_notification_badge)
+        except tk.TclError:
+            self._notification_badge_place_pending = False
+
+    def _place_notification_badge(self) -> None:
+        self._notification_badge_place_pending = False
+        if (self._notification_badge_count in (None, 0) or
+                not self.round_alarm_button.winfo_exists()):
+            return
+        # Float at the bell's upper-right without requesting space in the packed toolbar.
+        self.notification_badge.place(
+            x=self.round_alarm_button.winfo_x() + self.round_alarm_button.winfo_width() - 7,
+            y=self.round_alarm_button.winfo_y() - 3,
+        )
+
+    def _relay_notification_badge_click(self, event):
+        # The badge is decorative; relay only coordinates inside the bell's original hit box.
+        button = self.round_alarm_button
+        x = event.x_root - button.winfo_rootx()
+        y = event.y_root - button.winfo_rooty()
+        if 0 <= x < button.winfo_width() and 0 <= y < button.winfo_height():
+            button.invoke()
+        return "break"
 
     @staticmethod
     def _recovery_detail_widget(parent):

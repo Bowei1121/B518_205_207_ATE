@@ -1,0 +1,646 @@
+{
+  "hf3-count-two-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-count-two-en.png"
+  },
+  "hf3-count-two-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-count-two-zh-TW.png"
+  },
+  "hf3-one-save-failure-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-one-save-failure-en.png"
+  },
+  "hf3-one-save-failure-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-one-save-failure-zh-TW.png"
+  },
+  "hf3-zero-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-zero-en.png"
+  },
+  "hf3-zero-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-zero-zh-TW.png"
+  },
+  "hf3-two-save-rounds-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-two-save-rounds-en.png"
+  },
+  "hf3-two-save-rounds-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        18,
+        18
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-two-save-rounds-zh-TW.png"
+  },
+  "hf3-twelve-save-rounds-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        20,
+        20
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-twelve-save-rounds-en.png"
+  },
+  "hf3-twelve-save-rounds-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        20,
+        20
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-twelve-save-rounds-zh-TW.png"
+  },
+  "main_page": {
+    "en": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          181,
+          8,
+          85,
+          35
+        ],
+        "alarm": [
+          268,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          300,
+          11,
+          68,
+          29
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          504,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          542,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          564,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-en.png"
+    },
+    "zh-TW": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          181,
+          8,
+          85,
+          35
+        ],
+        "alarm": [
+          268,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          300,
+          11,
+          68,
+          29
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          504,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          542,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          564,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-zh-TW.png"
+    }
+  },
+  "hf3-archive-failure-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        19,
+        19
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-archive-failure-en.png"
+  },
+  "hf3-archive-failure-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "bell": [
+        268,
+        8,
+        30,
+        35
+      ],
+      "badge": [
+        291,
+        5,
+        19,
+        19
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "hf3-archive-failure-zh-TW.png"
+  }
+}

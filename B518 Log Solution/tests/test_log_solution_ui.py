@@ -37,6 +37,7 @@ from monitoring_round import (
 import audit_records
 import app_event_store
 import historical_event_query
+import monitoring_round
 import round_retention
 from audit_records import read_round_audit
 from app_event_store import AppEventStore, read_app_event_store
@@ -238,6 +239,23 @@ def capture_recovery_evidence(app, key, language, widgets):
         records = json.loads(output.read_text()) if output.exists() else {}
         records[key + "-" + language] = record
         output.write_text(json.dumps(records, ensure_ascii=False, indent=2))
+    return record
+
+
+def capture_main_badge_evidence(app, key, language, widgets):
+    root = app.root
+    root.deiconify()
+    root.lift()
+    root.focus_force()
+    deadline = time.monotonic() + .18
+    while time.monotonic() < deadline:
+        root.update()
+        time.sleep(.01)
+    if not root.winfo_ismapped():
+        raise AssertionError("main App window is not mapped for badge evidence")
+    record = capture_tk_window_evidence(root, key, language, widgets)
+    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+        write_tk_bounds_evidence(key + "-" + language, record)
     return record
 
 
@@ -2672,6 +2690,261 @@ class LogSolutionUiTests(unittest.TestCase):
             finally:
                 app.hotkey.close()
                 root.destroy()
+
+    def test_real_tk_notification_badge_stays_until_alarm_is_acknowledged(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            session_root = Path(temporary) / "sessions"
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=session_root)
+            elapsed = [0.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=session_root)
+            app.rounds = rounds
+            monitors = []
+
+            class AlarmMonitor(BaseMonitor):
+                def __init__(self, callback):
+                    super().__init__("FCT", {}, (1,), callback=callback,
+                                     session_root=session_root, monotonic=lambda: elapsed[0],
+                                     async_session_writes=True, round_timeout_seconds=1)
+                    monitors.append(self)
+
+                def poll_once(self):
+                    pass
+
+            try:
+                badge_text = lambda: app.notification_badge.itemcget(
+                    app._notification_badge_label, "text")
+                self.assertEqual(badge_text(), "")
+                started = rounds.start("FCT", AlarmMonitor, run_async=False,
+                                       round_timeout_seconds=1, capacity=1)
+                self.wait_for_ui(root, lambda: app._pending_notification_count() == 0)
+                elapsed[0] = 2.0
+                rounds.poll_once()
+                self.wait_for_ui(root, lambda: rounds.snapshot().round_alarm_ready)
+                monitor = monitors[0]
+                original_open = Path.open
+                write_attempts = {monitor.session.path: 0}
+                failure_limits = {monitor.session.path: 3}
+
+                def fail_round_event_append(path, mode="r", *args, **kwargs):
+                    if path.name == "events.log" and path.parent in failure_limits and mode == "a":
+                        write_attempts[path.parent] += 1
+                        if write_attempts[path.parent] <= failure_limits[path.parent]:
+                            raise OSError("HF3 controlled Session write failure")
+                    return original_open(path, mode, *args, **kwargs)
+
+                with patch.object(Path, "open", fail_round_event_append):
+                    monitor.session.enqueue_event("HF3 notification lifecycle probe")
+                    self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.wait_for_ui(root, lambda: badge_text() == "2")
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-count-two", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+
+                    bell_left = app.round_alarm_button.winfo_rootx()
+                    bell_right = bell_left + app.round_alarm_button.winfo_width()
+                    badge_left = app.notification_badge.winfo_rootx()
+                    badge_y = app.notification_badge.winfo_height() // 2
+                    outside_x = min(app.notification_badge.winfo_width() - 2,
+                                    bell_right - badge_left + 3)
+                    self.assertGreaterEqual(badge_left + outside_x, bell_right)
+                    app.notification_badge.event_generate(
+                        "<ButtonRelease-1>", x=outside_x, y=badge_y)
+                    root.update()
+                    self.assertTrue(app.recovery_window is None or
+                                    not app.recovery_window.winfo_viewable())
+                    inside_x = max(1, min(app.notification_badge.winfo_width() - 2,
+                                          bell_right - badge_left - 2))
+                    app.notification_badge.event_generate(
+                        "<ButtonRelease-1>", x=inside_x, y=badge_y)
+                    root.update()
+                    self.assertIsNotNone(app.recovery_window)
+                    self.assertTrue(app.recovery_window.winfo_viewable())
+                    app.recovery_window.withdraw()
+                    self.assertEqual(badge_text(), "2")
+                    app.recovery_alarm_ack_button.invoke()
+                    self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
+                    self.wait_for_ui(root, lambda: badge_text() == "1")
+
+                    app.recovery_tabs.select(1)
+                    root.update()
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.assertEqual(badge_text(), "1")
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        app.recovery_window.withdraw()
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-one-save-failure", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+
+                    second_started = rounds.start("FCT", AlarmMonitor, run_async=False,
+                                                   round_timeout_seconds=1, capacity=1)
+                    second_monitor = monitors[1]
+                    write_attempts[second_monitor.session.path] = 0
+                    failure_limits[second_monitor.session.path] = 1
+                    second_monitor.session.enqueue_event("HF3 second-round write failure")
+                    self.wait_for_ui(root, lambda:
+                                     rounds.snapshot().save_state == "failed")
+                    rounds.stop()
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    # Build ten additional independently failed rounds through the
+                    # coordinator/session lifecycle so the real badge proves it is
+                    # not capped at a single digit.
+                    additional_round_ids = []
+                    for index in range(10):
+                        started_extra = rounds.start(
+                            "FCT", AlarmMonitor, run_async=False,
+                            round_timeout_seconds=1, capacity=1)
+                        extra_monitor = monitors[-1]
+                        write_attempts[extra_monitor.session.path] = 0
+                        failure_limits[extra_monitor.session.path] = 1
+                        extra_monitor.session.enqueue_event(
+                            "HF3 multi-digit failure {}".format(index + 1))
+                        self.wait_for_ui(root, lambda round_id=started_extra.round_id:
+                                         rounds.round_snapshot(round_id).save_state == "failed")
+                        rounds.stop()
+                        additional_round_ids.append(started_extra.round_id)
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 12)
+                    app.recovery_window.withdraw()
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        self.wait_for_ui(root, lambda: badge_text() == "12")
+                        capture_main_badge_evidence(app, "hf3-twelve-save-rounds", language,
+                                                    {"bell": app.round_alarm_button,
+                                                     "badge": app.notification_badge})
+                    app.recovery_window.deiconify()
+                    app.recovery_window.lift()
+
+                    first_index = app._recovery_save_ids.index(started.round_id)
+                    app.recovery_save_list.selection_clear(0, "end")
+                    app.recovery_save_list.selection_set(first_index)
+                    app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                    root.update()
+
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: write_attempts[monitor.session.path] >= 2 and
+                                     rounds.round_snapshot(started.round_id).save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertEqual(badge_text(), "12")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: write_attempts[monitor.session.path] >= 3 and
+                                     rounds.round_snapshot(started.round_id).save_state == "failed" and
+                                     str(app.recovery_save_retry_button["state"]) == "normal")
+                    self.assertEqual(badge_text(), "12")
+                    app.recovery_save_retry_button.invoke()
+                    self.wait_for_ui(root, lambda:
+                                     app._pending_notification_count() == 11)
+                    second_index = app._recovery_save_ids.index(second_started.round_id)
+                    app.recovery_save_list.selection_clear(0, "end")
+                    app.recovery_save_list.selection_set(second_index)
+                    app.recovery_save_list.event_generate("<<ListboxSelect>>")
+                    root.update()
+                    original_archive_write = monitoring_round.write_round_archive
+                    archive_failure = [True]
+
+                    def fail_one_archive(audit_path, session_path, archived_at, **kwargs):
+                        if (kwargs.get("expected_round_id") == second_started.round_id and
+                                archive_failure[0]):
+                            archive_failure[0] = False
+                            raise OSError("HF3 controlled archive write failure")
+                        return original_archive_write(
+                            audit_path, session_path, archived_at, **kwargs)
+
+                    with patch("monitoring_round.write_round_archive", fail_one_archive):
+                        app.recovery_save_retry_button.invoke()
+                        self.wait_for_ui(
+                            root,
+                            lambda: (rounds.archive_status(second_started.round_id).status == "failed" and
+                                     rounds.archive_status(second_started.round_id).save_state == "complete"),
+                        )
+                        self.assertEqual(app._pending_notification_count(), 11)
+                        app.recovery_window.withdraw()
+                        for language in (ENGLISH, TRADITIONAL_CHINESE):
+                            self.select_language_from_menu(app, root, language)
+                            capture_main_badge_evidence(
+                                app, "hf3-archive-failure", language,
+                                {"bell": app.round_alarm_button,
+                                 "badge": app.notification_badge})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+                        archive = rounds.archive_status(second_started.round_id)
+                        if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            archive_record = {
+                                "round_id": second_started.round_id,
+                                "status": archive.status,
+                                "save_state": archive.save_state,
+                                "message": archive.message,
+                                "notification_count": app._pending_notification_count(),
+                            }
+                            (Path(os.environ["B518_TK_EVIDENCE_DIR"]) /
+                             "hf3-archive-failure-status.json").write_text(
+                                json.dumps(archive_record, ensure_ascii=False, indent=2))
+                        app.recovery_tabs.select(1)
+                        self.wait_for_ui(root, lambda:
+                                         second_started.round_id in app._recovery_archive_ids)
+                        archive_index = app._recovery_archive_ids.index(second_started.round_id)
+                        app.recovery_archive_list.selection_clear(0, "end")
+                        app.recovery_archive_list.selection_set(archive_index)
+                        app.recovery_archive_list.event_generate("<<ListboxSelect>>")
+                        root.update()
+                        self.assertEqual(str(app.recovery_archive_retry_button["state"]), "normal")
+                        for language in (ENGLISH, TRADITIONAL_CHINESE):
+                            self.select_language_from_menu(app, root, language)
+                            capture_recovery_evidence(
+                                app, "hf3-archive-recovery", language,
+                                {"archive-list": app.recovery_archive_list,
+                                 "archive-detail": app.recovery_archive_detail,
+                                 "archive-retry": app.recovery_archive_retry_button})
+                    app.recovery_archive_retry_button.invoke()
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 10)
+                    failure_limits.clear()
+                    for round_id in additional_round_ids:
+                        snapshot = rounds.round_snapshot(round_id)
+                        if snapshot is not None and snapshot.save_state == "failed":
+                            self.assertTrue(rounds.retry_saves(round_id))
+                        archive = rounds.archive_status(round_id)
+                        if archive is not None:
+                            rounds.retry_archival(round_id)
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 0,
+                                     timeout=30)
+                    self.wait_for_ui(root, lambda: app.notification_badge.winfo_manager() == "")
+                    self.assertFalse(app.notification_badge.winfo_ismapped())
+                    self.assertEqual(badge_text(), "")
+                    for language in (ENGLISH, TRADITIONAL_CHINESE):
+                        self.select_language_from_menu(app, root, language)
+                        app.recovery_window.withdraw()
+                        if app.round_alarm_window and app.round_alarm_window.winfo_exists():
+                            app.round_alarm_window.withdraw()
+                        capture_main_badge_evidence(app, "hf3-zero", language,
+                                                    {"bell": app.round_alarm_button})
+                        app.recovery_window.deiconify()
+                        app.recovery_window.lift()
+                    self.assertEqual(app._pending_notification_count(), 0)
+            finally:
+                rounds.stop()
+                rounds.request_close()
+                self.wait_for(lambda: rounds.close_status().status == "complete")
+                app.hotkey.close()
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
 
     def test_recovery_zero_alarm_language_and_reopen_preserve_tab(self):
         with TemporaryDirectory() as temporary, \
