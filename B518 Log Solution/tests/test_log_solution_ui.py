@@ -880,7 +880,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._render_conflict_review_button = original_render_conflict_button
                 app._render_conflict_review_button(
                     SimpleNamespace(pending_conflicts=()))
-                self.assertIsNone(disabled_hint._window)
+                self.assertTrue(app.review_button.instate(("disabled",)))
+                self.assertIsNotNone(disabled_hint._window)
+                self.assertEqual(
+                    disabled_hint._label.cget("text"),
+                    "開啟待確認清單。目前沒有等待裁決的衝突。")
+                self.assertEqual(app.review_button.invoke(), "")
+                self.assertIsNone(app.conflict_window,
+                                  "a disabled review control must not open its window")
 
                 app._select_language(ENGLISH)
                 root.update()

@@ -16,6 +16,8 @@ python3 -m unittest -v \
 
 English focus 證據後續在真正 App 中重拍：明確等待主頁標籤分別等於 `Project` 與 `Station Type` 後才擷取；重跑主頁 Tk 測試 `Ran 1 test in 9.084s — OK`。已目視確認 `st3-main-focus-en.png` 為完整英文（含兩個標籤），繁中 focus 截圖亦確認語言一致。此處理是證據擷取時序核對；沒有觀察到 App 本身混語或新增產品行為缺陷。
 
+繼承的 HM1 工具列回歸曾預期待確認按鈕停用時提示必須消失，與 ST3「停用控制仍可由滑鼠讀提示」要求衝突。測試已改為驗證停用時保留雙語的無待裁決說明、`invoke()` 不開啟衝突視窗；真正鍵盤回歸仍確認 Tab 可聚焦該停用控制但 Space 不執行。更新後 HM1 回歸 1/1 通過。
+
 可檢視的真正主視窗畫面：
 
 - `st3-main-hover-en.png`、`st3-main-hover-zh-TW.png`：Start 中英文滑鼠懸停。
