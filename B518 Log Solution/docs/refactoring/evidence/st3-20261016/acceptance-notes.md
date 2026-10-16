@@ -14,6 +14,8 @@ python3 -m unittest -v \
 
 結果：`Ran 2 tests in 12.242s — OK`。兩項均使用真正 Tk 主視窗；第一項以 Quartz 移動滑鼠、按下／拖離／放開、Tab/Shift+Tab，核對懸停、焦點、按下與停用狀態、提示文字及無焦點搶奪／無意外啟動；第二項回歸驗證頂列鍵盤遍歷。
 
+English focus 證據後續在真正 App 中重拍：明確等待主頁標籤分別等於 `Project` 與 `Station Type` 後才擷取；重跑主頁 Tk 測試 `Ran 1 test in 9.084s — OK`。已目視確認 `st3-main-focus-en.png` 為完整英文（含兩個標籤），繁中 focus 截圖亦確認語言一致。此處理是證據擷取時序核對；沒有觀察到 App 本身混語或新增產品行為缺陷。
+
 可檢視的真正主視窗畫面：
 
 - `st3-main-hover-en.png`、`st3-main-hover-zh-TW.png`：Start 中英文滑鼠懸停。
