@@ -565,6 +565,9 @@ class B518LogSolutionApp:
                        foreground=[("selected", TEXT_COLOUR), ("active", TEXT_COLOUR)])
         self.style.configure("TButton", background="#e5e7eb", foreground=TEXT_COLOUR,
                              padding=(10, 6), borderwidth=1)
+        self.style.configure("ProfileAction.TButton", background="#e5e7eb",
+                             foreground=TEXT_COLOUR, font=("Helvetica", 11),
+                             padding=(6, 4), borderwidth=1)
         self.style.map("TButton", background=[("active", "#d1d5db"), ("pressed", "#cbd5e1"),
                                                ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
@@ -960,7 +963,7 @@ class B518LogSolutionApp:
 
     def _settings_button(self, parent, message_id: str, command):
         widths = {
-            "app.settings.profile.choose_directory": 20,
+            "app.settings.profile.choose_directory": 12,
             "app.settings.profile.load": 25,
             "app.settings.profile.validate": 19,
             "app.settings.profile.apply": 18,
@@ -3090,7 +3093,17 @@ class B518LogSolutionApp:
         notebook.add(profile_tab, text=self._t(self._settings_tab_ids[0]))
         notebook.add(log_tab, text=self._t(self._settings_tab_ids[1]))
         notebook.add(retention_tab, text=self._t(self._settings_tab_ids[2]))
-        self._build_profile_editor_tab(self._settings_scrollable_tab(profile_tab))
+        profile_tab.columnconfigure(0, weight=1)
+        profile_tab.rowconfigure(0, weight=1)
+        profile_form = ttk.Frame(profile_tab)
+        profile_form.grid(row=0, column=0, sticky="nsew")
+        profile_actions = ttk.Frame(profile_tab, padding=(12, 0, 12, 8), height=172)
+        profile_actions.grid(row=1, column=0, sticky="ew")
+        profile_actions.grid_propagate(False)
+        for column in range(3):
+            profile_actions.columnconfigure(column, weight=1, uniform="profile-actions")
+        self._build_profile_editor_tab(
+            self._settings_scrollable_tab(profile_form), action_parent=profile_actions)
         self._build_log_tab(log_tab)
         self._build_retention_tab(self._settings_scrollable_tab(retention_tab))
         dialog.bind("<Destroy>", self._on_settings_destroy, add="+")
@@ -3330,7 +3343,8 @@ class B518LogSolutionApp:
             return "{}\n{}\n{}".format(presentation.text, details, diagnostic)
         return "{}\n{}".format(presentation.text, details)
 
-    def _build_profile_editor_tab(self, parent: ttk.Frame) -> None:
+    def _build_profile_editor_tab(self, parent: ttk.Frame,
+                                  action_parent: Optional[ttk.Frame] = None) -> None:
         """Build a draft editor whose values stay separate until explicit apply."""
         try:
             profile = self.profiles.get(self.project.get(), self.station.get())
@@ -3405,26 +3419,40 @@ class B518LogSolutionApp:
                 row=row, column=column, sticky="w", padx=(12, 0) if column else 0, pady=4)
             ttk.Entry(parent, textvariable=self.profile_editor_timeouts[field], width=16).grid(
                 row=row, column=column + 1, sticky="ew", padx=6, pady=4)
-        status_frame = ttk.Frame(parent, height=72)
-        status_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(10, 6))
+        actions = action_parent or parent
+        status_frame = ttk.Frame(actions, height=48)
+        status_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(2, 2))
         status_frame.grid_propagate(False)
-        ttk.Label(status_frame, textvariable=self.profile_editor_status, wraplength=600,
-                  foreground=TEXT_COLOUR).pack(fill="both", expand=True)
-        edit_actions = ttk.Frame(parent)
-        edit_actions.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(8, 0))
-        for message_id, action in (("app.settings.profile.load", self._load_profile_editor_selection),
-                                   ("app.settings.profile.validate", self._validate_profile_editor),
-                                   ("app.settings.profile.apply", self._apply_profile_editor),
-                                   ("app.settings.profile.cancel", self._cancel_profile_editor)):
-            self._settings_button(edit_actions, message_id, action).pack(side="left", padx=(0, 6))
-        file_actions = ttk.Frame(parent)
-        file_actions.grid(row=13, column=0, columnspan=4, sticky="ew", pady=(6, 0))
-        for message_id, action in (("app.settings.profile.import", self._import_profiles),
-                                   ("app.settings.profile.export", self._export_profiles),
-                                   ("app.settings.profile.reload", self._reload_profiles)):
-            self._settings_button(file_actions, message_id, action).pack(side="left", padx=(0, 6))
+        ttk.Label(status_frame, textvariable=self.profile_editor_status, wraplength=650,
+                  foreground=TEXT_COLOUR, anchor="w").pack(fill="both", expand=True)
+        action_rows = (
+            (("app.settings.profile.load", self._load_profile_editor_selection),
+             ("app.settings.profile.validate", self._validate_profile_editor),
+             ("app.settings.profile.apply", self._apply_profile_editor)),
+            (("app.settings.profile.import", self._import_profiles),
+             ("app.settings.profile.export", self._export_profiles),
+             ("app.settings.profile.reload", self._reload_profiles)),
+        )
+        for row_offset, action_specs in enumerate(action_rows):
+            action_row = ttk.Frame(actions)
+            action_row.grid(row=1 + row_offset, column=0, columnspan=3,
+                            sticky="ew", pady=(2 if row_offset == 0 else 1, 0))
+            for column, (message_id, action) in enumerate(action_specs):
+                action_row.columnconfigure(column, weight=1, uniform="profile-actions")
+                button = self._settings_button(action_row, message_id, action)
+                button.configure(style="ProfileAction.TButton")
+                button.grid(row=0, column=column, sticky="ew", padx=4, pady=2)
+
+        cancel_row = ttk.Frame(actions)
+        cancel_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(1, 0))
+        for column in range(3):
+            cancel_row.columnconfigure(column, weight=1, uniform="profile-cancel")
+        self._settings_button(
+            cancel_row, "app.settings.profile.cancel", self._cancel_profile_editor
+        ).grid(row=0, column=2, sticky="ew", padx=4, pady=2)
         parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(11, weight=1)
+        if action_parent is None:
+            parent.rowconfigure(11, weight=1)
 
     @staticmethod
     def _mapping_text(mapping) -> str:

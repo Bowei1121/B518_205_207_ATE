@@ -7908,7 +7908,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             return found
                     return None
 
-                choose_button = find_button(app.settings_window, "Choose Local Folder")
+                choose_button = find_button(app.settings_window, "📂 Browse")
                 import_button = find_button(app.settings_window, "Import Configuration")
                 export_button = find_button(app.settings_window, "Export Configuration")
                 self.assertIsNotNone(choose_button)
@@ -7991,7 +7991,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(outside, [],
                                  "Settings controls extend beyond the window: {}".format(outside))
                 self.assertTrue(any(isinstance(widget, ttk.Button) and
-                                    widget.cget("text") == "Choose Local Folder"
+                                    widget.cget("text") == "📂 Browse"
                                     for widget in visible_controls))
                 app.settings_notebook.select(app.settings_notebook.tabs()[2])
                 root.update()
@@ -8035,6 +8035,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 window = app.settings_window
                 window.geometry("680x560")
                 app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
                 app.profile_editor_project.set("HM2-DRAFT")
                 app.profile_editor_capacity.set("17")
                 long_path = "/deployment/" + ("long-directory/" * 12) + "final-results.csv"
@@ -8240,6 +8241,149 @@ class LogSolutionUiTests(unittest.TestCase):
                     import_button.event_generate("<KeyRelease-space>")
                     root.update()
                 self.assertIn("Configuration validated, imported", app.profile_editor_status.get())
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in {
+                    "complete", "failed"
+                })
+                self.wait_for_archive_checks(app.rounds)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_profile_editor_uses_three_equal_action_columns_and_browse_label(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey, session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                window = app.settings_window
+                window.geometry("680x560")
+                app.settings_notebook.select(app.settings_notebook.tabs()[0])
+                root.update()
+
+                def button_for(message_id):
+                    return next(widget for widget, key in app._settings_text_widgets
+                                if key == message_id)
+
+                choose = button_for("app.settings.profile.choose_directory")
+                self.assertEqual(choose.cget("text"), "📂 Browse")
+                app.profile_editor_project.set("DRAFT-PROJECT")
+                app.profile_editor_paths["active"].set("/before/chooser")
+                original_dialog_path = app.profile_editor_paths["active"].get()
+                with patch("b518_log_solution.filedialog.askdirectory",
+                           return_value="/selected/logs") as chooser:
+                    choose.invoke()
+                self.assertEqual(chooser.call_args.kwargs["parent"], window)
+                self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
+                self.assertEqual(chooser.call_args.kwargs["mustexist"], True)
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                with patch("b518_log_solution.filedialog.askdirectory", return_value=""):
+                    choose.invoke()
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                selected_dialog_path = app.profile_editor_paths["active"].get()
+
+                row_ids = (
+                    ("app.settings.profile.load", "app.settings.profile.validate",
+                     "app.settings.profile.apply"),
+                    ("app.settings.profile.import", "app.settings.profile.export",
+                     "app.settings.profile.reload"),
+                )
+                action_font = tkfont.Font(
+                    root=root, font=app.style.lookup("ProfileAction.TButton", "font"))
+                measured = []
+                action_buttons = []
+                for ids in row_ids:
+                    buttons = [button_for(key) for key in ids]
+                    action_buttons.extend(buttons)
+                    for button in buttons:
+                        self.assertLessEqual(action_font.measure(button.cget("text")) + 16,
+                                             button.winfo_width(),
+                                             "Action label is clipped: {} ({}/{})".format(
+                                                 button.cget("text"),
+                                                 action_font.measure(button.cget("text")),
+                                                 button.winfo_width()))
+                    bounds = [(button.winfo_rootx(), button.winfo_rooty(),
+                               button.winfo_width(), button.winfo_height())
+                              for button in buttons]
+                    widths = [item[2] for item in bounds]
+                    self.assertLessEqual(max(widths) - min(widths), 1, bounds)
+                    self.assertEqual(len({item[1] for item in bounds}), 1, bounds)
+                    self.assertEqual(len({item[3] for item in bounds}), 1, bounds)
+                    gaps = [bounds[index + 1][0] -
+                            (bounds[index][0] + bounds[index][2]) for index in range(2)]
+                    self.assertLessEqual(max(gaps) - min(gaps), 1, bounds)
+                    measured.append(bounds)
+                cancel = button_for("app.settings.profile.cancel")
+                self.assertGreater(cancel.winfo_rooty(), measured[1][0][1])
+                self.assertGreaterEqual(
+                    cancel.winfo_rootx(),
+                    measured[1][2][0] + measured[1][2][2] - cancel.winfo_width())
+                self.assertTrue(cancel.winfo_viewable())
+                self.assertLessEqual(cancel.winfo_rooty() + cancel.winfo_height(),
+                                     window.winfo_rooty() + window.winfo_height())
+                action_buttons.append(cancel)
+                left_edge = window.winfo_rootx()
+                right_edge = left_edge + window.winfo_width()
+                self.assertTrue(all(button.winfo_viewable() and
+                                    button.winfo_rootx() >= left_edge and
+                                    button.winfo_rootx() + button.winfo_width() <= right_edge
+                                    for button in action_buttons),
+                                [(button.cget("text"), button.winfo_rootx(),
+                                  button.winfo_width()) for button in action_buttons])
+
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update()
+                self.assertEqual(choose.cget("text"), "📂 瀏覽")
+                self.assertEqual(app.profile_editor_project.get(), "DRAFT-PROJECT")
+                self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
+                self.assertEqual(button_for("app.settings.profile.cancel").winfo_rootx(),
+                                 cancel.winfo_rootx())
+                evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
+                if evidence_root:
+                    captures = {}
+                    for key, language in (("en", "en"),
+                                          ("zh-TW", TRADITIONAL_CHINESE)):
+                        app._select_language(language)
+                        root.update()
+                        captures[key] = capture_tk_window_evidence(
+                            window, "hf5-settings", key, {
+                                "browse": choose,
+                                "load": button_for("app.settings.profile.load"),
+                                "validate": button_for("app.settings.profile.validate"),
+                                "apply": button_for("app.settings.profile.apply"),
+                                "import": button_for("app.settings.profile.import"),
+                                "export": button_for("app.settings.profile.export"),
+                                "reload": button_for("app.settings.profile.reload"),
+                                "cancel": button_for("app.settings.profile.cancel"),
+                            })
+                    behavior = {
+                        "folder_dialog": {
+                            "parent_is_settings_window": True,
+                            "mustexist": chooser.call_args.kwargs["mustexist"],
+                            "selected_path": "/selected/logs",
+                            "draft_path_after_selection": selected_dialog_path,
+                            "draft_path_before_dialog": original_dialog_path,
+                            "draft_path_after_cancel": selected_dialog_path,
+                            "draft_project_after_language_change": app.profile_editor_project.get(),
+                            "active_path_after_language_change":
+                                app.profile_editor_paths["active"].get(),
+                        }
+                    }
+                    (Path(evidence_root) / "hf5-settings-bounds.json").write_text(
+                        json.dumps({"rows": measured, "captures": captures,
+                                    "behavior": behavior},
+                                   ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             finally:
                 app._close_settings()
                 app.rounds.request_close()

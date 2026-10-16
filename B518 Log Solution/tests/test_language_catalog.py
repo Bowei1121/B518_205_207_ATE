@@ -5,6 +5,12 @@ import language_catalog
 
 
 class LanguageCatalogTests(unittest.TestCase):
+    def test_profile_folder_action_uses_the_compact_browse_copy(self):
+        self.assertEqual(language_catalog.translate(
+            "app.settings.profile.choose_directory", "en"), "📂 Browse")
+        self.assertEqual(language_catalog.translate(
+            "app.settings.profile.choose_directory", "zh-TW"), "📂 瀏覽")
+
     def test_main_message_translates_with_named_parameters(self):
         self.assertEqual(language_catalog.translate("main.settings", "en"), "Settings")
         self.assertEqual(language_catalog.translate("main.settings", "zh-TW"), "設定")
