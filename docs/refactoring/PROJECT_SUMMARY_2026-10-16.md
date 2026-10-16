@@ -105,3 +105,10 @@
 - HF1–HF7 的程式工作、對應回歸與真正 App 桌面驗收均已完成。HF7 從 `ed9432cd141b0bd1fe65adbada4ab56e4a2a7751` fast-forward 至整合分支 `codex/hmi-followup-20261016` 的 `3d098c41fd2119b19d64691035905bc2a7b5f5f6`；HF7 44 項故事矩陣、46 張中英原生 Aqua 畫面及 bounds／manifest 已提交，詳見 [HF7 驗收報告](evidence/hmi-followup-2026-10-16/hf7/README.md)。
 - HF7 整合測試的焦點測試在 11 項批次中 10 項通過，唯一項於該批次讀到 `focus_get() is None`，隔離重跑 1/1 通過；獨立 KVM 幾何 1/1、KVM 顯示契約 7/7。批次焦點現象已保留於報告，不宣稱批次全綠。HF1–HF6 有效原生驗收及測試證據重用，未無條件重跑長時間歷史效能測試。
 - 尚待最終 code review、修正 review 發現、將整合分支正常合回 `B518-Log-Solution`，確認 Gitea 與 GitHub 推送 SHA 相同，並由主協調者同步子議題／父議題狀態。正式打包版、工廠 KVM 傳輸與現場操作另列待確認，並非本地程式及桌面驗收的替代條件。
+
+## 七票最終審查與主線整合（2026-10-16）
+
+- HF1–HF7 的程式、各票回歸及真正 App 桌面驗收均完成；保留使用者現場提供的 HF1/HF2、HF4 證據，以及 HF5–HF7 原生 Aqua 雙語畫面。最終審查固定基準為 `26a4a353928d061bdf64ce32165333cc03b74389`。Spec 軸 finding 已修正：補入 HF6 修復前 Aqua 空白／捲軸跳動對照 PNG、觀察資料及 hash manifest，並校正 HF7 story 44 狀態。Standards 軸無硬性違規；留下兩項維護性提醒（通知計數責任邊界、主 UI 類的多種變更原因），不構成阻擋。
+- 整合分支 `codex/hmi-followup-20261016` 最終 tip：`60d5f31ad9ec620cf05f825915377ac0bb94932c`。以一般 `--no-ff` 合併回 `B518-Log-Solution`，主線合併提交：`2a7f7d4`（完整 SHA 待遠端推送後核對）。合併涵蓋七票全部程式、測試與驗收證據，未覆寫或清理使用者原有未追蹤證據。
+- 目前 Gitea / GitHub 推送與 #60–#67 GitHub issue 驗收留言、指派及關閉尚待連線／Issues 寫入權限恢復後完成；兩個 Git 遠端當下 fetch 連線失敗。不得將此本地整合狀態視為兩遠端已完成。HF5–HF7 Issue 維持開啟，父票 #60 也未結案，直到遠端推送及 issue 同步讀回確認。
+- 正式打包 App、工廠 KVM 傳輸、工站磁碟／權限／網路位置及現場操作仍需另行現場驗收；這些項目不改變本次七票程式與桌面驗收已完成的結果。
