@@ -1,0 +1,484 @@
+{
+  "st4-settings-configuration-en": {
+    "title": "Setting",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        24,
+        96,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-configuration-en.png"
+  },
+  "st4-settings-configuration-zh-TW": {
+    "title": "設定",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        24,
+        96,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-configuration-zh-TW.png"
+  },
+  "st4-settings-events-zh-TW": {
+    "title": "設定",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        24,
+        96,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-events-zh-TW.png"
+  },
+  "st4-settings-retention-zh-TW": {
+    "title": "設定",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        26,
+        132,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-retention-zh-TW.png"
+  },
+  "st4-settings-events-en": {
+    "title": "Setting",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        26,
+        132,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-events-en.png"
+  },
+  "st4-settings-retention-en": {
+    "title": "Setting",
+    "geometry": "720x620+101+88",
+    "size": [
+      720,
+      620
+    ],
+    "controls": {
+      "browse": [
+        539,
+        194,
+        134,
+        34
+      ],
+      "save retention": [
+        26,
+        132,
+        188,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 101.0,
+      "Y": 88.0,
+      "Width": 720.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1440,
+      "height": 1296
+    },
+    "screenshot": "st4-settings-retention-en.png"
+  },
+  "st4-recovery-alarms-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+217+204",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "tabs": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "alarm acknowledgement": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "retry save": [
+        12,
+        12,
+        1,
+        1
+      ],
+      "retry archive": [
+        12,
+        12,
+        1,
+        1
+      ]
+    },
+    "native_bounds": {
+      "X": 217.0,
+      "Y": 204.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st4-recovery-alarms-en.png"
+  },
+  "st4-recovery-alarms-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+217+204",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "tabs": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "alarm acknowledgement": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "retry save": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "retry archive": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 217.0,
+      "Y": 204.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st4-recovery-alarms-zh-TW.png"
+  },
+  "st4-recovery-saves-archives-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+217+204",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "tabs": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "alarm acknowledgement": [
+        751,
+        562,
+        125,
+        34
+      ],
+      "retry save": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "retry archive": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 217.0,
+      "Y": 204.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st4-recovery-saves-archives-zh-TW.png"
+  },
+  "st4-recovery-saves-archives-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+217+204",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "tabs": [
+        12,
+        12,
+        876,
+        596
+      ],
+      "alarm acknowledgement": [
+        687,
+        562,
+        189,
+        34
+      ],
+      "retry save": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "retry archive": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 217.0,
+      "Y": 204.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "st4-recovery-saves-archives-en.png"
+  },
+  "close_progress": {
+    "en": {
+      "title": "Save Before Closing",
+      "geometry": "620x390+1203+503",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          569,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 1203.0,
+        "Y": 503.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-en.png"
+    },
+    "zh-TW": {
+      "title": "關閉前保存",
+      "geometry": "620x390+1232+532",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          569,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 1232.0,
+        "Y": 532.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-zh-TW.png"
+    }
+  }
+}

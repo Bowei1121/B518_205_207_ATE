@@ -295,6 +295,197 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            errors = []
+            global_motion_bindings = set()
+            root.report_callback_exception = lambda *error: errors.append(error)
+            try:
+                app.open_settings()
+                self.wait_for_ui(root, lambda: app.settings_window.winfo_viewable())
+                self.assertEqual(len(app._settings_button_hints), 14)
+                global_motion_bindings.update(
+                    hint._global_motion_binding
+                    for hint in app._settings_button_hints.values())
+                evidence_root = os.environ.get("B518_TK_EVIDENCE_DIR")
+                target = next(button for button, message_id in app._settings_button_ids.items()
+                              if message_id == "app.settings.profile.choose_directory")
+
+                def capture_settings(key, language):
+                    record = capture_tk_window_evidence(
+                        app.settings_window, key, language,
+                        {"browse": target, "save retention": app.retention_save_button})
+                    if evidence_root:
+                        write_tk_bounds_evidence(key + "-" + language, record)
+
+                root.update()
+                capture_settings("st4-settings-configuration", "en")
+                hint = app._settings_button_hints[target]
+                self.assertIsNotNone(Quartz, "native macOS pointer input is unavailable")
+
+                def post_mouse(widget, event_kind):
+                    point = (widget.winfo_rootx() + widget.winfo_width() // 2,
+                             widget.winfo_rooty() + widget.winfo_height() // 2)
+                    Quartz.CGEventPost(
+                        Quartz.kCGSessionEventTap,
+                        Quartz.CGEventCreateMouseEvent(
+                            None, event_kind, point, Quartz.kCGMouseButtonLeft))
+                    root.update()
+                    time.sleep(.08)
+                    root.update()
+
+                def post_key(keycode, shift=False):
+                    flags = Quartz.kCGEventFlagMaskShift if shift else 0
+                    for down in (True, False):
+                        event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
+                        Quartz.CGEventSetFlags(event, flags)
+                        Quartz.CGEventPostToPid(os.getpid(), event)
+                    root.update()
+                    time.sleep(.08)
+                    root.update()
+
+                previous_control = target.tk_focusPrev()
+                previous_control.focus_force()
+                root.update()
+                post_key(48)
+                self.wait_for_ui(root, lambda: root.focus_get() is target)
+                self.wait_for_ui(root, lambda: hint._window is not None)
+                self.assertIs(root.focus_get(), target)
+                self.assertEqual(app.profile_editor_paths["active"].get(), "")
+                post_mouse(app.settings_window, Quartz.kCGEventMouseMoved)
+                post_key(48)
+                self.wait_for_ui(root, lambda: root.focus_get() is not target)
+                self.wait_for_ui(root, lambda: hint._window is None)
+
+                post_mouse(target, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: hint._window is not None)
+                self.assertIn("Choose the source folder", hint._label.cget("text"))
+                self.assertEqual(app.profile_editor_paths["active"].get(), "")
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertIn("來源資料夾", hint._label.cget("text"))
+                self.assertEqual(app.profile_editor_paths["active"].get(), "")
+                root.update()
+                capture_settings("st4-settings-configuration", "zh-TW")
+                post_mouse(app.settings_window, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: hint._window is None)
+                app.settings_notebook.select(1)
+                root.update()
+                capture_settings("st4-settings-events", "zh-TW")
+                app.settings_notebook.select(2)
+                root.update()
+                capture_settings("st4-settings-retention", "zh-TW")
+                app._select_language(ENGLISH)
+                app.settings_notebook.select(0)
+                root.update()
+                capture_settings("st4-settings-events", "en")
+                capture_settings("st4-settings-retention", "en")
+
+                app._open_recovery_center()
+                self.wait_for_ui(root, lambda: app.recovery_window.winfo_viewable())
+                global_motion_bindings.update(
+                    hint._global_motion_binding
+                    for hint in app._recovery_control_hints.values())
+                recovery_controls = {
+                    "tabs": app.recovery_tabs,
+                    "alarm acknowledgement": app.recovery_alarm_ack_button,
+                    "retry save": app.recovery_save_retry_button,
+                    "retry archive": app.recovery_archive_retry_button,
+                }
+
+                def capture_recovery(key, language):
+                    record = capture_tk_window_evidence(
+                        app.recovery_window, key, language, recovery_controls)
+                    if evidence_root:
+                        write_tk_bounds_evidence(key + "-" + language, record)
+
+                def capture_recovery_hover(key):
+                    if not evidence_root:
+                        return
+                    from Foundation import NSURL
+
+                    native_windows = Quartz.CGWindowListCopyWindowInfo(
+                        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+                    native_window = next((item for item in native_windows
+                                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                                          and item.get(Quartz.kCGWindowName) ==
+                                          app.recovery_window.title()), None)
+                    self.assertIsNotNone(native_window)
+                    bounds = native_window[Quartz.kCGWindowBounds]
+                    rect = Quartz.CGRectMake(bounds["X"], bounds["Y"],
+                                             bounds["Width"], bounds["Height"])
+                    image = Quartz.CGWindowListCreateImage(
+                        rect, Quartz.kCGWindowListOptionOnScreenOnly,
+                        Quartz.kCGNullWindowID, Quartz.kCGWindowImageDefault)
+                    self.assertIsNotNone(image)
+                    output = Path(evidence_root) / (key + ".png")
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    destination = Quartz.CGImageDestinationCreateWithURL(
+                        NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
+                    Quartz.CGImageDestinationAddImage(destination, image, None)
+                    self.assertTrue(Quartz.CGImageDestinationFinalize(destination))
+
+                retry_hint = app._recovery_control_hints[app.recovery_save_retry_button]
+                self.assertEqual(str(app.recovery_save_retry_button.cget("state")), "disabled")
+                capture_recovery("st4-recovery-alarms", "en")
+                app.recovery_tabs.select(1)
+                root.update()
+                post_mouse(app.recovery_save_retry_button, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: retry_hint._window is not None)
+                self.assertIn("Select a round whose save failed", retry_hint._label.cget("text"))
+                self.assertEqual(app._recovery_selected_save, None)
+                capture_recovery_hover("st4-recovery-disabled-save-tooltip-en")
+                with patch.object(app.rounds, "retry_saves", wraps=app.rounds.retry_saves) as retry_saves:
+                    for event_kind in (Quartz.kCGEventLeftMouseDown,
+                                       Quartz.kCGEventLeftMouseUp):
+                        post_mouse(app.recovery_save_retry_button, event_kind)
+                    retry_saves.assert_not_called()
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertIn("請選取保存失敗的輪次", retry_hint._label.cget("text"))
+                self.assertIsNotNone(retry_hint._window)
+                root.update()
+                time.sleep(.16)
+                root.update()
+                capture_recovery_hover("st4-recovery-disabled-save-tooltip-zh-TW")
+                capture_recovery("st4-recovery-alarms", "zh-TW")
+                app.recovery_tabs.select(1)
+                root.update()
+                capture_recovery("st4-recovery-saves-archives", "zh-TW")
+                app._select_language(ENGLISH)
+                root.update()
+                capture_recovery("st4-recovery-saves-archives", "en")
+                self.assertEqual(app._recovery_selected_save, None)
+
+                app.settings_window.withdraw()
+                app.recovery_window.withdraw()
+                app.root.deiconify()
+                app.root.lift()
+                root.update()
+                main_hint = app._main_action_hints[app.start_button]
+                post_mouse(app.start_button, Quartz.kCGEventMouseMoved)
+                self.wait_for_ui(root, lambda: main_hint._window is not None)
+                self.assertIsNone(retry_hint._window)
+                self.assertEqual(app.profile_editor_paths["active"].get(), "")
+                self.assertEqual(errors, [])
+            finally:
+                for window in (app.settings_window, app.recovery_window):
+                    if window is not None and window.winfo_exists():
+                        window.destroy()
+                root.update()
+                remaining_motion_bindings = str(
+                    root.tk.call("bind", "all", "<Motion>"))
+                self.assertTrue(all(binding not in remaining_motion_bindings
+                                    for binding in global_motion_bindings))
+                app.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_main_page_actions_explain_bilingual_behavior_without_invoking(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
