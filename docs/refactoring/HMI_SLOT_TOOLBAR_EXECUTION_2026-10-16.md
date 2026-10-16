@@ -36,7 +36,9 @@
 - ST7 修復前版 `77d15fb` 真 App 外觀切換已另行實測，結果未能重現回報症狀；三張原生視窗截圖與記錄已保存於 ST7 證據目錄，根因仍未定。ST7 的既有最後 Tk/AppKit replay 仍記為未通過，不以手動外觀畫面冒充該重跑成功。
 - 淺藍 hover 與藍色 focus：使用者看過真 App 英／中文對照後明確指示保留。
 - ST8 整合驗收完成；工廠電腦、產線 KVM／壓縮識別容差、工廠資料流程及未涵蓋 macOS／縮放留作現場驗收。未執行無關的數小時歷史效能測試。
-- 原工作樹 `/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution` 仍有未提交主程式／UI 測試與未追蹤 input-probe／window-bounds 暫稿；本次不覆寫、不清理。主線整合及遠端 SHA 核對待本紀錄提交後執行。
+- 原工作樹 `/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution` 仍有未提交主程式／UI 測試與未追蹤 input-probe／window-bounds 暫稿；本次不覆寫、不清理。五個開始前保存的 SHA-256 全數相符。
+- 最終整合分支以正常 fast-forward 從遠端主線 `612c6d0` 前進至 `e9cfa501b2e072b604c85a7318a24ab774572605`；主線受影響驗收 `PYTHONPATH=src:tests python3 -m unittest test_language_catalog test_kvm_display_contract` 為 15 tests OK，四個 Python 檔 `py_compile`、`git diff --check` 通過。
+- 已推送主線至 Gitea 與 GitHub，兩端 `B518-Log-Solution` 讀回同一 SHA `e9cfa501b2e072b604c85a7318a24ab774572605`。此紀錄尚有本次最終對帳提交，完成後會再 fast-forward 並讀回兩端一致性。
 
 ## ST1 #69 — Slot 十列與捲軸
 

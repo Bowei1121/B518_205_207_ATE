@@ -171,3 +171,4 @@
 - 最終 code review 固定基準為 `e245f6cff9bb4c45954c06208c5adc34d93b5e7e`；Standards 軸無發現。Spec 軸要求直接檢查 ST7 修復前症狀；已用真正 App 在修復前整合版 `77d15fb` 執行 Dark→Light→Dark，症狀未能重現，三張窗口畫面與系統模式讀回保存在 `B518 Log Solution/docs/refactoring/evidence/st7-20261016/baseline-reproduction-attempt/`。根因仍未知；最後 Tk/AppKit replay 中止仍列未通過，不冒稱完成。
 - 使用者檢視真正 App 中英文 hover／focus 畫面後明確選擇保留淺藍 hover 與藍色 focus 框。工廠電腦、產線 KVM／壓縮識別、工廠流程及未覆蓋的 macOS／縮放組合仍需現場驗收；沒有執行無關的長時歷史效能測試。
 - 續作期間使用者要求先不處理 GitHub Issue 問題，因此 #68–#76 未由本次續作更新或關閉。原始 B518 Log Solution 工作樹的未提交主程式／UI 測試及 input-probe／window-bounds 暫稿保留，不納入整合。
+- 整合以正常 fast-forward 推回 `B518-Log-Solution`；推送後 Gitea／GitHub 同為 `e9cfa501b2e072b604c85a7318a24ab774572605`。15 項語言／KVM 測試、4 檔編譯及 `git diff --check` 通過；原工作樹暫稿的五個 SHA-256 與開始前保存值相同。最終對帳文件提交後會再次同步並讀回 refs。
