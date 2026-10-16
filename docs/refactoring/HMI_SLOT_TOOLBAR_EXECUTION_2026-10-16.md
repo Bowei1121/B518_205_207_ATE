@@ -13,7 +13,7 @@
 
 | 票 | Issue | 執行狀態 | 實作分支 |
 | --- | --- | --- | --- |
-| ST1 | #69 | 已認領；TDD 實作中 | codex/st1-slot-scroll |
+| ST1 | #69 | 完成；已整合及遠端同步 | codex/st1-slot-scroll (`d3ed365`) / integration (`299a5c2`) |
 | ST2 | #70 | 未開始 | 待建立 |
 | ST3 | #71 | 未開始 | 待建立 |
 | ST4 | #72 | 等 ST3 | 待建立 |
@@ -37,3 +37,4 @@
 - 受影響回歸 12 項通過：macOS 固定視窗、容量編輯、原字體／列幾何及 KVM 契約；容量 20→1 與捲軸停用拖動亦通過。
 - 證據與完整重現命令：`docs/refactoring/evidence/st1-20261016/README.md`、兩份矩陣 JSON、兩語原生截圖與測試結果。
 - 工廠顯示器、不同縮放及上位機 KVM 壓縮辨識留作現場驗收；未宣稱完成。待功能分支提交／雙遠端推送及 merger 整合成功後由主代理更新 #69 驗收與狀態。
+- ST1 merger 整合提交：`299a5c25f30984742acf267ade825b90a0dc68cf`。整合後 7 項 KVM 契約與 5 項 Aqua UI 幾何回歸共 12 項全通過；使用 macOS 桌面 wrapper／Python 3.8.10、Tcl/Tk 8.6。sandbox 內先前兩種執行都在測試本體前 exit 134（沒有 Tcl traceback），使用者授權的桌面提升權限執行後通過。Gitea／GitHub integration ref 均讀回 `299a5c25f30984742acf267ade825b90a0dc68cf`。

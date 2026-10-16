@@ -156,3 +156,11 @@
 - 開始前已讀回確認 Gitea／GitHub 主線都為 `612c6d08e74c2e6fd2973114ccc9c5d32195a5ad`；在獨立 `/private/tmp/B518-st-integration` 建立 `codex/hmi-slot-toolbar-implementation-20261016`，保留 macOS 回歸修正。
 - 原工作樹未提交主程式／UI 測試及 input-probe／window-bounds 均保持原樣，另記 SHA-256 供結束比對。
 - 詳細進度、逐票提交與驗收見 [執行紀錄](HMI_SLOT_TOOLBAR_EXECUTION_2026-10-16.md)；此段只記啟動，不宣稱八票已完成。
+
+
+### ST1 首票完成
+
+- #69 ST1 已以 TDD 完成並關閉，功能提交 `d3ed365ba86c05674387080ac09e1f15ccfafe75`；整合提交 `299a5c25f30984742acf267ade825b90a0dc68cf` 已推送 Gitea／GitHub 且兩端 SHA 一致。
+- 真正 Aqua Tk 矩陣 32 場景涵蓋容量 1／10／11／20、兩種視窗高度及繁中／英文；足高十列，小高度 4／5 列、末列可達，操作區及 KVM 契約維持。整合後 12 項受影響測試全通過。顯示模式已還原。
+- 證據含 32 張原生截圖、矩陣及重跑紀錄，見 `B518 Log Solution/docs/refactoring/evidence/st1-20261016/README.md`。工廠 KVM/縮放驗收待現場。
+- 當下整合 tip：`299a5c25f30984742acf267ade825b90a0dc68cf`。依序接續 ST2 #70。
