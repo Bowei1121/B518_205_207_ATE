@@ -2985,6 +2985,9 @@ class B518LogSolutionApp:
         if not self.recovery_window or not self.recovery_window.winfo_exists():
             window = tk.Toplevel(self.root)
             self.recovery_window = window
+            # Tk's Aqua default resolves to a system color; this App-owned
+            # window must keep the same light surface across system changes.
+            window.configure(background=LIGHT_BACKGROUND)
             window.title(self._t("recovery.title"))
             window.geometry("900x620")
             window.minsize(760, 520)
