@@ -110,9 +110,10 @@ TOOLBAR_ICON_FONT = ("Apple Color Emoji", 15)
 class _LocalizedControlHint:
     """Show one localized hint for a Tk or ttk control, with owned lifecycle."""
 
-    def __init__(self, widget: tk.Widget, text_provider):
+    def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None):
         self._widget = widget
         self._text_provider = text_provider
+        self._menu = menu
         self._after_id = None
         self._window = None
         self._label = None
@@ -122,7 +123,7 @@ class _LocalizedControlHint:
                 ("<Leave>", self._hide), ("<FocusOut>", self._hide)):
             binding_id = widget.bind(sequence, callback, add="+")
             self._bindings.append((sequence, binding_id))
-        if isinstance(widget, tk.Menubutton):
+        if menu is not None:
             for sequence in ("<ButtonPress-1>", "<KeyPress-space>",
                              "<KeyPress-Return>", "<KeyPress-Down>"):
                 binding_id = widget.bind(sequence, self._hide, add="+")
@@ -138,11 +139,11 @@ class _LocalizedControlHint:
             return True
 
     def _menu_is_posted(self, widget) -> bool:
-        if not isinstance(widget, tk.Menubutton):
+        menu = self._menu
+        if menu is None:
             return False
         try:
-            menu = widget.cget("menu")
-            return bool(menu and widget.tk.call("winfo", "viewable", menu))
+            return bool(menu.winfo_exists() and menu.winfo_viewable())
         except tk.TclError:
             return False
 
@@ -176,6 +177,7 @@ class _LocalizedControlHint:
                 pass
         self._bindings.clear()
         self._widget = None
+        self._menu = None
 
     def _schedule(self, _event=None) -> None:
         widget = self._widget
@@ -205,6 +207,7 @@ class _LocalizedControlHint:
                 return
             window = tk.Toplevel(widget.winfo_toplevel())
             window.overrideredirect(True)
+            window.focusmodel("passive")
             label = tk.Label(
                 window, text=self._text_provider(), anchor="w", justify="left",
                 background="#fffbe6", foreground=TEXT_COLOUR, borderwidth=1,
@@ -247,16 +250,11 @@ class _LocalizedControlHint:
 
     def _on_destroy(self, event) -> None:
         if event.widget is self._widget:
-            widget = self._widget
-            if isinstance(widget, tk.Menubutton):
-                try:
-                    widget.tk.call("set", "::tk::Priv(inMenubutton)", "")
-                except tk.TclError:
-                    pass
             self._hide()
             self._bindings.clear()
             self._destroy_binding = None
             self._widget = None
+            self._menu = None
 
 
 def visible_detail_rows(capacity: int, screen_height: int) -> int:
@@ -499,12 +497,6 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
-        language_button = getattr(self, "language_button", None)
-        if language_button is not None:
-            try:
-                language_button.tk.call("set", "::tk::Priv(inMenubutton)", "")
-            except tk.TclError:
-                pass
         if hasattr(self, "_historical_query_service"):
             self._historical_query_service.shutdown()
         if hasattr(self, "_historical_detail_service"):
@@ -577,10 +569,20 @@ class B518LogSolutionApp:
                              foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
                              focuscolor="#2563eb", focusthickness=2,
                              font=TOOLBAR_ICON_FONT)
-        self.style.map("Toolbar.TButton", background=[("focus", "#bfdbfe"),
+        self.style.map("Toolbar.TButton", background=[("invalid", "#fecaca"),
+                                                        ("focus", "#bfdbfe"),
                                                         ("active", "#e5e7eb"),
                                                         ("pressed", "#d1d5db"),
                                                         ("disabled", LIGHT_BACKGROUND)])
+        self.style.configure("Toolbar.Language.TButton", background=LIGHT_BACKGROUND,
+                             foreground=TEXT_COLOUR, padding=(1, 1), borderwidth=0,
+                             focuscolor="#2563eb", focusthickness=2,
+                             font=TOOLBAR_ICON_FONT)
+        self.style.map("Toolbar.Language.TButton", background=[("invalid", "#fecaca"),
+                                                                 ("focus", "#bfdbfe"),
+                                                                 ("active", "#e5e7eb"),
+                                                                 ("pressed", "#d1d5db"),
+                                                                 ("disabled", LIGHT_BACKGROUND)])
         self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
                                                     ("disabled", "#eeeeee")],
                        foreground=[("disabled", "#777777")])
@@ -645,23 +647,27 @@ class B518LogSolutionApp:
             takefocus=True,
         )
         self.review_button.pack(side="left")
-        self.review_count = tk.Label(
-            self.review_group, text="0", width=8, anchor="center",
-            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-            font=("Helvetica", 10, "bold"),
+        self.review_badge = tk.Canvas(
+            header, width=18, height=18, background=LIGHT_BACKGROUND,
+            highlightthickness=0, borderwidth=0, takefocus=False,
         )
-        self.review_count.pack(side="left", padx=(1, 0))
+        self.review_badge_oval = self.review_badge.create_oval(
+            1, 1, 17, 17, fill="#dc2626", outline="#dc2626")
+        self.review_badge_label = self.review_badge.create_text(
+            9, 9, text="", fill="#ffffff", font=("Helvetica", 9, "bold"))
+        self.review_badge.bind("<ButtonRelease-1>", self._relay_review_badge_click)
+        self._review_badge_count = None
+        self._review_badge_header = header
+        self._review_badge_place_pending = False
         self.round_alarm_button = ttk.Button(
             header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=1,
             command=self._open_recovery_center, style="Toolbar.TButton",
             takefocus=True,
         )
         self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
-        self.language_button = tk.Menubutton(
+        self.language_button = ttk.Button(
             header, text=TOOLBAR_ICON_GLYPHS["language"], width=2,
-            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-            activebackground="#e5e7eb", relief="flat", borderwidth=0,
-            takefocus=True, font=TOOLBAR_ICON_FONT,
+            style="Toolbar.Language.TButton", takefocus=True,
         )
         self.language_menu = tk.Menu(self.language_button, tearoff=False)
         for language, native_name in LANGUAGE_OPTIONS:
@@ -669,10 +675,13 @@ class B518LogSolutionApp:
                 label=native_name, variable=self.language_choice, value=language,
                 command=lambda selected=language: self._select_language(selected),
             )
-        self.language_button.configure(menu=self.language_menu)
+        self.language_button.configure(command=self._post_language_menu)
+        self.language_menu.bind("<Escape>", self._cancel_language_menu, add="+")
+        self.language_menu.bind("<Unmap>", self._language_menu_unmapped, add="+")
         self.language_button.pack(side="right", padx=(2, 0))
-        self.round_alarm_button.pack(side="right")
-        self.review_group.pack(side="right", padx=(2, 2))
+        # Reserve the corner badges' overhang so neither badge covers the next entry.
+        self.round_alarm_button.pack(side="right", padx=(0, 13))
+        self.review_group.pack(side="right", padx=(2, 14))
         self.notification_badge = tk.Canvas(
             header, width=18, height=18, background=LIGHT_BACKGROUND,
             highlightthickness=0, borderwidth=0, takefocus=False,
@@ -686,17 +695,22 @@ class B518LogSolutionApp:
         self._notification_badge_header = header
         self._notification_badge_place_pending = False
         header.bind("<Configure>", self._schedule_notification_badge_place, add="+")
+        header.bind("<Configure>", self._schedule_review_badge_place, add="+")
         self._schedule_notification_badge_place()
-        for key in ("<space>", "<Return>", "<Down>"):
-            self.language_button.bind(key, self._post_language_menu)
+        self._schedule_review_badge_place()
+        # Aqua's TButton class does not invoke on Space. Invoke exactly once
+        # on key-down and suppress its class key-up behavior; the native Menu
+        # then owns arrow navigation, Return selection, and Escape cancellation.
+        self.language_button.bind("<KeyPress-space>", self._invoke_language_button)
+        self.language_button.bind("<KeyRelease-space>", lambda _event: "break")
+        self.language_button.bind("<KeyPress-Return>", self._invoke_language_button)
+        self.language_button.bind("<KeyPress-Down>", self._invoke_language_button)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
-        self.language_button.bind("<FocusIn>", lambda event:
-                                  self.language_button.configure(background="#bfdbfe"))
-        self.language_button.bind("<FocusOut>", lambda event:
-                                  self.language_button.configure(background=LIGHT_BACKGROUND))
+        self._language_hint = _LocalizedControlHint(self.language_button, lambda: self._t(
+                "main.language", current_language=language_name(self.current_language)),
+                menu=self.language_menu)
         self._toolbar_hints.extend((
-            _LocalizedControlHint(self.language_button, lambda: self._t(
-                "main.language", current_language=language_name(self.current_language))),
+            self._language_hint,
             _LocalizedControlHint(self.round_alarm_button, lambda: self._t("recovery.title")),
             _LocalizedControlHint(self.review_button, lambda: self._t(
                 "main.review_count", count=self._pending_conflict_count())),
@@ -853,8 +867,7 @@ class B518LogSolutionApp:
         """Update existing main-page widgets without rebuilding monitoring state."""
         if not hasattr(self, "language_button"):
             return
-        self.language_button.configure(
-            relief="sunken" if self._language_save_error else "raised")
+        self.language_button.state(("invalid",) if self._language_save_error else ("!invalid",))
         self._refresh_language_entry()
         self.project_label.configure(text=self._t("main.project"))
         self.machine_label.configure(text=self._t("main.machine_type"))
@@ -1091,10 +1104,7 @@ class B518LogSolutionApp:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         conflicts = snapshot.pending_conflicts if snapshot else ()
-        self.review_count.configure(text=str(len(conflicts)))
-        self.review_button.configure(state="normal" if conflicts else "disabled")
-        if len(getattr(self, "_toolbar_hints", ())) > 3:
-            self._toolbar_hints[3].refresh()
+        self._render_conflict_review_button(snapshot)
         alarm = snapshot.round_alarm if snapshot else None
         alarm_pending = alarm is not None and not alarm.acknowledged_at
         self.round_alarm_button.configure(state="normal")
@@ -1438,19 +1448,31 @@ class B518LogSolutionApp:
             self._language_save_error = str(error)
             self._record_app_event("app.language.preference_save_failed", {"reason": str(error)},
                                    str(error))
-            self.language_button.configure(relief="sunken")
+            self.language_button.state(("invalid",))
             self._show_notice("language.save_failed_title", "language.save_failed",
                               {"reason": str(error)})
         else:
             self._language_save_error = None
-            self.language_button.configure(relief="raised")
+            self.language_button.state(("!invalid",))
 
     def _post_language_menu(self, _event=None):
         if self._closing_ui:
             return "break"
-        self.language_menu.post(self.language_button.winfo_rootx(),
-                                self.language_button.winfo_rooty() + self.language_button.winfo_height())
-        self.language_menu.focus_set()
+        language_hint = getattr(self, "_language_hint", None)
+        if language_hint is not None:
+            language_hint._hide()
+        x = self.language_button.winfo_rootx()
+        y = self.language_button.winfo_rooty() + self.language_button.winfo_height()
+        try:
+            self.language_menu.tk_popup(x, y)
+        except tk.TclError:
+            # A window may be closing between the key event and popup post.
+            pass
+        return "break"
+
+    def _invoke_language_button(self, _event=None):
+        if not self._closing_ui and self.language_button.instate(("!disabled",)):
+            self.language_button.invoke()
         return "break"
 
     def _refresh_language_entry(self) -> None:
@@ -1477,8 +1499,18 @@ class B518LogSolutionApp:
             self.language_menu.unpost()
         except tk.TclError:
             pass
+        self.language_choice.set(self.current_language)
         self.language_button.focus_set()
         return "break"
+
+    def _language_menu_unmapped(self, _event=None):
+        if getattr(self, "_ui_destroyed", False):
+            return
+        try:
+            self.language_choice.set(self.current_language)
+        except tk.TclError:
+            # Tk may unmap the native popup while its owning root is tearing down.
+            pass
 
     def _show_invalid_language_warning(self) -> None:
         if self.root.winfo_exists() and self.profile_store.language_error:
@@ -2147,7 +2179,7 @@ class B518LogSolutionApp:
             return
         snapshot = snapshot if snapshot is not None else self.rounds.snapshot()
         conflicts = snapshot.pending_conflicts if snapshot else ()
-        self.review_count.configure(text=str(len(conflicts)))
+        self._render_review_badge(len(conflicts))
         self.review_button.configure(state="normal" if conflicts else "disabled")
         if len(getattr(self, "_toolbar_hints", ())) > 3:
             self._toolbar_hints[3].refresh()
@@ -2584,6 +2616,52 @@ class B518LogSolutionApp:
                                        diameter / 2, diameter / 2)
         self.notification_badge.itemconfigure(self._notification_badge_label, text=label)
         self._schedule_notification_badge_place()
+
+    def _render_review_badge(self, count: int) -> None:
+        if count == self._review_badge_count:
+            return
+        self._review_badge_count = count
+        if count == 0:
+            self.review_badge.itemconfigure(self.review_badge_label, text="")
+            self.review_badge.place_forget()
+            return
+        label = str(count)
+        font = tkfont.Font(root=self.root, family="Helvetica", size=9, weight="bold")
+        diameter = max(18, font.measure(label) + 8)
+        self.review_badge.configure(width=diameter, height=diameter)
+        self.review_badge.coords(self.review_badge_oval, 1, 1, diameter - 1, diameter - 1)
+        self.review_badge.coords(self.review_badge_label, diameter / 2, diameter / 2)
+        self.review_badge.itemconfigure(self.review_badge_label, text=label)
+        self._schedule_review_badge_place()
+
+    def _schedule_review_badge_place(self, _event=None) -> None:
+        if self._review_badge_place_pending:
+            return
+        self._review_badge_place_pending = True
+        try:
+            self.root.after_idle(self._place_review_badge)
+        except tk.TclError:
+            self._review_badge_place_pending = False
+
+    def _place_review_badge(self) -> None:
+        self._review_badge_place_pending = False
+        button = self.review_button
+        header = self._review_badge_header
+        if (self._review_badge_count in (None, 0) or
+                not button.winfo_exists() or not header.winfo_exists()):
+            return
+        self.review_badge.place(
+            x=button.winfo_rootx() - header.winfo_rootx() + button.winfo_width() - 7,
+            y=button.winfo_rooty() - header.winfo_rooty() - 3,
+        )
+
+    def _relay_review_badge_click(self, event):
+        button = self.review_button
+        x = event.x_root - button.winfo_rootx()
+        y = event.y_root - button.winfo_rooty()
+        if 0 <= x < button.winfo_width() and 0 <= y < button.winfo_height():
+            button.invoke()
+        return "break"
 
     def _schedule_notification_badge_place(self, _event=None) -> None:
         if self._notification_badge_place_pending:
