@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import platform
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -63,6 +65,16 @@ def main():
             record("root_destroyed")
 
     root.bind("<Destroy>", on_destroy, add="+")
+    runtime = {
+        "executable": sys.executable, "python": sys.version,
+        "tk_patchlevel": str(root.tk.call("info", "patchlevel")),
+        "tk_windowing_system": str(root.tk.call("tk", "windowingsystem")),
+        "macos": subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"],
+                                          text=True).strip() if sys.platform == "darwin"
+                 else platform.platform(),
+    }
+    record("runtime", **runtime)
+
 
     def event_received(sequence, event):
         # Record control identities only; never record entered text or keys.
@@ -78,6 +90,16 @@ def main():
                      "<KeyPress-Return>"):
         root.bind_all(sequence, lambda event, sequence=sequence:
                       event_received(sequence, event), add="+")
+
+    # First bindtag observes pointer delivery before native class bindings can
+    # consume an event; return None to preserve the original event semantics.
+    pointer_tag = "B518DiagnosticPointer"
+    for control in (app.settings_button, app.review_button,
+                    app.round_alarm_button, app.language_button):
+        control.bindtags((pointer_tag,) + control.bindtags())
+    for sequence in ("<ButtonPress-1>", "<ButtonRelease-1>"):
+        root.bind_class(pointer_tag, sequence, lambda event, sequence=sequence:
+                        event_received("raw" + sequence, event), add="+")
 
     for name, button in (("settings", app.settings_button),
                          ("recovery", app.round_alarm_button)):
@@ -138,7 +160,7 @@ def main():
         for entry in records:
             counts[entry["kind"]] = counts.get(entry["kind"], 0) + 1
         summary = {
-            "trace": str(log_path), "event_counts": counts,
+            "trace": str(log_path), "runtime": runtime, "event_counts": counts,
             "max_heartbeat_interval_ms": max(
                 (entry.get("interval_ms", 0) for entry in records), default=0),
             "commands": [entry for entry in records if entry["kind"] == "command_end"],

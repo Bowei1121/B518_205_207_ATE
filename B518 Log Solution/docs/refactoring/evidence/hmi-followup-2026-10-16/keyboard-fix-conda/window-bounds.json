@@ -1,0 +1,262 @@
+{
+  "main_page": {
+    "en": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          181,
+          8,
+          77,
+          35
+        ],
+        "alarm": [
+          260,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          292,
+          13,
+          76,
+          25
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          504,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          542,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          564,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-en.png"
+    },
+    "zh-TW": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          181,
+          8,
+          77,
+          35
+        ],
+        "alarm": [
+          260,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          292,
+          13,
+          76,
+          25
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          504,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          542,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          564,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          565,
+          125,
+          34
+        ],
+        "retry_selected": [
+          228,
+          625,
+          140,
+          34
+        ],
+        "retry_archive": [
+          228,
+          672,
+          140,
+          34
+        ],
+        "diagnostics": [
+          228,
+          720,
+          140,
+          34
+        ],
+        "retry_text": [
+          228,
+          757,
+          140,
+          34
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-zh-TW.png"
+    }
+  }
+}

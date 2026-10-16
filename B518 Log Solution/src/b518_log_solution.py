@@ -571,8 +571,10 @@ class B518LogSolutionApp:
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1)
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
                              foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
+                             focuscolor="#2563eb", focusthickness=2,
                              font=TOOLBAR_ICON_FONT)
-        self.style.map("Toolbar.TButton", background=[("active", "#e5e7eb"),
+        self.style.map("Toolbar.TButton", background=[("focus", "#bfdbfe"),
+                                                        ("active", "#e5e7eb"),
                                                         ("pressed", "#d1d5db"),
                                                         ("disabled", LIGHT_BACKGROUND)])
         self.style.map("Main.TButton", background=[("active", "#e5e7eb"), ("pressed", "#d1d5db"),
@@ -591,6 +593,19 @@ class B518LogSolutionApp:
                        selectforeground=[("readonly", TEXT_COLOUR)])
         self.style.configure("TSeparator", background="#9ca3af")
 
+    def _bind_toolbar_reverse_alias(self, control):
+        try:
+            control.bind("<KeyPress-ISO_Left_Tab>", self._toolbar_focus_previous)
+        except tk.TclError:
+            # Aqua Tk does not define the X11 ISO_Left_Tab keysym.
+            pass
+
+    def _toolbar_focus_previous(self, event):
+        previous = event.widget.tk_focusPrev()
+        if previous is not None:
+            previous.focus_set()
+        return "break"
+
     def _build(self) -> None:
         body = tk.Frame(self.root, background=LIGHT_BACKGROUND, padx=8, pady=8)
         body.pack(fill="both", expand=True)
@@ -598,8 +613,9 @@ class B518LogSolutionApp:
         header.pack(fill="x")
         header.pack_propagate(False)
         self._toolbar_hints = []
+        # Single-glyph widths leave room for the existing review count at 376px.
         self.settings_button = ttk.Button(
-            header, text=TOOLBAR_ICON_GLYPHS["settings"], width=2,
+            header, text=TOOLBAR_ICON_GLYPHS["settings"], width=1,
             command=self.open_settings, style="Toolbar.TButton", takefocus=True,
         )
         self.settings_button.pack(side="left", padx=(0, 3))
@@ -607,6 +623,24 @@ class B518LogSolutionApp:
                                                  lambda: self._t("main.settings")))
         self._build_company_identity(header)
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
+        self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
+        self.review_button = ttk.Button(
+            self.review_group, text=TOOLBAR_ICON_GLYPHS["review"], width=1,
+            command=self._open_conflict_review, style="Toolbar.TButton", state="disabled",
+            takefocus=True,
+        )
+        self.review_button.pack(side="left")
+        self.review_count = tk.Label(
+            self.review_group, text="0", width=8, anchor="center",
+            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+            font=("Helvetica", 10, "bold"),
+        )
+        self.review_count.pack(side="left", padx=(1, 0))
+        self.round_alarm_button = ttk.Button(
+            header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=1,
+            command=self._open_recovery_center, style="Toolbar.TButton",
+            takefocus=True,
+        )
         self.language_choice = tk.StringVar(master=self.root, value=self.current_language)
         self.language_button = tk.Menubutton(
             header, text=TOOLBAR_ICON_GLYPHS["language"], width=2,
@@ -622,38 +656,28 @@ class B518LogSolutionApp:
             )
         self.language_button.configure(menu=self.language_menu)
         self.language_button.pack(side="right", padx=(2, 0))
+        self.round_alarm_button.pack(side="right")
+        self.review_group.pack(side="right", padx=(2, 2))
         for key in ("<space>", "<Return>", "<Down>"):
             self.language_button.bind(key, self._post_language_menu)
         self.language_button.bind("<Escape>", self._cancel_language_menu)
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.language_button, lambda: self._t(
-                "main.language", current_language=language_name(self.current_language))))
-
-        self.round_alarm_button = ttk.Button(
-            header, text=TOOLBAR_ICON_GLYPHS["alarm"], width=2,
-            command=self._open_recovery_center, style="Toolbar.TButton",
-            takefocus=True,
-        )
-        self.round_alarm_button.pack(side="right")
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.round_alarm_button, lambda: self._t("recovery.title")))
-        self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
-        self.review_group.pack(side="right", padx=(2, 2))
-        self.review_button = ttk.Button(
-            self.review_group, text=TOOLBAR_ICON_GLYPHS["review"], width=2,
-            command=self._open_conflict_review, style="Toolbar.TButton", state="disabled",
-            takefocus=True,
-        )
-        self.review_button.pack(side="left")
-        self.review_count = tk.Label(
-            self.review_group, text="0", width=8, anchor="center",
-            background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
-            font=("Helvetica", 10, "bold"),
-        )
-        self.review_count.pack(side="left", padx=(1, 0))
-        self._toolbar_hints.append(_LocalizedControlHint(
-            self.review_button, lambda: self._t("main.review_count",
-                                                count=self._pending_conflict_count())))
+        self.language_button.bind("<FocusIn>", lambda event:
+                                  self.language_button.configure(background="#bfdbfe"))
+        self.language_button.bind("<FocusOut>", lambda event:
+                                  self.language_button.configure(background=LIGHT_BACKGROUND))
+        self._toolbar_hints.extend((
+            _LocalizedControlHint(self.language_button, lambda: self._t(
+                "main.language", current_language=language_name(self.current_language))),
+            _LocalizedControlHint(self.round_alarm_button, lambda: self._t("recovery.title")),
+            _LocalizedControlHint(self.review_button, lambda: self._t(
+                "main.review_count", count=self._pending_conflict_count())),
+        ))
+        # Tk's traversal follows creation order; keep it aligned with the row.
+        # Aqua emits Shift+Tab rather than the generic Tk ISO_Left_Tab mapping.
+        for control in (self.settings_button, self.review_button,
+                        self.round_alarm_button, self.language_button):
+            control.bind("<Shift-KeyPress-Tab>", self._toolbar_focus_previous)
+            self._bind_toolbar_reverse_alias(control)
 
         selection = tk.Frame(body, background=LIGHT_BACKGROUND)
         selection.pack(fill="x", pady=(3, 3))
@@ -664,6 +688,8 @@ class B518LogSolutionApp:
         self.project_choice = ttk.Combobox(selection, textvariable=self.project, state="readonly", width=10,
                                            values=self.profiles.projects)
         self.project_choice.grid(row=0, column=1, sticky="ew", padx=(5, 12))
+        self.project_choice.bind("<Shift-KeyPress-Tab>", self._toolbar_focus_previous)
+        self._bind_toolbar_reverse_alias(self.project_choice)
         self.project_choice.bind("<<ComboboxSelected>>", self._project_changed)
         self.machine_label = ttk.Label(selection, text="機型")
         self.machine_label.grid(row=1, column=0, sticky="w")

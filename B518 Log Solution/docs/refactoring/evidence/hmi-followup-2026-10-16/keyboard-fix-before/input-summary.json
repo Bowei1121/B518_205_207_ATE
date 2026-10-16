@@ -1,0 +1,33 @@
+{
+  "trace": "docs/refactoring/evidence/hmi-followup-2026-10-16/input-probe/input-trace.jsonl",
+  "event_counts": {
+    "heartbeat": 24,
+    "<FocusIn>": 20,
+    "command_start": 2,
+    "command_end": 2,
+    "<KeyPress-space>": 1,
+    "<FocusOut>": 13,
+    "<ButtonPress-1>": 2,
+    "<ButtonRelease-1>": 2,
+    "normal_close_requested": 1,
+    "root_destroyed": 1,
+    "finished": 1
+  },
+  "max_heartbeat_interval_ms": 292.06,
+  "commands": [
+    {
+      "seconds": 10.7366,
+      "kind": "command_end",
+      "control": "settings",
+      "duration_ms": 23.52
+    },
+    {
+      "seconds": 14.2599,
+      "kind": "command_end",
+      "control": "settings",
+      "duration_ms": 9.24
+    }
+  ],
+  "normal_close_completed": true,
+  "interpretation": "Human input trace; no automatic defect/pass verdict."
+}

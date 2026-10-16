@@ -259,7 +259,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app_event_path=Path(temporary) / "app-events.json",
             )
             try:
-                root.update_idletasks()
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.retry_save_button.winfo_height() > 1)
                 self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
                 self.assertGreaterEqual(root.winfo_height(), root.winfo_reqheight())
                 self.assertGreaterEqual(app.stop_button.winfo_height(),
@@ -390,7 +391,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     (app.language_button, app._toolbar_hints[1],
                      "Select language (current: English)"),
                     (app.round_alarm_button, app._toolbar_hints[2],
-                     "Round Alarm (Awaiting Review)"),
+                     "Notifications and Recovery"),
                     (app.review_button, app._toolbar_hints[3], "Awaiting Review (0)"),
                 )
                 for widget, hint, expected in tooltip_expectations:
@@ -479,9 +480,9 @@ class LogSolutionUiTests(unittest.TestCase):
                         "<ButtonRelease-1>", x=app.round_alarm_button.winfo_width() // 2,
                         y=app.round_alarm_button.winfo_height() // 2)
                     root.update()
-                    self.assertIsNotNone(app.round_alarm_window)
-                    self.assertEqual(app.round_alarm_window.title(), "Round Monitoring Timeout")
-                    app.round_alarm_window.destroy()
+                    self.assertIsNotNone(app.recovery_window)
+                    self.assertEqual(app.recovery_window.title(), "Notifications and Recovery")
+                    app.recovery_window.destroy()
 
                 conflicts = tuple(SimpleNamespace() for _ in range(20))
                 snapshot = SimpleNamespace(
@@ -542,6 +543,90 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            try:
+                self.wait_for_ui(root, lambda: app.project_choice.winfo_ismapped())
+                geometry_widgets = (app.settings_button, app.review_group,
+                                    app.round_alarm_button, app.language_button,
+                                    app.kvm_results, app.kvm_state_marker, app.kvm_layout_marker,
+                                    *app.kvm_result_blocks.values())
+                def geometry():
+                    return tuple((widget.winfo_x(), widget.winfo_y(),
+                                  widget.winfo_width(), widget.winfo_height())
+                                 for widget in geometry_widgets)
+                baseline = geometry()
+                for language, key in ((ENGLISH, "en"), (TRADITIONAL_CHINESE, "zh-TW")):
+                    app._select_language(language)
+                    root.update()
+                    controls = (app.settings_button, app.review_button,
+                                app.round_alarm_button, app.language_button, app.project_choice)
+                    app.settings_button.focus_force()
+                    root.update()
+                    for source, target in zip(controls, controls[1:]):
+                        source.event_generate("<KeyPress-Tab>")
+                        root.update()
+                        self.assertIs(root.focus_get(), target)
+                    for source, target in zip(reversed(controls), reversed(controls[:-1])):
+                        source.event_generate("<KeyPress-Tab>", state=1)
+                        root.update()
+                        self.assertIs(root.focus_get(), target)
+                    app.settings_button.event_generate("<KeyPress-Tab>", state=1)
+                    root.update()
+                    self.assertNotIn(root.focus_get(), controls[:4])
+                    app.round_alarm_button.focus_force()
+                    root.update()
+                    try:
+                        app.round_alarm_button.event_generate("<KeyPress-ISO_Left_Tab>")
+                    except tk.TclError as error:
+                        self.assertIn("ISO_Left_Tab", str(error))
+                    else:
+                        root.update()
+                        self.assertIs(root.focus_get(), app.review_button)
+                    # Review remains unavailable even when reached for orientation.
+                    self.assertTrue(app.review_button.instate(["disabled"]))
+                    app.review_button.event_generate("<KeyPress-space>")
+                    app.review_button.event_generate("<KeyRelease-space>")
+                    root.update()
+                    self.assertIsNone(app.conflict_window)
+                    for name, control in zip(("settings", "review", "bell", "language"), controls):
+                        control.focus_force()
+                        root.update()
+                        self.assertEqual(geometry(), baseline)
+                        self.assertEqual(sorted(controls[:4], key=lambda widget: widget.winfo_rootx()),
+                                         list(controls[:4]))
+                        capture_tk_window_evidence(root, "toolbar-focus-" + name, key,
+                                                   {"focused": control})
+                app.open_settings()
+                root.update()
+                children = []
+                def collect(widget):
+                    for child in widget.winfo_children():
+                        children.append(child)
+                        collect(child)
+                collect(app.settings_window)
+                entry = next(widget for widget in children
+                             if isinstance(widget, ttk.Entry) and widget.winfo_viewable())
+                entry.focus_force()
+                self.wait_for_ui(root, lambda: root.focus_get() is entry)
+                entry.event_generate("<KeyPress-Tab>")
+                root.update()
+                self.assertIs(root.focus_get().winfo_toplevel(), app.settings_window)
+                app._close_settings()
+            finally:
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_hm1_logo_normal_missing_and_corrupt_keep_fixed_slot_without_dialog(self):
         with TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
@@ -566,7 +651,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         app_event_path=temporary_path / (state + "-events.json"),
                     )
                     try:
-                        root.update_idletasks()
+                        self.wait_for_ui(root, lambda: app.company_logo_slot.winfo_ismapped() and
+                                         app.company_logo_slot.winfo_width() > 1)
                         slot_bounds = (app.company_logo_slot.winfo_x(),
                                        app.company_logo_slot.winfo_y(),
                                        app.company_logo_slot.winfo_width(),

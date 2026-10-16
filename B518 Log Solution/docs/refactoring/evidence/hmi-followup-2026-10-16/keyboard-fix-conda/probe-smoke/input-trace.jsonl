@@ -1,0 +1,7 @@
+{"seconds": 1.0477, "kind": "runtime", "executable": "/opt/anaconda3/bin/python3", "python": "3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ]", "tk_patchlevel": "8.6.12", "tk_windowing_system": "aqua", "macos": "15.7.9"}
+{"seconds": 1.4178, "kind": "heartbeat", "interval_ms": 50.57, "focus": "None", "hints": [false, false, false, false], "active": false, "key_window": null}
+{"seconds": 6.3671, "kind": "normal_close_requested"}
+{"seconds": 6.8736, "kind": "<FocusIn>", "widget": ".!toplevel", "focus": ".!toplevel", "toolbar": false}
+{"seconds": 6.8749, "kind": "heartbeat", "interval_ms": 548.17, "focus": ".!toplevel", "hints": [false, false, false, false], "active": true, "key_window": 69093}
+{"seconds": 7.0439, "kind": "root_destroyed"}
+{"seconds": 7.0575, "kind": "finished"}
