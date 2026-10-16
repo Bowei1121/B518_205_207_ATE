@@ -397,10 +397,12 @@ class B518LogSolutionApp:
         self._close_diagnostic_text = None
         self._close_retry_button = None
         self._close_cancel_button = None
+        self._close_action_hints = {}
         self._close_poll_generation = None
         self.resolve_conflict_original_button = None
         self.resolve_conflict_candidate_button = None
         self.conflict_close_button = None
+        self._conflict_action_hints = {}
         self.active_round_id: Optional[str] = None
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
@@ -515,6 +517,7 @@ class B518LogSolutionApp:
         self.round_alarm_message: Optional[ttk.Label] = None
         self.round_alarm_ack_button: Optional[ttk.Button] = None
         self.round_alarm_close_button: Optional[ttk.Button] = None
+        self._round_alarm_action_hints = {}
         self._round_alarm_window_identity: Optional[tuple[str, str]] = None
         self._rendered_alarm_view_state = None
         self.recovery_window: Optional[tk.Toplevel] = None
@@ -602,6 +605,11 @@ class B518LogSolutionApp:
         for hint in getattr(self, "_main_action_hints", {}).values():
             hint.close()
         self._main_action_hints = {}
+        for hint_name in ("_conflict_action_hints", "_round_alarm_action_hints",
+                          "_close_action_hints"):
+            for hint in getattr(self, hint_name, {}).values():
+                hint.close()
+            setattr(self, hint_name, {})
         for after_id in tuple(self._after_ids):
             self._cancel_ui_timer(after_id)
         self._close_after_id = None
@@ -1104,7 +1112,9 @@ class B518LogSolutionApp:
         show_notice(title, message, parent=self.root, text_provider=text_provider,
                     register_refresh=self.register_language_receiver,
                     receiver_name=lambda: self._t(title_id),
-                    background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR)
+                    background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
+                    hint_factory=lambda button: _LocalizedControlHint(
+                        button, lambda: self._t("app.notice.hint.dismiss")))
 
     def _settings_label(self, parent, message_id: str, **kwargs):
         widths = {
@@ -2230,7 +2240,7 @@ class B518LogSolutionApp:
                 window_width, window_height, window_x, window_y))
             window.minsize(820, 540)
             window.transient(self.root)
-            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            window.protocol("WM_DELETE_WINDOW", self._hide_conflict_review)
             instruction_area = ttk.Frame(window, height=44)
             instruction_area.pack(fill="x", padx=12, pady=(12, 8))
             instruction_area.pack_propagate(False)
@@ -2327,9 +2337,20 @@ class B518LogSolutionApp:
             )
             self.resolve_conflict_candidate_button.grid(row=0, column=1, sticky="ew", padx=(0, 8))
             self.conflict_close_button = ttk.Button(
-                actions, text="", command=window.withdraw,
+                actions, text="", command=self._hide_conflict_review,
             )
             self.conflict_close_button.grid(row=0, column=2, sticky="ew")
+            self._conflict_action_hints = {
+                self.resolve_conflict_original_button: _LocalizedControlHint(
+                    self.resolve_conflict_original_button,
+                    lambda: self._conflict_action_hint_text("keep_original")),
+                self.resolve_conflict_candidate_button: _LocalizedControlHint(
+                    self.resolve_conflict_candidate_button,
+                    lambda: self._conflict_action_hint_text("accept_candidate")),
+                self.conflict_close_button: _LocalizedControlHint(
+                    self.conflict_close_button,
+                    lambda: self._conflict_action_hint_text("close")),
+            }
             window.bind("<Destroy>", self._on_conflict_window_destroy, add="+")
             self._unregister_conflict_language_receiver = self.register_language_receiver(
                 lambda: self._t("conflict.title"),
@@ -2465,6 +2486,23 @@ class B518LogSolutionApp:
         ):
             if button and button.winfo_exists():
                 button.configure(text=self._t(message_id))
+        for hint in self._conflict_action_hints.values():
+            hint.refresh()
+
+    def _conflict_action_hint_text(self, action: str) -> str:
+        if action == "close":
+            return self._t("conflict.hint.close")
+        selection = self.conflict_list.curselection() if self.conflict_list else ()
+        message = self._t("conflict.hint." + action)
+        if not selection or selection[0] >= len(self._conflict_ids):
+            return "{} {}".format(message, self._t("conflict.hint.disabled.no_selection"))
+        return message
+
+    def _hide_conflict_review(self) -> None:
+        for hint in self._conflict_action_hints.values():
+            hint._hide()
+        if self.conflict_window and self.conflict_window.winfo_exists():
+            self.conflict_window.withdraw()
 
     def _set_initial_conflict_sash(self) -> None:
         if not self.conflict_panes or not self.conflict_panes.winfo_exists():
@@ -2494,6 +2532,8 @@ class B518LogSolutionApp:
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
                 button.configure(state="disabled")
+        for hint in self._conflict_action_hints.values():
+            hint.refresh()
 
     def _show_selected_conflict(self, _event=None, preserve_reading: bool = False) -> None:
         if (not self.conflict_list or not self.conflict_details or
@@ -2526,6 +2566,8 @@ class B518LogSolutionApp:
                        self.resolve_conflict_candidate_button):
             if button and button.winfo_exists():
                 button.configure(state="normal")
+        for hint in self._conflict_action_hints.values():
+            hint.refresh()
 
         def source_parts(side):
             if not side.source:
@@ -2668,6 +2710,9 @@ class B518LogSolutionApp:
         window = self.conflict_window
         if event.widget is not window:
             return
+        for hint in self._conflict_action_hints.values():
+            hint.close()
+        self._conflict_action_hints = {}
         unregister = self._unregister_conflict_language_receiver
         self._unregister_conflict_language_receiver = None
         if unregister is not None:
@@ -3335,7 +3380,7 @@ class B518LogSolutionApp:
             window.geometry("700x340")
             window.minsize(620, 300)
             window.transient(self.root)
-            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+            window.protocol("WM_DELETE_WINDOW", self._hide_round_alarm)
             self.round_alarm_message = ttk.Label(
                 window, wraplength=650, justify="left",
                 background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR,
@@ -3351,9 +3396,18 @@ class B518LogSolutionApp:
             )
             self.round_alarm_ack_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
             self.round_alarm_close_button = ttk.Button(
-                actions, text=self._t("alarm.button.close"), command=window.withdraw,
+                actions, text=self._t("alarm.button.close"),
+                command=self._hide_round_alarm,
             )
             self.round_alarm_close_button.grid(row=0, column=1, sticky="ew")
+            self._round_alarm_action_hints = {
+                self.round_alarm_ack_button: _LocalizedControlHint(
+                    self.round_alarm_ack_button,
+                    lambda: self._round_alarm_action_hint_text("acknowledge")),
+                self.round_alarm_close_button: _LocalizedControlHint(
+                    self.round_alarm_close_button,
+                    lambda: self._round_alarm_action_hint_text("close")),
+            }
             window.bind("<Destroy>", self._on_round_alarm_destroy, add="+")
             self._unregister_round_alarm_language_receiver = self.register_language_receiver(
                 lambda: self._t("alarm.title"),
@@ -3380,11 +3434,20 @@ class B518LogSolutionApp:
             unregister()
         self.round_alarm_window = None
         self.round_alarm_message = None
+        for hint in self._round_alarm_action_hints.values():
+            hint.close()
+        self._round_alarm_action_hints = {}
         self.round_alarm_ack_button = None
         self.round_alarm_close_button = None
         self._round_alarm_window_identity = None
         self._shown_round_alarm_identity = None
         self._rendered_alarm_view_state = None
+
+    def _hide_round_alarm(self) -> None:
+        for hint in self._round_alarm_action_hints.values():
+            hint._hide()
+        if self.round_alarm_window and self.round_alarm_window.winfo_exists():
+            self.round_alarm_window.withdraw()
 
     def _render_round_alarm(self, alarm) -> None:
         if self.round_alarm_window and self.round_alarm_window.winfo_exists():
@@ -3413,9 +3476,27 @@ class B518LogSolutionApp:
             )
         if self.round_alarm_close_button and self.round_alarm_close_button.winfo_exists():
             self.round_alarm_close_button.configure(text=self._t("alarm.button.close"))
+        for hint in self._round_alarm_action_hints.values():
+            hint.refresh()
         self._rendered_alarm_view_state = (
             alarm, bool(snapshot and snapshot.round_alarm_ready),
         )
+
+    def _round_alarm_action_hint_text(self, action: str) -> str:
+        if action == "close":
+            return self._t("alarm.hint.close")
+        snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        alarm = snapshot.round_alarm if snapshot else None
+        if alarm is None:
+            reason = "alarm.hint.disabled.no_alarm"
+        elif alarm.acknowledged_at:
+            reason = "alarm.hint.disabled.acknowledged"
+        elif not snapshot.round_alarm_ready:
+            reason = "alarm.hint.disabled.preparation_pending"
+        else:
+            reason = None
+        message = self._t("alarm.hint.acknowledge")
+        return "{} {}".format(message, self._t(reason)) if reason else message
 
     def _acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> None:
         snapshot = self.rounds.snapshot()
@@ -5070,6 +5151,13 @@ class B518LogSolutionApp:
             self._close_cancel_button = ttk.Button(
                 actions, text=self._t("app.close.cancel"), command=self.cancel_close, width=18)
             self._close_cancel_button.grid(row=0, column=1, sticky="e")
+            self._close_action_hints = {
+                self._close_retry_button: _LocalizedControlHint(
+                    self._close_retry_button, self._close_retry_hint_text),
+                self._close_cancel_button: _LocalizedControlHint(
+                    self._close_cancel_button,
+                    lambda: self._t("app.close.hint.cancel")),
+            }
         if self._close_window and self._close_window.winfo_exists():
             self._close_window.deiconify()
             self._close_window.lift()
@@ -5104,6 +5192,21 @@ class B518LogSolutionApp:
             self._close_retry_button.configure(state="normal" if status.status == "failed" else "disabled")
         if self._close_cancel_button:
             self._close_cancel_button.configure(text=self._t("app.close.cancel"))
+        for hint in self._close_action_hints.values():
+            hint.refresh()
+
+    def _close_retry_hint_text(self) -> str:
+        status = self.rounds.close_status()
+        message = self._t("app.close.hint.retry")
+        if status.status == "failed":
+            return message
+        disabled_id = {
+            "saving": "app.close.hint.disabled.saving",
+            "waiting": "app.close.hint.disabled.waiting",
+            "complete": "app.close.hint.disabled.complete",
+            "cancelled": "app.close.hint.disabled.cancelled",
+        }.get(status.status, "app.close.hint.disabled.waiting")
+        return "{} {}".format(message, self._t(disabled_id))
 
     def _schedule_close_poll(self, generation: int) -> None:
         self._close_poll_generation = generation
@@ -5140,6 +5243,9 @@ class B518LogSolutionApp:
         self._close_after_id = None
         self._refresh_language_entry()
         if self._close_window and self._close_window.winfo_exists():
+            for hint in self._close_action_hints.values():
+                hint.close()
+            self._close_action_hints = {}
             self._close_window.destroy()
         self._close_window = None
         self._apply_round_snapshot(self.rounds.snapshot())
@@ -5147,6 +5253,9 @@ class B518LogSolutionApp:
 
     def _finish_close(self) -> None:
         if self._close_window and self._close_window.winfo_exists():
+            for hint in self._close_action_hints.values():
+                hint.close()
+            self._close_action_hints = {}
             self._close_window.destroy()
         self._closing_ui = False
         self.hotkey.close()
