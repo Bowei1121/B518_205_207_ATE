@@ -61,3 +61,13 @@
 - 滑鼠問題定位於本機 Conda runtime：原生 pointer 在最小 Tk 與真 App 不送達（真 App 四操作 0/4），此限制尚存在。Python.org Framework 真 App 四個獨立程序皆單擊設定／鈴鐺／專案／機型 4/4；已提供 `scripts/run_macos_desktop.sh` 選用已驗證 Framework，README 更新入口。未宣稱打包 App／Python3.12 已驗收。
 - 詳細測試、證據、原始失敗及限制見 `HF1_KEYBOARD_FIX_2026-10-16.md`。整合沒有修改程式，僅補 diff check／compile，不重跑有效桌面測試。
 - HF1 待主協調者完成完整結案審查；HF2 英文零警報按鈕及完整保存／封存雙語操作仍待補。其後依序 HF3～HF7；本次 merger 未關 Issue、未合主線、未清理工作樹。
+
+## HF2 補修、完整桌面驗收與整合
+
+- HF1 #61 已於完整驗收、整合與推送後結案。上方「待補／OPEN」為當時紀錄，以本節及後續進度為準。
+- HF2 分支 `codex/hf2-acceptance-fix` 的 `ed31f67cefd0ae7745ca4aeb56beaf3bf3f97dc4` 已從 `e4cd033` 快轉整合至 `codex/hmi-followup-20261016`；保留使用者原未追蹤 input-probe、bounds 與 ignored 畫面，未覆寫其他工作。
+- 修復零警報英文確認按鈕、長診斷與窄視窗重試入口溢出、150ms 更新清單閱讀位置，以及可信封存顯示。80 行原始錯誤完整保留於可捲動詳細區，舊主頁恢復控制仍存在。
+- 真正 Session／audit 連續故障從鈴鐺新入口重試，人工確認僅一筆、跨輪保存不換當前板、選單一輪仍恢復全部符合資格封存。兩種 audit reader 依耐久 `save_recovered` 解除對應故障，仍拒絕序號缺失、沒有恢復及恢復後新失敗；恢復事件本身未保存仍阻擋封存與關閉。
+- Framework Python3.8／Tk8.6.8 真 App 8/8、保存封存領域 101/101、受影響歷史查詢呈現 74/74 通過；20 張繁中／英文原生 PNG 與測試輸出、bounds／hash 已保存並檢視。整合無程式衝突，僅補 diff whitespace 與三檔 compile，重用有效桌面證據。詳見 [HF2 驗收紀錄](HF2_RECOVERY_ACCEPTANCE_2026-10-16.md)。
+- 本次文件提交將正常推送既有 Gitea／GitHub，兩端 SHA 另由主協調者確認並同步 #62；merger 未關 Issue、未合主線、未刪工作樹。下一票 HF3 #63 需原生依賴皆解除，再依序至 HF7，不宣稱後續票已完成。
+- 正式打包 App、工站磁碟／權限／網路位置、實際人工處理及 KVM 傳輸仍需現場確認；Conda Tk 原生滑鼠限制維持 HF1 所記，不假稱修好。
