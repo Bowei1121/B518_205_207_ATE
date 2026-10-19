@@ -32,7 +32,7 @@
 - Audit/session 測試從磁碟重新讀取 alarm、停止與 ack 事件；開始期限事件保留雙語 message ID 和中英文內容。
 - 驗證：`PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_machine_profiles tests.test_log_monitoring tests.test_round_start_preparation tests.test_monitoring_round tests.test_language_catalog -v` — 132 tests passed；新增雙語覆蓋後又執行 `tests.test_language_catalog` 與磁碟 audit 測試，共 10 tests passed。
 - 真 App/Tk：`PYTHONPATH=src /opt/anaconda3/bin/python3 tools/smoke_li4_start_alarm_app.py` — macOS/Tk 8.6.12，使用 5 秒受控 monotonic deadline，未等待真實 120 秒；驗證真實 B518 App 視窗呈現兩格 NOTEST/REVIEW，Close 不會 ack，實際 Ack 後輪次 COMPLETE 且結果可交付。證據：`docs/refactoring/evidence/li4-real-app/{alarm-pending.png,main-review.png,main-complete.png,run.json}`。
-- 真 Tk 回歸：`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged` passed。另嘗試 `test_real_tk_close_keeps_conflict_and_alarm_actions_available` 兩次，均在既有 conflict-control hover hint 等待逾時，尚未抵達 alarm 行為斷言；LI4 專用真 App 操作 smoke 通過。這個回歸失敗需在整合驗收時保留並追蹤。
+- 真 Tk 回歸：`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged` passed。`test_real_tk_close_keeps_conflict_and_alarm_actions_available` 初次在 LI4 source 嘗試兩次，均於既有 conflict-control hover hint 等待逾時，未抵達 alarm 行為斷言。2026-10-19 在同一 macOS/Tk 桌面環境以相同命令分別於 LI4 integration base `08f5d38` 與 source `cc4f75c` 重跑，兩邊各 1/1 passed；現有實證顯示初次 timeout 為間歇性桌面 hover 事件，未能重現為 LI4 回歸。另於 LI4 source 重跑 badge regression，1/1 passed。LI4 真 App 操作 smoke 通過：使用 5 秒受控 monotonic deadline，真實 B518 FCT App 畫面呈現兩格 NOTEST/REVIEW；關閉警報不會 ack，實際 ack 後輪次 COMPLETE 且結果可交付。證據位置：`B518 Log Solution/docs/refactoring/evidence/li4-real-app/`。
 - 限制：只使用合成的等待來源與受控時鐘，沒有連接現場 ATE、bridge TCP、KVM_Log 或 JetKVM；這些不屬本票驗收範圍。
 
 ## Blocked by
