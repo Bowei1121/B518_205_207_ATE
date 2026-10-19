@@ -80,7 +80,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 0.9999999999999999,
@@ -163,7 +164,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 0.9999999999999999,
@@ -246,7 +248,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 0.9999999999999999,
@@ -329,7 +332,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 1.4985250737463125,
@@ -412,7 +416,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 1.4985250737463125,
@@ -495,7 +500,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 1.4985250737463125,
@@ -578,7 +584,8 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   },
   {
     "tk_scaling": 1.4985250737463125,
@@ -661,6 +668,7 @@
     "window_frame_extra_tk_units": [
       0.0,
       28.0
-    ]
+    ],
+    "profile_change_path": "legacy matrix: direct in-memory profile catalog replacement; not normal editor persistence evidence"
   }
 ]

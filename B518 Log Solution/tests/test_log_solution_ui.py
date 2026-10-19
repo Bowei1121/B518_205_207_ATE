@@ -489,7 +489,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 try:
                     self.wait_for_ui(root, lambda: root.winfo_ismapped() and
                                      app.kvm_locator_left.winfo_height() == 22)
-                    original_profile = app._selected_profile()
                     original_band = (app.kvm_results.winfo_rootx(),
                                      app.kvm_results.winfo_rooty())
                     original_fixed = {
@@ -510,14 +509,50 @@ class LogSolutionUiTests(unittest.TestCase):
                                        app.kvm_result_blocks[1].winfo_width(),
                                        app.kvm_result_blocks[1].winfo_height()),
                     }
+
+                    def descendants(widget):
+                        for child in widget.winfo_children():
+                            yield child
+                            yield from descendants(child)
+
+                    def edit_visible_profile_capacity(capacity):
+                        app.open_settings()
+                        root.update()
+                        editor_widgets = list(descendants(app.settings_window))
+
+                        def entry_for(variable):
+                            variable_name = str(variable)
+                            return next(widget for widget in editor_widgets
+                                        if widget.winfo_class() in {"TEntry", "Entry"}
+                                        and widget.cget("textvariable") == variable_name)
+
+                        capacity_entry = entry_for(app.profile_editor_capacity)
+                        capacity_entry.delete(0, tk.END)
+                        capacity_entry.insert(0, str(capacity))
+                        mapping_entry = entry_for(app.profile_editor_mapping)
+                        mapping_entry.delete(0, tk.END)
+                        mapping_entry.insert(
+                            0, ", ".join("{}:{}".format(slot, slot)
+                                         for slot in range(1, capacity + 1)))
+                        apply_button = next(
+                            widget for widget in editor_widgets
+                            if widget.winfo_class() == "TButton"
+                            and widget.cget("text") == app._t("app.settings.profile.apply"))
+                        apply_button.invoke()
+                        root.update()
+                        self.assertEqual(app.profile_editor_status.get(),
+                                         app._t("app.settings.profile.status.saved"))
+                        self.assertEqual(app._selected_profile().capacity, capacity)
+                        persisted, selected_project, selected_machine, error = (
+                            MachineProfileStore(Path(temporary) / "preferences.json").load())
+                        self.assertIsNone(error)
+                        self.assertEqual(persisted.get(selected_project, selected_machine).capacity,
+                                         capacity)
+                        app._close_settings()
+                        root.update()
+
                     for capacity in (1, 10, 11, 20):
-                        app.profiles = app.profiles.with_profile(
-                            replace(original_profile, platform="sample-json",
-                                    capacity=capacity, paths={"active": "unused"},
-                                    mapping=tuple((display, display)
-                                                 for display in range(1, capacity + 1)))
-                        )
-                        app._render_rows()
+                        edit_visible_profile_capacity(capacity)
                         root.update()
                         left = app.kvm_locator_left
                         right = app.kvm_locator_right
@@ -591,6 +626,9 @@ class LogSolutionUiTests(unittest.TestCase):
                         record = {
                             "tk_scaling": scale_readback,
                             "capacity": capacity,
+                            "profile_change_path": (
+                                "Settings profile editor entries + Apply button; "
+                                "verified persisted profile reload"),
                             "tk_bounds": {
                                 "root": [root.winfo_width(), root.winfo_height()],
                                 "kvm_parent": [parent.winfo_x(), parent.winfo_y(),
@@ -630,10 +668,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
                     self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
                                      (20, KVM_BAND_HEIGHT))
-                    app.profiles = app.profiles.with_profile(
-                        replace(original_profile, platform="sample-json", capacity=1,
-                                paths={"active": "unused"}, mapping=((1, 1),)))
-                    app._render_rows()
+                    edit_visible_profile_capacity(1)
                     root.update()
                     self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
                                      (1, 61))

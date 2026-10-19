@@ -8,9 +8,11 @@
 B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities
 ```
 
-共產生8組畫面及JSON：Tk scaling 1.0與1.5各搭配容量1、10、11、20。測試逐格切換容量，最後再以正常 profile 更新路徑將20切回1，確認單排/雙排父框尺寸跟著切換。1.0與1.5下幾何均一致；實際Tk scaling讀值約為1.0000、1.4985。
+目前保存的8張舊畫面及JSON涵蓋Tk scaling 1.0與1.5、容量1、10、11、20。它們可作為畫面幾何參考；產生時使用測試內直接替換 profile catalog 的舊方法，**不能**作為經 Profile Editor 持久化與正常切換的驗收證據。
 
-測試支援以 `B518_LI7_SCALING=1.0` 或 `1.5` 將兩種縮放分成獨立程序重跑。驗收矩陣的有效輸出來自上方不帶此filter的一次成功執行。之後重跑時，macOS LaunchServices/hiservices XPC 回報 `Connection invalid`，Tk 在建立第一個 root 時於 `NSMenuItem initWithTitle:action:keyEquivalent:` 以 `Invalid parameter not satisfying: aString != nil` 原生中止；分 scaling 單程序重跑也遇到相同環境錯誤，沒有改寫既有成功矩陣。
+LI7 acceptance test 已改為每一容量都在可見 Settings Profile Editor 中編輯容量與mapping欄位，按下實際「Apply」按鈕，並從偏好檔重新載入確認儲存值；20→1也走同一流程。新紀錄會填入 `profile_change_path`。目前尚未成功重跑這版測試，請勿把舊圖認作新流程的證據。
+
+測試支援以 `B518_LI7_SCALING=1.0` 或 `1.5` 將兩種縮放分成獨立程序重跑。既有完整矩陣曾成功執行，當時的擷取方式有效，但其容量來源是直接替換測試 profile catalog，故不能滿足目前要求的正常 Profile Editor 儲存/切換驗收。2026-10-19 18:24:07重跑完整矩陣的命令為 `B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry/revised-full PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities`。macOS LaunchServices/hiservices XPC 回報 `Connection Invalid error for service com.apple.hiservices-xpcservice`，Tk在建立第一個root時於 `NSMenuItem initWithTitle:action:keyEquivalent:` 以 `Invalid parameter not satisfying: aString != nil` 原生中止；新版矩陣沒有產生。將scaling拆成獨立程序重跑也遇到相同環境錯誤。
 
 ## 凍結的幾何與量測
 
