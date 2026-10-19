@@ -3579,7 +3579,12 @@ class B518LogSolutionApp:
             status_id = "alarm.status.preparation_pending"
         else:
             status_id = "alarm.status.pending"
-        status = "{}\n{}".format(self._t(status_id), self._t("alarm.status.conflict_note"))
+        reason = next((item.event.detail.get("reason") for item in snapshot.events
+                       if item.event.kind == "round_alarm_created" and
+                       item.event.detail.get("alarm_id") == alarm.alarm_id), alarm.reason)
+        status = "{}\n{}\n{}: {}".format(
+            self._t(status_id), self._t("alarm.status.conflict_note"),
+            self._t("recovery.reason"), self._t("alarm.reason." + str(reason)))
         if self.round_alarm_message and self.round_alarm_message.winfo_exists():
             self.round_alarm_message.configure(text=self._t(
                 "alarm.body", round_label=self._t("alarm.round"), round_id=alarm.round_id,

@@ -32,6 +32,35 @@ class LanguageCatalogTests(unittest.TestCase):
         with patch.object(language_catalog, "LANGUAGE_RESOURCES", resources):
             self.assertEqual(language_catalog.translate("main.settings", "zh-TW"), "Settings")
 
+    def test_start_deadline_audit_events_capture_bilingual_explanations(self):
+        events = (
+            ("timeout", "NOTEST", {"reason": "start_deadline_no_activity",
+                                     "deadline_seconds": "120", "elapsed_seconds": "120"},
+             "timeout"),
+            ("round_alarm_created", "", {"reason": "start_deadline_no_activity"}, "alarm"),
+        )
+        expected = {
+            "timeout": (
+                "B518：開始期限 120 秒內未偵測到測試開始。來源收集已停止；這不代表已確認 ATE 故障。",
+                "B518: No test start was detected within 120 seconds. Source collection has stopped; this does not confirm an ATE failure.",
+            ),
+            "alarm": (
+                "B518 已建立警報：開始期限內未偵測到測試開始。",
+                "B518 alarm: No test start was detected within the configured start deadline.",
+            ),
+        }
+
+        for kind, status, detail, key in events:
+            with self.subTest(kind=kind):
+                captured = language_catalog.capture_round_event_message(
+                    kind, "B518", None, status, detail, "legacy")
+                record = captured.as_record()
+                self.assertEqual(record["message_id"],
+                                 "round.start_deadline.whole" if key == "timeout"
+                                 else "round.start_deadline.alarm.created")
+                self.assertEqual(record["zh-TW"], expected[key][0])
+                self.assertEqual(record["en"], expected[key][1])
+
     def test_shared_round_and_conflict_terms_use_the_approved_glossary(self):
         expected = {
             "test_round": ("Test Round", "測試輪次"),

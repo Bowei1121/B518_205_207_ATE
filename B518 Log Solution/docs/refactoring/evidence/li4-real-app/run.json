@@ -1,0 +1,52 @@
+{
+  "command": "PYTHONPATH=src python3 tools/smoke_li4_start_alarm_app.py",
+  "python": "3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ]",
+  "platform": "darwin",
+  "macos_version": "10.16",
+  "tk_patchlevel": "8.6.12",
+  "clock": "controlled monotonic clock; 5-second deadline, no wall-clock wait",
+  "app_pid": 98598,
+  "evidence": [
+    {
+      "phase": "alarm_pending",
+      "state": "AWAITING_REVIEW",
+      "results": [
+        "NOTEST",
+        "NOTEST"
+      ],
+      "window": {
+        "file": "main-review.png",
+        "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+        "window_owner_pid": 98598,
+        "physical_pixels": [
+          752,
+          1390
+        ]
+      },
+      "alarm": {
+        "file": "alarm-pending.png",
+        "window_title": "Round Monitoring Timeout",
+        "window_owner_pid": 98598,
+        "physical_pixels": [
+          1400,
+          736
+        ]
+      }
+    },
+    {
+      "phase": "alarm_acknowledged",
+      "state": "COMPLETED",
+      "result_available": true,
+      "acknowledged_at": "2026-10-19T16:41:49",
+      "window": {
+        "file": "main-complete.png",
+        "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+        "window_owner_pid": 98598,
+        "physical_pixels": [
+          752,
+          1390
+        ]
+      }
+    }
+  ]
+}

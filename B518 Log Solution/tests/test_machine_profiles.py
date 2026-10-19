@@ -23,6 +23,38 @@ def valid_profile():
 
 
 class MachineProfileTests(unittest.TestCase):
+    def test_fct_start_timeout_is_120_in_default_saved_and_imported_profiles(self):
+        catalog, _project, _machine = migrate_legacy_preferences({})
+        self.assertEqual(catalog.get("B518", "FCT").timeouts["start"], 120)
+        self.assertEqual(catalog.get("B518", "DFU").timeouts["start"], 30)
+        self.assertEqual(catalog.get("B482", "BT").timeouts["start"], 30)
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            legacy_catalog = ProfileCatalog.from_dict({
+                "schema_version": 1,
+                "profiles": [dict(valid_profile(), machine="FCT", platform="atlas",
+                                   timeouts={"start": 30, "test": 480, "round": 7200})],
+            })
+            raw = legacy_catalog.to_dict()
+            raw.update({"project": "B518", "machine": "FCT"})
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            migrated, _, _, _ = MachineProfileStore(path).load()
+            self.assertEqual(migrated.get("B518", "FCT").timeouts["start"], 120)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["profiles"][0]
+                             ["timeouts"]["start"], 120)
+
+            store = MachineProfileStore(path)
+            imported = ProfileCatalog.from_dict({
+                "schema_version": 1,
+                "profiles": [dict(valid_profile(), machine="FCT", platform="atlas",
+                                   timeouts={"start": 30, "test": 480, "round": 7200})],
+            })
+            imported, _, _ = store.import_document(imported.to_json(), "B518", "FCT")
+            self.assertEqual(imported.get("B518", "FCT").timeouts["start"], 120)
+            reloaded, _, _, _ = MachineProfileStore(path).load()
+            self.assertEqual(reloaded.get("B518", "FCT").timeouts["start"], 120)
+
     def test_global_language_defaults_to_english_and_reloads_from_preferences_disk(self):
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "preferences.json"
