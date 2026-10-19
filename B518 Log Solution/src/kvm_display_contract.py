@@ -34,18 +34,22 @@ KVM_COLUMN_COUNT = 10
 
 class MarkerState(str, Enum):
     STANDBY = "standby"
+    PREPARING = "preparing"
     MONITORING = "monitoring"
     REVIEW = "review"
     COMPLETE = "complete"
+    MANUAL_STOP_COMPLETE = "manual_stop_complete"
 
 
 # True denotes black. Samples are ordered top-left, top-right, bottom-left,
 # bottom-right; locator geometry establishes the screen orientation first.
 MARKER_PATTERNS = {
     MarkerState.STANDBY: ((True, False), (False, True)),
+    MarkerState.PREPARING: ((False, True), (False, True)),
     MarkerState.MONITORING: ((True, True), (False, False)),
     MarkerState.REVIEW: ((True, False), (True, False)),
     MarkerState.COMPLETE: ((False, True), (True, False)),
+    MarkerState.MANUAL_STOP_COMPLETE: ((False, False), (True, True)),
 }
 
 
@@ -60,6 +64,8 @@ def state_for_round_snapshot(snapshot: Optional[RoundSnapshot]) -> MarkerState:
         return MarkerState.REVIEW
     if snapshot.state == RoundState.COMPLETED and snapshot.result_available:
         return MarkerState.COMPLETE
+    if snapshot.state == RoundState.PREPARING:
+        return MarkerState.PREPARING
     if snapshot.state == RoundState.RUNNING:
         return MarkerState.MONITORING
     return MarkerState.STANDBY

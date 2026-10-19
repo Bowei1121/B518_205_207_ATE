@@ -1324,6 +1324,8 @@ class B518LogSolutionApp:
             self._set_main_monitor_state("monitor.completed")
         elif snapshot and snapshot.state.value == "STOPPED" and snapshot.completion_reason == "manual_stop":
             self._set_main_monitor_state("monitor.stopped")
+        elif snapshot and snapshot.state.value == "PREPARING":
+            self._set_main_monitor_state("monitor.preparing")
         elif self._round_is_active():
             self._set_main_monitor_state("monitor.active")
         elif self._monitor_state_message not in {"monitor.starting", "monitor.start_failed",
@@ -1944,7 +1946,11 @@ class B518LogSolutionApp:
         self.rows_canvas.yview_moveto(0)
         self._update_rows_scroll_region()
         self._render_station_title()
-        self._set_main_monitor_state("monitor.active" if self._round_is_active() else "monitor.idle")
+        snapshot = self.rounds.snapshot()
+        if snapshot and snapshot.state.value == "PREPARING":
+            self._set_main_monitor_state("monitor.preparing")
+        else:
+            self._set_main_monitor_state("monitor.active" if self._round_is_active() else "monitor.idle")
         for slot in range(1, row_count + 1):
             row = tk.Frame(self.rows_box, background="#111111", width=ROW_WIDTH, height=ROW_HEIGHT)
             row.place(x=0, y=(slot - 1) * (ROW_HEIGHT + ROW_GAP), width=ROW_WIDTH, height=ROW_HEIGHT)
@@ -2006,7 +2012,9 @@ class B518LogSolutionApp:
     def _round_is_active(self) -> bool:
         rounds = getattr(self, "rounds", None)
         snapshot = rounds.snapshot() if rounds is not None else None
-        return snapshot is not None and snapshot.state.value in {"RUNNING", "AWAITING_REVIEW"}
+        return snapshot is not None and snapshot.state.value in {
+            "PREPARING", "RUNNING", "AWAITING_REVIEW",
+        }
 
     def _refresh_machine_choices(self) -> None:
         self.project_choice.configure(values=self.profiles.projects)
@@ -2089,7 +2097,7 @@ class B518LogSolutionApp:
         if getattr(self, "_closing_ui", False):
             return
         current = self.rounds.snapshot()
-        if current is not None and current.state == "RUNNING":
+        if current is not None and current.state in {"PREPARING", "RUNNING"}:
             return
         station = self.station.get().upper()
         try:
@@ -2133,10 +2141,12 @@ class B518LogSolutionApp:
                               {"reason": str(error)})
             return
         self._set_monitor_controls(True)
+        if snapshot.state.value == "PREPARING":
+            self._set_main_monitor_state("monitor.preparing")
 
     def stop_monitor(self) -> None:
         snapshot = self.rounds.snapshot()
-        if snapshot is not None and snapshot.state in {"RUNNING", "AWAITING_REVIEW"}:
+        if snapshot is not None and snapshot.state in {"PREPARING", "RUNNING", "AWAITING_REVIEW"}:
             self.rounds.stop()
 
     def _render_event_record(self, record: tuple[str, object, Optional[str]]) -> str:
