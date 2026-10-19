@@ -43,7 +43,7 @@
 
       <section id="te"><p class="section-label">TE 操作指南</p><h2>開始前確認</h2><ul><li>已開啟 B518 Log Solution，且測試機將產生的 Log 資料夾可由此 Mac 讀取。</li><li>畫面右上角的主看板不被 Atlas 或 BT HMI 覆蓋，供 KVM 擷取結果。</li><li>每次新一輪測試前都要按「開始監控」；程式會記錄本輪開始時間及原有 Log；原本就存在且沒有更新的 CSV 不會當成本輪結果。</li></ul></section>
 
-      <section id="quick-start"><h2>快速上手</h2><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」。</li><li><strong>選工站並設定路徑。</strong>選擇 DFU、FCT 或 BT，依下方說明按「選擇」挑選正確根目錄。</li><li><strong>按儲存。</strong>工站、路徑和逾時值會一起保存；取消不會保存修改。</li><li><strong>開始監控。</strong>按主畫面「開始監控」，或使用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。看到「啟動中」表示程式正在記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果；完成後會顯示「監控中」。</li><li><strong>再開始操作測試機。</strong>等待監控進入「監控中」後才啟動測試。測試過程中確認 Slot 與 SN 是否正確。</li><li><strong>讀取最終結果。</strong>待 PASS、FAIL、NOTEST 或 TIMEOUT 出現後，依「判讀結果」處置。下一輪請再次按開始監控。</li></ol>
+      <section id="quick-start"><h2>快速上手</h2><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」。</li><li><strong>選工站並設定路徑。</strong>選擇 DFU、FCT 或 BT，依下方說明按「選擇」挑選正確根目錄。</li><li><strong>按儲存。</strong>工站、路徑和逾時值會一起保存；取消不會保存修改。</li><li><strong>開始監控。</strong>按主畫面「開始監控」，或使用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。看到「啟動中」表示程式正在記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果；完成後會顯示「監控中」。</li><li><strong>再開始操作測試機。</strong>等待監控進入「監控中」後才啟動測試。測試過程中確認 Slot 與 SN 是否正確。</li><li><strong>讀取最終結果。</strong>待 PASS、FAIL、NOTEST 或 TIMEOUT 出現後，依「判讀結果」處置。先依畫面完成必要的警報確認、輪次取消或啟動故障復位，再明確按「開始監控」建立下一輪。</li></ol>
       </section>
 
       <section id="paths"><h2>設定讀取路徑</h2><p class="note warning"><strong>專案適用警語：</strong>本說明書是以 B482 專案製作而成，需根據自身專案選擇正確路徑。</p><p>路徑必須存在且可讀取。空白、已移除或無權限的路徑會使程式拒絕開始監控。下列皆為<strong>目錄結構示意</strong>，請依實際測試機位置選取根目錄。</p>
@@ -66,7 +66,7 @@
         </div>
         <p class="note"><strong>DFU 欄位名稱提醒：</strong>App 目前顯示「最終結果根路徑 (unitest)」，但此部署請依實機路徑選取 <code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code>。本手冊只更新操作說明，不修改程式。</p>
         <p class="note"><strong>BT CaseInfo：</strong>CaseInfo 欄位可以留空，但建議同樣選取 <code>/vault/B482_RFTEST/TestData</code>；程式才能在最終 CSV 到達前呈現測試活動與 SN。若只靠最終 CSV，測試尚未產生結果時可能達到等待開始逾時。</p>
-        <p class="note"><strong>逾時預設值：</strong>DFU 和 FCT 為等待開始 30 秒／測試上限 480 秒；BT 為 30 秒／240 秒。可在各工站設定中改成正整數秒數。</p>
+        <p class="note"><strong>逾時預設值：</strong>DFU 為等待開始 30 秒／測試上限 480 秒；B518/FCT 為等待開始 120 秒／測試上限 480 秒；BT 為 30 秒／240 秒。工程師可在各工站設定中調整為正整數秒數。</p>
         <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="設定頁的工站下拉選單，提供 DFU、FCT 和 BT" data-caption="工站選擇"><figcaption>圖 2：切換工站後，程式會顯示該工站對應的路徑欄位與 Slot 數。</figcaption></figure>
         <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.36.png" alt="BT 設定頁，含 TestData、CaseInfo 和兩個逾時欄位" data-caption="BT 設定"><figcaption>圖 3：BT 設定範例。兩個路徑欄位都選取 TestData；CaseInfo 可選填，建議填寫。</figcaption></figure>
         <h3>依圖 3 設定 BT 路徑並儲存</h3><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」，確認目前在「監控設定」分頁。</li><li><strong>選擇 BT 工站。</strong>在「工站」下拉選單選取 <code>BT</code>，畫面會顯示 BT TestData、BT CaseInfo 與兩個逾時欄位。</li><li><strong>設定 TestData。</strong>在「BT TestData 根路徑」右側按「選擇」，選取 <code>/vault/B482_RFTEST/TestData</code>，再確認完整路徑已出現在欄位中。</li><li><strong>設定 CaseInfo。</strong>在「BT CaseInfo 根路徑」右側按「選擇」，同樣選取 <code>/vault/B482_RFTEST/TestData</code>。此欄位可留空，但建議設定，讓測試進行時能提早顯示 SN 與 TESTING。</li><li><strong>確認逾時秒數。</strong>BT 預設為等待開始測試逾時 30 秒、測試時間上限 240 秒；依產線需要調整時，兩個值都必須是正整數。</li><li><strong>儲存設定。</strong>按右下角「儲存」，回到主畫面後才可按「開始監控」。按「取消」或直接關閉設定視窗都不會保存本次修改。</li></ol>
@@ -109,7 +109,7 @@
         <details><summary>一直是 WAITING 或整輪未開始警報</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。若開始期限到時整輪仍沒有可信活動或有效結果，未開始 Slot 會定案 NOTEST、停止來源並進入待確認；在警報視窗按「確認」才算處理完成，關閉視窗不會確認。若本輪已有任一 Slot 的可信活動或結果，不會建立整輪未開始警報；各 Slot 仍依自己的測試期限處理。</p></details>
         <details><summary>顯示「SN 讀取失敗 / FAIL」</summary><p>DFU/FCT 從 active 的 records.csv 讀可信 SN；若 active 消失前都未讀到可信 SN，會判 FAIL。請提供該 Slot 的 active records.csv 與最終結果 records.csv 給開發者。</p></details>
         <details><summary>個別 Slot TIMEOUT</summary><p>從首次 TESTING／COMPLETING 起算，包含等待最終結果的時間；逾時只會標記該 Slot，其他未結束 Slot 繼續監控，已完成結果保留。先確認最終 CSV 是否遲到、寫在別的根目錄，或測試機本身停住。</p></details>
-        <details><summary>啟動失敗後如何復位或開始下一輪</summary><p>先依錯誤訊息修正路徑或權限，再按主畫面「確認並復位啟動故障」。這會結束失敗請求或取消並保留已建立的失敗輪次，不會重試或啟動測試機；App 重開後也可依保存的故障紀錄復位。之後須再次明確按「開始監控」才建立新輪。若畫面要求取消尚未確認的輪次，按「取消未確認輪次並保留紀錄」後再開始。</p></details>
+        <details><summary>啟動失敗後如何復位或開始下一輪</summary><p>先依錯誤訊息修正路徑或權限，再按主畫面「確認並復位啟動故障」。這會結束失敗請求或取消並保留已建立的失敗輪次，不會重試或啟動測試機；App 重開後也可依保存的故障紀錄復位。依畫面完成所有必要的警報確認、未確認輪次取消及啟動故障復位後，再明確按「開始監控」建立新輪。</p></details>
         <details><summary>BT 出現「人工覆核」</summary><p>BT 會鎖定本輪第一個時間戳批次。若看到不同批次，或同一 Thread 出現另一個最終結果，程式會詢問是否接受新檔案。只有確認它屬於本輪、同一台機台要看的資料時才選「是」；不確定時選「否」並把 Session 和原始 Log 回報。</p></details>
         <details><summary>BT 為何先顯示 TESTING，再有 PASS／FAIL？</summary><p>設定 CaseInfo 後，程式會讀取 Thread1–4 的 CaseInfo 活動並對應主畫面 Slot 1–4，可在最終 CSV 到達前顯示測試中與條碼。最終結果仍以 TestData 下的 PASSED／FAILED CSV 判定。</p></details>
       </div></section>
