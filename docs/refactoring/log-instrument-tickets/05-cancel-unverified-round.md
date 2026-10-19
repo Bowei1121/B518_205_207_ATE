@@ -34,6 +34,8 @@
 
 分支：`codex/li5-manual-cancel-restart`
 基底：`313ef8a22394e3e55af27f272935862ef39d0ff1`
+整合分支：`codex/log-instrument-1-2`
+整合 commit：`3bc95142404e0b0f42438550097a4ebef3f5082d`
 
 - 新增本機明確取消未確認輪次的操作，保留原逐格資料、audit 事件及停止／期限／警報原因；取消後才允許明確開始一個新輪次。來源尚未 ready 的人工停止和已確認的整輪 deadline，在取消前將 Start、快捷鍵及 Coordinator 公開 start 入口鎖定，狀態標記維持 REVIEW。
 - 來源已 ready 的 LI2 正常人工停止既有放行語意保持；有待解衝突、未確認警報或未完成準備時不會因此解鎖。取消不能代替衝突選擇、警報確認或啟動故障復位。
@@ -49,4 +51,4 @@
 
 ### 範圍與限制
 
-只使用合成的本地來源與受控計時；未連接 bridge TCP、KVM_Log、JetKVM、LabVIEW 或現場 ATE。未推送遠端、更新／關閉 GitHub Issue 或整合至 `codex/log-instrument-1-2`；待 merger 將此分支整合後完成遠端和 Issue 收尾。
+只使用合成的本地來源與受控計時；未連接 bridge TCP、KVM_Log、JetKVM、LabVIEW 或現場 ATE。整合分支已推送至 GitHub 與內部 Gitea；本機／遠端 SHA 與 Issue #82 關閉狀態於完成紀錄確認。
