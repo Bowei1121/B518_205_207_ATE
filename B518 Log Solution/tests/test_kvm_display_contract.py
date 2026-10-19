@@ -8,7 +8,10 @@ from kvm_display_contract import (
     KVM_CELL_WIDTH,
     KVM_COLUMN_COUNT,
     KVM_ROW_STEP,
+    LOCATOR_LEFT,
+    LOCATOR_RIGHT,
     LOCATOR_SIZE,
+    LOCATOR_WHITE_SIZE,
     MARKER_PATTERNS,
     MARKER_SIZE,
     MarkerState,
@@ -74,7 +77,7 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
 
     def test_six_fixed_black_white_patterns_are_unique_and_decodable(self):
-        self.assertEqual(CONTRACT_VERSION, "1.1")
+        self.assertEqual(CONTRACT_VERSION, "1.2")
         self.assertEqual(len(set(MARKER_PATTERNS.values())), 6)
         self.assertEqual(MARKER_SIZE, 26)
         self.assertEqual(MARKER_PATTERNS[MarkerState.PREPARING],
@@ -100,6 +103,11 @@ class KvmDisplayContractTests(unittest.TestCase):
 
     def test_locator_and_two_row_geometry_keep_marker_separate_from_result_cells(self):
         self.assertEqual(LOCATOR_SIZE, 22)
+        self.assertEqual(LOCATOR_LEFT, (0, 2))
+        self.assertEqual(LOCATOR_RIGHT, (320, 2))
+        self.assertEqual(LOCATOR_RIGHT[0] - LOCATOR_LEFT[0], 320)
+        self.assertEqual(LOCATOR_RIGHT[0] + LOCATOR_SIZE - LOCATOR_LEFT[0], 342)
+        self.assertEqual(LOCATOR_WHITE_SIZE, 8)
         self.assertGreater(KVM_FIRST_ROW_Y, MARKER_SIZE)
         self.assertEqual(KVM_ROW_STEP, 27)
         self.assertEqual(KVM_CELL_STEP, KVM_CELL_WIDTH)
