@@ -2,7 +2,7 @@
 
 分支：`codex/li3-startup-failure-reset`
 基底：`ba026325f167a67f8f623aebd0849d8dccc5e550`
-狀態：實作與本機驗收完成；待整合分支同步、遠端推送及 GitHub Issue 更新。
+狀態：已整合驗收並推送到 GitHub 與內部 Gitea；GitHub #80 已留下完成紀錄並以 completed 關閉。
 
 ## 修改與驗收對照
 
@@ -25,4 +25,8 @@
 
 ## 範圍與限制
 
-測試涵蓋本程式公開輪次行為、App/Tk 畫面、audit/App 診斷持久化及磁碟重建。KVM_Log、JetKVM、Dock 自動化、LabVIEW、現場 ATE 流程不屬本票驗收。此紀錄不代表已推送、整合或關閉 Issue #80。
+測試涵蓋本程式公開輪次行為、App/Tk 畫面、audit/App 診斷持久化及磁碟重建。KVM_Log、JetKVM、Dock 自動化、LabVIEW、現場 ATE 流程不屬本票驗收。
+
+## 整合結果
+
+已整合至 `codex/log-instrument-1-2`，LI3 整合 commit `cd0ccb0698cc55ee2625f5b35e7e7c878e9e6c47`；票務紀錄修正後 commit `6e7842563e285ac0fb61ab08f0f9fc87e9ca8354`。整合後重跑核心+準備 64/64、audit/AppEvent/契約 61/61、真 Tk 7/7，`git diff --check` 通過。GitHub 與內部 Gitea 遠端 SHA 均核對為 `6e78425eda9d2eccc58614e1a0a1780e70b406fb`。GitHub #80 已新增完成紀錄並以 completed 關閉，回讀確認 CLOSED/COMPLETED。
