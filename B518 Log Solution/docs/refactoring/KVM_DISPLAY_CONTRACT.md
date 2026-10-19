@@ -1,54 +1,44 @@
-# KVM display contract 1.1
+# KVM display contract 1.2
 
-This contract describes the Tk app's machine-readable top band. Ticket 16 upgrades the original Ticket 12 contract 1.0 to 1.1: a row-count rail distinguishes a real single-row layout from an unreadable second row. App and upper computer must update together; a 1.0 frame without this rail is rejected by the 1.1 consumer. Actual JetKVM capture and field deployment remain unverified; local Tk/Quartz frame integration is recorded under evidence/ticket-16/contract-1.1/.
+This is the local Log Solution display contract. It defines the Tk status band that a separate consumer may inspect. It does not define or implement a transport protocol, KVM recognition, or an ATE control path. A consumer must update with the App because version 1.2 adds PREPARING and MANUAL_STOP_COMPLETE patterns and moves the left locator; a version 1.1 consumer cannot safely interpret every 1.2 frame.
 
 ## Coordinate spaces and geometry
 
-All coordinates below are Tk widget coordinate units relative to the `KVM RESULT` frame. They are logical app coordinates, not guaranteed physical display pixels. The frame is laid out in a 376-unit-wide, fixed-width app. A capture system must measure its own physical-pixel-to-Tk-unit scale; it must not assume Retina scale, `tk scaling`, or an arbitrary remote-desktop resize factor. The app's tests use Tk scaling 1.0 and 1.5, but this does not establish remote KVM compatibility.
+Coordinates are Tk units relative to the `KVM` parent frame. They are not physical pixels. On the verified macOS desktop, the Tk content view rendered at 2.0 physical pixels per Tk unit; consumers must measure their own capture scale and must not infer it from Tk scaling or assume that it applies to remote captures.
 
 | Element | Tk geometry | Purpose |
 | --- | --- | --- |
-| Left locator | origin `(82, 2)`, 22×22; white 8×8 inset at `(3, 3)` | Asymmetric orientation/scale anchor |
-| Row-count rail | origin `(130, 2)`, 26×14; two 10×10 cells, 2-unit gap and white quiet margin | `B W` = one row, `W B` = two rows; other patterns reject |
-| State marker | origin `(278, 0)`, 26×26 | 2×2 state pattern, no text required |
-| Right locator | origin `(320, 2)`, 22×22; white 8×8 inset at `(11, 11)` | Opposite asymmetric orientation/scale anchor |
-| Result cell | 34×26, 27-unit row step; first row begins at y=34 | Fixed ten-column product result band |
+| Left locator | origin `(0, 2)`, 22×22; white 8×8 inset at `(3, 3)` | Orientation/scale anchor above the first strip cell |
+| Row-count rail | origin `(130, 2)`, 26×14; two 10×10 cells with a 2-unit gap | `B W` = one row; `W B` = two rows |
+| State marker | origin `(278, 0)`, 26×26 | Four-cell state pattern |
+| Right locator | origin `(320, 2)`, 22×22; white 8×8 inset at `(11, 11)` | Opposite asymmetric orientation anchor |
+| Result cells | first row y=34; 34×26 cells; 27-unit row step | Ten fixed columns; second row for positions 11–20 |
 
-The row-count rail is independent of the four state patterns and says nothing about result availability. It is drawn from the same frozen capacity as the product band, during the same snapshot-render callback. The one-row consumer samples exactly ten cells; the two-row consumer requires all first-row cells to be in capacity, at least one second-row cell in capacity, and the entire second row visible. Missing, low-contrast or unknown row patterns reject; unknown second-row pixels must never be treated as a valid capacity-ten layout.
+The parent frame is 360 Tk units wide. The first result cell begins at x=0; the left locator is fully inside the parent and starts at x=0, so rendering does not rely on negative Canvas coordinates or clipping. The parent has a 2-unit top inset, 338-unit right inset, and 37-unit bottom inset for capacities 1–10 or 64-unit bottom inset for capacities 11–20. In the main window the parent begins 8 Tk units from the Tk content's left edge. The left locator's inset is asymmetric: its white cell is 3/3/11/11 units from the left/top/right/bottom edges; the right locator retains the opposite `(11, 11)` inset. The locators are 320 units apart.
 
-The state marker uses a white background and a 2-unit quiet zone. Each black/white cell is 10×10, with a 2-unit horizontal and vertical gap. The locator, state marker, and product band occupy separate regions. For capacity 1–10, the result band is one row of ten cells; for 11–20 it is two rows of ten, with positions 1–10 above 11–20. Capacity-external cells remain black. The marker is above the band and does not use its black cells. Result-cell width and horizontal pitch share one contract constant to keep the UI and stated geometry aligned.
+Each row always has ten cells. Capacity 1–10 displays one row; capacity 11–20 displays two. Unused capacity cells stay black. The row rail is rendered from the same frozen snapshot/capacity as the strip. It is independent of result availability. A top marker cannot detect every occlusion: a separate window covering only a result strip while leaving the upper locator visible may evade locator-based occlusion checks. Consumers must still validate each required result cell.
 
-## State patterns
+## Six state patterns
 
-Rows are top-to-bottom and columns left-to-right. `B` is `#000000`, `W` is `#ffffff`. The locators establish orientation; OCR is not part of state recognition.
+Rows are top-to-bottom, columns left-to-right. `B` is `#000000`; `W` is `#ffffff`. The pattern table is owned by `src/kvm_display_contract.py` and `classify_kvm_frame_samples` returns unknown for missing, low-contrast, reversed-locator, or unlisted samples.
 
-| State | Top row | Bottom row | Snapshot meaning |
-| --- | --- | --- | --- |
-| Standby | `B W` | `W B` | No released current round, including not started, start failure, or manual stop |
-| Monitoring | `B B` | `W W` | Round is running/preparing with no required confirmation |
-| Review | `B W` | `B W` | Conflict or unacknowledged round alarm; collection may continue or be stopped |
-| Complete | `W B` | `B W` | Snapshot says COMPLETED and results are available |
+| State | Pattern | Snapshot meaning |
+| --- | --- | --- |
+| STANDBY | `B W / W B` | No released current round, including not started, start failure, or cancelled round |
+| PREPARING | `W B / W B` | Start accepted; source baseline/preparation is still pending; ATE must not start |
+| MONITORING | `B B / W W` | Source preparation is complete; new round data can be collected |
+| REVIEW | `B W / B W` | Conflict, unacknowledged alarm, or start failure requires operator action |
+| COMPLETE | `W B / B W` | State is completed, full results are available, and no confirmation is pending |
+| MANUAL_STOP_COMPLETE | `W W / B B` | A manually stopped round has full results available and no confirmation pending |
 
-Mapping precedence is explicit: (1) any awaiting-review state, pending conflict, or unacknowledged round alarm maps to Review; (2) otherwise, `COMPLETED` plus `result_available` maps to Complete; (3) otherwise, `RUNNING` maps to Monitoring; (4) every other state maps to Standby. Thus no pending confirmation can appear Complete, even if a malformed or transient snapshot also carries `result_available`. Closing a review window does not change the snapshot. The Tk renderer obtains one `RoundSnapshot` and updates result cells and marker during the same UI callback. It redraws the marker only when the state changes to avoid flashing.
+Review has priority over every released state. Monitoring is not proof that the ATE has started; only trusted channel activity or a valid result provides that evidence. Complete is not equivalent to all PASS: FAIL, NOTEST, TIMEOUT, or STOPPED may be part of a complete result. Closing a review window does not acknowledge it. A fresh round is required before a prior released result can be treated as current-round output.
 
-## Sampling and rejection limits
+The classifier first validates both asymmetric locator samples, then the four state-cell samples. Its grayscale thresholds are part of the local helper; they are a minimum sample-quality gate, not a validated tolerance for remote compression, perspective, occlusion, or JetKVM capture.
 
-Before sampling the four state cells, verify orientation from both asymmetric locators. The public `classify_kvm_frame_samples` helper expects grayscale averages at (in order) the left locator's near white inset, left far black area, right near black area, and right locator's far white inset. Each locator sample must pass the same white (`176–255`) or black (`0–80`) threshold for the expected polarity. Missing, low-contrast, out-of-range, or reversed locator samples produce **unknown** before state classification. Then sample the four marker-cell centers top-left, top-right, bottom-left, bottom-right. Values `0–80` classify as black and `176–255` as white. Values `81–175`, missing cells, out-of-range values, or a four-bit pattern outside this contract produce **unknown**, never Complete. This is a minimum input-quality gate, not a validated remote-image recognizer. Sampling crop size, compression, perspective, occlusion, and inter-frame consistency must be verified by the consumer.
+## Local verification artifacts
 
-The automated classifier tests exact patterns, orientation rejection, and low-contrast, missing, and unknown samples. Tk tests cover scale settings 1.0 and 1.5 and ensure the marker stays above the result band while twenty detail rows scroll. Actual KVM hardware, transport/compression and remote scaling remain unverified. Ticket 16 has now verified independent raw captures of actual Tk windows for capacities 1/4/6/10/11/12/20 and four-state controlled flows through the upper-computer frame interface; these are local Quartz captures, not JetKVM evidence. Ticket 16 must measure the deployed capture path and repeat the sample recognition against that system.
+The actual Tk acceptance matrix is documented in `evidence/li7-geometry/README.md`. It covers Tk scaling 1.0 and 1.5, capacities 1/10/11/20, Profile Editor apply/reload, widget bounds, capacity-external black cells, and Tk content-view captures. These captures are native App/Tk rendering, not WindowServer screenshots or remote KVM evidence. The content-view measurement was 2.0 physical pixels per Tk unit on the tested desktop; titlebar/window bounds are reported separately.
 
-## Reproducible artifacts
+## Compatibility and scope
 
-Ticket 12's controlled Tk screenshots and run metadata are stored under `evidence/ticket-12/`. They contain synthetic/anonymized values only and are not actual KVM captures. `tools/smoke_state_marker_app.py` recreates the four states through the app's shared round interface and captures the app window on macOS.
-
-## JetKVM prototype reference
-
-The separate `B518_JetKVM_Log` repository was inspected as a read-only design reference. Its README describes a JetKVM upper-computer prototype that captures a remote frame and performs template matching, while explicitly keeping local Log reading in an independent project with no code dependency. Its `JetKVMClient.frame` stores decoded BGR frames, which gives Ticket 16 a useful measurement point: record the actual frame width/height and compare native capture pixels with this app's Tk-unit geometry. The prototype's multiscale matching diagnostics are a useful investigation pattern, not validation of this marker's recognition thresholds.
-
-That repository's historical FCT image is not a current-device sample and contains no Ticket 12 two-by-two marker contract. It was not copied into this repository or used as acceptance evidence. Ticket 16 must capture the deployed app through the actual JetKVM path and independently validate orientation, physical dimensions, transport/compression, and marker classification.
-
-## Version 1.1 controlled integration
-
-The 2026-10-05 Spec rereview found that the original upper recognizer always sampled twenty cells, although the App hides row two at capacity ten or below. Synthetic frames painted twenty cells for every capacity and hid the fault. TDD reproduced this at the raw-frame/round-gate seam. Version 1.1 adds only the independent row rail; locators, status colors and four state patterns keep their geometry and semantics. The updated consumer rejects legacy 1.0, cropped or uniformly occluded second rows and inconsistent two-row capacity.
-
-`tools/smoke_ticket16_layout_app.py --output <isolated-evidence-directory>` produces actual Tk/Quartz monitoring and completed captures through configured sample-json sources, non-identity mapping and disk audit reconstruction. The separate upper repo `tools/verify_ticket16_layout_frames.py` reads these pixels through its frame gate and fake action outlet. `tools/smoke_state_marker_app.py` supplies new 1.1 conflict/alarm/complete/new-round captures for the upper frame replay. Original Ticket 12 1.0 samples remain historical evidence and are not claimed as current-version acceptance.
+Version 1.1 predates the left locator at x=0 and has no PREPARING or MANUAL_STOP_COMPLETE state. Its samples and consumers remain historical and are not rewritten as 1.2 evidence. Do not send version 1.2 frames to a 1.1 consumer as if the versions were compatible. The `B518_JetKVM_Log` project owns its own recognition and bridge behavior; `monitor_start`, `check_start`, and `check_finish` are implemented there. Log Solution does not add TCP commands, ACK handling, JetKVM recognition, Dock automation, LabVIEW behavior, or field ATE validation.

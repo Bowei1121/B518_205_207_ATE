@@ -599,33 +599,62 @@ class LogSolutionUiTests(unittest.TestCase):
                                 )
                         scale_readback = float(root.tk.call("tk", "scaling"))
                         self.assertAlmostEqual(scale_readback, scaling, places=2)
-                        key = "li7-s{}-capacity-{}".format(str(scaling).replace(".", "p"),
-                                                            capacity)
-                        if NSApplication is not None:
-                            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-                        root.lift()
-                        root.update()
-                        evidence = capture_tk_content_view_evidence(root, key, {
-                            "kvm": parent,
-                            "left_locator": left,
-                            "left_white_cell": left.white_cell,
-                            "right_locator": right,
-                            "right_white_cell": right.white_cell,
-                            "layout_marker": app.kvm_layout_marker,
-                            "state_marker": app.kvm_state_marker,
-                            "first_cell": app.kvm_result_blocks[1],
-                            "last_configured_cell": app.kvm_result_blocks[capacity],
-                            "last_cell": app.kvm_result_blocks[20],
-                        })
-                        physical_per_native_unit = (
-                            evidence["image_pixels"]["width"] / evidence["size"][0],
-                            evidence["image_pixels"]["height"] / evidence["size"][1],
-                        )
-                        self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
-                        self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
-                        record = {
+                        for language_index, language in ((0, ENGLISH),
+                                                         (1, TRADITIONAL_CHINESE)):
+                            app.language_menu.invoke(language_index)
+                            root.update()
+                            self.assertEqual(app.current_language, language)
+                            self.assertEqual((app.kvm_locator_left.winfo_x(),
+                                              app.kvm_locator_left.winfo_y(),
+                                              app.kvm_locator_left.winfo_width(),
+                                              app.kvm_locator_left.winfo_height()),
+                                             (0, 2, 22, 22))
+                            self.assertEqual((app.kvm_locator_right.winfo_x(),
+                                              app.kvm_locator_right.winfo_y(),
+                                              app.kvm_locator_right.winfo_width(),
+                                              app.kvm_locator_right.winfo_height()),
+                                             original_fixed["right_locator"])
+                            self.assertEqual((app.kvm_layout_marker.winfo_x(),
+                                              app.kvm_layout_marker.winfo_y(),
+                                              app.kvm_layout_marker.winfo_width(),
+                                              app.kvm_layout_marker.winfo_height()),
+                                             original_fixed["layout_marker"])
+                            self.assertEqual((app.kvm_state_marker.winfo_x(),
+                                              app.kvm_state_marker.winfo_y(),
+                                              app.kvm_state_marker.winfo_width(),
+                                              app.kvm_state_marker.winfo_height()),
+                                             original_fixed["state_marker"])
+                            self.assertEqual(app._display_capacity(), capacity)
+                            self.assertEqual(parent.winfo_height(), expected_parent_height)
+                            language_key = "en" if language == ENGLISH else "zh-TW"
+                            key = "li7-s{}-capacity-{}-{}".format(
+                                str(scaling).replace(".", "p"), capacity, language_key)
+                            if NSApplication is not None:
+                                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                            root.lift()
+                            root.update()
+                            evidence = capture_tk_content_view_evidence(root, key, {
+                                "kvm": parent,
+                                "left_locator": app.kvm_locator_left,
+                                "left_white_cell": app.kvm_locator_left.white_cell,
+                                "right_locator": app.kvm_locator_right,
+                                "right_white_cell": app.kvm_locator_right.white_cell,
+                                "layout_marker": app.kvm_layout_marker,
+                                "state_marker": app.kvm_state_marker,
+                                "first_cell": app.kvm_result_blocks[1],
+                                "last_configured_cell": app.kvm_result_blocks[capacity],
+                                "last_cell": app.kvm_result_blocks[20],
+                            })
+                            physical_per_native_unit = (
+                                evidence["image_pixels"]["width"] / evidence["size"][0],
+                                evidence["image_pixels"]["height"] / evidence["size"][1],
+                            )
+                            self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
+                            self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
+                            record = {
                             "tk_scaling": scale_readback,
                             "capacity": capacity,
+                            "language": language,
                             "profile_change_path": (
                                 "Settings profile editor entries + Apply button; "
                                 "verified persisted profile reload"),
@@ -662,10 +691,10 @@ class LogSolutionUiTests(unittest.TestCase):
                             "screenshot": evidence["screenshot"],
                             "native_bounds": evidence["native_bounds"],
                             "image_pixels": evidence["image_pixels"],
-                        }
-                        matrix.append(record)
-                        (evidence_dir / (key + ".json")).write_text(
-                            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+                            }
+                            matrix.append(record)
+                            (evidence_dir / (key + ".json")).write_text(
+                                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
                     self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
                                      (20, KVM_BAND_HEIGHT))
                     edit_visible_profile_capacity(1)

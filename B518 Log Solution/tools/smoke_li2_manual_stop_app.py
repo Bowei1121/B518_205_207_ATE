@@ -39,10 +39,21 @@ def wait_for(root, condition, label, timeout=12):
 
 
 def capture(root, path):
-    import Quartz
-    from Foundation import NSURL
+    from AppKit import NSApplication, NSBitmapImageFileTypePNG
 
     root.update()
+    native_window = next((item for item in NSApplication.sharedApplication().windows()
+                          if item.title() == root.wm_title() and item.isVisible()), None)
+    if native_window is None:
+        raise RuntimeError("Visible Tk NSWindow not found for {}".format(root.wm_title()))
+    view = native_window.contentView()
+    rect = view.bounds()
+    bitmap = view.bitmapImageRepForCachingDisplayInRect_(rect)
+    view.cacheDisplayInRect_toBitmapImageRep_(rect, bitmap)
+    data = bitmap.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
+    if not data.writeToFile_atomically_(str(path), True):
+        raise RuntimeError("Could not save Tk contentView capture: {}".format(path))
+    import Quartz
     windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionAll,
                                                 Quartz.kCGNullWindowID)
     candidates = [item for item in windows if item.get("kCGWindowLayer") == 0 and
@@ -53,20 +64,12 @@ def capture(root, path):
         item.get("kCGWindowBounds", {}).get("Height", 0)), default=None)
     if info is None or "B518" not in root.wm_title():
         raise RuntimeError("Could not identify the real B518 Tk window for this process")
-    image = Quartz.CGWindowListCreateImage(
-        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-        info["kCGWindowNumber"], Quartz.kCGWindowImageBoundsIgnoreFraming)
-    if image is None:
-        raise RuntimeError("Quartz could not capture the B518 Tk window")
-    writer = Quartz.CGImageDestinationCreateWithURL(
-        NSURL.fileURLWithPath_(str(path)), "public.png", 1, None)
-    Quartz.CGImageDestinationAddImage(writer, image, None)
-    if not Quartz.CGImageDestinationFinalize(writer):
-        raise RuntimeError("Could not write screenshot {}".format(path))
+    width, height = bitmap.pixelsWide(), bitmap.pixelsHigh()
     return {"file": path.name, "window_title": info["kCGWindowName"],
             "window_owner_pid": info["kCGWindowOwnerPID"],
             "window_bounds": dict(info.get("kCGWindowBounds", {})),
-            "physical_pixels": [Quartz.CGImageGetWidth(image), Quartz.CGImageGetHeight(image)]}
+            "physical_pixels": [width, height],
+            "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"}
 
 
 def marker_matches(app, snapshot):
@@ -129,8 +132,9 @@ def main():
                 created_monitors.append(monitor)
                 return monitor
 
-            # Stop during a blocked source factory. The full configured result
-            # must be visible before the factory is released.
+            # Stop during a blocked source factory. LI5 adds a local-review
+            # gate until MONITORING has been observed: preserve the full
+            # STOPPED result, keep REVIEW visible, and require explicit cancel.
             def blocked_factory(name, **kwargs):
                 entered.set()
                 if not release.wait(8):
@@ -149,22 +153,41 @@ def main():
                 prep_stop = app.rounds.snapshot()
                 if [item.status for item in prep_stop.results] != ["STOPPED", "STOPPED"]:
                     raise RuntimeError("Preparation stop did not settle the full capacity")
-                if state_for_round_snapshot(prep_stop).value != "manual_stop_complete":
-                    raise RuntimeError("Preparation stop did not render manual-stop marker")
+                if state_for_round_snapshot(prep_stop).value != "review":
+                    raise RuntimeError("Unverified preparation stop did not remain in REVIEW")
+                if not prep_stop.cancellation_available:
+                    raise RuntimeError("Unverified preparation stop did not offer local cancellation")
+                if str(app.start_button.cget("state")) != "disabled":
+                    raise RuntimeError("Unverified preparation stop allowed a new round before cancellation")
                 wait_for(root, lambda: marker_matches(app, app.rounds.snapshot())
                          and [app.status_rows[index]["status"].cget("text")
                               for index in (1, 2)] == ["STOPPED", "STOPPED"],
-                         "preparation-stop HMI rows and marker")
+                         "preparation-stop REVIEW HMI rows and marker")
                 result["screens"].append({
-                    "scenario": "preparing-stop", "round_id": prep_id,
+                    "scenario": "preparing-stop-review", "round_id": prep_id,
                     "results": [item.status for item in prep_stop.results],
                     "state": state_for_round_snapshot(prep_stop).value,
                     **capture(root, evidence / "preparing-stop.png")})
+                with patch.object(app_module.messagebox, "askyesno", return_value=True) as confirm:
+                    app.cancel_unverified_round_button.invoke()
+                    if not confirm.called:
+                        raise RuntimeError("Unverified preparation stop skipped cancel confirmation")
+                cancelled = app.rounds.snapshot()
+                if (cancelled.completion_reason != "unverified_round_cancelled" or
+                        cancelled.result_available or
+                        [item.status for item in cancelled.results] != ["STOPPED", "STOPPED"]):
+                    raise RuntimeError("Preparation-stop cancellation changed or released its results")
+                result["screens"].append({
+                    "scenario": "preparing-stop-cancelled", "round_id": prep_id,
+                    "results": [item.status for item in cancelled.results],
+                    "state": state_for_round_snapshot(cancelled).value,
+                    "result_available": cancelled.result_available,
+                    **capture(root, evidence / "preparing-stop-cancelled.png")})
             release.set()
             wait_for(root, lambda: not app.rounds.snapshot().source_preparation_pending,
                      "late source completion")
-            if app.rounds.snapshot().completion_reason != "manual_stop":
-                raise RuntimeError("Late source completion replaced the manual-stop reason")
+            if app.rounds.snapshot().completion_reason != "unverified_round_cancelled":
+                raise RuntimeError("Late source completion changed the cancelled round")
 
             # Normal monitoring, mixed terminal/progress state, and operator stop.
             wait_for(root, lambda: str(app.start_button.cget("state")) == "normal",
@@ -187,6 +210,8 @@ def main():
             mixed = app.rounds.snapshot()
             if [item.status for item in mixed.results] != ["PASS", "STOPPED"]:
                 raise RuntimeError("Manual stop did not preserve PASS and settle only the active slot")
+            if state_for_round_snapshot(mixed).value != "manual_stop_complete":
+                raise RuntimeError("Ready manual stop did not render MANUAL_STOP_COMPLETE")
             wait_for(root, lambda: marker_matches(app, app.rounds.snapshot())
                      and [app.status_rows[index]["status"].cget("text")
                           for index in (1, 2)] == ["PASS", "STOPPED"],

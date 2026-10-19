@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
 
 from kvm_display_contract import (
     CONTRACT_VERSION,
@@ -112,6 +113,37 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertEqual(KVM_ROW_STEP, 27)
         self.assertEqual(KVM_CELL_STEP, KVM_CELL_WIDTH)
         self.assertEqual(KVM_COLUMN_COUNT, 10)
+
+    def test_formal_contract_document_matches_the_shipped_1_2_display_contract(self):
+        contract = (Path(__file__).resolve().parents[1] / "docs" / "refactoring" /
+                    "KVM_DISPLAY_CONTRACT.md").read_text(encoding="utf-8")
+        self.assertIn("# KVM display contract 1.2", contract)
+        self.assertIn("(0, 2)", contract)
+        self.assertIn("(320, 2)", contract)
+        self.assertIn("(278, 0)", contract)
+        self.assertIn("(130, 2)", contract)
+        self.assertNotIn("KVM RESULT", contract)
+        self.assertIn("MANUAL_STOP_COMPLETE", contract)
+
+    def test_handoff_labels_local_monitoring_and_external_activity_owners(self):
+        handoff = (Path(__file__).resolve().parents[2] / "docs" / "refactoring" /
+                   "KVM_DISPLAY_CONTRACT_1.2_HANDOFF.md").read_text(encoding="utf-8")
+        self.assertIn("monitor_start", handoff)
+        self.assertIn("KVM_Log", handoff)
+        self.assertIn("Log Solution 不新增 TCP", handoff)
+        self.assertNotIn("新左定位點的精確幾何仍未定", handoff)
+
+    def test_li8_story_matrix_covers_every_story_once_with_ticket_and_evidence(self):
+        matrix = (Path(__file__).resolve().parents[2] / "docs" / "refactoring" /
+                  "log-instrument-tickets" / "LI8_STORY_EVIDENCE_MATRIX.md").read_text(
+                      encoding="utf-8")
+        rows = [line for line in matrix.splitlines()
+                if line.startswith("|") and line.count("|") == 5
+                and line.split("|")[1].strip().isdigit()]
+        story_ids = [int(line.split("|")[1].strip()) for line in rows]
+        self.assertEqual(story_ids, list(range(1, 89)))
+        self.assertTrue(all(line.split("|")[2].strip().startswith("LI") and
+                            line.split("|")[4].strip() for line in rows))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,68 @@
+{
+  "hf2-save-failure-en": {
+    "title": "Notifications and Recovery",
+    "geometry": "900x620+164+146",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 164.0,
+      "Y": 146.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-save-failure-en.png"
+  },
+  "hf2-save-failure-zh-TW": {
+    "title": "通知與恢復",
+    "geometry": "900x620+164+146",
+    "size": [
+      900,
+      620
+    ],
+    "controls": {
+      "save_retry": [
+        24,
+        562,
+        418,
+        34
+      ],
+      "archive_retry": [
+        458,
+        562,
+        418,
+        34
+      ]
+    },
+    "native_bounds": {
+      "X": 164.0,
+      "Y": 146.0,
+      "Width": 900.0,
+      "Height": 648.0
+    },
+    "image_pixels": {
+      "width": 1800,
+      "height": 1296
+    },
+    "screenshot": "hf2-save-failure-zh-TW.png"
+  }
+}

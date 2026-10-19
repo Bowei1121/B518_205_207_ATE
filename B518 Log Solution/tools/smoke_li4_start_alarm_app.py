@@ -80,9 +80,20 @@ class WaitingMonitor:
 
 
 def capture_window(title, path):
-    import Quartz
-    from Foundation import NSURL
+    from AppKit import NSApplication, NSBitmapImageFileTypePNG
 
+    native_window = next((item for item in NSApplication.sharedApplication().windows()
+                          if item.title() == title and item.isVisible()), None)
+    if native_window is None:
+        raise RuntimeError("Visible Tk NSWindow not found for {!r}".format(title))
+    view = native_window.contentView()
+    rect = view.bounds()
+    bitmap = view.bitmapImageRepForCachingDisplayInRect_(rect)
+    view.cacheDisplayInRect_toBitmapImageRep_(rect, bitmap)
+    data = bitmap.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
+    if not data.writeToFile_atomically_(str(path), True):
+        raise RuntimeError("Could not save Tk contentView capture: {}".format(path))
+    import Quartz
     windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionAll,
                                                 Quartz.kCGNullWindowID)
     matches = [item for item in windows if item.get("kCGWindowLayer") == 0 and
@@ -93,19 +104,11 @@ def capture_window(title, path):
         raise RuntimeError("Visible Tk window owned by this App process not found: {!r}; owned={}".format(
             title, [(item.get("kCGWindowName"), item.get("kCGWindowNumber")) for item in windows
                     if item.get("kCGWindowOwnerPID") == os.getpid()]))
-    image = Quartz.CGWindowListCreateImage(
-        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-        matches[0]["kCGWindowNumber"], Quartz.kCGWindowImageBoundsIgnoreFraming)
-    if image is None:
-        raise RuntimeError("Quartz could not capture Tk window {!r}".format(title))
-    writer = Quartz.CGImageDestinationCreateWithURL(
-        NSURL.fileURLWithPath_(str(path)), "public.png", 1, None)
-    Quartz.CGImageDestinationAddImage(writer, image, None)
-    if not Quartz.CGImageDestinationFinalize(writer):
-        raise RuntimeError("Screenshot failed: {}".format(path))
+    width, height = bitmap.pixelsWide(), bitmap.pixelsHigh()
     return {"file": path.name, "window_title": title,
             "window_owner_pid": os.getpid(),
-            "physical_pixels": [Quartz.CGImageGetWidth(image), Quartz.CGImageGetHeight(image)]}
+            "physical_pixels": [width, height],
+            "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"}
 
 
 def main():
