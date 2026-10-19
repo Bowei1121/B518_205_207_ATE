@@ -1,0 +1,404 @@
+{
+  "captured_at": "2026-10-19T15:42:53.562171+00:00",
+  "source_commit": "5b14451990511733e6fc9f909db93e8ca3d17af3",
+  "working_tree_dirty": true,
+  "source_files": {
+    "B518 Log Solution/scripts/capture_manual.py": "51a573aa282c98cd20563a30908e3d6e978ceba34d75254aa64d8faf635e71a6",
+    "B518 Log Solution/src/app_event_store.py": "040f0177f946f6084d935b30424f50f582ec84ec743125621debd428a3c9dd9a",
+    "B518 Log Solution/src/atlas_source_adapter.py": "513c00399a9a6567c82da708b4c871b9030bce9a64a11481a5041adfc321a58c",
+    "B518 Log Solution/src/audit_records.py": "1cba9375dd374bf9687e290467acd8cf0db6e6c49ce60ccfd952753bfa2ea141",
+    "B518 Log Solution/src/b482_source_adapter.py": "04bf73847c93eeee036d2818ba2315c9e3c078933386357c1a7c5e51133df0ed",
+    "B518 Log Solution/src/b518_log_solution.py": "855a62059eee4eb7b549c494592afa46e7f9cfc40c7b5c7f58535d866af3248d",
+    "B518 Log Solution/src/cleanup_reasons.py": "3806708500ba2c6a57fda1ffd3affe5e76847f07c20566d04524db6e073757e2",
+    "B518 Log Solution/src/configured_monitor.py": "109e94d44cd6b23b19404f9f1f7a2f87e26b7bff2e02efb79cd967cbceac0d7d",
+    "B518 Log Solution/src/global_hotkey.py": "472324bfe7ad3811beb72202d92930d1e193e7c551f811526efcbb782b8fd64a",
+    "B518 Log Solution/src/historical_event_display.py": "8c9d1c25ddb04770e311f3b641945499220ba8c2a46553a508fdc061e855ec5f",
+    "B518 Log Solution/src/historical_event_query.py": "07e274f86bcaf14d71e734dcd4fb75592bf9c380aec25c4df4faafff3f72bda3",
+    "B518 Log Solution/src/kvm_display_contract.py": "55c651550f59cba13a794951e250f8b785fabc2d15a495b16aaeb3ce99bac282",
+    "B518 Log Solution/src/language_catalog.py": "5d8424a915a40abcde5349601a52151ddd90dfde5ff6e71d6761b5e286c27790",
+    "B518 Log Solution/src/localized_notice.py": "854d87dbe7d02cba2d91b27734e4d3a6cecf0789e3fca283fe65e62233e5c3a9",
+    "B518 Log Solution/src/log_monitoring.py": "abd0cfb893dae417513468a75c132f9344c0af8f1e2f794fbd0c8844829b488d",
+    "B518 Log Solution/src/machine_profiles.py": "ea8a1ab6c021659360a8e31be678bb2729cba129976bfccc551d42a670b9ec72",
+    "B518 Log Solution/src/monitoring_files.py": "3549f3eac768bf2722a6b157a437265f28ec2735789568b7c060672d3d80259b",
+    "B518 Log Solution/src/monitoring_round.py": "c1a9a8596733851231a802a1e70372c3d575c0309b86e7c94f3872298a85040f",
+    "B518 Log Solution/src/platform_registry.py": "12e1e92cac0d575aac2745c1245869581851aebe1b9cea25df27dd885d489808",
+    "B518 Log Solution/src/round_archival.py": "9d76045a5799cedd6f27f56ce6d0684fe03da5529120b4e70a05d72cd4d82c44",
+    "B518 Log Solution/src/round_retention.py": "b89992ef93d364abfae69f3e89ed0ae959610a944c3748f7ed5421367718cdfe",
+    "B518 Log Solution/src/round_start_preparation.py": "671c1412619e2e7d6ff60e031e14a0fbb1c5cd0e3aea79e63059b2757b4fa92f",
+    "B518 Log Solution/src/rswmt_monitoring.py": "c93494fb3d95dfdf924f79ae303e91d26f6922fec844f199a981c7ea6860fd20",
+    "B518 Log Solution/src/rswmt_source_adapter.py": "3592c93fa76bf3da5ca76e6151c7a892e9c0b3634d27fa060297df08333ac312",
+    "B518 Log Solution/src/sample_json_monitor.py": "30def7e874d1b154910c926956b4f92233245f00e4253c2476c19b5a7b6c4a68",
+    "B518 Log Solution/tests/test_log_solution_ui.py": "1b93be024ea950271a94f78c4ca29899ecfcfa935966e8bbb3b95ab25dc74295",
+    "B518 Log Solution/tools/smoke_li1_preparation_app.py": "972fec42a9a071f18354c5c7337220fbdd90c3ada12251593826aac24f6efbd1",
+    "B518 Log Solution/tools/smoke_li2_manual_stop_app.py": "645aeb4bb60bc4e59c46ecdec2ee31139183d42ec30e06e97206744ac7fdc170"
+  },
+  "python": "3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ]",
+  "platform": "macOS-10.16-x86_64-i386-64bit",
+  "capture_method": "NSWindow.contentView live Tk view cache",
+  "scope": "Application content; not physical KVM, occlusion or native focus evidence",
+  "images": [
+    {
+      "file": "home-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed",
+      "source": "main-page-zh-TW.png",
+      "pixels": [
+        752,
+        1616
+      ],
+      "sha256": "5cc3b36ce1cfb52e70bb718ab8d2e2c19eaac121c234e43ec310ca95ca94e869"
+    },
+    {
+      "file": "home-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed",
+      "source": "main-page-en.png",
+      "pixels": [
+        752,
+        1616
+      ],
+      "sha256": "5a69ce5dae5b5ea69dca0048960e7d21e9f68f3931f586e3d983652db743fe99"
+    },
+    {
+      "file": "configuration-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "hf5-settings-zh-TW.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "10d22004394af686a679b58935b53f5aa96f90e6639faa9d9cec30d5e547309f"
+    },
+    {
+      "file": "configuration-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "hf5-settings-en.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "1974538599a0f2eb87383bc33316c3703f0860b9383c1ca171225aa7bc836a01"
+    },
+    {
+      "file": "events-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "settings-events-zh-TW.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "443c0a592036e569524b516a53616cedb7f6cf90d7add79673a50bf345dc5fa8"
+    },
+    {
+      "file": "events-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "settings-events-en.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "4b213155acff5120e3c5aaf49dad2c30458781b9507513f851ac947575070f2c"
+    },
+    {
+      "file": "retention-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "settings-retention-zh-TW.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "8c7c4aae738993be3c94cd4fcd77179214da751ef5c9a1c5c79f673b8ff3ce8f"
+    },
+    {
+      "file": "retention-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_profile_editor_uses_three_equal_action_columns_and_browse_label",
+      "source": "settings-retention-en.png",
+      "pixels": [
+        1360,
+        1120
+      ],
+      "sha256": "1620096f3d51d6d47cfef010ee2803fc90a224e436060dfe6938e58fbec583cd"
+    },
+    {
+      "file": "alarm-pending-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-alarm-pending-zh-TW.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "037bf48e03cb54153dea63d10e042f8b084ae0a1eac7ff158ec9208f5e1eba99"
+    },
+    {
+      "file": "alarm-pending-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-alarm-pending-en.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "4dcce17d19692e20b0298d2fb878cafe1a7b57630bdf0b282ff45ff6f8098e66"
+    },
+    {
+      "file": "alarm-acknowledged-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-alarm-acknowledged-zh-TW.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "8474fd5d549f8e1063c016b4e86973ee876263eb55bf309dfa2c94461da83703"
+    },
+    {
+      "file": "alarm-acknowledged-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-alarm-acknowledged-en.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "7a2eaf6f8f93419b6157be90c7ddbea81f07a1361a5570c1f96124f556bd70e1"
+    },
+    {
+      "file": "save-recovered-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-session-recovered-zh-TW.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "d8873bb0d036d8abb26bd682cda28deaf086da299a21912541cef4b12fb97cb1"
+    },
+    {
+      "file": "save-recovered-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once",
+      "source": "hf2-session-recovered-en.png",
+      "pixels": [
+        1800,
+        1240
+      ],
+      "sha256": "cadadf03efb6ebbe7b26732e2702b78b3d1fad5abf0969fcd4e556bb21af7877"
+    },
+    {
+      "file": "conflict-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages",
+      "source": "conflict-review-zh-TW.png",
+      "pixels": [
+        1920,
+        1200
+      ],
+      "sha256": "102a071c3136cfa308348da565ce93b0505c2f9866095bea68fe6f5a000f7d5d"
+    },
+    {
+      "file": "conflict-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages",
+      "source": "conflict-review-en.png",
+      "pixels": [
+        1920,
+        1200
+      ],
+      "sha256": "6be7b8fa059abe36e18247f366d7200e863028b78a4412ada1d0aa7b9e3f32c9"
+    },
+    {
+      "file": "round-alarm-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages",
+      "source": "round-alarm-zh-TW.png",
+      "pixels": [
+        1400,
+        680
+      ],
+      "sha256": "f9b52a50331f96d4046dd3cc109a297c379d0c2e4e7a33e2976b264a1dad460a"
+    },
+    {
+      "file": "round-alarm-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages",
+      "source": "round-alarm-en.png",
+      "pixels": [
+        1400,
+        680
+      ],
+      "sha256": "e000e42c06c621f55396f3b9984a32384717c7e44b3d39a9ea6c4fcf9e0f2ee0"
+    },
+    {
+      "file": "history-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "history-events-zh-TW.png",
+      "pixels": [
+        1920,
+        1360
+      ],
+      "sha256": "fa4a649d0aff768f36b94e20e0c7f8de1327cfe569e0441a7562af3e80982e07"
+    },
+    {
+      "file": "history-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "history-events-en.png",
+      "pixels": [
+        1920,
+        1360
+      ],
+      "sha256": "c7dbeaf66651b4a462aef7867ea8b627bbd39b1b1df906a1ef0ced3a1a716cf4"
+    },
+    {
+      "file": "diagnostics-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "app-diagnostics-zh-TW.png",
+      "pixels": [
+        1800,
+        1120
+      ],
+      "sha256": "813659e7e01d576933c51fafc534230968d06fb5e53e8e7e9f165b23637ba135"
+    },
+    {
+      "file": "diagnostics-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "app-diagnostics-en.png",
+      "pixels": [
+        1800,
+        1120
+      ],
+      "sha256": "027d28418315d0384504cfd399496b6118aaef0327a857e509e2749e1b58ecc6"
+    },
+    {
+      "file": "history-diagnostics-zh-TW.png",
+      "language": "zh-TW",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "history-diagnostics-zh-TW.png",
+      "pixels": [
+        1920,
+        1360
+      ],
+      "sha256": "e5619cd4588dd74bd362fff6710b3c6cac0cde5d6d68d4f09801715207fa58c2"
+    },
+    {
+      "file": "history-diagnostics-en.png",
+      "language": "en",
+      "test": "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail",
+      "source": "history-diagnostics-en.png",
+      "pixels": [
+        1920,
+        1360
+      ],
+      "sha256": "a7cd28a9be3b1e78936600a0a520bac989ca55a1c748560432592ba09e6b15b7"
+    },
+    {
+      "file": "preparing.png",
+      "language": "en",
+      "test": "tools/smoke_li1_preparation_app.py",
+      "source": "preparing.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "9035c98842fe9b281ca63109f10b6676738815a6a45dca7522363db616085f94"
+    },
+    {
+      "file": "monitoring.png",
+      "language": "en",
+      "test": "tools/smoke_li1_preparation_app.py",
+      "source": "monitoring.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "faf447fdd05c3751522d4e4b84f07f6cdc1da1f38f6f2852d1e0fa9849476f24"
+    },
+    {
+      "file": "activity.png",
+      "language": "en",
+      "test": "tools/smoke_li1_preparation_app.py",
+      "source": "activity.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "5764ba8d8ad1952c96106edca27f2bfb91900f962117e76f121683abac154a69"
+    },
+    {
+      "file": "complete.png",
+      "language": "en",
+      "test": "tools/smoke_li1_preparation_app.py",
+      "source": "complete.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "e9ddd2b8114a9e9de607da013e9479f9a18d4624fe5c387be4aa59e5be214df5"
+    },
+    {
+      "file": "preparing-stop.png",
+      "language": "en",
+      "test": "tools/smoke_li2_manual_stop_app.py",
+      "source": "preparing-stop.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "e4e1a9076857bf4037f46a669ad1a6bc847331c8838330cfa9593c0a496c0be0"
+    },
+    {
+      "file": "preparing-stop-cancelled.png",
+      "language": "en",
+      "test": "tools/smoke_li2_manual_stop_app.py",
+      "source": "preparing-stop-cancelled.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "26cf57c9ffbd6a75a8fbeb19a7ea0783c2c309f31eabfb63c30ef79db96639a1"
+    },
+    {
+      "file": "mixed-terminal-stop.png",
+      "language": "en",
+      "test": "tools/smoke_li2_manual_stop_app.py",
+      "source": "mixed-terminal-stop.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "940abdb5bafaee694f6bf702f1acdd26c8547196c52332992ab2abd19b829a79"
+    },
+    {
+      "file": "all-terminal-review.png",
+      "language": "en",
+      "test": "tools/smoke_li2_manual_stop_app.py",
+      "source": "all-terminal-review.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "d9df552034e3e3d8a633012ac706128cd598f0adb1d8a3b95530b9f1e6d1f939"
+    },
+    {
+      "file": "manual-stop-released.png",
+      "language": "en",
+      "test": "tools/smoke_li2_manual_stop_app.py",
+      "source": "manual-stop-released.png",
+      "pixels": [
+        752,
+        1334
+      ],
+      "sha256": "30b2bf5107c09270264e0c3567540198408b6dbd8ebe4599d0d117ff20ff0fd5"
+    }
+  ]
+}

@@ -41,7 +41,12 @@ def wait_for(root, condition, label, timeout=12):
 def capture(root, path):
     from AppKit import NSApplication, NSBitmapImageFileTypePNG
 
-    root.update()
+    # The coordinator can advance before the UI's scheduled event drain.
+    # Capture the rendered round, rather than the preceding frame.
+    deadline = time.monotonic() + .3
+    while time.monotonic() < deadline:
+        root.update()
+        time.sleep(.01)
     native_window = next((item for item in NSApplication.sharedApplication().windows()
                           if item.title() == root.wm_title() and item.isVisible()), None)
     if native_window is None:
@@ -301,7 +306,7 @@ def main():
     result["environment"] = {
         "macOS": subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"], text=True).strip(),
         "architecture": platform.machine(), "python": platform.python_version(),
-        "tk": str(tk.TkVersion), "capture": "Quartz window filtered by app process PID and exact title"}
+        "tk": str(tk.TkVersion), "capture": "NSWindow.contentView live Tk view cache"}
     result["physical_kvm_available"] = False
     (evidence / "run.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")

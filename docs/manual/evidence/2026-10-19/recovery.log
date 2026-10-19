@@ -1,0 +1,6 @@
+test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once (test_log_solution_ui.LogSolutionUiTests.test_recovery_acknowledges_only_manually_and_session_retry_keeps_evidence_once) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 13.939s
+
+OK

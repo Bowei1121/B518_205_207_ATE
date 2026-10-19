@@ -169,6 +169,41 @@ def conflict_summary_rows(app):
     return [tuple(line.split("\t")[:3]) for line in lines]
 
 
+def capture_tk_window_image(window, native_window):
+    """Manual assets may use the live NSView cache without screen recording.
+
+    The default remains WindowServer capture for desktop acceptance. View-cache
+    images document app content, not occlusion, native menus or keyboard focus.
+    """
+    if os.environ.get("B518_TK_CAPTURE_METHOD") == "view-cache":
+        from AppKit import NSApplication
+        # Aqua needs several frames after a tab/language switch before its
+        # contentView cache contains the newly mapped controls.
+        def expose(widget):
+            if widget.winfo_viewable():
+                widget.event_generate("<Expose>")
+                for child in widget.winfo_children():
+                    expose(child)
+        expose(window)
+        deadline = time.monotonic() + .25
+        while time.monotonic() < deadline:
+            window.update()
+            time.sleep(.01)
+        native = next((item for item in NSApplication.sharedApplication().windows()
+                       if item.title() == window.title() and item.isVisible()), None)
+        if native is None:
+            raise AssertionError("missing visible NSWindow: " + window.title())
+        view = native.contentView()
+        rect = view.bounds()
+        bitmap = view.bitmapImageRepForCachingDisplayInRect_(rect)
+        view.cacheDisplayInRect_toBitmapImageRep_(rect, bitmap)
+        return bitmap.CGImage()
+    return Quartz.CGWindowListCreateImage(
+        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
+        native_window[Quartz.kCGWindowNumber],
+        Quartz.kCGWindowImageBoundsIgnoreFraming)
+
+
 def capture_tk_window_evidence(window, key, language, widgets):
     window.update_idletasks()
     window.lift()
@@ -206,10 +241,7 @@ def capture_tk_window_evidence(window, key, language, widgets):
                           and item.get(Quartz.kCGWindowName) == window.title()), None)
     if native_window is None:
         raise AssertionError("missing native window: {}".format(key))
-    image = Quartz.CGWindowListCreateImage(
-        Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-        native_window[Quartz.kCGWindowNumber],
-        Quartz.kCGWindowImageBoundsIgnoreFraming)
+    image = capture_tk_window_image(window, native_window)
     if image is None:
         raise AssertionError("could not capture native window: {}".format(key))
     output_dir = Path(evidence_value)
@@ -228,6 +260,7 @@ def capture_tk_window_evidence(window, key, language, widgets):
         "image_pixels": {"width": Quartz.CGImageGetWidth(image),
                          "height": Quartz.CGImageGetHeight(image)},
         "screenshot": filename,
+        "capture_method": os.environ.get("B518_TK_CAPTURE_METHOD", "window-server"),
     })
     return record
 
@@ -9831,6 +9864,12 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "reload": button_for("app.settings.profile.reload"),
                                 "cancel": button_for("app.settings.profile.cancel"),
                             })
+                        for tab, name in ((1, "settings-events"), (2, "settings-retention")):
+                            app.settings_notebook.select(tab)
+                            root.update()
+                            capture_tk_window_evidence(window, name, key, {})
+                        app.settings_notebook.select(0)
+                        root.update()
                     behavior = {
                         "folder_dialog": {
                             "parent_is_settings_window": True,
@@ -10644,9 +10683,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                      "Window missing from Aqua window list: {}".format(
                                          window.title()))
                 native_id = native_window[Quartz.kCGWindowNumber]
-                captured = Quartz.CGWindowListCreateImage(
-                    Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-                    native_id, Quartz.kCGWindowImageBoundsIgnoreFraming)
+                captured = capture_tk_window_image(window, native_window)
                 self.assertIsNotNone(captured)
                 output = Path(evidence_root) / filename
                 output.parent.mkdir(parents=True, exist_ok=True)
@@ -13048,10 +13085,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                       if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
                                       and item.get(Quartz.kCGWindowName) == window.title()), None)
                 self.assertIsNotNone(native_window, "missing native window: {}".format(key))
-                image = Quartz.CGWindowListCreateImage(
-                    Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-                    native_window[Quartz.kCGWindowNumber],
-                    Quartz.kCGWindowImageBoundsIgnoreFraming)
+                image = capture_tk_window_image(window, native_window)
                 self.assertIsNotNone(image)
                 filename = "{}-{}.png".format(key, language)
                 output = evidence_root / filename

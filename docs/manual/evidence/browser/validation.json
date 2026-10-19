@@ -1,0 +1,63 @@
+{
+  "results": [
+    {
+      "lang": "zh-Hant",
+      "sections": [
+        "hmi",
+        "te",
+        "quick-start",
+        "profiles",
+        "paths",
+        "results",
+        "rounds",
+        "troubleshooting",
+        "recovery",
+        "history",
+        "retention",
+        "comparison",
+        "feedback",
+        "developer",
+        "maintenance"
+      ],
+      "images": 18,
+      "broken": [],
+      "overflow": false,
+      "mobileOverflow": false
+    },
+    {
+      "lang": "en",
+      "sections": [
+        "hmi",
+        "te",
+        "quick-start",
+        "profiles",
+        "paths",
+        "results",
+        "rounds",
+        "troubleshooting",
+        "recovery",
+        "history",
+        "retention",
+        "comparison",
+        "feedback",
+        "developer",
+        "maintenance"
+      ],
+      "images": 18,
+      "broken": [],
+      "overflow": false,
+      "mobileOverflow": false
+    }
+  ],
+  "checks": [
+    "offline images",
+    "desktop/mobile overflow",
+    "image dialog/Escape",
+    "clipboard denial fallback and report selection",
+    "mobile nav",
+    "print styles",
+    "language anchor",
+    "no JavaScript"
+  ],
+  "errors": []
+}

@@ -17,3 +17,7 @@ B518 ATE MVP Demo/release-macos*/
 # Virtual environments
 .venv/
 .venv-*/
+
+# Published manual assets are versioned; raw desktop runs stay local.
+!Manual/Photo/generated/*.png
+docs/manual/evidence/latest/

@@ -1,0 +1,161 @@
+{
+  "screens": [
+    {
+      "scenario": "preparing-stop-review",
+      "round_id": "45e832ec33cc4738b869cb41abeda878",
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ],
+      "state": "review",
+      "file": "preparing-stop.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 20916,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1334
+      ],
+      "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"
+    },
+    {
+      "scenario": "preparing-stop-cancelled",
+      "round_id": "45e832ec33cc4738b869cb41abeda878",
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ],
+      "state": "standby",
+      "result_available": false,
+      "file": "preparing-stop-cancelled.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 20916,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1334
+      ],
+      "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"
+    },
+    {
+      "scenario": "mixed-terminal-stop",
+      "round_id": "fab9c33ef7fe43adb328af3e0e34f82e",
+      "results": [
+        "PASS",
+        "STOPPED"
+      ],
+      "state": "manual_stop_complete",
+      "file": "mixed-terminal-stop.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 20916,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1334
+      ],
+      "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"
+    },
+    {
+      "scenario": "all-terminal-review",
+      "round_id": "8f18cea0c83b44e8b6723cb832ee5307",
+      "results": [
+        "PASS",
+        "FAIL"
+      ],
+      "state": "review",
+      "file": "all-terminal-review.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 20916,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1334
+      ],
+      "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"
+    },
+    {
+      "scenario": "manual-stop-released",
+      "round_id": "8f18cea0c83b44e8b6723cb832ee5307",
+      "results": [
+        "PASS",
+        "FAIL"
+      ],
+      "state": "manual_stop_complete",
+      "file": "manual-stop-released.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 20916,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1334
+      ],
+      "capture_source": "NSWindow.contentView live Tk view cache; not WindowServer screenshot"
+    }
+  ],
+  "disk_rebuild": [
+    {
+      "round_id": "45e832ec33cc4738b869cb41abeda878",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": false,
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ]
+    },
+    {
+      "round_id": "fab9c33ef7fe43adb328af3e0e34f82e",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": true,
+      "results": [
+        "PASS",
+        "STOPPED"
+      ]
+    },
+    {
+      "round_id": "8f18cea0c83b44e8b6723cb832ee5307",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": true,
+      "results": [
+        "PASS",
+        "FAIL"
+      ]
+    }
+  ],
+  "ticket": "LI2",
+  "environment": {
+    "macOS": "15.8.1",
+    "architecture": "x86_64",
+    "python": "3.11.7",
+    "tk": "8.6",
+    "capture": "NSWindow.contentView live Tk view cache"
+  },
+  "physical_kvm_available": false
+}

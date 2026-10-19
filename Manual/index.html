@@ -15,78 +15,36 @@
   </div>
   <a class="skip-link" href="#content">跳至主要內容</a>
   <header class="hero">
-    <div><p class="eyebrow">B518 Log Solution · v0.1.0</p><h1>使用手冊</h1><p class="lead">供產線 TE 操作與跨部門開發者理解 Log 監控流程。可直接雙擊本資料夾的 <code>index.html</code> 離線閱讀。</p></div>
+    <div><p class="eyebrow">B518 Log Solution · v0.1.0</p><h1>使用手冊</h1><p class="lead">操作、配置、輪次處置、紀錄查詢與復原。含自動測試產生的目前 App 圖片，可離線閱讀。</p></div>
     <div class="meta"><span>文件更新</span><strong>2026-10-19</strong><span>適用程式版本</span><strong>0.1.0</strong></div>
   </header>
   <div class="layout">
-    <aside class="sidebar" aria-label="文件導覽"><button class="nav-toggle" type="button" aria-expanded="false">章節導覽</button><nav>
-      <a href="#hmi">認識主畫面</a><a href="#te">TE 操作指南</a><a href="#quick-start">快速上手</a><a href="#paths">設定讀取路徑</a><a href="#results">判讀結果</a><a href="#comparison">實機結果對照</a><a href="#troubleshooting">異常處理</a><a href="#feedback">產線測試與回報</a><a href="#developer">開發者原理說明</a><a href="#maintenance">手冊維護</a>
-    </nav></aside>
+    <aside class="sidebar" aria-label="文件導覽"><button class="nav-toggle" type="button" aria-expanded="false">章節導覽</button><nav><a href="#hmi">認識目前的主畫面</a><a href="#te">開始前確認</a><a href="#quick-start">每輪操作流程</a><a href="#profiles">工程師配置：編輯、驗證與套用</a><a href="#paths">平台路徑與期限</a><a href="#results">Slot 結果與 KVM 判讀</a><a href="#rounds">人工停止、取消與啟動故障復位</a><a href="#troubleshooting">結果衝突與警報處置</a><a href="#recovery">通知、保存失敗與復原中心</a><a href="#history">歷史事件查詢與 App 診斷</a><a href="#retention">輪次紀錄保存與清理</a><a href="#comparison">歷史實機結果對照</a><a href="#feedback">回報與保存證據</a><a href="#developer">資料流與狀態責任</a><a href="#maintenance">文件版本與素材範圍</a></nav></aside>
     <main id="content">
-      <section class="intro cards" aria-label="讀者入口">
-        <a class="card" href="#te"><span class="tag">產線 TE</span><h2>操作、判讀與回報</h2><p>依序設定路徑、啟動一輪監控、查看 Slot 狀態，並在發生問題時蒐集可追查的資料。</p></a>
-        <a class="card" href="#developer"><span class="tag">開發者</span><h2>程式如何判讀 Log</h2><p>認識 UI、背景監控、事件、Log 格式與 Session 紀錄的資料流。</p></a>
-      </section>
+      <section id="hmi"><h2>認識目前的主畫面</h2><p>主畫面用來查看本輪 Log 結果與提供 KVM 讀取。操作員選「專案＋機型」，工程師維護配置；開始監控不會啟動 ATE。本文依目前原始碼與實際 Tk 測試畫面更新。</p><p class="note">除「實機結果對照」的歷史照片外，新圖片均由自動測試開啟實際 App 產生。測試使用隔離資料、受控 Log／故障；SN、路徑、長訊息為範例。這些圖片不代表產線實測或實體 KVM 取像驗收。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/home-zh-TW.png" alt="圖 1：目前主畫面，含工具列、專案／機型、KVM 格位與狀態、結果明細及操作區。" data-caption="圖 1：目前主畫面，含工具列、專案／機型、KVM 格位與狀態、結果明細及操作區。"><figcaption>圖 1：目前主畫面，含工具列、專案／機型、KVM 格位與狀態、結果明細及操作區。 </figcaption></figure><div class="table-wrap"><table><thead><tr><th>區域</th><th>用途</th></tr></thead><tbody><tr><td>⚙️ 設定</td><td>工程師配置、事件與 Session、輪次紀錄保存期限。</td></tr><tr><td>⚠️ 結果衝突</td><td>開啟待確認候選。數字是待處理提示；關閉視窗不會解決衝突。</td></tr><tr><td>🔔 通知／復原中心</td><td>查看警報、保存／封存失敗與恢復操作；數字可能同時包含不同待處理事項。</td></tr><tr><td>🌐 語言</td><td>切換繁體中文／English；已開視窗同步更新，狀態名稱、SN 與來源資料不改寫。</td></tr><tr><td>專案／機型</td><td>選擇工程師已準備的配置。機型是 DFU／FCT／BT 工站類型，不是產品型號。</td></tr><tr><td>KVM 與明細</td><td>色帶與定位標記固定；最多 20 個位置，明細可捲動，容量外固定黑色。</td></tr><tr><td>開始／停止、保存重試、App 診斷</td><td>建立／停止本輪；依故障狀態重試保存，或開啟 App 診斷查看原因。</td></tr></tbody></table></div></section>
 
-      <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。開始監控、可信 TESTING、Slot 結果更新（含 TIMEOUT／STOPPED）及輪次完成或停止時，Log Solution 會短暫回到前景方便 KVM 讀取；它不會永久置頂，也不會強制鍵盤焦點。</p>
-        <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="BT Log Solution 主畫面，含設定、KVM RESULT、狀態模板、Slot 表格及監控按鈕" data-caption="BT 主畫面功能導覽"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>圖 1：BT 主畫面。標記對應下方功能說明；DFU、FCT 使用相同畫面結構，只有有效 Slot 數不同。</figcaption></figure>
-        <div class="table-wrap"><table><thead><tr><th>標記</th><th>區域／部件</th><th>功能</th></tr></thead><tbody>
-          <tr><td>1</td><td>設定</td><td>開啟「監控設定」與「事件與 Session」視窗，可選工站、設定路徑及逾時秒數、查看即時事件與開啟 Session 紀錄。</td></tr>
-          <tr><td>2</td><td>版本與工站名稱</td><td>顯示 B518 Log Solution 版本及目前監控的 DFU、FCT 或 BT 工站。</td></tr>
-          <tr><td>3</td><td>監控狀態</td><td>顯示待命、啟動中、監控中或逾時停止。待命表示目前沒有監控，畫面仍可能保留上一輪結果。</td></tr>
-          <tr><td>4</td><td>KVM RESULT 色帶</td><td>固定七格，左至右代表 Slot 1～7；兩端黑白標記用於定位及確認方向。DFU 使用 1～7、FCT 使用 1～6、BT 使用 1～4，其餘格固定黑色。</td></tr>
-          <tr><td>5</td><td>KVM 狀態模板</td><td>PASS、FAIL、TESTING、NOTEST 的固定顏色範本，供 KVM 先建立取樣模板；這四格不是操作按鈕。</td></tr>
-          <tr><td>6</td><td>結果表格</td><td>每個有效 Slot 顯示通道、目前狀態與產品 SN。BT 的 Slot 1～4 分別對應測試機 Thread 1～4。</td></tr>
-          <tr><td>7</td><td>開始／停止監控</td><td>「開始監控」會記錄本輪開始時間，並先記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果，可用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。開始不會啟動測試機；「停止監控」由人員結束本輪，尚未結束的通道改為 STOPPED，已完成的結果保留。每次明確開始才建立新輪，不會自動重試。</td></tr>
-        </tbody></table></div>
-      </section>
+      <section id="te"><h2>開始前確認</h2><ol class="steps"><li>核對程式版本、專案與機型，確認 Log 目錄存在且可讀。</li><li>確認配置的容量、來源映射與實際治具一致；容量不等於本輪實際投入數量。</li><li>先處理上一輪待確認事項與啟動故障；保存失敗另外依復原中心處理。</li><li>確認 KVM 能看見固定看板。App 會在關鍵事件回到前景，但不永久置頂或強制鍵盤焦點。</li></ol></section>
 
-      <section id="te"><p class="section-label">TE 操作指南</p><h2>開始前確認</h2><ul><li>已開啟 B518 Log Solution，且測試機將產生的 Log 資料夾可由此 Mac 讀取。</li><li>畫面右上角的主看板不被 Atlas 或 BT HMI 覆蓋，供 KVM 擷取結果。</li><li>每次新一輪測試前都要按「開始監控」；程式會記錄本輪開始時間及原有 Log；原本就存在且沒有更新的 CSV 不會當成本輪結果。</li></ul></section>
+      <section id="quick-start"><h2>每輪操作流程</h2><ol class="steps"><li>在主畫面選專案與機型。沒有合適配置時，請工程師依下一節建立。</li><li>按「開始監控」，或 Command + Shift + M。啟動中／Log 準備中屬於 BUSY，來源基準尚未完成，不能據此啟動 ATE。</li><li>等待監控就緒，再開始測試機。本工具開始收集 Log 與 ATE 真正開測是兩個時點；TESTING／可信結果才是測試活動證據。</li><li>核對 Slot、SN 與狀態。只見一個 PASS 不等於整輪可交付；所有位置定案、同輪可靠且無待確認才可取用。</li><li>異常時依結果衝突、警報、取消或啟動故障復位指引處理。每次新輪都要明確再次開始，不會自動重測。</li></ol><figure><img class="manual-image" loading="lazy" src="Photo/generated/preparing.png" alt="圖 2：來源準備中，開始按鈕鎖定；此時仍不可啟動 ATE。" data-caption="圖 2：來源準備中，開始按鈕鎖定；此時仍不可啟動 ATE。"><figcaption>圖 2：來源準備中，開始按鈕鎖定；此時仍不可啟動 ATE。 自動測試素材；英文 UI。</figcaption></figure><p class="note warning"><strong>本次測試觀察：</strong>LI1 受控情境中，輪次快照與獨立狀態標記已進入監控，但底部文字仍可能保留 Preparing。此圖供比較通道活動與狀態標記；不可單靠底部文字判定可開測。若缺少可靠的本輪監控就緒確認，先暫停並回報。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/activity.png" alt="圖 3：本輪已有可信活動，部分位置 TESTING，其他位置仍 WAITING。" data-caption="圖 3：本輪已有可信活動，部分位置 TESTING，其他位置仍 WAITING。"><figcaption>圖 3：本輪已有可信活動，部分位置 TESTING，其他位置仍 WAITING。 自動測試素材；英文 UI。</figcaption></figure><figure><img class="manual-image" loading="lazy" src="Photo/generated/complete.png" alt="圖 4：受控兩位置樣本完成；可交付仍須以本輪整體狀態判定。" data-caption="圖 4：受控兩位置樣本完成；可交付仍須以本輪整體狀態判定。"><figcaption>圖 4：受控兩位置樣本完成；可交付仍須以本輪整體狀態判定。 自動測試素材；英文 UI。</figcaption></figure></section>
 
-      <section id="quick-start"><h2>快速上手</h2><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」。</li><li><strong>選工站並設定路徑。</strong>選擇 DFU、FCT 或 BT，依下方說明按「選擇」挑選正確根目錄。</li><li><strong>按儲存。</strong>工站、路徑和逾時值會一起保存；取消不會保存修改。</li><li><strong>開始監控。</strong>按主畫面「開始監控」，或使用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。看到「啟動中」表示程式正在記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果；完成後會顯示「監控中」。</li><li><strong>再開始操作測試機。</strong>等待監控進入「監控中」後才啟動測試。測試過程中確認 Slot 與 SN 是否正確。</li><li><strong>讀取最終結果。</strong>待 PASS、FAIL、NOTEST 或 TIMEOUT 出現後，依「判讀結果」處置。先依畫面完成必要的警報確認、輪次取消或啟動故障復位，再明確按「開始監控」建立下一輪。</li></ol>
-      </section>
+      <section id="profiles"><h2>工程師配置：編輯、驗證與套用</h2><p>⚙️ →「工程師配置」。配置包含專案、機型、測試平台、容量、來源位置映射、路徑及三種期限。不是原先只選工站和兩個路徑的設定頁。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/configuration-zh-TW.png" alt="圖 5：目前工程師配置頁；測試畫面顯示的是範例草稿，正式環境須填入實際路徑。" data-caption="圖 5：目前工程師配置頁；測試畫面顯示的是範例草稿，正式環境須填入實際路徑。"><figcaption>圖 5：目前工程師配置頁；測試畫面顯示的是範例草稿，正式環境須填入實際路徑。 </figcaption></figure><ol class="steps"><li>載入要修改的配置；核對專案／機型、平台與容量（1–20）。</li><li>設定來源位置到畫面位置的映射，例如 1:1, 2:2；依平台使用的來源編號配置，不能只照測試機畫面列號猜測。</li><li>按路徑旁的「選擇」，填入適用根目錄；設定開始等待、測試上限、整輪上限，皆為正整數秒。</li><li>先「驗證草稿」，再「套用並保存」；驗證成功本身不等於已保存。取消不套用草稿，保存失敗時原有效配置保留。</li><li>匯出可攜配置供工程部署；匯入後核對本機路徑並確認有效選擇。「重新載入部署配置」用於重讀已保存資料，修改前注意尚未套用的草稿。</li></ol><p class="note">每輪開始時固定配置快照；運行中修改配置不回頭改寫本輪。偏好與配置保存在 ~/Library/Application Support/B518LogSolution/preferences.json。</p></section>
 
-      <section id="paths"><h2>設定讀取路徑</h2><p class="note warning"><strong>專案適用警語：</strong>本說明書是以 B482 專案製作而成，需根據自身專案選擇正確路徑。</p><p>路徑必須存在且可讀取。空白、已移除或無權限的路徑會使程式拒絕開始監控。下列皆為<strong>目錄結構示意</strong>，請依實際測試機位置選取根目錄。</p>
-        <div class="station-grid">
-          <article><h3>DFU · Slot 1–7</h3><dl><dt>即時 Log 根路徑</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/active</code></dd><dt>最終結果根路徑</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></dd></dl><pre>/Users/gdlocal/Library/Logs/Atlas/
-├── <mark>active</mark>/
-│   └── group0-slot1/…/records.csv
-└── <mark>unit-archive</mark>/
-    └── &lt;產品SN&gt;/&lt;時間戳&gt;/system/records.csv</pre></article>
-          <article><h3>FCT · Slot 1–6</h3><dl><dt>即時 Log 根路徑</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/active</code></dd><dt>最終結果根路徑</dt><dd><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></dd></dl><pre>/Users/gdlocal/Library/Logs/Atlas/
-├── <mark>active</mark>/
-│   └── group0-slot1/…/records.csv
-└── <mark>unit-archive</mark>/
-    └── &lt;產品SN&gt;/&lt;時間戳&gt;/system/records.csv</pre></article>
-          <article><h3>BT · Thread 0–3</h3><dl><dt>BT TestData 根路徑</dt><dd><code>/vault/B482_RFTEST/TestData</code></dd><dt>BT CaseInfo 根路徑</dt><dd>同樣選取 <code>/vault/B482_RFTEST/TestData</code>（選填，建議填寫）</dd></dl><pre>/vault/B482_RFTEST/<mark>TestData</mark>/
-├── thread1CaseInfo_YYYY-MM-DD.txt
-├── thread2CaseInfo_YYYY-MM-DD.txt
-└── YYYY-MM-DD/PASSED 或 FAILED/
-    └── [Thread0][…][SN][PASSED][時間戳].csv</pre></article>
-        </div>
-        <p class="note"><strong>DFU 欄位名稱提醒：</strong>App 目前顯示「最終結果根路徑 (unitest)」，但此部署請依實機路徑選取 <code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code>。本手冊只更新操作說明，不修改程式。</p>
-        <p class="note"><strong>BT CaseInfo：</strong>CaseInfo 欄位可以留空，但建議同樣選取 <code>/vault/B482_RFTEST/TestData</code>；程式才能在最終 CSV 到達前呈現測試活動與 SN。若只靠最終 CSV，測試尚未產生結果時可能達到等待開始逾時。</p>
-        <p class="note"><strong>逾時預設值：</strong>DFU 為等待開始 30 秒／測試上限 480 秒；B518/FCT 為等待開始 120 秒／測試上限 480 秒；BT 為 30 秒／240 秒。工程師可在各工站設定中調整為正整數秒數。</p>
-        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.30.54.png" alt="設定頁的工站下拉選單，提供 DFU、FCT 和 BT" data-caption="工站選擇"><figcaption>圖 2：切換工站後，程式會顯示該工站對應的路徑欄位與 Slot 數。</figcaption></figure>
-        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.36.png" alt="BT 設定頁，含 TestData、CaseInfo 和兩個逾時欄位" data-caption="BT 設定"><figcaption>圖 3：BT 設定範例。兩個路徑欄位都選取 TestData；CaseInfo 可選填，建議填寫。</figcaption></figure>
-        <h3>依圖 3 設定 BT 路徑並儲存</h3><ol class="steps"><li><strong>開啟設定。</strong>在主畫面按「設定」，確認目前在「監控設定」分頁。</li><li><strong>選擇 BT 工站。</strong>在「工站」下拉選單選取 <code>BT</code>，畫面會顯示 BT TestData、BT CaseInfo 與兩個逾時欄位。</li><li><strong>設定 TestData。</strong>在「BT TestData 根路徑」右側按「選擇」，選取 <code>/vault/B482_RFTEST/TestData</code>，再確認完整路徑已出現在欄位中。</li><li><strong>設定 CaseInfo。</strong>在「BT CaseInfo 根路徑」右側按「選擇」，同樣選取 <code>/vault/B482_RFTEST/TestData</code>。此欄位可留空，但建議設定，讓測試進行時能提早顯示 SN 與 TESTING。</li><li><strong>確認逾時秒數。</strong>BT 預設為等待開始測試逾時 30 秒、測試時間上限 240 秒；依產線需要調整時，兩個值都必須是正整數。</li><li><strong>儲存設定。</strong>按右下角「儲存」，回到主畫面後才可按「開始監控」。按「取消」或直接關閉設定視窗都不會保存本次修改。</li></ol>
-      </section>
+      <section id="paths"><h2>平台路徑與期限</h2><p class="note warning">以下是 B482 產線路徑範例，與自動測試畫面的隔離路徑不同。其他專案須依自己的部署選取。</p><div class="table-wrap"><table><thead><tr><th>平台／機型</th><th>即時來源</th><th>最終結果來源</th></tr></thead><tbody><tr><td>Atlas / DFU, FCT</td><td><code>/Users/gdlocal/Library/Logs/Atlas/active</code></td><td><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code></td></tr><tr><td>BT</td><td><code>/vault/B482_RFTEST/TestData</code> （CaseInfo 選填，建議填）</td><td><code>/vault/B482_RFTEST/TestData</code></td></tr></tbody></table></div><p>Atlas 的 active 與 final 都要正確設定；final 欄位的 unitest 提示不代表所有部署的實際目錄名稱。BT 的 TestData 與 CaseInfo 範例都選同一個 TestData 根目錄；若只有最終匯出檔，不會由複製時間推定 TESTING，也可能在結果抵達前達到開始期限。</p><div class="table-wrap"><table><thead><tr><th>期限</th><th>計算與處置</th></tr></thead><tbody><tr><td>開始等待</td><td>從本輪受理開始計算，包含準備時間。整輪都無可信活動／有效結果時停止來源、未開始位置定案 NOTEST 並要求人工確認。部分位置已活動時，其餘未開始位置依期限定案 NOTEST，不額外判成整輪未開測。</td></tr><tr><td>測試上限</td><td>從各位置首次可信活動起算；COMPLETING 不重設。單一位置到期為 TIMEOUT，其他位置繼續。</td></tr><tr><td>整輪上限</td><td>從共同起點計算。仍有未完成位置時，停止來源並保留終態，其餘依活動證據定 NOTEST／TIMEOUT，建立整輪警報。已全部定案、只剩衝突時，不把它變成人工確認倒數。</td></tr></tbody></table></div><p>內建／遷移後預設：DFU 開始 30／測試 480 秒；B518/FCT 120／480 秒；BT 30／240 秒。整輪預設 7200 秒。有效值以所選配置為準，工程師可調整。</p></section>
 
-      <section id="results"><h2>判讀結果</h2><p>以下八種狀態與顏色已依目前 v0.1.0 原始碼核對；COMPLETING 為淺藍色。實機安裝包是否與此原始碼相同尚未驗證。</p><div class="table-wrap"><table><thead><tr><th>畫面狀態</th><th>代表意義</th><th>TE 下一步</th></tr></thead><tbody>
-        <tr><td><span class="state waiting">WAITING</span></td><td>本輪尚未看到此 Slot 的測試活動。</td><td>確認先按開始監控，再確認測試機是否開始寫入正確路徑。</td></tr>
-        <tr><td><span class="state testing">TESTING</span></td><td>偵測到即時 Log 或 BT CaseInfo 活動；SN 可能已顯示。</td><td>繼續等待最終結果，核對 Slot 與產品 SN。</td></tr>
-        <tr><td><span class="state completing">COMPLETING</span></td><td>等待最終測試結果，尚不代表測試通過。此狀態可能只短暫出現，畫面也可能直接由 TESTING 跳到 PASS／FAIL。</td><td>等待 archive／TestData 寫入；若超過上限，依 TIMEOUT 處理。</td></tr>
-        <tr><td><span class="state pass">PASS</span></td><td>最終 Log 判定通過。</td><td>依產線流程放行，必要時由 KVM 讀取色帶或畫面。</td></tr>
-        <tr><td><span class="state fail">FAIL</span></td><td>最終 Log 判定失敗，或 DFU/FCT 測試活動結束前未讀到可信 SN。</td><td>依產線異常流程處理並保存原始 Log。</td></tr>
-        <tr><td><span class="state notest">NOTEST</span></td><td>DFU／FCT：本輪已有通道活動，且所有有效通道的 active 資料夾消失至少 3 秒後，未參與的通道由 WAITING 改為 NOTEST。BT：FAILED 最終 CSV 的 SN 為空時顯示 NOTEST。若全輪期限到時沒有任何可信活動或有效結果，未開始的 Slot 也會定案為 NOTEST，來源停止並建立待確認警報。</td><td>確認該 Slot 是否本來就未測。若出現整輪未開始警報，須在警報視窗按「確認」；關閉視窗不等於確認。</td></tr>
-        <tr><td><span class="state timeout">TIMEOUT</span></td><td>整輪開始期限內完全沒有可信活動或有效結果時，所有未開始 Slot 定案為 NOTEST，停止來源並要求人工確認；若已有任何 Slot 活動或結果，則不建立「整輪未開始」警報。個別通道測試逾時只標記該 Slot，其餘未結束通道依各自規則繼續。</td><td>TIMEOUT 不代表產品 FAIL。檢查測試機、路徑與 Log；整輪警報須按「確認」，部分活動時未開始 Slot 會在開始期限到時定案 NOTEST。確認後仍有其他待處理事項時，先處理完再開始新輪。</td></tr>
-        <tr><td><span class="state stopped">STOPPED</span></td><td>人員停止監控，尚未結束的通道改為 STOPPED，已完成的 PASS／FAIL／NOTEST 與已逾時的 TIMEOUT 保留。若本輪尚未確認監控就緒，畫面不足以證明來源屬於本輪，須取消並保留紀錄。</td><td>這不是產品 FAIL。依畫面提示完成確認或取消；排除問題後再次明確按「開始監控」才會建立新一輪。</td></tr>
-      </tbody></table></div>
-        <h3>KVM 色帶與通道</h3><p>頂端 <code>KVM RESULT</code> 永遠由左至右代表 Slot 1–7。DFU 使用 1–7、FCT 使用 1–6、BT 使用 1–4；不存在的通道固定為黑色。兩端黑白定位標記協助影像辨識確認方向。主畫面上的 PASS、FAIL、TESTING、NOTEST 色塊是 KVM 取樣模板，不是按鈕。</p>
-      </section>
+      <section id="results"><h2>Slot 結果與 KVM 判讀</h2><div class="table-wrap"><table><thead><tr><th>狀態</th><th>意義與下一步</th></tr></thead><tbody><tr><td><span class="state waiting">WAITING</span></td><td>尚無此位置的可信活動；檢查測試機是否開測及路徑。</td></tr><tr><td><span class="state testing">TESTING</span></td><td>有可信活動，仍待最終結果；核對 SN。</td></tr><tr><td><span class="state completing">COMPLETING</span></td><td>活動結束／等待最終結果的過渡狀態，可能短暫出現；不是 PASS。</td></tr><tr><td><span class="state pass">PASS</span> / <span class="state fail">FAIL</span></td><td>平台最終判定。FAIL 亦可能是 Atlas 活動結束前未讀到可信 SN；仍須核對整輪是否可交付。</td></tr><tr><td><span class="state notest">NOTEST</span></td><td>平台明確無測試，或期限內未觀察到可信測試。應查看事件中的來源原因，不能全部當成同一種空料。</td></tr><tr><td><span class="state timeout">TIMEOUT</span></td><td>有活動的位置超時；不等於產品 FAIL。檢查 Log 是否遲到或 ATE 停住。</td></tr><tr><td><span class="state stopped">STOPPED</span></td><td>人員停止時尚未完成的位置。已完成 PASS／FAIL／NOTEST／TIMEOUT 保留。</td></tr></tbody></table></div><h3>KVM 新排列</h3><p>每排固定十格：容量 1–10 顯示一排，11–20 顯示兩排；第一排 Slot 1–10，第二排 11–20。容量外格位固定黑色，明細捲動不會移動色帶與定位點。已取消舊七格模式，辨識端必須使用同版契約。</p><p>獨立狀態標記區分待命、準備中、監控中、待確認、正常完成與人工停止可交付。READY 不表示 PASS 或已有結果；BUSY 包含準備及待確認。產品色帶只顯示各位置結果，不能單靠全綠或保留的上一輪結果放行。</p></section>
 
-      <section id="comparison"><h2>實機結果對照</h2><p>下列照片將測試機 HMI 與 B518 Log Solution 並列。TE 應同時確認通道、產品 SN、結果與頂端 KVM 色帶是否一致；照片僅展示畫面可見的結果，不用來推論 FAIL 原因。</p>
-        <h3>FCT：測試機列號與 Log Solution Slot</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165716_16_52.jpg" alt="FCT 測試機畫面與 B518 Log Solution 結果並列，顯示六個通道的 FAIL、PASS、NOTEST 與 SN 讀取失敗" data-caption="FCT 實機結果對照"><figcaption>圖 4：FCT 實機結果。測試機左側列號 0～5 依序對應 Log Solution Slot 1～6。</figcaption></figure>
+      <section id="rounds"><h2>人工停止、取消與啟動故障復位</h2><div class="table-wrap"><table><thead><tr><th>情況</th><th>應如何處理</th></tr></thead><tbody><tr><td>已監控就緒後人工停止</td><td>按停止後保留終態，未完成改 STOPPED，整輪保留 manual_stop 原因。全部位置定案且無待確認時可以交付，但與正常完成不同；重工範圍由操作員決定。</td></tr><tr><td>準備中停止／無法確認本輪就緒</td><td>不能因畫面已有色塊就取用。待來源返回並完成必要處置後，明確取消本輪、保留紀錄，再開始新輪。</td></tr><tr><td>取消本輪</td><td>明確放棄後續交付並保留紀錄；不是刪除、改 FAIL 或自動重測。</td></tr><tr><td>啟動失敗</td><td>修正路徑／權限後按「確認並復位啟動故障」。結束失敗請求或取消已建立失敗輪次，保留證據；復位不會自行重啟 ATE。重開 App 後仍可依保存故障處理。</td></tr></tbody></table></div><figure><img class="manual-image" loading="lazy" src="Photo/generated/mixed-terminal-stop.png" alt="圖 6：人工停止後保留既有終態，未完成位置成為 STOPPED。" data-caption="圖 6：人工停止後保留既有終態，未完成位置成為 STOPPED。"><figcaption>圖 6：人工停止後保留既有終態，未完成位置成為 STOPPED。 自動測試素材；英文 UI。</figcaption></figure><figure><img class="manual-image" loading="lazy" src="Photo/generated/preparing-stop.png" alt="圖 7：準備中停止仍待確認，不可強制交付不確定的同輪結果。" data-caption="圖 7：準備中停止仍待確認，不可強制交付不確定的同輪結果。"><figcaption>圖 7：準備中停止仍待確認，不可強制交付不確定的同輪結果。 自動測試素材；英文 UI。</figcaption></figure></section>
+
+      <section id="troubleshooting"><h2>結果衝突與警報處置</h2><h3>同輪結果衝突</h3><p>同一位置收到與已鎖定結果不一致的候選時，程式保留原結果並進入待確認。從 ⚠️ 開啟清單，選擇候選後核對摘要比較、SN、狀態、來源時間、完整檔案路徑與診斷。來源檔名相同不代表來源相同；必要時展開／捲動原文。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/conflict-zh-TW.png" alt="圖 8：同輪結果衝突；長路徑與多候選為測試刻意建立的情境。" data-caption="圖 8：同輪結果衝突；長路徑與多候選為測試刻意建立的情境。"><figcaption>圖 8：同輪結果衝突；長路徑與多候選為測試刻意建立的情境。 </figcaption></figure><ol class="steps"><li>先確認選中的是要處理的候選；多筆候選須逐筆核對。</li><li>可信且屬於本輪才採用新候選；否則保留原結果。缺少可靠同輪證據時不能強制採用，按鈕會依條件停用。</li><li>關閉衝突視窗只暫時收起，⚠️ 可重開；不會自動放行。</li></ol><h3>整輪警報</h3><p>開始期限內完全無活動，或整輪上限到期仍有未完成位置，會停止來源並建立警報。這不直接證明 ATE 硬體故障。先看原因及各位置結果，排除問題後明確按「確認」。來源尚在準備、位置尚未定案時確認可能停用。確認只處理警報，不會替你解決其他衝突，也不會啟動新輪。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/round-alarm-zh-TW.png" alt="圖 9：整輪監控逾時警報，與產品 FAIL 分開處理。" data-caption="圖 9：整輪監控逾時警報，與產品 FAIL 分開處理。"><figcaption>圖 9：整輪監控逾時警報，與產品 FAIL 分開處理。 </figcaption></figure></section>
+
+      <section id="recovery"><h2>通知、保存失敗與復原中心</h2><p>按 🔔 開啟復原中心。通知數不只代表警報，也可能包含 Session、稽核或封存待恢復項目；請讀取各頁籤的原因與可用操作。關閉視窗不等於確認，重開仍保留待辦。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/alarm-pending-zh-TW.png" alt="圖 10：復原中心的未確認警報；明確確認後才解除該項。" data-caption="圖 10：復原中心的未確認警報；明確確認後才解除該項。"><figcaption>圖 10：復原中心的未確認警報；明確確認後才解除該項。 </figcaption></figure><ol class="steps"><li>警報頁：核對 round_id 與原因；確認只解除該筆警報。</li><li>保存／封存頁：選擇失敗項目，看診斷後重試。保存完整性與結果是否可取用分開判斷，不能只看 Slot 顏色。</li><li>重試成功後核對狀態；仍失敗時保留視窗與錯誤資料，不要用新輪蓋掉問題。</li><li>關閉 App 會等待必要保存；若保存失敗會留在可重試的關閉畫面，也可取消關閉回到處理。取消關閉不是取消輪次。</li></ol><figure><img class="manual-image" loading="lazy" src="Photo/generated/save-recovered-zh-TW.png" alt="圖 11：受控 Session 保存失敗經重試後恢復的畫面。" data-caption="圖 11：受控 Session 保存失敗經重試後恢復的畫面。"><figcaption>圖 11：受控 Session 保存失敗經重試後恢復的畫面。 </figcaption></figure></section>
+
+      <section id="history"><h2>歷史事件查詢與 App 診斷</h2><p>歷史事件查詢從已保存的輪次事件及 App 事件讀取，不是依 SN 統計良率的生產報表。從「設定 → 事件與 Session」開啟；App 診斷也可由主畫面進入。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/history-zh-TW.png" alt="圖 12：歷史事件的日期查詢、分頁、選取事件與原文詳細資料。" data-caption="圖 12：歷史事件的日期查詢、分頁、選取事件與原文詳細資料。"><figcaption>圖 12：歷史事件的日期查詢、分頁、選取事件與原文詳細資料。 </figcaption></figure><ol class="steps"><li>選擇起訖日期，再查詢；等待首批資料公布後即可讀取，後續批次可能仍在準備。</li><li>用分頁切換資料，選擇一筆查看詳細內容。後續頁尚未準備時依畫面等待，不要把載入中當成沒有事件。</li><li>同次查詢保留固定內容與順序；後來新增事件或來源清理不會偷偷改寫已公布頁面。要看最新事件，重新查詢。</li><li>可取消查詢；後續批次失敗時依畫面重試，已公布內容仍可閱讀。索引降級、來源無法讀取或日期異常可開查詢診斷核對。</li><li>切換語言保留查詢、頁碼、選取與閱讀位置；舊格式或原始診斷保留原文。</li></ol><figure><img class="manual-image" loading="lazy" src="Photo/generated/history-diagnostics-zh-TW.png" alt="圖 13：歷史查詢診斷，範例包含刻意建立的舊格式與損壞資料。" data-caption="圖 13：歷史查詢診斷，範例包含刻意建立的舊格式與損壞資料。"><figcaption>圖 13：歷史查詢診斷，範例包含刻意建立的舊格式與損壞資料。 </figcaption></figure><h3>App 診斷</h3><p>查看 App 事件與原始原因，適用保存失敗或文字刷新失敗。依目前故障使用「重試保存」或文字刷新重試；無待恢復項目時按鈕停用。App 診斷不等於各產品的測試失敗分析。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/diagnostics-zh-TW.png" alt="圖 14：App 診斷的事件清單、原文與重試入口。" data-caption="圖 14：App 診斷的事件清單、原文與重試入口。"><figcaption>圖 14：App 診斷的事件清單、原文與重試入口。 </figcaption></figure></section>
+
+      <section id="retention"><h2>輪次紀錄保存與清理</h2><p>⚙️ →「保存期限」設定全域保存天數（正整數），保存後以畫面有效值為準。期限從可信的封存時間起算，不是每次查看的時間。未結束、待確認、保存未完成或不具可信封存條件的輪次不應當作一般過期輪次刪除。</p><figure><img class="manual-image" loading="lazy" src="Photo/generated/retention-zh-TW.png" alt="圖 15：全域輪次紀錄保存期限與清理摘要。" data-caption="圖 15：全域輪次紀錄保存期限與清理摘要。"><figcaption>圖 15：全域輪次紀錄保存期限與清理摘要。 </figcaption></figure><p>清理摘要顯示掃描／刪除／保留／失敗等處置及原因，無資料與清理失敗要分開判讀。此功能管理本工具輪次紀錄；不清理測試平台原始 Log、工程師配置、偏好或人工匯出檔。App 事件共用全域保存天數，但從各自原事件時間起算；輪次則從可信封存時間起算。</p></section>
+
+      <section id="comparison"><h2>歷史實機結果對照</h2><p class="note">下列為 2026-09-11 舊版產線照片，僅保留通道／Thread 與結果的實機對照。畫面與舊七格排列不代表目前 UI；配置可自訂映射，現場以有效配置為準。</p><p>下列照片將測試機 HMI 與 B518 Log Solution 並列。TE 應同時確認通道、產品 SN、結果與頂端 KVM 色帶是否一致；照片僅展示畫面可見的結果，不用來推論 FAIL 原因。</p>
+        <h3>FCT：測試機列號與 Log Solution Slot</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165716_16_52.jpg" alt="FCT 測試機畫面與 B518 Log Solution 結果並列，顯示六個通道的 FAIL、PASS、NOTEST 與 SN 讀取失敗" data-caption="FCT 實機結果對照"><figcaption>圖 16：FCT 實機結果。測試機左側列號 0～5 依序對應 Log Solution Slot 1～6。</figcaption></figure>
         <div class="table-wrap"><table><thead><tr><th>測試機列號</th><th>Log Solution</th><th>照片可見結果</th><th>產品 SN 顯示</th></tr></thead><tbody>
           <tr><td>0</td><td>Slot 1</td><td><span class="state fail">FAIL</span></td><td>HK5HVH6ZH7300003YV</td></tr>
           <tr><td>1</td><td>Slot 2</td><td><span class="state fail">FAIL</span></td><td>SN 讀取失敗</td></tr>
@@ -95,7 +53,7 @@
           <tr><td>4</td><td>Slot 5</td><td><span class="state fail">FAIL</span></td><td>HK5HVH6ZBB700003YV</td></tr>
           <tr><td>5</td><td>Slot 6</td><td><span class="state fail">FAIL</span></td><td>SN 讀取失敗</td></tr>
         </tbody></table></div><p class="note">照片中測試機第 3 列使用 <code>NOTSET</code>，Log Solution 顯示 <code>NOTEST</code>；兩者在此對照中都代表該通道沒有測試結果。</p>
-        <h3>BT：測試機 Thread、CSV 與 Log Solution Slot</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165718_18_52.jpg" alt="BT 測試機四個 Thread 均顯示 PASSED，右側 B518 Log Solution 四個 Slot 均顯示 PASS" data-caption="BT 實機結果對照"><figcaption>圖 5：BT 實機結果。照片中的 TestThread 1～4 均為 PASSED，Log Solution Slot 1～4 均為 PASS。</figcaption></figure>
+        <h3>BT：測試機 Thread、CSV 與 Log Solution Slot</h3><figure><img class="manual-image result-image" src="Photo/圖片_20260911165718_18_52.jpg" alt="BT 測試機四個 Thread 均顯示 PASSED，右側 B518 Log Solution 四個 Slot 均顯示 PASS" data-caption="BT 實機結果對照"><figcaption>圖 17：BT 實機結果。照片中的 TestThread 1～4 均為 PASSED，Log Solution Slot 1～4 均為 PASS。</figcaption></figure>
         <div class="table-wrap"><table><thead><tr><th>測試機</th><th>TestData CSV</th><th>Log Solution</th><th>照片可見結果</th></tr></thead><tbody>
           <tr><td>TestThread 1</td><td>Thread0</td><td>Slot 1</td><td><span class="state pass">PASSED / PASS</span></td></tr>
           <tr><td>TestThread 2</td><td>Thread1</td><td>Slot 2</td><td><span class="state pass">PASSED / PASS</span></td></tr>
@@ -104,46 +62,23 @@
         </tbody></table></div>
       </section>
 
-      <section id="troubleshooting"><h2>異常處理</h2><div class="accordions">
-        <details><summary>無法開始監控／出現路徑錯誤</summary><p>回到設定，確認必要欄位已選到根目錄、目錄仍存在且目前帳號有讀取權限。DFU/FCT 需要同時設定 active 與最終結果路徑；BT 必須設定 TestData，CaseInfo 可留空。</p></details>
-        <details><summary>一直是 WAITING 或整輪未開始警報</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。若開始期限到時整輪仍沒有可信活動或有效結果，未開始 Slot 會定案 NOTEST、停止來源並進入待確認；在警報視窗按「確認」才算處理完成，關閉視窗不會確認。若本輪已有任一 Slot 的可信活動或結果，不會建立整輪未開始警報；各 Slot 仍依自己的測試期限處理。</p></details>
-        <details><summary>顯示「SN 讀取失敗 / FAIL」</summary><p>DFU/FCT 從 active 的 records.csv 讀可信 SN；若 active 消失前都未讀到可信 SN，會判 FAIL。請提供該 Slot 的 active records.csv 與最終結果 records.csv 給開發者。</p></details>
-        <details><summary>個別 Slot TIMEOUT</summary><p>從首次 TESTING／COMPLETING 起算，包含等待最終結果的時間；逾時只會標記該 Slot，其他未結束 Slot 繼續監控，已完成結果保留。先確認最終 CSV 是否遲到、寫在別的根目錄，或測試機本身停住。</p></details>
-        <details><summary>啟動失敗後如何復位或開始下一輪</summary><p>先依錯誤訊息修正路徑或權限，再按主畫面「確認並復位啟動故障」。這會結束失敗請求或取消並保留已建立的失敗輪次，不會重試或啟動測試機；App 重開後也可依保存的故障紀錄復位。依畫面完成所有必要的警報確認、未確認輪次取消及啟動故障復位後，再明確按「開始監控」建立新輪。</p></details>
-        <details><summary>BT 出現「人工覆核」</summary><p>BT 會鎖定本輪第一個時間戳批次。若看到不同批次，或同一 Thread 出現另一個最終結果，程式會詢問是否接受新檔案。只有確認它屬於本輪、同一台機台要看的資料時才選「是」；不確定時選「否」並把 Session 和原始 Log 回報。</p></details>
-        <details><summary>BT 為何先顯示 TESTING，再有 PASS／FAIL？</summary><p>設定 CaseInfo 後，程式會讀取 Thread1–4 的 CaseInfo 活動並對應主畫面 Slot 1–4，可在最終 CSV 到達前顯示測試中與條碼。最終結果仍以 TestData 下的 PASSED／FAILED CSV 判定。</p></details>
-      </div></section>
-
-      <section id="feedback"><h2>產線測試與回報</h2><h3>建議測試檢查表</h3><div class="checklist"><label><input type="checkbox"> 三種工站都可儲存正確路徑並進入監控中</label><label><input type="checkbox"> 每一有效 Slot 的 SN、TESTING 與最終結果和測試機一致</label><label><input type="checkbox"> PASS、FAIL、NOTEST、TIMEOUT 與停止監控的顯示符合預期</label><label><input type="checkbox"> BT CaseInfo 選填時可在最終 CSV 前看到 Thread 對應的活動</label><label><input type="checkbox"> KVM 可辨識右上角看板與色帶</label></div>
-        <h3>回報到 WeChat</h3><p>開啟「設定 → 事件與 Session → 開啟 Session 紀錄」取得本輪資料夾。Session 內含 <code>session.json</code>（設定、時間、來源路徑）、<code>events.log</code>（事件）與 <code>results.csv</code>（每 Slot 結果）；<strong>不會複製備份原始 Log</strong>，發生異常時請另外附上來源 Log。</p>
-        <figure><img class="manual-image" src="Photo/截圖%202026-09-11%2012.31.07.png" alt="設定視窗中的事件與 Session 分頁，含開啟 Session 紀錄按鈕" data-caption="事件與 Session"><figcaption>圖 6：從「事件與 Session」按「開啟 Session 紀錄」，可開啟目前一輪或全部 Session 的保存位置。</figcaption></figure>
-        <div class="report-box"><textarea id="report-template" rows="11" readonly>【B518 Log Solution 回報】
+      <section id="feedback"><h2>回報與保存證據</h2><figure><img class="manual-image" loading="lazy" src="Photo/generated/events-zh-TW.png" alt="圖 18：事件與 Session 頁，可檢視事件並開啟 Session／歷史查詢。" data-caption="圖 18：事件與 Session 頁，可檢視事件並開啟 Session／歷史查詢。"><figcaption>圖 18：事件與 Session 頁，可檢視事件並開啟 Session／歷史查詢。 </figcaption></figure><p>透過「開啟 Session 紀錄」取得資料夾；常用檔案包含 session.json、events.log、results.csv，輪次稽核另有自己的保存資料。Session 不會複製原始測試 Log。回報時另外附來源 Log，且先記下發生時間、版本、專案／機型與 round_id。</p><div class="checklist"><label><input type="checkbox"> 專案／機型／容量與映射正確</label><label><input type="checkbox"> 準備完成後才啟動 ATE</label><label><input type="checkbox"> Slot、SN、結果與原始 Log 一致</label><label><input type="checkbox"> 警報、衝突、保存與復位各自處理完</label><label><input type="checkbox"> KVM 使用目前十格／兩排配置契約</label></div><div class="report-box"><textarea id="report-template" rows="14" readonly>【B518 Log Solution 回報】
 程式版本：
-工站（DFU / FCT / BT）：
-發生時間：
-Slot／Thread 與產品 SN：
-設定路徑：
+發生時間／時區：
+專案／機型／平台：
+round_id：
+容量／映射：
+Slot／來源通道／SN：
+設定路徑與期限：
 操作步驟：
-預期結果：
-實際結果：
-已附資料：主畫面截圖／Session 資料夾／原始 Log
-其他觀察：</textarea><button id="copy-report" type="button">複製回報範本</button><span id="copy-status" aria-live="polite"></span></div>
-      </section>
+預期／實際結果：
+待確認／保存狀態：
+已附：畫面、Session、輪次稽核、原始 Log
+其他觀察：</textarea><button id="copy-report" type="button">複製回報範本</button><span id="copy-status" aria-live="polite"></span></div></section>
 
-      <section id="developer"><p class="section-label">開發者原理說明</p><h2>資料如何流動</h2><div class="flow" role="img" aria-label="使用者介面、背景監控、Log 解析、事件與 Session 紀錄的資料流"><div>設定與主看板<br><small>b518_log_solution.py</small></div><b>啟動</b><div>背景輪詢<br><small>每 0.5 秒</small></div><b>讀取</b><div>DFU／FCT／BT Log<br><small>log_monitoring.py</small></div><b>事件</b><div>UI 更新與 Session<br><small>JSON、CSV、LOG</small></div></div>
-        <p>桌面 UI 建立監控器並把背景執行緒傳回的事件放進佇列；UI 定期取出事件，更新 Slot 與事件頁。開始監控、可信 TESTING、Slot 結果變更及輪次完成／停止會讓看板短暫回到前景，包括 TIMEOUT 和 STOPPED 更新；不會永久置頂或搶鍵盤焦點。核心監控邏輯不控制測試機，也沒有 Arduino、USB、TCP、KVM 或螢幕擷取依賴。</p>
-        <div class="table-wrap"><table><thead><tr><th></th><th>DFU／FCT</th><th>BT</th></tr></thead><tbody>
-          <tr><th>核心類別</th><td><code>AtlasActiveArchiveMonitor</code></td><td><code>BtLogMonitor</code></td></tr>
-          <tr><th>即時來源</th><td><code>active/group0-slotN/.../records.csv</code></td><td>選填 <code>threadNCaseInfo_YYYY-MM-DD.txt</code></td></tr>
-          <tr><th>最終來源</th><td><code>/Users/gdlocal/Library/Logs/Atlas/unit-archive</code> 下，以 SN 與時間戳定位的 records.csv</td><td>B482 範例為 <code>/vault/B482_RFTEST/TestData</code> 下當日 PASSED 或 FAILED 目錄中的 CSV</td></tr>
-          <tr><th>SN</th><td>讀取 <code>MLB_SN</code>、<code>PrimaryIdentity</code> 或 <code>SerialNumber</code> 等可信欄位，第一次可信值鎖定。</td><td>讀檔名或 CSV 的 SerialNumber；同一 TestData 根目錄中的 CaseInfo SNRead 可提早呈現條碼。</td></tr>
-          <tr><th>判定</th><td>最終 records.csv 任一 status 以 FAIL 開頭即 FAIL；全部以 PASS 開頭才 PASS。</td><td>資料夾、檔名與 CSV 的 PASSED／FAILED 必須一致；FAILED 且空 SN 為 NOTEST。</td></tr>
-          <tr><th>避免誤讀舊檔</th><td colspan="2">開始時記錄既有 CSV 檔案的大小與修改時間，用來辨別新增或變更的 CSV，避免誤讀未更新的舊結果。這項記錄不會截圖或備份原始 Log。DFU／FCT 的 archive 與 BT 最終 CSV 另檢查時間戳；BT CaseInfo 則以記錄內的時間篩選，並非使用 CSV 的檔案比對方式。</td></tr>
-        </tbody></table></div>
-        <h3>核心程式對照</h3><dl class="mapping"><dt><code>b518_log_solution.py</code></dt><dd>畫面、工站設定、偏好設定、快捷鍵、事件佇列與 Session 開啟入口。</dd><dt><code>log_monitoring.py</code></dt><dd>記錄既有檔案的大小與修改時間、CSV 解析、各工站監控器、逾時計算與 SessionStore。</dd><dt><code>test_log_monitoring.py</code></dt><dd>Log 格式、SN、批次、CaseInfo、逾時與狀態判定的自動測試。</dd><dt><code>test_log_solution_ui.py</code></dt><dd>工站 Slot 數、顏色、設定保存、路徑防呆與 UI 行為的自動測試。</dd></dl>
-      </section>
+      <section id="developer"><h2>資料流與狀態責任</h2><div class="flow" role="img" aria-label="App data flow"><div>配置快照</div><b>→</b><div>Platform Adapter</div><b>→</b><div>RoundCoordinator</div><b>→</b><div>UI / KVM / Audit / Session</div></div><p>Adapter 解析平台 Log 與來源證據；RoundCoordinator 統一處理輪次、期限、衝突、停止、取消及結果可用性；UI 使用共同快照更新畫面。App 事件、輪次稽核、Session 保存完整性與產品 PASS／FAIL 是不同判斷。</p><div class="table-wrap"><table><thead><tr><th>模組</th><th>用途</th></tr></thead><tbody><tr><td><code>machine_profiles.py</code></td><td>版本化配置、驗證、遷移與保存。</td></tr><tr><td><code>monitoring_round.py</code></td><td>共同輪次協調與事件。</td></tr><tr><td><code>log_monitoring.py / platform_registry.py</code></td><td>來源監控、平台解析與擴充點。</td></tr><tr><td><code>kvm_display_contract.py</code></td><td>KVM 幾何與整輪標記契約。</td></tr><tr><td><code>historical_event_query.py</code></td><td>固定查詢、分頁、診斷與恢復。</td></tr><tr><td><code>audit_records.py / round_retention.py / app_event_store.py</code></td><td>稽核、保存／封存及清理。</td></tr></tbody></table></div><p>核心不控制 ATE、Arduino、USB 或 TCP，也不在正常監控時自動截圖。手冊素材是開發用測試腳本額外產生，不增加產線 App 的截圖依賴。</p></section>
 
-      <section id="maintenance"><h2>手冊維護</h2><p>本手冊對照 B518 Log Solution v0.1.0 原始碼及目前產線路徑製作。若新增工站、調整 Log 路徑／格式、狀態、逾時值、Session 內容或實機對照照片，請同步更新中英文兩版及原始碼專案內的 <code>docs/manual/MAINTENANCE.md</code>（轉發版不附維護紀錄），並在瀏覽器以離線方式確認圖片、導覽與列印版面。</p></section>
+      <section id="maintenance"><h2>文件版本與素材範圍</h2><p>文件更新：2026-10-19；適用原始碼版本 0.1.0。新圖片記錄於 Photo/generated/manifest.json，包含來源 commit、工作目錄狀態、測試、語言、像素與 SHA-256。以 NSWindow.contentView 擷取實際 Tk 內容，不涵蓋原生系統選單、視窗遮擋、前景焦點或實體 KVM 驗收。</p><p>整個 Manual/ 可離線轉發，請連同 Photo、CSS 與 JavaScript 一起提供。圖片可點擊放大；列印使用目前語言。維護流程、情境清單與驗證結果在原始碼專案 docs/manual/，不放入轉發包。</p></section>
     </main>
   </div>
   <dialog id="image-dialog"><button class="close-dialog" type="button" aria-label="關閉放大圖片">×</button><img id="dialog-image" alt=""><p id="dialog-caption"></p></dialog>
