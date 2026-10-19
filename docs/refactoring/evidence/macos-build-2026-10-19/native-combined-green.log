@@ -1,0 +1,10 @@
+test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed) ... ok
+test_main_page_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking) ... ok
+test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking) ... ok
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... ok
+test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar (test_log_solution_ui.LogSolutionUiTests.test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 26.379s
+
+OK

@@ -76,7 +76,8 @@ class LanguageRefreshNotifications:
 
 
 def show_notice(title, message, *, parent, text_provider, register_refresh,
-                receiver_name=None, background="#f3f4f6", foreground="#111827"):
+                receiver_name=None, background="#f3f4f6", foreground="#111827",
+                hint_factory=None):
     """Keep the modal acknowledgement effect while Tk continues processing events."""
     previous_focus = parent.focus_get()
     previous_grab = parent.grab_current()
@@ -103,6 +104,7 @@ def show_notice(title, message, *, parent, text_provider, register_refresh,
     body.configure(state="disabled")
     acknowledge = ttk.Button(window, command=window.destroy)
     acknowledge.grid(row=1, column=0, sticky="e", padx=16, pady=(0, 16))
+    button_hint = hint_factory(acknowledge) if hint_factory is not None else None
 
     def refresh(_event=None):
         if not window.winfo_exists():
@@ -116,6 +118,8 @@ def show_notice(title, message, *, parent, text_provider, register_refresh,
         body.configure(state="disabled")
         body.yview_moveto(top)
         acknowledge.configure(text=button_text)
+        if button_hint is not None:
+            button_hint.refresh()
 
     unregister = register_refresh(receiver_name or title, refresh, window.winfo_exists)
 

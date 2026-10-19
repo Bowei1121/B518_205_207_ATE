@@ -9,6 +9,40 @@ from pathlib import Path
 
 @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1", "requires desktop Tk")
 class M10TkLifecycleTests(unittest.TestCase):
+    def test_global_hint_cleanup_releases_root_owned_commands(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from b518_log_solution import _LocalizedControlHint
+
+        for destroy_widget in (False, True):
+            with self.subTest(destroy_widget=destroy_widget):
+                root = tk.Tk()
+                errors = []
+                root.report_callback_exception = lambda *args: errors.append(args)
+                first = ttk.Button(root)
+                second = ttk.Button(root)
+                hint = _LocalizedControlHint(first, lambda: "first")
+                peer = _LocalizedControlHint(second, lambda: "second")
+                command = hint._global_motion_binding
+                pointer_poll = hint._pointer_poll_id
+                peer_command = peer._global_motion_binding
+                try:
+                    self.assertIn(command, root._tclCommands)
+                    if destroy_widget:
+                        first.destroy()
+                    else:
+                        hint.close()
+                    self.assertNotIn(command, root._tclCommands)
+                    if pointer_poll is not None:
+                        self.assertNotIn(pointer_poll, root.tk.call("after", "info"))
+                    self.assertFalse(root.tk.call("info", "commands", command))
+                    self.assertIn(peer_command, root._tclCommands)
+                    self.assertIn(peer_command, root.bind_all("<Motion>"))
+                    self.assertEqual(errors, [])
+                finally:
+                    peer.close()
+                    root.destroy()
+
     def test_closed_source_app_scenario_releases_interpreter_before_worker_gc(self):
         # Fault-injection exceptions can keep their traceback/widget graph in a
         # cycle. A later writer's collection must never dispose of that graph

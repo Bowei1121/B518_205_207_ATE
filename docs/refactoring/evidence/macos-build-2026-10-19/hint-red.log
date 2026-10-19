@@ -1,0 +1,46 @@
+test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) ...
+  test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) (destroy_widget=False) ... ERROR
+  test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) (destroy_widget=True) ... ERROR
+
+======================================================================
+ERROR: test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) (destroy_widget=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 34, in test_global_hint_cleanup_releases_root_owned_commands
+    self.assertNotIn(command, root._tclCommands)
+AssertionError: '4369181312_on_global_motion' unexpectedly found in ['tkerror', 'exit', '4348557568destroy', '4369181312_on_global_motion', '4369179520_on_global_motion']
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 41, in test_global_hint_cleanup_releases_root_owned_commands
+    root.destroy()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2391, in destroy
+    Misc.destroy(self)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 689, in destroy
+    self.tk.deletecommand(name)
+_tkinter.TclError: can't delete Tcl command
+
+======================================================================
+ERROR: test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) (destroy_widget=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 34, in test_global_hint_cleanup_releases_root_owned_commands
+    self.assertNotIn(command, root._tclCommands)
+AssertionError: '4369632192_on_global_motion' unexpectedly found in ['tkerror', 'exit', '4354265856destroy', '4369632192_on_global_motion', '4369633792_on_global_motion']
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 41, in test_global_hint_cleanup_releases_root_owned_commands
+    root.destroy()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2391, in destroy
+    Misc.destroy(self)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 689, in destroy
+    self.tk.deletecommand(name)
+_tkinter.TclError: can't delete Tcl command
+
+----------------------------------------------------------------------
+Ran 1 test in 0.230s
+
+FAILED (errors=2)

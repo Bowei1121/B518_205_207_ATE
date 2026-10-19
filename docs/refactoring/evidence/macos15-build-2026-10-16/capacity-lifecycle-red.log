@@ -1,0 +1,23 @@
+test_capacity_scenario_releases_interpreter_before_worker_collection (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_capacity_scenario_releases_interpreter_before_worker_collection) ... FAIL
+
+======================================================================
+FAIL: test_capacity_scenario_releases_interpreter_before_worker_collection (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_capacity_scenario_releases_interpreter_before_worker_collection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_historical_event_capacity_tk.py", line 75, in test_capacity_scenario_releases_interpreter_before_worker_collection
+    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+AssertionError: 1 != 0 : test_real_app_query_remains_responsive_and_matches_disk_baseline (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_real_app_query_remains_responsive_and_matches_disk_baseline) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 16.058s
+
+OK
+Traceback (most recent call last):
+  File "<string>", line 17, in <module>
+AssertionError: Capacity scenario retained a destroyed interpreter
+
+
+----------------------------------------------------------------------
+Ran 1 test in 16.143s
+
+FAILED (failures=1)

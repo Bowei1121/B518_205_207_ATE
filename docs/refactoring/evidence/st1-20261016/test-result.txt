@@ -1,0 +1,6 @@
+test_st1_ten_rows_and_small_window_keep_all_slots_reachable (test_slot_toolbar_st1.SlotViewportTests) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 15.707s
+
+OK

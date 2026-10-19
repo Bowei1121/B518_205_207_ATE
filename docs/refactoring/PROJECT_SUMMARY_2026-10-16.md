@@ -149,3 +149,26 @@
 - ST1 #69 Slot／捲軸；ST2 #70 頂列／雙徽章／語言；ST3 #71 主頁提示能力；ST4 #72 設定與恢復提示；ST5 #73 裁決／警報／關閉提示；ST6 #74 查詢／診斷提示；ST7 #75 恢復窗淺色；ST8 #76 全覆蓋及整合驗收。
 - 依賴：ST4–ST6 各依 ST3，ST8 依 ST1–ST7，其餘無前置。僅按真實前置認領，不將無依賴當成共享 Tk 模組可任意並行。
 - 本次只有文件與議題發布，不修改產品、執行產品測試或採納先前未驗收暫稿；保留未追蹤證據。不修改父規格正文或關閉父議題。
+
+## ST1–ST8 整批實作啟動
+
+- 使用者明確授權依序完整實作八票與驗收、必要議題更新、最後正常合併回 B518-Log-Solution 及雙遠端推送，不逐票等待確認。
+- 開始前已讀回確認 Gitea／GitHub 主線都為 `612c6d08e74c2e6fd2973114ccc9c5d32195a5ad`；在獨立 `/private/tmp/B518-st-integration` 建立 `codex/hmi-slot-toolbar-implementation-20261016`，保留 macOS 回歸修正。
+- 原工作樹未提交主程式／UI 測試及 input-probe／window-bounds 均保持原樣，另記 SHA-256 供結束比對。
+- 詳細進度、逐票提交與驗收見 [執行紀錄](HMI_SLOT_TOOLBAR_EXECUTION_2026-10-16.md)；此段只記啟動，不宣稱八票已完成。
+
+
+### ST1 首票完成
+
+- #69 ST1 已以 TDD 完成並關閉，功能提交 `d3ed365ba86c05674387080ac09e1f15ccfafe75`；整合提交 `299a5c25f30984742acf267ade825b90a0dc68cf` 已推送 Gitea／GitHub 且兩端 SHA 一致。
+- 真正 Aqua Tk 矩陣 32 場景涵蓋容量 1／10／11／20、兩種視窗高度及繁中／英文；足高十列，小高度 4／5 列、末列可達，操作區及 KVM 契約維持。整合後 12 項受影響測試全通過。顯示模式已還原。
+- 證據含 32 張原生截圖、矩陣及重跑紀錄，見 `B518 Log Solution/docs/refactoring/evidence/st1-20261016/README.md`。工廠 KVM/縮放驗收待現場。
+- 當下整合 tip：`299a5c25f30984742acf267ade825b90a0dc68cf`。依序接續 ST2 #70。
+
+## ST1–ST8 整批續作與最終整合（2026-10-16）
+
+- ST1–ST8 已按序實作及整合到 `codex/hmi-slot-toolbar-implementation-20261016`；最終整合證據、逐票畫面與測試索引見 [執行紀錄](HMI_SLOT_TOOLBAR_EXECUTION_2026-10-16.md) 和 [ST8 整合驗收](evidence/st8-20261016/integrated-acceptance.md)。整合階段逐票分支、提交及遠端同步亦記於該執行紀錄。
+- 最終 code review 固定基準為 `e245f6cff9bb4c45954c06208c5adc34d93b5e7e`；Standards 軸無發現。Spec 軸要求直接檢查 ST7 修復前症狀；已用真正 App 在修復前整合版 `77d15fb` 執行 Dark→Light→Dark，症狀未能重現，三張窗口畫面與系統模式讀回保存在 `B518 Log Solution/docs/refactoring/evidence/st7-20261016/baseline-reproduction-attempt/`。根因仍未知；最後 Tk/AppKit replay 中止仍列未通過，不冒稱完成。
+- 使用者檢視真正 App 中英文 hover／focus 畫面後明確選擇保留淺藍 hover 與藍色 focus 框。工廠電腦、產線 KVM／壓縮識別、工廠流程及未覆蓋的 macOS／縮放組合仍需現場驗收；沒有執行無關的長時歷史效能測試。
+- 續作期間使用者要求先不處理 GitHub Issue 問題，因此 #68–#76 未由本次續作更新或關閉。原始 B518 Log Solution 工作樹的未提交主程式／UI 測試及 input-probe／window-bounds 暫稿保留，不納入整合。
+- 整合以正常 fast-forward 推回 `B518-Log-Solution`；推送後 Gitea／GitHub 同為 `e9cfa501b2e072b604c85a7318a24ab774572605`。15 項語言／KVM 測試、4 檔編譯及 `git diff --check` 通過；原工作樹暫稿的五個 SHA-256 與開始前保存值相同。最終對帳文件提交後會再次同步並讀回 refs。

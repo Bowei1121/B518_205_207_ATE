@@ -1,0 +1,406 @@
+{
+  "st2-twelve-conflicts-en": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "settings": [
+        8,
+        8,
+        30,
+        35
+      ],
+      "logo": [
+        41,
+        8,
+        137,
+        35
+      ],
+      "review": [
+        233,
+        8,
+        30,
+        35
+      ],
+      "review_badge": [
+        256,
+        5,
+        20,
+        20
+      ],
+      "bell": [
+        277,
+        8,
+        30,
+        35
+      ],
+      "bell_badge": [
+        300,
+        5,
+        18,
+        18
+      ],
+      "language": [
+        322,
+        10,
+        46,
+        31
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "kvm_state_marker": [
+        286,
+        95,
+        26,
+        26
+      ],
+      "kvm_layout_marker": [
+        138,
+        97,
+        26,
+        14
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "st2-twelve-conflicts-en.png"
+  },
+  "st2-twelve-conflicts-zh-TW": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "settings": [
+        8,
+        8,
+        30,
+        35
+      ],
+      "logo": [
+        41,
+        8,
+        137,
+        35
+      ],
+      "review": [
+        233,
+        8,
+        30,
+        35
+      ],
+      "review_badge": [
+        256,
+        5,
+        20,
+        20
+      ],
+      "bell": [
+        277,
+        8,
+        30,
+        35
+      ],
+      "bell_badge": [
+        300,
+        5,
+        18,
+        18
+      ],
+      "language": [
+        322,
+        10,
+        46,
+        31
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "kvm_state_marker": [
+        286,
+        95,
+        26,
+        26
+      ],
+      "kvm_layout_marker": [
+        138,
+        97,
+        26,
+        14
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "st2-twelve-conflicts-zh-TW.png"
+  },
+  "st2-language-native-keyboard": {
+    "tab_focus": ".!toplevel.!frame.!frame.!button3",
+    "cancel_preserved_language": "zh-TW",
+    "selected_language": "en",
+    "selected_menu_index": 0
+  },
+  "main_page": {
+    "en": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          233,
+          8,
+          30,
+          35
+        ],
+        "alarm": [
+          277,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          322,
+          10,
+          46,
+          31
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          670,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          708,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          730,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          731,
+          125,
+          34
+        ],
+        "app_status": [
+          8,
+          771,
+          247,
+          20
+        ],
+        "diagnostics": [
+          263,
+          771,
+          105,
+          20
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-en.png"
+    },
+    "zh-TW": {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "settings": [
+          8,
+          8,
+          30,
+          35
+        ],
+        "logo": [
+          41,
+          8,
+          137,
+          35
+        ],
+        "review": [
+          233,
+          8,
+          30,
+          35
+        ],
+        "alarm": [
+          277,
+          8,
+          30,
+          35
+        ],
+        "language": [
+          322,
+          10,
+          46,
+          31
+        ],
+        "project": [
+          94,
+          46,
+          262,
+          22
+        ],
+        "station": [
+          94,
+          68,
+          262,
+          22
+        ],
+        "start": [
+          8,
+          670,
+          360,
+          36
+        ],
+        "monitor_state": [
+          8,
+          708,
+          360,
+          20
+        ],
+        "stop": [
+          8,
+          730,
+          110,
+          36
+        ],
+        "retry_save": [
+          243,
+          731,
+          125,
+          34
+        ],
+        "app_status": [
+          8,
+          771,
+          247,
+          20
+        ],
+        "diagnostics": [
+          263,
+          771,
+          105,
+          20
+        ],
+        "kvm": [
+          8,
+          95,
+          360,
+          61
+        ],
+        "kvm_state_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "kvm_layout_marker": [
+          138,
+          97,
+          26,
+          14
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "main-page-zh-TW.png"
+    }
+  }
+}
