@@ -20,10 +20,10 @@ B518_TK_TESTS=1 /opt/anaconda3/bin/python3 scripts/run_tests.py test_log_solutio
 
 ## 固定基底比較
 
-從整合基底 `b2be9c66f0eb54796bf35c1f0016a64850131a28` 匯出乾淨快照，使用同一 Python/Tk/Quartz 環境重跑上述六個非 LI6 舊行為測試（排除已更新的舊 focus-force 預期）。結果為 6 tests、5 failures、2 errors：
+從整合基底 `b2be9c66f0eb54796bf35c1f0016a64850131a28` 匯出乾淨快照，使用同一 Python/Tk/Quartz 環境重跑上述六個非 LI6 舊行為測試（排除已更新的舊 focus-force 預期）。實際命令輸出為 `Ran 6 tests`、`FAILED (failures=5, errors=2)`。這裡的 6 是測試方法數；`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged` 在自身清理與 `tearDownClass` 各額外拋出一個 Tcl cleanup error，因此 unittest 的 failure/error 記錄合計 7 筆，並非 7 個不同測試方法：
 
-- `test_empty_paths_are_rejected_before_monitor_creation`、`test_monitor_creation_error_is_visible_and_returns_to_standby`、`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged`、`test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy` 在基底上有相同的斷言／等待／Tcl cleanup 錯誤。
-- `test_main_page_actions_explain_bilingual_behavior_without_invoking` 在基底上也失敗，該次為原生滑鼠按下狀態未顯示 (`pressed` assertion)；branch 批次則於同一測試的 Tk presentation 等候逾時。
+- `test_empty_paths_are_rejected_before_monitor_creation`、`test_monitor_creation_error_is_visible_and_returns_to_standby`、`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged`、`test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy` 四個測試方法失敗；通知 badge 測試另外產生兩個 Tcl cleanup error（一個測試清理、一個 `tearDownClass`）。
+- `test_main_page_actions_explain_bilingual_behavior_without_invoking` 在基底上失敗，該次為原生滑鼠按下狀態未顯示 (`pressed` assertion)；branch 批次則於同一測試的 Tk presentation 等候逾時。
 - `test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar` 在基底單獨分類批次及 branch 單獨分類批次都通過，屬完整批次的時序失敗。
 
 branch 單獨分類命令：

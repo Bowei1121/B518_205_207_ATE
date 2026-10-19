@@ -260,5 +260,5 @@
   ],
   "foreground_failure_diagnostic": "RuntimeError: injected native raise failure",
   "command": "B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=\"$PWD/docs/refactoring/evidence/li6-foreground\" /opt/anaconda3/bin/python3 scripts/run_tests.py test_li6_foreground",
-  "result": "1 test passed; 0 failures; 0 skips"
+  "result": "Ran 1 test; OK; 0 failures, 0 errors, 0 skips"
 }

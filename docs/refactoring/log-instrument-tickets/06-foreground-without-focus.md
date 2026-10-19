@@ -15,13 +15,35 @@
 
 ## Acceptance criteria
 
-- [ ] 開始監控、可信TESTING、結果更新及一般／人工停止整輪完成均有可觀察的前景效果；依輪次與實際轉換處理，不漏人工停止或TIMEOUT等結果更新。
-- [ ] 不呼叫強制鍵盤焦點或設永久topmost；使用者仍能操作其他視窗，既有人工裁決／保存及關閉流程保持。
-- [ ] 同批事件可合併提升，狀態未變不因固定輪詢反覆提升；舊輪事件不提升錯誤輪次畫面。
-- [ ] 真Log App與另一個本機測試視窗驗證遮擋前後順序、鍵盤焦點、最小化恢復及非永久置頂，不以假root呼叫次數代替實機效果。
-- [ ] 前景操作失敗保留可查閱診斷，不讓例外中斷輪次處理或暗中跳過其餘結果更新；新增說明保持兩語。
-- [ ] 保留適當隔離資料與前景／焦點證據，驗收不包含橋接點Dock、JetKVM傳輸或特定ATE測試軟體。
+- [x] 開始監控、可信TESTING、結果更新及一般／人工停止整輪完成均有可觀察的前景效果；依輪次與實際轉換處理，不漏人工停止或TIMEOUT等結果更新。
+- [x] 不呼叫強制鍵盤焦點或設永久topmost；使用者仍能操作其他視窗，既有人工裁決／保存及關閉流程保持。
+- [x] 同批事件可合併提升，狀態未變不因固定輪詢反覆提升；舊輪事件不提升錯誤輪次畫面。
+- [x] 真Log App與另一個本機測試視窗驗證遮擋前後順序、鍵盤焦點、最小化恢復及非永久置頂，不以假root呼叫次數代替實機效果。
+- [x] 前景操作失敗保留可查閱診斷，不讓例外中斷輪次處理或暗中跳過其餘結果更新；新增說明保持兩語。
+- [x] 保留適當隔離資料與前景／焦點證據，驗收不包含橋接點Dock、JetKVM傳輸或特定ATE測試軟體。
 
 ## Blocked by
 
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/79
+
+
+## LI6 implementation record
+
+來源分支：`codex/li6-foreground-without-focus` (`342345c29204d4334567297286e6a737a3def72c`)
+目標整合分支：`codex/log-instrument-1-2`（當前整合 SHA：`b2be9c66f0eb54796bf35c1f0016a64850131a28`）
+Merger 候選分支：`codex/li6-merger-integration`
+候選 merge commit：`35f757051a2e2938fc63716b6598cc7af3c4f383`，父 commits：`b2be9c66f0eb54796bf35c1f0016a64850131a28`、`342345c29204d4334567297286e6a737a3def72c`。待主整合分支 fast-forward 後更新最終整合 SHA。
+
+以輪次 snapshot 的實際狀態與結果轉換排程前景提示；同一 Tk idle 批次合併、輪詢不變時不重複提升，輪次 ID 不符時忽略。macOS 原生視窗使用非 key window 的 order-front 路徑；不設永久 topmost、不呼叫 `focus_force()`。原生提升失敗記錄雙語 App event 與原始診斷，仍繼續更新結果列。README、RS-WMT pilot 與 Ticket 17 驗收說明同步調整為雙語前景規則。
+
+### 實際驗證
+
+- `B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR="$PWD/docs/refactoring/evidence/li6-foreground" /opt/anaconda3/bin/python3 scripts/run_tests.py test_li6_foreground` — macOS Python 3.11.7、Tk 8.6.12、Quartz/AppKit；1 test，通過。真正 B518 Tk 主視窗與本機第二個 Tk 視窗驗證開始監控／可信 TESTING、結果變更、一般完成、TIMEOUT、人工停止完成、最小化恢復、焦點保持、非永久置頂、同狀態輪詢不提升、舊輪事件忽略及原生提升例外後 FAIL 仍呈現。
+- `/opt/anaconda3/bin/python3 scripts/run_tests.py test_language_catalog test_monitoring_round` — 71 tests，通過。
+- 固定基底 UI 分類：`B518_TK_TESTS=1 /opt/anaconda3/bin/python3 scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_empty_paths_are_rejected_before_monitor_creation test_log_solution_ui.LogSolutionUiTests.test_monitor_creation_error_is_visible_and_returns_to_standby test_log_solution_ui.LogSolutionUiTests.test_real_tk_notification_badge_stays_until_alarm_is_acknowledged test_log_solution_ui.LogSolutionUiTests.test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking test_log_solution_ui.LogSolutionUiTests.test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar` — 基底 `b2be9c66f0eb54796bf35c1f0016a64850131a28` 的 6 個測試方法，實際為 5 failures、2 cleanup errors；通知 badge 測試自身清理與 `tearDownClass` 各產生一個 Tcl cleanup error，詳見 `B518 Log Solution/docs/refactoring/evidence/li6-foreground/ui-regression-classification.md`。
+- `python3 -m compileall -q src tests` 與 `git diff --check` — 通過。
+- 真桌面逐事件 JSON 與截圖：`B518 Log Solution/docs/refactoring/evidence/li6-foreground/`；執行命令與環境記於其中 README，執行觀測記於 `run.json`。
+
+### 範圍與限制
+
+本機合成輪次與第二個 Tk 視窗驗證；未連接現場 ATE、KVM_Log、JetKVM、Dock automation 或 LabVIEW。既有整套 `test_log_solution_ui` 基底有預存 UI 失敗／cleanup errors，分類和逐項基底比較見證據文件；不將其宣稱為通過。
