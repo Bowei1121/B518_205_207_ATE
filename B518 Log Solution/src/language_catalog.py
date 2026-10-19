@@ -393,7 +393,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "conflict.hint.close": "Hide this window without resolving or removing any pending conflict.",
         "conflict.hint.disabled.no_selection": "Select a pending conflict before choosing a result.",
         "alarm.title": "Round Monitoring Timeout",
-        "alarm.body": "The round monitoring limit was reached. New source reads have stopped. Existing terminal results were retained, and unfinished positions were handled using their observed activity.\n\n{round_label}: {round_id}\n{alarm_label}: {alarm_id}\n{created_label}: {created_at}\n{status}",
+        "alarm.body": "Source collection has stopped. Existing terminal results were retained, and unfinished positions were handled according to the alarm reason.\n\n{round_label}: {round_id}\n{alarm_label}: {alarm_id}\n{created_label}: {created_at}\n{status}",
         "alarm.round": "Test Round",
         "alarm.identity": "Alarm",
         "alarm.created_at": "Created at",
@@ -410,6 +410,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "alarm.hint.disabled.acknowledged": "This round alarm has already been acknowledged.",
         "alarm.hint.disabled.preparation_pending": "Wait for source preparation to finish before acknowledging the alarm.",
         "alarm.reason.round_deadline": "The configured round monitoring limit was reached.",
+        "alarm.reason.start_deadline_no_activity": "No trusted activity or valid result was detected before the configured start deadline. This does not confirm an ATE failure.",
         "recovery.title": "Notifications and Recovery",
         "recovery.alarms": "Round Alarms",
         "recovery.saves_archives": "Save and Archive",
@@ -471,6 +472,8 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.timeout.slot': '{station} Slot {slot} timed out: {status} after {elapsed} seconds (limit {deadline} seconds)',
         'round.timeout.whole': '{station} round monitoring timed out after {elapsed} seconds (limit {deadline} seconds)',
         'round.alarm.created': '{station} round timeout alarm created',
+        'round.start_deadline.whole': '{station}: No test start was detected within {deadline} seconds. Source collection has stopped; this does not confirm an ATE failure.',
+        'round.start_deadline.alarm.created': '{station} alarm: No test start was detected within the configured start deadline.',
         'round.alarm.acknowledged': 'Round timeout alarm acknowledged; other review items remain',
         'round.alarm.ignored': 'Round alarm acknowledgement ignored',
         'round.conflict.detected': 'Slot {slot} has a same-round result conflict and awaits review',
@@ -897,7 +900,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "conflict.hint.close": "隱藏視窗，不會裁決或移除任何待確認衝突。",
         "conflict.hint.disabled.no_selection": "請先選取一筆待確認衝突，再選擇結果。",
         "alarm.title": "整輪監控逾時",
-        "alarm.body": "整輪監控已到達設定上限。新的來源讀取已停止，既有終態已保留，未完成位置已依活動證據裁決。\n\n{round_label}：{round_id}\n{alarm_label}：{alarm_id}\n{created_label}：{created_at}\n{status}",
+        "alarm.body": "來源收集已停止。既有終態已保留，未完成位置已依警報原因裁決。\n\n{round_label}：{round_id}\n{alarm_label}：{alarm_id}\n{created_label}：{created_at}\n{status}",
         "alarm.round": "測試輪次",
         "alarm.identity": "警報",
         "alarm.created_at": "建立時間",
@@ -914,6 +917,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "alarm.hint.disabled.acknowledged": "此整輪警報已確認。",
         "alarm.hint.disabled.preparation_pending": "請等來源準備完成後再確認警報。",
         "alarm.reason.round_deadline": "已達設定的整輪監控時間上限。",
+        "alarm.reason.start_deadline_no_activity": "設定的開始期限內未偵測到可信活動或有效結果；這不代表已確認 ATE 故障。",
         "recovery.title": "通知與恢復",
         "recovery.alarms": "整輪警報",
         "recovery.saves_archives": "保存與封存",
@@ -975,6 +979,8 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.timeout.slot': '{station} 通道 {slot} 逾時：經過 {elapsed} 秒，期限 {deadline} 秒，結果 {status}',
         'round.timeout.whole': '{station} 整輪監控逾時：經過 {elapsed} 秒，期限 {deadline} 秒',
         'round.alarm.created': '{station} 已建立整輪逾時警報',
+        'round.start_deadline.whole': '{station}：開始期限 {deadline} 秒內未偵測到測試開始。來源收集已停止；這不代表已確認 ATE 故障。',
+        'round.start_deadline.alarm.created': '{station} 已建立警報：開始期限內未偵測到測試開始。',
         'round.alarm.acknowledged': '整輪逾時警報已確認；仍有其他項目待確認',
         'round.alarm.ignored': '整輪警報確認已忽略',
         'round.conflict.detected': '通道 {slot} 發現同輪結果衝突，等待人工確認',
@@ -1127,9 +1133,13 @@ def capture_round_event_message(kind: str, station: str, slot: object, status: s
             message_id = "round.timeout.slot"
             parameters.update(slot=display_slot, status=status or "unknown")
         else:
-            message_id = "round.timeout.whole"
+            message_id = ("round.start_deadline.whole"
+                          if detail.get("reason") == "start_deadline_no_activity"
+                          else "round.timeout.whole")
     elif kind == "round_alarm_created":
-        message_id = "round.alarm.created"
+        message_id = ("round.start_deadline.alarm.created"
+                      if detail.get("reason") == "start_deadline_no_activity"
+                      else "round.alarm.created")
     elif kind == "round_alarm_acknowledged":
         message_id = "round.alarm.acknowledged"
     elif kind == "round_alarm_acknowledgement_ignored":

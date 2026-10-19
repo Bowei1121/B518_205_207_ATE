@@ -72,6 +72,10 @@ class PreparedRoundStart:
     def round_timeout_seconds(self) -> int:
         return self._profile.timeouts["round"]
 
+    @property
+    def start_timeout_seconds(self) -> int:
+        return self._profile.timeouts["start"]
+
     def start(self, coordinator: RoundCoordinator, run_async: bool = True) -> RoundSnapshot:
         """Accept this prepared configuration through the existing round API."""
         profile = self._profile
@@ -140,6 +144,7 @@ class PreparedRoundStart:
             monitor_factory,
             run_async=run_async,
             round_timeout_seconds=timeouts["round"],
+            start_timeout_seconds=timeouts["start"],
             capacity=profile.capacity,
             audit_context=audit_context,
         )
@@ -156,6 +161,11 @@ class RoundStartPreparation:
                 monotonic: Optional[Callable] = None) -> PreparedRoundStart:
         """Validate source access and capture all values needed for one round."""
         validate_profile(profile, self._registry)
+        if profile.key == ("B518", "FCT") and profile.timeouts.get("start") != 120:
+            profile = MachineProfile(
+                profile.project, profile.machine, profile.platform, profile.capacity,
+                dict(profile.paths), profile.mapping, dict(profile.timeouts, start=120),
+            )
         fixed_profile = _fixed_profile(profile)
         definition = self._registry.get(fixed_profile.platform)
         resolved_paths = {}

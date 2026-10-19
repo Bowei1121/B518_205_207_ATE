@@ -46,7 +46,7 @@ from monitoring_files import (
 TERMINAL = {"PASS", "FAIL", "NOTEST", "STOPPED", "TIMEOUT"}
 DEFAULT_TIMEOUTS = {
     "DFU": {"start": 30, "test": 480, "round": 7200},
-    "FCT": {"start": 30, "test": 480, "round": 7200},
+    "FCT": {"start": 120, "test": 480, "round": 7200},
     "BT": {"start": 30, "test": 240, "round": 7200},
 }
 

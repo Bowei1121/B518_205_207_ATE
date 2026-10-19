@@ -187,12 +187,14 @@ class MachineProfileStore:
 
         if type(raw.get("schema_version")) is int and raw.get("schema_version") == PROFILE_SCHEMA_VERSION:
             try:
-                catalog = ProfileCatalog.from_dict(raw)
+                catalog = _with_fct_start_timeout(ProfileCatalog.from_dict(raw))
                 retention_error = self._load_retention_days(raw)
                 language_error = self._load_language(raw)
                 project, machine = raw.get("project"), raw.get("machine")
                 try:
                     catalog.get(project, machine)
+                    if _catalog_has_noncanonical_fct_timeout(ProfileCatalog.from_dict(raw)):
+                        self.save(catalog, project, machine)
                     return catalog, project, machine, retention_error
                 except ProfileError:
                     fallback = catalog.profiles[0]
@@ -225,6 +227,7 @@ class MachineProfileStore:
 
     def save(self, catalog: ProfileCatalog, project: str, machine: str,
              preserve_legacy: bool = False) -> None:
+        catalog = _with_fct_start_timeout(catalog)
         catalog.get(project, machine)
         retention_days = self._retention_days
         language = self._language
@@ -300,7 +303,7 @@ class MachineProfileStore:
 
     def import_document(self, document: str, selected_project: str, selected_machine: str):
         """Validate a complete catalog, then atomically replace the saved catalog."""
-        catalog = ProfileCatalog.from_json(document)
+        catalog = _with_fct_start_timeout(ProfileCatalog.from_json(document))
         try:
             catalog.get(selected_project, selected_machine)
         except ProfileError:
@@ -351,6 +354,8 @@ def profile_from_editor_fields(project: str, machine: str, platform: str, capaci
         name: _editor_integer(timeouts.get(name, ""), "{} 期限（正整數秒）".format(label))
         for name, label in (("start", "開始"), ("test", "測試"), ("round", "整輪"))
     }
+    if project.strip() == "B518" and machine == "FCT":
+        parsed_timeouts["start"] = 120
     profile = MachineProfile(
         project=project.strip() if isinstance(project, str) else project,
         machine=machine, platform=platform, capacity=capacity_value,
@@ -368,6 +373,24 @@ def _editor_integer(value: str, field: str) -> int:
     if parsed <= 0:
         raise ProfileError("{}必須是正整數。".format(field))
     return parsed
+
+
+def _with_fct_start_timeout(catalog: ProfileCatalog) -> ProfileCatalog:
+    """Pin every stored FCT profile to the field-approved 120 second start limit."""
+    return ProfileCatalog(
+        MachineProfile(
+            profile.project, profile.machine, profile.platform, profile.capacity,
+            dict(profile.paths), profile.mapping,
+            dict(profile.timeouts, start=120)
+            if profile.key == ("B518", "FCT") else profile.timeouts,
+        )
+        for profile in catalog.profiles
+    )
+
+
+def _catalog_has_noncanonical_fct_timeout(catalog: ProfileCatalog) -> bool:
+    return any(profile.key == ("B518", "FCT") and profile.timeouts["start"] != 120
+               for profile in catalog.profiles)
 
 def _profile_from_dict(record: object) -> MachineProfile:
     if not isinstance(record, Mapping):
@@ -468,7 +491,8 @@ def migrate_legacy_preferences(preferences: Mapping[str, object]) -> Tuple[Profi
         paths = legacy_paths.get(machine_name, {}) if matches_legacy and isinstance(legacy_paths, Mapping) else {}
         old_timeouts = legacy_timeouts.get(machine_name, {}) \
             if matches_legacy and isinstance(legacy_timeouts, Mapping) else {}
-        defaults = {"start": 240 if platform_name == "rswmt" else 30, "test": 480, "round": 7200}
+        defaults = {"start": (240 if platform_name == "rswmt" else 120)
+                    if machine_name == "FCT" else 30, "test": 480, "round": 7200}
         timeouts = {}
         for field, default in defaults.items():
             raw = old_timeouts.get(field, default) if isinstance(old_timeouts, Mapping) else default
@@ -477,6 +501,8 @@ def migrate_legacy_preferences(preferences: Mapping[str, object]) -> Tuple[Profi
             except (TypeError, ValueError):
                 value = default
             timeouts[field] = value if value > 0 else default
+        if project_name == "B518" and machine_name == "FCT":
+            timeouts["start"] = 120
         profile_paths = {key: value for key, value in paths.items() if key in {"active", "final", "caseinfo"}} \
             if isinstance(paths, Mapping) else {}
         if platform_name == "atlas":
