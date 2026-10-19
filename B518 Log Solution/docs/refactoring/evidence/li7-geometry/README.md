@@ -5,14 +5,20 @@
 ## 執行方式與矩陣
 
 ```sh
-B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities
+B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry/escalated-desktop-20261019 PYTHONPATH=src /opt/anaconda3/bin/python3 -X faulthandler -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities
 ```
 
-目前保存的8張舊畫面及JSON涵蓋Tk scaling 1.0與1.5、容量1、10、11、20。它們可作為畫面幾何參考；產生時使用測試內直接替換 profile catalog 的舊方法，**不能**作為經 Profile Editor 持久化與正常切換的驗收證據。
+目前保留兩組矩陣。根目錄的舊8張畫面及JSON使用測試內直接替換 profile catalog 的舊方法，只作幾何參考，**不能**作為正常 Profile Editor 切換的驗收證據。已通過的正式矩陣位於 [`escalated-desktop-20261019/`](escalated-desktop-20261019/)；它涵蓋Tk scaling 1.0與1.5、容量1、10、11、20，並以真實 Profile Editor 流程產生。
 
-LI7 acceptance test 已改為每一容量都在可見 Settings Profile Editor 中編輯容量與mapping欄位，按下實際「Apply」按鈕，並從偏好檔重新載入確認儲存值；20→1也走同一流程。新紀錄會填入 `profile_change_path`。目前尚未成功重跑這版測試，請勿把舊圖認作新流程的證據。
+LI7 acceptance test 每一容量都在可見 Settings Profile Editor 中編輯容量與mapping欄位，按下實際「Apply」按鈕，並從偏好檔重新載入確認儲存值；20→1也走同一流程。每份JSON的 `profile_change_path` 記錄此驗收路徑。
 
-測試支援以 `B518_LI7_SCALING=1.0` 或 `1.5` 將兩種縮放分成獨立程序重跑。既有完整矩陣曾成功執行，當時的擷取方式有效，但其容量來源是直接替換測試 profile catalog，故不能滿足目前要求的正常 Profile Editor 儲存/切換驗收。2026-10-19 18:24:07重跑完整矩陣的命令為 `B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry/revised-full PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities`。macOS LaunchServices/hiservices XPC 回報 `Connection Invalid error for service com.apple.hiservices-xpcservice`，Tk在建立第一個root時於 `NSMenuItem initWithTitle:action:keyEquivalent:` 以 `Invalid parameter not satisfying: aString != nil` 原生中止；新版矩陣沒有產生。將scaling拆成獨立程序重跑也遇到相同環境錯誤。
+測試支援以 `B518_LI7_SCALING=1.0` 或 `1.5` 將兩種縮放分成獨立程序重跑。sandbox執行時因無法使用 Aqua GUI session，LaunchServices/hiservices XPC回報 `Connection Invalid`，Tk在root初始化期間原生中止；這是執行環境限制，不是程式或驗收測試失敗。使用授權的桌面GUI session後，以下完整矩陣通過：
+
+```sh
+B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry/escalated-desktop-20261019 PYTHONPATH=src /opt/anaconda3/bin/python3 -X faulthandler -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities
+```
+
+結果：`Ran 1 test in 7.788s / OK`。成功矩陣各有一份單獨JSON與contentView PNG，`li7-geometry-matrix.json`彙整8組資料。
 
 ## 凍結的幾何與量測
 
