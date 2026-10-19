@@ -81,8 +81,10 @@ class RoundAuditStore:
 
     def __init__(self, root: Path, round_id: str, station: str,
                  accepted_start_at: str, accepted_start_monotonic: float,
-                 config: Optional[dict] = None, on_error=None):
-        self.path = Path(root) / round_id
+                 config: Optional[dict] = None, on_error=None,
+                 existing_audit_path: Optional[Path] = None):
+        self.path = (Path(existing_audit_path).parent if existing_audit_path is not None
+                     else Path(root) / round_id)
         self.round_id = round_id
         self.station = station
         self._lock = _lock_for(self.path / "audit.jsonl")
@@ -112,7 +114,7 @@ class RoundAuditStore:
             "legacy_session_path": None,
         }
         with self._lock:
-            path = self.path / "audit.jsonl"
+            path = self.audit_path
             if path.exists():
                 existing = read_round_audit(path)
                 if existing["round"]["round_id"] != round_id:

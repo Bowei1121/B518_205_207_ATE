@@ -16,6 +16,7 @@ from log_monitoring import MonitorEvent, SlotResult, TERMINAL
 from audit_records import AuditEvent, AuditRecordError, RoundAuditStore, read_round_audit
 from app_event_store import AppEventCleanupError
 from cleanup_reasons import capture_cleanup_reason
+from historical_event_display import iter_historical_event_sources
 from language_catalog import capture_round_event_message, make_bilingual_message
 from round_archival import (ArchiveLocation, ArchiveSnapshot, normalize_archive_time,
                             write_round_archive)
@@ -1762,24 +1763,37 @@ class RoundCoordinator:
         """Cancel a startup-failed round from its audit after the live object is gone."""
         if self._audit_root is None:
             return True
-        audit_path = self._audit_root / failure.round_id / "audit.jsonl"
-        if not audit_path.is_file():
-            return False
         try:
-            audit = read_round_audit(audit_path)
-            if (audit["round"]["round_id"] != failure.round_id or
-                    audit["completion_reason"] not in {"start_failed", "start_failed_cancelled"}):
+            sources = tuple(iter_historical_event_sources(self._audit_root))
+        except OSError:
+            return False
+        matches = []
+        for source in sources:
+            if source.kind != "round-audit":
+                continue
+            try:
+                candidate = read_round_audit(source.path)
+            except (OSError, AuditRecordError):
+                continue
+            if candidate["round"]["round_id"] == failure.round_id:
+                matches.append((source.path, candidate))
+        if len(matches) != 1:
+            return False
+        audit_path, audit = matches[0]
+        try:
+            if audit["completion_reason"] not in {"start_failed", "start_failed_cancelled"}:
                 return False
-            if audit["completion_reason"] == "start_failed_cancelled":
+            present = {event["kind"] for event in audit["events"]}
+            required = {"start_failure_reset", "round_cancelled"}
+            if required.issubset(present):
                 return True
             header = audit["round"]
             started_monotonic = float(header["accepted_start_monotonic"])
             journal = RoundAuditStore(
                 self._audit_root, failure.round_id, failure.station,
                 header["accepted_start_at"], started_monotonic,
-                config=header.get("config", {}),
+                config=header.get("config", {}), existing_audit_path=audit_path,
             )
-            present = {event["kind"] for event in audit["events"]}
             operation_at = self._wall_clock().isoformat(timespec="seconds")
             next_sequence = audit["events"][-1]["sequence"] + 1 if audit["events"] else 1
             records = (

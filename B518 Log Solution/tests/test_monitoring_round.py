@@ -11,13 +11,13 @@ from unittest.mock import patch
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from log_monitoring import BtLogMonitor, MonitorEvent, SlotResult
+from log_monitoring import BtLogMonitor, MonitorEvent, SessionStore, SlotResult
 from monitoring_round import RoundCoordinator
 from rswmt_monitoring import RsWmtLogMonitor
 import app_event_store
 import audit_records
 from app_event_store import AppEventStore, read_app_event_store
-from audit_records import read_round_audit
+from audit_records import AuditEvent, RoundAuditStore, read_round_audit
 
 
 class FakeMonitor:
@@ -167,6 +167,23 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def _persist_start_failure(self, audit_root, app_path, round_id, session_path=None):
+        store = AppEventStore(app_path)
+        recorder = RoundCoordinator(audit_root=audit_root)
+        recorder.register_app_event_store(store)
+        failure = recorder.record_start_failure("FCT", "source setup failed", round_id)
+        self.assertTrue(store.flush(3))
+        store.stop()
+
+        started_at = datetime.now().isoformat(timespec="seconds")
+        journal = RoundAuditStore(audit_root, round_id, "FCT", started_at, 1.0)
+        journal.append_event(AuditEvent(1, "start_failed", "FCT source setup failed", None),
+                             started_at, 0.0)
+        self.assertTrue(journal.flush(3))
+        if session_path is not None:
+            journal.attach_session(session_path)
+        return failure
+
     def test_accepted_round_stays_preparing_until_background_source_baseline_is_ready(self):
         source_entered = threading.Event()
         release_source = threading.Event()
@@ -2293,6 +2310,91 @@ class MonitoringRoundTests(unittest.TestCase):
             new_round = restarted.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
             self.assertNotEqual(new_round.round_id, started.round_id)
             close_and_wait(restarted)
+            restarted_store.stop()
+
+    def test_restart_reset_repairs_partial_persisted_cancellation_without_duplicate_events(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_path = root / "app-events.json"
+            audit_root = root / "sessions"
+            round_id = "round-partial-reset"
+            self._persist_start_failure(audit_root, app_path, round_id)
+
+            partial_store = AppEventStore(app_path)
+            partial_reset = RoundCoordinator(audit_root=audit_root)
+            partial_reset.register_app_event_store(partial_store)
+
+            real_append = audit_records.RoundAuditStore._append_complete_line
+
+            def fail_cancel_event(journal, record):
+                if record.get("kind") == "round_cancelled":
+                    raise OSError("cancel event disk fault")
+                return real_append(journal, record)
+
+            with patch.object(audit_records.RoundAuditStore, "_append_complete_line",
+                              new=fail_cancel_event):
+                self.assertFalse(partial_reset.reset_start_failure("operator confirmed reset"))
+            partial = read_round_audit(audit_root / round_id / "audit.jsonl")
+            self.assertEqual([item["kind"] for item in partial["events"]].count(
+                "start_failure_reset"), 1)
+            self.assertFalse(any(item["kind"] == "round_cancelled" for item in partial["events"]))
+            self.assertEqual(partial_reset.start_failure_snapshot().round_id, round_id)
+            partial_store.stop()
+
+            restarted_store = AppEventStore(app_path)
+            restarted = RoundCoordinator(audit_root=audit_root)
+            restarted.register_app_event_store(restarted_store)
+            self.assertEqual(restarted.start_failure_snapshot().round_id, round_id)
+            self.assertTrue(restarted.reset_start_failure("retry after disk recovery"))
+            self.assertTrue(restarted_store.flush(3))
+            repaired = read_round_audit(audit_root / round_id / "audit.jsonl")
+            self.assertEqual([item["kind"] for item in repaired["events"]].count(
+                "start_failure_reset"), 1)
+            self.assertEqual([item["kind"] for item in repaired["events"]].count(
+                "round_cancelled"), 1)
+            restarted_store.stop()
+
+    def test_restart_reset_finds_start_failure_audit_attached_to_session_by_round_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_path = root / "app-events.json"
+            session_root = root / "sessions"
+            round_id = "round-session-attached-reset"
+            session = SessionStore("fct-session-public-seam", {}, session_root)
+            self._persist_start_failure(
+                session_root, app_path, round_id, session.path)
+            audit_path = session.path / "audit.jsonl"
+            self.assertTrue(audit_path.is_file())
+            self.assertEqual(read_round_audit(audit_path)["round"]["round_id"], round_id)
+
+            restarted_store = AppEventStore(app_path)
+            restarted = RoundCoordinator(audit_root=session_root)
+            restarted.register_app_event_store(restarted_store)
+            self.assertEqual(restarted.start_failure_snapshot().round_id, round_id)
+            self.assertTrue(restarted.reset_start_failure("operator confirmed reset"))
+            repaired = read_round_audit(audit_path)
+            self.assertTrue(any(item["kind"] == "start_failure_reset" for item in repaired["events"]))
+            self.assertTrue(any(item["kind"] == "round_cancelled" for item in repaired["events"]))
+            self.assertFalse((session_root / round_id / "audit.jsonl").exists())
+            restarted_store.stop()
+
+    def test_restart_reset_rejects_duplicate_audit_sources_for_same_round_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_path = root / "app-events.json"
+            session_root = root / "sessions"
+            round_id = "round-duplicate-audit"
+            self._persist_start_failure(session_root, app_path, round_id)
+            audit_path = session_root / round_id / "audit.jsonl"
+            duplicate = session_root / "other-session" / "audit.jsonl"
+            duplicate.parent.mkdir(parents=True)
+            duplicate.write_bytes(audit_path.read_bytes())
+
+            restarted_store = AppEventStore(app_path)
+            restarted = RoundCoordinator(audit_root=session_root)
+            restarted.register_app_event_store(restarted_store)
+            self.assertFalse(restarted.reset_start_failure("must not guess source"))
+            self.assertEqual(restarted.start_failure_snapshot().round_id, round_id)
             restarted_store.stop()
 
     def test_manual_stop_can_be_explicitly_cancelled_without_erasing_results(self):

@@ -5,7 +5,7 @@
 - `Manual/` 僅保留閱讀所需的 11 個檔案：`index.html`、`index-en.html`、`manual.css`、`patch.css`、`manual.js` 及 `Photo/` 內六張原始截圖。整個資料夾可以直接轉發，不能只傳 HTML，否則圖片、樣式與互動會遺失。
 - 收件者先解壓縮，再開啟 `Manual/index.html`；頁面頂端可以切換 English，也可以直接開啟 `index-en.html`。不需安裝套件或連線。
 - 維護文件與專案摘要保存在 `docs/manual/`，不放入轉發資料夾。歷史摘要中的舊路徑保留作為當時紀錄。
-- 本次提供專案根目錄的 `B518_Log_Solution_Manual_2026-09-21.zip`，ZIP 為本機交付產物，依既有 `.gitignore` 不提交。更新手冊後應重新打包，排除 `.DS_Store`、`__MACOSX`、Markdown 紀錄及其他非閱讀資源；壓縮檔內只需 `Manual/` 的上述 11 個檔案。
+- 最新本機交付檔為專案根目錄的 `B518_Log_Solution_Manual_2026-10-19.zip`；先前交付檔為 `B518_Log_Solution_Manual_2026-09-21.zip`。ZIP 是本機產物，依既有 `.gitignore` 不提交。每次更新手冊後重新打包，排除 `.DS_Store`、`__MACOSX`、Markdown 紀錄及其他非閱讀資源；壓縮檔內只放 `Manual/` 的 11 個閱讀檔案。
 
 手冊入口為 `Manual/index.html`，樣式及互動分別在 `manual.css`、`manual.js`。所有資源必須使用相對路徑，讓使用者可直接以 `file://` 離線開啟。
 
@@ -27,3 +27,11 @@
 發版前以瀏覽器直接開啟 `index.html`，確認：圖片可讀取及可放大、行動版導覽可收合、回報範本可複製或手動選取、列印不顯示側欄和操作按鈕。手冊說明必須以 `B518 Log Solution/log_monitoring.py` 與 `b518_log_solution.py` 的實際行為為準。
 
 狀態校對時應一起核對狀態產生條件、STATUS_COLOURS、Slot 與 KVM 色帶的套色流程，以及回到前景的觸發條件。2026-09-18 已確認手冊八種狀態顏色與原始碼一致，COMPLETING 為 #82c7ff；實機安裝包尚未驗證，不能只因未觀察到短暫狀態而更改手冊色彩。TE 內容以「先記錄原有 Log，避免誤讀舊結果」說明啟動準備。
+
+## 維護紀錄
+
+### 2026-10-19
+
+- 中英文手冊更新日期同步為 2026-10-19；預設逾時值列明 DFU 30/480 秒、B518/FCT 120/480 秒、BT 30/240 秒，並說明工程師可調整設定。
+- 快速開始與啟動失敗處置同步要求：先依畫面完成必要的警報確認、輪次取消或啟動故障復位，再明確開始下一輪。
+- 重新產生 `B518_Log_Solution_Manual_2026-10-19.zip`，僅含 `Manual/` 11 個閱讀檔案。離線資源與章節 ID/order 已做靜態檢查；本次沒有執行瀏覽器視覺、互動、手機或列印驗收。
