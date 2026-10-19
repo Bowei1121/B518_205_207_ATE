@@ -32,6 +32,10 @@
 - AppKit contentView bitmap cache 可讀並呈現執行中的Tk畫面；它不是WindowServer螢幕截圖。Quartz window capture曾產生黑圖，`screencapture -x` 回報 `could not create image from display 69734272`，因此不將其作為有效畫面證據。環境與證據細節見證據README。
 - sandbox重跑 GUI 測試時，LaunchServices/hiservices XPC回報 `Connection invalid`，Tk在建立首個root期間由AppKit原生中止；改在授權桌面 Aqua session 執行後矩陣通過，因此判定為sandbox環境限制。Quartz window capture黑圖及`screencapture -x`限制記錄於證據README；驗收使用已目視確認可讀的真Tk contentView快取圖。
 
+### 整合完成紀錄
+
+- LI7 實作與驗收證據已整合到 `codex/log-instrument-1-2`，整合 commit：`e6ebd579ce42055f9fa57da9b02b3d133f1b33a9`。整合後 contract test 8/8、真 Tk 聚焦測試 2/2（6.816s）、compileall 與 `git diff --check` 均通過。
+
 ## Blocked by
 
 None (can start immediately)
