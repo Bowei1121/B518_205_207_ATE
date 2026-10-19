@@ -60,6 +60,7 @@ def state_for_round_snapshot(snapshot: Optional[RoundSnapshot]) -> MarkerState:
     alarm = snapshot.round_alarm
     alarm_pending = alarm is not None and not alarm.acknowledged_at
     if (snapshot.state == RoundState.AWAITING_REVIEW or snapshot.pending_conflicts
+            or snapshot.cancellation_available
             or alarm_pending):
         return MarkerState.REVIEW
     if snapshot.state == RoundState.COMPLETED and snapshot.result_available:

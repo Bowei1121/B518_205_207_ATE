@@ -1,0 +1,178 @@
+{
+  "command": "PYTHONPATH=src /opt/anaconda3/bin/python3 tools/smoke_li5_manual_cancel_app.py",
+  "python": "3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ]",
+  "platform": "darwin",
+  "macos_version": "10.16",
+  "tk_patchlevel": "8.6.12",
+  "app_pid": 5814,
+  "screens": [
+    {
+      "phase": "manual_stop_review",
+      "round_id": "b98190ae7b434a2dadb7260fad7763ba",
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ],
+      "result_available": true,
+      "start_button_state": "disabled",
+      "file": "manual-stop-review.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "manual_stop_cancelled",
+      "round_id": "b98190ae7b434a2dadb7260fad7763ba",
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ],
+      "result_available": false,
+      "file": "manual-stop-cancelled.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "new_round_after_manual_stop",
+      "round_id": "60113b88ad784dc6bf3568581f7c9711",
+      "old_round_id": "b98190ae7b434a2dadb7260fad7763ba",
+      "file": "new-round-after-manual-stop.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "preparation_timeout_review",
+      "round_id": "3afcaf6c7f2c49d28d40a34a7e5d7b07",
+      "results": [
+        "NOTEST",
+        "NOTEST"
+      ],
+      "alarm_acknowledged": false,
+      "alarm_window": {
+        "file": "preparation-timeout-alarm.png",
+        "window_title": "Round Monitoring Timeout",
+        "window_owner_pid": 5814,
+        "window_bounds": {
+          "X": 106.0,
+          "Height": 368.0,
+          "Y": 88.0,
+          "Width": 700.0
+        },
+        "physical_pixels": [
+          1400,
+          736
+        ]
+      },
+      "file": "preparation-timeout-review.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "preparation_timeout_acknowledged",
+      "round_id": "3afcaf6c7f2c49d28d40a34a7e5d7b07",
+      "alarm_acknowledged": true,
+      "result_available": true,
+      "cancellation_available": true,
+      "cancellation_button_state": "normal",
+      "start_button_state": "disabled",
+      "file": "preparation-timeout-acknowledged.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "preparation_timeout_cancelled",
+      "round_id": "3afcaf6c7f2c49d28d40a34a7e5d7b07",
+      "results": [
+        "NOTEST",
+        "NOTEST"
+      ],
+      "result_available": false,
+      "file": "preparation-timeout-cancelled.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "phase": "new_round_after_timeout",
+      "round_id": "83dcbce3e776463ba269934ea12bba61",
+      "old_round_id": "3afcaf6c7f2c49d28d40a34a7e5d7b07",
+      "file": "new-round-after-timeout.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 5814,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    }
+  ],
+  "assertions": [
+    "manual stop -> explicit local cancel -> explicit new round",
+    "blocked preparation deadline -> alarm acknowledgement -> explicit cancel -> new round",
+    "old source handoff cannot affect the new round"
+  ],
+  "external_integrations": "none; synthetic local source only"
+}

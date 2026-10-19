@@ -415,6 +415,7 @@ def read_round_audit(path: Path) -> dict:
     released = False
     manual_stop = False
     startup_failed = False
+    round_cancelled = False
     state = "READY"
     completion_reason = ""
     alarms = {}
@@ -423,6 +424,9 @@ def read_round_audit(path: Path) -> dict:
     for event in events:
         kind = event["kind"]
         slot = event.get("display_position")
+        if round_cancelled and kind not in {"audit_write_failed", "session_write_failed",
+                                            "save_recovered"}:
+            continue
         if kind in {"audit_write_failed", "session_write_failed"}:
             save_failure_pending = True
         elif kind == "save_recovered":
@@ -446,7 +450,7 @@ def read_round_audit(path: Path) -> dict:
                                       "source_position": detail.get("chosen_source_position")})
             state = "AWAITING_REVIEW" if any(
                 conflict.get("resolution") is None for conflict in conflicts.values()) else state
-        elif kind == "result" and slot is not None:
+        elif kind == "result" and slot is not None and not round_cancelled:
             results[slot] = {"display_position": slot, "source_position": event.get("source_position"),
                              "sn": event.get("sn"), "status": event.get("status"),
                              "source": event.get("source"), "source_time": event.get("source_time"),
@@ -484,6 +488,14 @@ def read_round_audit(path: Path) -> dict:
         elif kind == "round_cancelled" and startup_failed:
             state = "STOPPED"
             completion_reason = "start_failed_cancelled"
+            round_cancelled = True
+            released = False
+        elif kind == "round_cancelled":
+            detail = event.get("detail", {})
+            round_cancelled = True
+            released = False
+            state = "STOPPED"
+            completion_reason = detail.get("reason", "unverified_round_cancelled")
         elif kind == "finished":
             released = True
             state = "COMPLETED"
