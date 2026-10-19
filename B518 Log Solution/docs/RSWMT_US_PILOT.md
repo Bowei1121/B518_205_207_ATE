@@ -30,7 +30,7 @@ source tests and sample replay do not prove packaged-app compatibility.
 3. Compare Slot1–4 against DUT1–4. CSV `tc=Slot...` values determine the mapping;
    filename order does not. Once a complete CSV is observed, its SN appears with
    COMPLETING. After five seconds without changes, PASS or FAIL is displayed and
-   the dashboard comes to the front.
+   the dashboard is raised to the front without taking keyboard focus.
 4. A Fail without a serial number remains FAIL. Missing files do not imply PASS
    or NOTEST. The event/session tab records rejected or conflicting data.
 5. Start a new monitoring round before the next RS-WMT run. Existing files are
@@ -50,7 +50,10 @@ Record the app version, macOS version and the configured paths. Verify:
 - All four DUT/Slot serial numbers and final statuses, including initialization
   failures without a serial number.
 - Whether `.log` files grow while the test is running, and in which directory.
-- The global start shortcut, final-result foreground behavior and per-Slot timeout.
+- The global start shortcut, foreground behavior at monitoring-ready, TESTING,
+  result updates and round completion, and per-Slot timeout. Raising the Log
+  window must leave keyboard input in the window you were using; it is not kept
+  on top, and unchanged polling must not keep raising it.
 - Multiple rounds without old or duplicate results entering a new round.
 
 For a mismatch, preserve the complete run directory containing paired CSV/log

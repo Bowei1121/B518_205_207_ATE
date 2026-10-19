@@ -1,0 +1,264 @@
+{
+  "python": "3.11.7 (main, Dec 15 2023, 12:09:04) [Clang 14.0.6 ]",
+  "tk": "8.6.12",
+  "observations": [
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "testing-batch",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "result-updated",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "normal-complete",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "timeout-complete",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "manual-stop-complete",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    },
+    {
+      "event": "minimize-restore",
+      "log_above_other_after": true,
+      "focused_widget": ".!toplevel.!entry",
+      "topmost": false
+    },
+    {
+      "log_above_other_before": false,
+      "focused_widget": ".!toplevel.!entry"
+    }
+  ],
+  "screenshots": [
+    {
+      "title": "LI6 Other Local Window",
+      "geometry": "250x42+106+88",
+      "size": [
+        250,
+        42
+      ],
+      "controls": {
+        "entry": [
+          32,
+          0,
+          186,
+          22
+        ]
+      },
+      "native_bounds": {
+        "X": 106.0,
+        "Y": 88.0,
+        "Width": 250.0,
+        "Height": 70.0
+      },
+      "image_pixels": {
+        "width": 500,
+        "height": 140
+      },
+      "screenshot": "li6-other-window-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-testing-batch-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-timeout-complete-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-manual-stop-complete-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-minimize-restore-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-result-updated-en.png"
+    },
+    {
+      "title": "B518 FCT ATE Log Solution-V0.1.0",
+      "geometry": "376x808+1052+32",
+      "size": [
+        376,
+        808
+      ],
+      "controls": {
+        "start": [
+          8,
+          584,
+          360,
+          38
+        ]
+      },
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 32.0,
+        "Width": 376.0,
+        "Height": 836.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1672
+      },
+      "screenshot": "li6-log-window-normal-complete-en.png"
+    }
+  ],
+  "foreground_failure_diagnostic": "RuntimeError: injected native raise failure",
+  "command": "B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=\"$PWD/docs/refactoring/evidence/li6-foreground\" /opt/anaconda3/bin/python3 scripts/run_tests.py test_li6_foreground",
+  "result": "1 test passed; 0 failures; 0 skips"
+}
