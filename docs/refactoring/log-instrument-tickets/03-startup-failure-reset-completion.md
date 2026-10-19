@@ -1,7 +1,7 @@
 # LI3 #80 完成紀錄
 
-分支：`codex/li3-startup-failure-reset`  
-基底：`ba026325f167a67f8f623aebd0849d8dccc5e550`  
+分支：`codex/li3-startup-failure-reset`
+基底：`ba026325f167a67f8f623aebd0849d8dccc5e550`
 狀態：實作與本機驗收完成；待整合分支同步、遠端推送及 GitHub Issue 更新。
 
 ## 修改與驗收對照
