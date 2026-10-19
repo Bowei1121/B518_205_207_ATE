@@ -1,0 +1,83 @@
+test_closed_source_app_scenario_releases_interpreter_before_worker_gc (test_m10_tk_lifecycle.M10TkLifecycleTests.test_closed_source_app_scenario_releases_interpreter_before_worker_gc) ... FAIL
+test_language_refresh_preserves_event_log_reading_position (test_m10_integration.M10SourceIntegrationTests.test_language_refresh_preserves_event_log_reading_position) ... ok
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions) ... Exception in Tkinter callback
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 862, in callit
+    func(*args)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 577, in invoke
+    callback(*args)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 2171, in _drain_events
+    self._handle_event(self.events.get_nowait())
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 2235, in _handle_event
+    self._open_conflict_review()
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 2311, in _open_conflict_review
+    comparison_font = tkfont.nametofont("TkDefaultFont")
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/font.py", line 23, in nametofont
+    return Font(name=name, exists=True, root=root)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/font.py", line 86, in __init__
+    if self.name not in tk.splitlist(tk.call("font", "names")):
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+_tkinter.TclError: can't invoke "font" command: application has been destroyed
+FAIL
+test_session_directory_failure_is_visible_and_persisted (test_m10_integration.M10SourceIntegrationTests.test_session_directory_failure_is_visible_and_persisted) ... ok
+test_visible_language_write_error_refresh_keeps_original_preferences (test_m10_integration.M10SourceIntegrationTests.test_visible_language_write_error_refresh_keeps_original_preferences) ... ok
+test_visible_source_failure_notice_and_fixed_bilingual_audit (test_m10_integration.M10SourceIntegrationTests.test_visible_source_failure_notice_and_fixed_bilingual_audit) ... ok
+test_visible_start_validation_notice_refreshes_without_accepting_a_round (test_m10_integration.M10SourceIntegrationTests.test_visible_start_validation_notice_refreshes_without_accepting_a_round) ... ok
+
+======================================================================
+FAIL: test_closed_source_app_scenario_releases_interpreter_before_worker_gc (test_m10_tk_lifecycle.M10TkLifecycleTests.test_closed_source_app_scenario_releases_interpreter_before_worker_gc)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 51, in test_closed_source_app_scenario_releases_interpreter_before_worker_gc
+    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+AssertionError: 1 != 0 : test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions) ... Exception in Tkinter callback
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 1968, in __call__
+    return self.func(*args)
+           ^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 862, in callit
+    func(*args)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 577, in invoke
+    callback(*args)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 5319, in <lambda>
+    100, lambda: self._poll_close_status(generation))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 5329, in _poll_close_status
+    self._finish_close()
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py", line 5367, in _finish_close
+    self.root.destroy()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2391, in destroy
+    Misc.destroy(self)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 689, in destroy
+    self.tk.deletecommand(name)
+_tkinter.TclError: can't delete Tcl command
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 3.157s
+
+OK
+Traceback (most recent call last):
+  File "<string>", line 21, in <module>
+AssertionError: Closed Tk interpreter survived its main-thread test cleanup
+
+
+======================================================================
+FAIL: test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_integration.py", line 134, in test_real_source_all_windows_switch_cancel_and_single_decisions
+    self.pump(root, lambda: app.round_alarm_window is not None)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_integration.py", line 60, in pump
+    self.fail("Timed out waiting for public App state")
+AssertionError: Timed out waiting for public App state
+
+----------------------------------------------------------------------
+Ran 7 tests in 26.597s
+
+FAILED (failures=2)

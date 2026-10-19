@@ -1,0 +1,7 @@
+test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed) ... ok
+test_destroyed_ui_is_safe_when_next_worker_collects_cycles (test_log_solution_ui.LogSolutionUiTests.test_destroyed_ui_is_safe_when_next_worker_collects_cycles) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 5.564s
+
+OK

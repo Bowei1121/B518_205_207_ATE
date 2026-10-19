@@ -1,0 +1,6 @@
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 8.714s
+
+OK

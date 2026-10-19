@@ -1,0 +1,13 @@
+test_closed_source_app_scenario_releases_interpreter_before_worker_gc (test_m10_tk_lifecycle.M10TkLifecycleTests.test_closed_source_app_scenario_releases_interpreter_before_worker_gc) ... ok
+test_global_hint_cleanup_releases_root_owned_commands (test_m10_tk_lifecycle.M10TkLifecycleTests.test_global_hint_cleanup_releases_root_owned_commands) ... ok
+test_language_refresh_preserves_event_log_reading_position (test_m10_integration.M10SourceIntegrationTests.test_language_refresh_preserves_event_log_reading_position) ... ok
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions) ... ok
+test_session_directory_failure_is_visible_and_persisted (test_m10_integration.M10SourceIntegrationTests.test_session_directory_failure_is_visible_and_persisted) ... ok
+test_visible_language_write_error_refresh_keeps_original_preferences (test_m10_integration.M10SourceIntegrationTests.test_visible_language_write_error_refresh_keeps_original_preferences) ... ok
+test_visible_source_failure_notice_and_fixed_bilingual_audit (test_m10_integration.M10SourceIntegrationTests.test_visible_source_failure_notice_and_fixed_bilingual_audit) ... ok
+test_visible_start_validation_notice_refreshes_without_accepting_a_round (test_m10_integration.M10SourceIntegrationTests.test_visible_start_validation_notice_refreshes_without_accepting_a_round) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 7.235s
+
+OK

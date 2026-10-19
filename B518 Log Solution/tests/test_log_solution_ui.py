@@ -525,6 +525,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.recovery_window.withdraw()
                 app.root.deiconify()
                 app.root.lift()
+                app.root.focus_force()
                 root.update()
                 main_hint = app._main_action_hints[app.start_button]
                 post_mouse(app.start_button, Quartz.kCGEventMouseMoved)
@@ -1253,6 +1254,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._render_conflict_review_button = original_render_conflict_button
                 toolbar_hints = tuple(app._toolbar_hints)
                 language_hint = toolbar_hints[1]
+                root.deiconify()
+                root.lift()
+                app.language_button.focus_force()
+                root.update()
                 app.language_button.event_generate("<Enter>")
                 self.wait_for_ui(root, lambda: language_hint._window is not None)
                 language_hint_window = language_hint._window
@@ -1439,10 +1444,27 @@ class LogSolutionUiTests(unittest.TestCase):
                             capture_errors.append(
                                 "{}: timed out capturing native menu".format(screenshot_tag))
 
+                popup_entered = threading.Event()
+                popup_exited = threading.Event()
+                actual_popup = app.language_menu.tk_popup
+
+                def observed_popup(*args, **kwargs):
+                    popup_entered.set()
+                    try:
+                        return actual_popup(*args, **kwargs)
+                    finally:
+                        popup_exited.set()
+
+                popup_patcher = patch.object(app.language_menu, "tk_popup", observed_popup)
+                popup_patcher.start()
+                self.addCleanup(popup_patcher.stop)
+
                 def send_menu_keys(screenshot_tag, keycodes):
                     def deliver():
                         try:
-                            time.sleep(.35)
+                            if not popup_entered.wait(3):
+                                raise AssertionError("native menu popup never started")
+                            time.sleep(.1)
                             capture_language_menu(screenshot_tag, delay=0,
                                                   wait_for_capture=True)
                             for index, keycode in enumerate(keycodes):
@@ -1453,7 +1475,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                         raise AssertionError(
                                             "Quartz could not create menu key event {} ({})".format(
                                                 keycode, "down" if down else "up"))
-                                    Quartz.CGEventPostToPid(process_id, event)
+                                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
                                 if index < len(keycodes) - 1:
                                     time.sleep(.18)
                         except Exception as error:
@@ -1468,7 +1490,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 post_key(49, pump=False)  # Open, then cancel from inside native menu loop.
                 send_menu_keys("escape", (53,))
-                root.update()
+                self.wait_for_ui(root, popup_exited.is_set)
                 self.assertFalse(app.language_menu.winfo_viewable())
                 self.assertEqual(app.language_choice.get(), current_language)
                 self.assertIsNone(app._language_hint._window)
@@ -1482,9 +1504,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 target_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(index, "label") == target_name)
+                popup_entered.clear()
+                popup_exited.clear()
                 post_key(125, pump=False)  # Down opens; native menu receives further keys.
-                send_menu_keys("return", (125, 36))
+                send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
+                self.wait_for_ui(root, lambda: app.language_choice.get() == target_language)
                 self.assertEqual(app.language_choice.get(), target_language)
                 self.assertIs(root.focus_get(), app.language_button)
                 write_tk_bounds_evidence("st2-language-native-keyboard", {
@@ -1630,7 +1655,6 @@ class LogSolutionUiTests(unittest.TestCase):
             unregister_failed = app.register_language_receiver(
                 "Diagnostics window", refresh_failed_window, failed_window.winfo_exists)
             with patch.object(app.project_label, "configure", side_effect=RuntimeError("refresh failed")):
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese = next(i for i in range(app.language_menu.index("end") + 1)
                                if app.language_menu.entrycget(i, "label") == "繁體中文")
@@ -1966,10 +1990,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch("app_event_store._atomic_replace", side_effect=fail_app_store), \
                         patch.object(app.project_label, "configure",
                                      side_effect=RuntimeError("main text refresh failed")):
-                    x = app.language_button.winfo_width() // 2
-                    y = app.language_button.winfo_height() // 2
-                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
-                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
                     root.update()
                     chinese = next(
                         index for index in range(app.language_menu.index("end") + 1)
@@ -2042,6 +2062,7 @@ class LogSolutionUiTests(unittest.TestCase):
         # Tk on macOS uses a process-wide event queue. Keep one interpreter
         # alive; each App still gets a real, independently destroyed window.
         cls._desktop_root = tk.Tk()
+        cls._pointer_before_suite = cls._desktop_root.winfo_pointerxy()
         cls._desktop_root.geometry("1x1+0+0")
         cls._desktop_root.update()
         cls._desktop_root.tk.eval(
@@ -2052,9 +2073,15 @@ class LogSolutionUiTests(unittest.TestCase):
     def tearDownClass(cls):
         cls._desktop_root.destroy()
         cls._desktop_root = None
+        if Quartz is not None:
+            Quartz.CGWarpMouseCursorPosition(cls._pointer_before_suite)
         gc.collect()
 
     def setUp(self):
+        # A prior native-input test can leave the real cursor over a new
+        # App's controls, competing with this test's synthetic focus/Enter.
+        if Quartz is not None and os.environ.get("B518_MANUAL_HOVER") != "1":
+            self.assertEqual(Quartz.CGWarpMouseCursorPosition((1, 1)), 0)
         self._async_errors = []
         errors = self._async_errors
         previous_hook = sys.unraisablehook
@@ -2441,9 +2468,6 @@ class LogSolutionUiTests(unittest.TestCase):
             try:
                 root.update()
                 original_preferences = preferences.read_bytes()
-                x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
-                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
-                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -2521,9 +2545,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     raise OSError("app journal unavailable")
 
                 with patch("app_event_store._atomic_replace", side_effect=fail_app_store):
-                    x, y = app.language_button.winfo_width() // 2, app.language_button.winfo_height() // 2
-                    app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
-                    app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
                     root.update()
                     chinese_index = next(
                         index for index in range(app.language_menu.index("end") + 1)
@@ -2644,7 +2665,6 @@ class LogSolutionUiTests(unittest.TestCase):
                         patch("b518_log_solution.show_notice"):
                     click(export_button)
                 self.assertIn("could not be exported", app.profile_editor_status.get())
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -2654,7 +2674,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertIn("無法匯出配置", app.profile_editor_status.get())
                 self.assertIn("No such file or directory", app.profile_editor_status.get())
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 app.language_menu.invoke(0)
                 root.update()
@@ -2887,8 +2906,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     for path in session_path.rglob("*") if path.is_file()
                 ))
 
-                # Exercise the visible menu button and the actual native menu entry.
-                app.language_button.event_generate("<Button-1>")
+                # Exercise the actual Menu command; native popup input has its own test.
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -3322,7 +3340,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("App events deleted 0, retained 2", app.retention_cleanup_status.get())
                 self.assertTrue(archive_path.parent.exists())
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -3333,7 +3350,6 @@ class LogSolutionUiTests(unittest.TestCase):
                               app.retention_cleanup_status.get())
                 self.assertIn("App 事件從各自原事件時間起算",
                               app.retention_help_label.cget("text"))
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 app.language_menu.invoke(0)
                 root.update()
@@ -3629,7 +3645,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIn("retention media unavailable",
                               app.rounds.retention_cleanup_summaries()[0].app_events.reason)
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -3690,8 +3705,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     app._refresh_retention_cleanup_status()
                     self.assertIn("An App event original time has no time zone",
                                   app.retention_cleanup_status.get())
-                    app.language_button.event_generate("<Button-1>")
-                    root.update()
                     chinese_index = next(
                         index for index in range(app.language_menu.index("end") + 1)
                         if app.language_menu.entrycget(index, "label") == "繁體中文")
@@ -5047,7 +5060,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                           app.profile_error))
 
                         def select_language(label):
-                            app.language_button.event_generate("<Button-1>")
                             root.update()
                             menu_index = next(
                                 item for item in range(app.language_menu.index("end") + 1)
@@ -5210,7 +5222,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                 before_language_refresh = (
                                     session_path / "audit.jsonl").read_bytes()
                                 state_before_language_refresh = app.rounds.snapshot()
-                                app.language_button.event_generate("<Button-1>")
                                 root.update()
                                 chinese_index = next(
                                     menu_index for menu_index in range(
@@ -5239,7 +5250,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                     (session_path / "audit.jsonl").read_bytes(),
                                     before_language_refresh,
                                 )
-                                app.language_button.event_generate("<Button-1>")
                                 root.update()
                                 english_index = next(
                                     menu_index for menu_index in range(
@@ -5889,7 +5899,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 audit_bytes_before_refresh = audit_path.read_bytes()
                 state_before_refresh = app.rounds.snapshot()
                 selected_conflict_id = second_conflict.conflict_id
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -5911,7 +5920,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                  ("SN-ORIGINAL", "SN-CANDIDATE-2"))
                 self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 english_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -6658,7 +6666,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 audit_bytes_before_refresh = (app.rounds.session_path / "audit.jsonl").read_bytes()
                 state_before_refresh = app.rounds.snapshot()
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -6677,7 +6684,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual((app.rounds.session_path / "audit.jsonl").read_bytes(),
                                  audit_bytes_before_refresh)
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 english_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -6767,7 +6773,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                      if event.event.kind == "timeout")
                 self.assertIsNotNone(timeout_event.localized_message)
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 chinese_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -6783,7 +6788,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.rounds.snapshot().events, state_before_refresh.events)
                 self.assertEqual(audit_path.read_bytes(), audit_bytes_before_refresh)
 
-                app.language_button.event_generate("<Button-1>")
                 root.update()
                 english_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
@@ -7660,9 +7664,8 @@ class LogSolutionUiTests(unittest.TestCase):
             )
 
             def select_language(language):
-                app.language_button.event_generate("<ButtonPress-1>")
-                app.language_button.event_generate("<ButtonRelease-1>")
-                root.update()
+                # Exercise the real Menu command without entering Aqua's
+                # modal popup loop before the test can select an item.
                 native_name = "English" if language == ENGLISH else "繁體中文"
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
@@ -7824,9 +7827,8 @@ class LogSolutionUiTests(unittest.TestCase):
             )
 
             def select_language(language):
-                app.language_button.event_generate("<ButtonPress-1>")
-                app.language_button.event_generate("<ButtonRelease-1>")
-                root.update()
+                # Exercise the real Menu command without entering Aqua's
+                # modal popup loop before the test can select an item.
                 native_name = "English" if language == ENGLISH else "繁體中文"
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
@@ -7906,9 +7908,8 @@ class LogSolutionUiTests(unittest.TestCase):
             )
 
             def select_language(language):
-                app.language_button.event_generate("<ButtonPress-1>")
-                app.language_button.event_generate("<ButtonRelease-1>")
-                root.update()
+                # Exercise the real Menu command without entering Aqua's
+                # modal popup loop before the test can select an item.
                 native_name = "English" if language == ENGLISH else "繁體中文"
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
@@ -8005,9 +8006,8 @@ class LogSolutionUiTests(unittest.TestCase):
             )
 
             def select_language(language):
-                app.language_button.event_generate("<ButtonPress-1>")
-                app.language_button.event_generate("<ButtonRelease-1>")
-                root.update()
+                # Exercise the real Menu command without entering Aqua's
+                # modal popup loop before the test can select an item.
                 native_name = "English" if language == ENGLISH else "繁體中文"
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
@@ -8072,7 +8072,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
 
             def select_language(language):
-                click(app.language_button)
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(item, "label") ==
@@ -8252,8 +8251,6 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIn(
                         "Cleanup paused while records are being saved for app close.",
                         app.retention_cleanup_status.get())
-                    app.language_button.event_generate("<Button-1>")
-                    root.update()
                     chinese_index = next(
                         index for index in range(app.language_menu.index("end") + 1)
                         if app.language_menu.entrycget(index, "label") == "繁體中文"
@@ -10158,8 +10155,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 sash = app.conflict_panes.sashpos(0)
 
                 for language in ("繁體中文", "English", "繁體中文"):
-                    app.language_button.event_generate("<Button-1>")
-                    root.update()
                     menu_index = next(index for index in range(app.language_menu.index("end") + 1)
                                       if app.language_menu.entrycget(index, "label") == language)
                     app.language_menu.invoke(menu_index)
@@ -10511,11 +10506,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.fail("Timed out while pumping the Tk language-refresh flow")
 
             def select_language(label):
-                x = max(1, app.language_button.winfo_width() // 2)
-                y = max(1, app.language_button.winfo_height() // 2)
-                app.language_button.event_generate("<ButtonPress-1>", x=x, y=y)
-                app.language_button.event_generate("<ButtonRelease-1>", x=x, y=y)
-                root.update()
                 index = next(
                     item for item in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(item, "label") == label)
@@ -10912,7 +10902,19 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 NSRunningApplication.runningApplicationWithProcessIdentifier_(
                     os.getpid()).activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
-                widget.winfo_toplevel().lift()
+                owner = widget.winfo_toplevel()
+                # Both minimum-height dialogs cannot fit vertically on this
+                # desktop. Keep the other dialog away from the target actions.
+                if owner is app.conflict_window and app.round_alarm_window:
+                    app.round_alarm_window.geometry("+30+0")
+                elif owner is app.round_alarm_window:
+                    owner.geometry("+30+{}".format(max(
+                        0, root.winfo_screenheight() - owner.winfo_height() - 50)))
+                owner.deiconify()
+                owner.lift()
+                focused = root.focus_get()
+                if focused is None or focused.winfo_toplevel() is not owner:
+                    owner.focus_force()
                 root.update()
                 point = (widget.winfo_rootx() + widget.winfo_width() // 2,
                          widget.winfo_rooty() + widget.winfo_height() // 2)
@@ -10955,10 +10957,10 @@ class LogSolutionUiTests(unittest.TestCase):
                         Quartz.CGEventCreateMouseEvent(
                             event_source, Quartz.kCGEventMouseMoved, point,
                             Quartz.kCGMouseButtonLeft))
-                pump_until(lambda: any(
-                    child.overrideredirect() and child.winfo_viewable()
-                    for child in widget.winfo_toplevel().winfo_children()
-                    if isinstance(child, tk.Toplevel)))
+                pump_until(lambda: _LocalizedControlHint._visible_hint is not None and
+                           _LocalizedControlHint._visible_hint._widget is widget and
+                           _LocalizedControlHint._visible_hint._window is not None and
+                           _LocalizedControlHint._visible_hint._window.winfo_viewable())
                 hint_window = next(
                     child
                     for child in widget.winfo_toplevel().winfo_children()
@@ -10980,7 +10982,10 @@ class LogSolutionUiTests(unittest.TestCase):
                         Quartz.kCGHIDEventTap,
                         Quartz.CGEventCreateMouseEvent(
                             event_source, event_kind, point, Quartz.kCGMouseButtonLeft))
-                    root.update()
+                    deadline = time.monotonic() + .08
+                    while time.monotonic() < deadline:
+                        root.update()
+                        time.sleep(.005)
 
             def press_and_release_outside(widget, screenshot_name):
                 event_source = Quartz.CGEventSourceCreate(
@@ -11046,6 +11051,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.conflict_window and app.conflict_window.winfo_exists() and
                            app.round_alarm_window and app.round_alarm_window.winfo_exists())
 
+                # Native pointer acceptance needs exposed controls in both
+                # sibling windows, rather than hovering through an occluder.
+                app.conflict_window.geometry("960x540+30+0")
+                root.update()
+                app.round_alarm_window.geometry("700x300+30+{}".format(
+                    app.conflict_window.winfo_rooty() +
+                    app.conflict_window.winfo_height() + 12))
+                root.update()
                 app._select_language(ENGLISH)
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.event_generate("<<ListboxSelect>>")
@@ -11078,6 +11091,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 app.resolve_conflict_original_button.focus_force()
+                pump_until(lambda: app.conflict_window.focus_get() is
+                           app.resolve_conflict_original_button)
                 press_key(48)
                 pump_until(lambda: app.conflict_window.focus_get() is
                            app.resolve_conflict_candidate_button)

@@ -1,0 +1,29 @@
+test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed) ... FAIL
+test_destroyed_ui_is_safe_when_next_worker_collects_cycles (test_log_solution_ui.LogSolutionUiTests.test_destroyed_ui_is_safe_when_next_worker_collects_cycles) ... FAIL
+test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen (test_log_solution_ui.LogSolutionUiTests.test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen) ... ok
+
+======================================================================
+FAIL: test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed (test_log_solution_ui.LogSolutionUiTests.test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 1257, in test_hm1_toolbar_title_status_and_kvm_geometry_stay_fixed
+    self.wait_for_ui(root, lambda: language_hint._window is not None)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2393, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+======================================================================
+FAIL: test_destroyed_ui_is_safe_when_next_worker_collects_cycles (test_log_solution_ui.LogSolutionUiTests.test_destroyed_ui_is_safe_when_next_worker_collects_cycles)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2375, in test_destroyed_ui_is_safe_when_next_worker_collects_cycles
+    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 30, in <module>
+AssertionError: Destroyed interpreter is still retained
+
+
+----------------------------------------------------------------------
+Ran 3 tests in 11.145s
+
+FAILED (failures=2)

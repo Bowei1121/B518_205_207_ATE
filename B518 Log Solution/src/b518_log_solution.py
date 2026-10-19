@@ -121,6 +121,8 @@ class _LocalizedControlHint:
         self._label = None
         self._bindings = []
         self._global_motion_binding = None
+        self._pointer_poll_id = None
+        self._polled_inside = False
         for sequence, callback in (
                 ("<Enter>", self._on_enter), ("<FocusIn>", self._on_focus_in),
                 ("<Leave>", self._on_leave), ("<FocusOut>", self._on_focus_out)):
@@ -136,6 +138,30 @@ class _LocalizedControlHint:
         self._destroy_binding = widget.bind("<Destroy>", self._on_destroy, add="+")
         self._global_motion_binding = widget.bind_all("<Motion>", self._on_global_motion,
                                                        add="+")
+        if widget.tk.call("tk", "windowingsystem") == "aqua":
+            self._pointer_poll_id = widget.after(100, self._poll_pointer)
+
+    def _poll_pointer(self) -> None:
+        """Track Aqua hover when native view changes omit Enter/Motion."""
+        self._pointer_poll_id = None
+        widget = self._widget
+        if widget is None:
+            return
+        x, y = widget.winfo_pointerxy()
+        inside = bool(widget.winfo_viewable() and
+                      widget.winfo_containing(x, y) is widget)
+        if inside and (not self._polled_inside or (
+                self._window is None and self._after_id is None)):
+            self._on_enter()
+        elif not inside and self._polled_inside:
+            self._on_leave()
+        self._polled_inside = inside
+        self._pointer_poll_id = widget.after(100, self._poll_pointer)
+
+    def _cancel_pointer_poll(self) -> None:
+        if self._pointer_poll_id is not None:
+            self._widget.after_cancel(self._pointer_poll_id)
+            self._pointer_poll_id = None
 
     def _disabled(self, widget) -> bool:
         try:
@@ -168,6 +194,7 @@ class _LocalizedControlHint:
             self._hide()
 
     def close(self) -> None:
+        self._cancel_pointer_poll()
         self._hide()
         widget = self._widget
         if widget is None:
@@ -296,10 +323,9 @@ class _LocalizedControlHint:
         script = str(widget.tk.call("bind", "all", "<Motion>"))
         if command in script:
             widget.tk.call("bind", "all", "<Motion>", script.replace(command, ""))
-        try:
-            widget.deletecommand(binding_id)
-        except tk.TclError:
-            pass
+        # bind_all registers on _root(), even when called through a button.
+        # Delete through that same owner so its destroy list is updated too.
+        widget._root().deletecommand(binding_id)
 
     def _on_focus_in(self, event=None) -> None:
         self._focused = True
@@ -329,6 +355,7 @@ class _LocalizedControlHint:
 
     def _on_destroy(self, event) -> None:
         if event.widget is self._widget:
+            self._cancel_pointer_poll()
             self._hide()
             if self._global_motion_binding:
                 try:
@@ -625,7 +652,7 @@ class B518LogSolutionApp:
             if isinstance(value, (tk.Misc, tk.Variable, tk.Image, tkfont.Font, ttk.Style)):
                 return None
             if isinstance(value, dict):
-                return {key: release(item) for key, item in value.items()}
+                return {release(key): release(item) for key, item in value.items()}
             if isinstance(value, list):
                 return [release(item) for item in value]
             if isinstance(value, tuple):

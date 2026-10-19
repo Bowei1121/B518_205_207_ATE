@@ -1,0 +1,28 @@
+test_main_page_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking) ... POST 5 <CoreFoundation.CGPoint x=1270.0 y=186.0>
+ACTUAL (1270, 186) front Python bind 807
+POST 5 <CoreFoundation.CGPoint x=1270.0 y=791.0>
+ACTUAL (1270, 791) front Python bind 807
+POST 1 <CoreFoundation.CGPoint x=1270.0 y=791.0>
+ACTUAL (1270, 791) front Python bind 807
+POST 5 <CoreFoundation.CGPoint x=1263.0 y=451.0>
+ACTUAL (1263, 451) front Python bind 807
+POST 2 <CoreFoundation.CGPoint x=1263.0 y=451.0>
+ACTUAL (1263, 451) front Python bind 807
+POST 5 <CoreFoundation.CGPoint x=1146.0 y=853.0>
+ACTUAL (1146, 853) front Python bind 807
+FAIL
+
+======================================================================
+FAIL: test_main_page_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 718, in test_main_page_actions_explain_bilingual_behavior_without_invoking
+    self.wait_for_ui(root, lambda: disabled_stop_hint._window is not None)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2397, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+----------------------------------------------------------------------
+Ran 1 test in 12.118s
+
+FAILED (failures=1)

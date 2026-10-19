@@ -1,0 +1,50 @@
+test_main_page_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking) ... FAIL
+test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking) ... FAIL
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... FAIL
+test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar (test_log_solution_ui.LogSolutionUiTests.test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar) ... FAIL
+
+======================================================================
+FAIL: test_main_page_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 718, in test_main_page_actions_explain_bilingual_behavior_without_invoking
+    self.wait_for_ui(root, lambda: disabled_stop_hint._window is not None)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2397, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+======================================================================
+FAIL: test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 531, in test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking
+    self.wait_for_ui(root, lambda: main_hint._window is not None)
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2397, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+======================================================================
+FAIL: test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 11048, in test_real_tk_close_keeps_conflict_and_alarm_actions_available
+    pump_until(lambda: app.conflict_window.focus_get() is
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 10874, in pump_until
+    self.fail("Timed out while pumping the Tk operator/close flow")
+AssertionError: Timed out while pumping the Tk operator/close flow
+
+======================================================================
+FAIL: test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar (test_log_solution_ui.LogSolutionUiTests.test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 1492, in test_toolbar_keyboard_traverses_visual_order_and_leaves_toolbar
+    self.assertEqual(app.language_choice.get(), target_language)
+AssertionError: 'zh-TW' != 'en'
+- zh-TW
++ en
+
+
+----------------------------------------------------------------------
+Ran 4 tests in 26.890s
+
+FAILED (failures=4)

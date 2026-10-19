@@ -1,0 +1,57 @@
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... POINTER 506 572 CONTAINING None FOCUS .!toplevel.!toplevel
+NATIVE [('整輪監控逾時', {
+    Height = 328;
+    Width = 700;
+    X = 30;
+    Y = 558;
+}), ('同輪結果衝突', {
+    Height = 568;
+    Width = 960;
+    X = 30;
+    Y = 33;
+}), ('B518 FCT ATE Log Solution-V0.1.4', {
+    Height = 883;
+    Width = 376;
+    X = 1082;
+    Y = 33;
+}), ('tk', {
+    Height = 29;
+    Width = 1;
+    X = 0;
+    Y = 33;
+})]
+HINT .!toplevel.!frame.!frame.!button ⚙️ 1090 69 30 35 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame.!button3 🌐 1404 71 46 31 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame.!button2 🔔 1359 69 30 35 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame.!frame3.!button ⚠️ 1315 69 30 35 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame7.!button 開始監控  (Command+Shift+M) 1090 772 360 38 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame7.!frame.!button 停止 1090 834 112 38 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame7.!frame.!button2 重試保存 1325 836 125 34 view 1 inside False polled False window None
+HINT .!toplevel.!frame.!frame7.!frame2.!button App 診斷 1343 877 107 22 view 1 inside False polled False window None
+HINT .!toplevel.!toplevel.!frame3.!button2 採用新候選 354 555 304 34 view 1 inside False polled False window None
+HINT .!toplevel.!toplevel.!frame3.!button 保留原結果 42 555 304 34 view 1 inside False polled False window None
+HINT .!toplevel.!toplevel.!frame3.!button3 關閉 666 555 312 34 view 1 inside False polled False window None
+HINT .!toplevel.!toplevel2.!frame.!button 確認整輪警報 50 834 322 34 view 1 inside False polled False window None
+HINT .!toplevel.!toplevel2.!frame.!button2 關閉 380 834 330 34 view 1 inside False polled False window None
+FAIL
+
+======================================================================
+FAIL: test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 11124, in test_real_tk_close_keeps_conflict_and_alarm_actions_available
+    translated_disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 10927, in hover_hint
+    pump_until(lambda: _LocalizedControlHint._visible_hint is not None and
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 10872, in pump_until
+    self.fail("Timed out while pumping the Tk operator/close flow")
+  File "/tmp/b518-20261019/probe_containing.py", line 18, in fail
+    return original(self,message)
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Timed out while pumping the Tk operator/close flow
+
+----------------------------------------------------------------------
+Ran 1 test in 9.754s
+
+FAILED (failures=1)
