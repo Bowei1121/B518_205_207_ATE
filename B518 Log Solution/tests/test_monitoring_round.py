@@ -2021,6 +2021,86 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertTrue(rebuilt["audit_complete"])
             self.assertTrue(any(event["kind"] == "start_failed" for event in rebuilt["events"]))
 
+    def test_unaccepted_start_failure_masks_old_complete_until_explicit_reset_and_restores(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app_path = Path(temporary) / "app-events.json"
+            store = AppEventStore(app_path)
+            rounds = RoundCoordinator(audit_root=Path(temporary) / "rounds")
+            rounds.register_app_event_store(store)
+            monitors = []
+
+            def create_monitor(callback):
+                monitor = FakeMonitor(callback)
+                monitors.append(monitor)
+                return monitor
+
+            complete = rounds.start("FCT", create_monitor, run_async=False)
+            monitor = monitors[0]
+            monitor.results[1].status = "PASS"
+            monitor.results[2].status = "PASS"
+            monitor.finished = True
+            monitor.callback(MonitorEvent("finished", "finished", detail={
+                "completion_reason": "results_terminal"}))
+            self.assertTrue(rounds.snapshot().result_available)
+
+            failure = rounds.record_start_failure("FCT", "invalid configured path")
+            projected = rounds.snapshot()
+            self.assertEqual(projected.round_id, complete.round_id)
+            self.assertEqual(projected.state.value, "AWAITING_REVIEW")
+            self.assertFalse(projected.result_available)
+            self.assertEqual(projected.start_failure.diagnostic, "invalid configured path")
+            with self.assertRaisesRegex(RuntimeError, "啟動故障"):
+                rounds.start("FCT", lambda callback: FakeMonitor(callback))
+            self.assertTrue(store.flush(3))
+
+            restored_store = AppEventStore(app_path)
+            restored = RoundCoordinator()
+            restored.register_app_event_store(restored_store)
+            self.assertEqual(restored.start_failure_snapshot().request_id, failure.request_id)
+            self.assertTrue(restored.reset_start_failure("path fixed by operator"))
+            reset_snapshot = restored.snapshot()
+            self.assertIsNone(reset_snapshot)
+            self.assertTrue(restored_store.flush(3))
+            records = read_app_event_store(app_path)["events"]
+            self.assertEqual([item["kind"] for item in records if item["kind"].startswith("start_")],
+                             ["start_failed", "start_failure_reset"])
+            store.stop()
+            restored_store.stop()
+
+    def test_accepted_source_start_failure_requires_reset_and_audits_cancellation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app_store = AppEventStore(Path(temporary) / "app-events.json")
+            rounds = RoundCoordinator(audit_root=Path(temporary) / "rounds")
+            rounds.register_app_event_store(app_store)
+
+            def fail(_callback):
+                raise PermissionError("source permission denied")
+
+            started = rounds.start("FCT", fail, run_async=False)
+            failed = rounds.snapshot()
+            self.assertEqual(failed.round_id, started.round_id)
+            self.assertEqual(failed.state.value, "AWAITING_REVIEW")
+            self.assertFalse(failed.result_available)
+            self.assertEqual(failed.start_failure.round_id, started.round_id)
+            self.assertEqual(failed.results, ())
+            self.assertEqual(failed.completion_reason, "start_failed")
+            with self.assertRaisesRegex(RuntimeError, "啟動故障"):
+                rounds.start("FCT", lambda callback: FakeMonitor(callback))
+
+            self.assertTrue(rounds.reset_start_failure("source permissions corrected"))
+            cancelled = rounds.round_snapshot(started.round_id)
+            self.assertEqual(cancelled.completion_reason, "start_failed_cancelled")
+            self.assertFalse(cancelled.result_available)
+            self.assertEqual(cancelled.results, ())
+            self.assertTrue(rounds.flush_audit(3))
+            audit = read_round_audit(Path(temporary) / "rounds" / started.round_id / "audit.jsonl")
+            self.assertEqual(audit["completion_reason"], "start_failed_cancelled")
+            self.assertFalse(audit["result_available"])
+            self.assertTrue(any(item["kind"] == "round_cancelled" for item in audit["events"]))
+            self.assertTrue(rounds.start("FCT", lambda callback: FakeMonitor(callback),
+                                        run_async=False).round_id != started.round_id)
+            app_store.stop()
+
     def test_close_recovers_a_failed_previous_round_and_current_round_without_crossing_events(self):
         with tempfile.TemporaryDirectory() as temporary:
             failure_reported = threading.Event()

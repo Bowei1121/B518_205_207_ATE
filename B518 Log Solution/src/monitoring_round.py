@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from queue import Empty, Queue
 from enum import Enum
@@ -124,6 +124,15 @@ class RoundAlarm:
 
 
 @dataclass(frozen=True)
+class StartFailureSnapshot:
+    request_id: str
+    station: str
+    diagnostic: str
+    occurred_at: str
+    round_id: str = ""
+
+
+@dataclass(frozen=True)
 class RoundSnapshot:
     round_id: str
     station: str
@@ -145,6 +154,8 @@ class RoundSnapshot:
     save_errors: Tuple[str, ...] = ()
     save_history: Tuple[str, ...] = ()
     retry_in_progress: bool = False
+    start_failure: Optional[StartFailureSnapshot] = None
+    source_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -209,11 +220,13 @@ class MonitoringRound:
         self._collection_stopped_at = ""
         self._deferred_persist_events = []  # type: list[MonitorEvent]
         self._deferred_event_ids = set()
+        self._deferred_event_sequences = set()
         self._poll_started_at: Optional[float] = None
         self._run_thread: Optional[threading.Thread] = None
         self._monitor_factory = monitor_factory
         self._monitor: Optional[RoundMonitor] = None
         self._monitor_persistence_ready = False
+        self._source_ready = False
         self._audit_errors = []  # type: list[str]
         self._save_errors = []  # type: list[str]
         self._save_history = []  # type: list[str]
@@ -261,6 +274,8 @@ class MonitoringRound:
             else:
                 try:
                     self._prepare_monitor()
+                except Exception as error:
+                    self._fail_start(error)
                 finally:
                     self._prepared_event.set()
             return self.snapshot()
@@ -495,6 +510,7 @@ class MonitoringRound:
                                   self._audit_store.error else ()),
                 tuple(self._save_history),
                 self._retry_in_progress,
+                source_ready=self._source_ready,
             )
 
     def finalize_close_snapshot(self) -> RoundSnapshot:
@@ -697,35 +713,34 @@ class MonitoringRound:
         try:
             self._prepare_monitor()
         except Exception as error:
-            with self._lock:
-                if self._completion_reason == "manual_stop":
-                    self._monitor_persistence_ready = True
-                    return
-                self._state = RoundState.STOPPED
-                self._collection_stopped = True
-                self._completion_reason = "start_failed"
-                self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
-                # Source setup has terminated. The round audit store remains the
-                # durable record when no Session was created, so close must not
-                # wait forever for monitor persistence that cannot become ready.
-                self._monitor_persistence_ready = True
-            self._append_event(MonitorEvent(
-                "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
-                detail={"round_id": self.round_id, "reason": "start_failed",
-                        "collection_stopped_at": self._collection_stopped_at},
-            ))
-            self._receive_monitor_event(
-                MonitorEvent(
-                    "start_failed", "無法準備監控來源：{}".format(error),
-                    message_id="round.start_failed",
-                    message_parameters={"station": self.station},
-                    diagnostic=str(error),
-                )
-            )
+            self._fail_start(error)
             return
         finally:
             self._prepared_event.set()
         self._run()
+
+    def _fail_start(self, error: Exception) -> None:
+        with self._lock:
+            if self._completion_reason == "manual_stop":
+                self._monitor_persistence_ready = True
+                return
+            self._state = RoundState.AWAITING_REVIEW
+            self._collection_stopped = True
+            self._completion_reason = "start_failed"
+            self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
+            # Failed source setup has no Session to wait for. The audit journal
+            # remains the durable record and save-before-close can complete.
+            self._monitor_persistence_ready = True
+        self._append_event(MonitorEvent(
+            "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
+            detail={"round_id": self.round_id, "reason": "start_failed",
+                    "collection_stopped_at": self._collection_stopped_at},
+        ))
+        self._receive_monitor_event(MonitorEvent(
+            "start_failed", "無法準備監控來源：{}".format(error),
+            message_id="round.start_failed", message_parameters={"station": self.station},
+            diagnostic=str(error), detail={"station": self.station},
+        ))
 
     def _prepare_monitor(self) -> None:
         monitor = self._monitor_factory(self._receive_monitor_event)
@@ -757,6 +772,12 @@ class MonitoringRound:
             if self._preparation_deadline_expired:
                 self._finalize_preparation_deadline_locked(monitor)
                 return
+            # stop() shares _poll_lock. Refresh the request here because the
+            # earlier read happened before acquiring that lock; otherwise a
+            # stop between the read and lock acquisition leaves preparation
+            # pending forever and save-before-close waits on a dead handoff.
+            with self._lock:
+                stop_requested = self._stop_requested
             if stop_requested:
                 self._stop_collection("manual_stop")
                 monitor.stop()
@@ -767,14 +788,48 @@ class MonitoringRound:
             self._apply_deadlines(self._monotonic())
             self._finish_if_terminal()
             with self._lock:
-                if self._collection_stopped or self._state not in {
-                        RoundState.PREPARING, RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
-                    return
+                already_stopped = self._collection_stopped or self._state not in {
+                    RoundState.PREPARING, RoundState.RUNNING, RoundState.AWAITING_REVIEW}
+                manual_stop = self._completion_reason == "manual_stop"
+            if already_stopped:
+                if manual_stop:
+                    monitor.stop()
+                    with self._lock:
+                        self._monitor_persistence_ready = True
+                    self._release_manual_stop_if_complete()
+                return
             monitor.start()
             with self._lock:
+                self._source_ready = True
                 if self._state == RoundState.PREPARING:
                     self._state = RoundState.RUNNING
             self._publish_round_event(MonitorEvent("round_ready", "{} 監控來源準備就緒".format(self.station)))
+
+    def reset_start_failure(self, request_id: str, diagnostic: str = "") -> bool:
+        """Cancel only this failed startup round and preserve its audit trail."""
+        with self._poll_lock:
+            with self._lock:
+                if (self._completion_reason != "start_failed" or
+                        self._state != RoundState.AWAITING_REVIEW or
+                        self._close_finalized):
+                    return False
+                self._completion_reason = "start_failed_cancelled"
+                self._state = RoundState.STOPPED
+            self._publish_round_event(MonitorEvent(
+                "start_failure_reset", "{} 啟動失敗已確認並復位".format(self.station),
+                message_id="round.start_failure_reset",
+                message_parameters={"station": self.station}, diagnostic=diagnostic,
+                detail={"round_id": self.round_id, "request_id": request_id,
+                        "reason": "start_failed_cancelled"},
+            ))
+            self._publish_round_event(MonitorEvent(
+                "round_cancelled", "{} 啟動失敗輪次已取消並保留紀錄".format(self.station),
+                message_id="round.start_failure_cancelled",
+                message_parameters={"station": self.station}, diagnostic=diagnostic,
+                detail={"round_id": self.round_id, "request_id": request_id,
+                        "reason": "start_failed_cancelled"},
+            ))
+        return True
 
     def _run(self) -> None:
         while True:
@@ -958,6 +1013,8 @@ class MonitoringRound:
             with self._lock:
                 deferred, self._deferred_persist_events = self._deferred_persist_events, []
                 self._deferred_event_ids.update(id(event) for event in deferred)
+                self._deferred_event_sequences.update(
+                    event.sequence for event in deferred if event.sequence is not None)
             for event in deferred:
                 monitor.publish_round_event(event)
             with self._lock:
@@ -1064,6 +1121,9 @@ class MonitoringRound:
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
         if id(event) in self._deferred_event_ids:
             self._deferred_event_ids.remove(id(event))
+            return
+        if event.sequence is not None and event.sequence in self._deferred_event_sequences:
+            self._deferred_event_sequences.remove(event.sequence)
             return
         if event.kind == "result_candidate":
             return self._consider_result_candidate(event)
@@ -1366,6 +1426,7 @@ class RoundCoordinator:
         self._close_status = CloseSnapshot()
         self._close_worker_active = False
         self._app_event_store = None
+        self._start_failure: Optional[StartFailureSnapshot] = None
         self._archive_states: Dict[str, ArchiveSnapshot] = {}
         self._archive_locations: Dict[str, ArchiveLocation] = {}
         self._archive_locks: Dict[str, threading.Lock] = {}
@@ -1392,6 +1453,8 @@ class RoundCoordinator:
               run_async: bool = True, round_timeout_seconds: Optional[int] = None,
               capacity: Optional[int] = None, audit_context: Optional[dict] = None) -> RoundSnapshot:
         with self._lock:
+            if self._start_failure is not None:
+                raise RuntimeError("啟動故障尚未確認並復位")
             if self._closing:
                 raise RuntimeError("關閉保存進行中，暫時不能開始新輪")
             if self._current is not None and self._current.snapshot().state in {
@@ -1455,6 +1518,7 @@ class RoundCoordinator:
             if self._closing:
                 raise RuntimeError("關閉保存進行中，不能替換 App 事件保存來源")
             self._app_event_store = store
+            self._start_failure = self._restore_start_failure(store.records)
             retention_store = self._retention_store
             root = managed_root or (self._audit_root.parent if self._audit_root is not None else None)
         if retention_store is not None and root is not None:
@@ -1469,6 +1533,73 @@ class RoundCoordinator:
             if self._app_event_store is None:
                 raise RuntimeError("尚未註冊 App 事件保存來源")
             return self._app_event_store.record(message_id, parameters, diagnostic, kind)
+
+    @staticmethod
+    def _restore_start_failure(records) -> Optional[StartFailureSnapshot]:
+        active = {}
+        for record in records:
+            message = record.get("localized_message", {})
+            message_id = message.get("message_id") if isinstance(message, dict) else None
+            parameters = message.get("parameters", {}) if isinstance(message, dict) else {}
+            if record.get("kind") == "start_failed" and message_id == "app.start_failed":
+                request_id = parameters.get("request_id")
+                if request_id:
+                    active[request_id] = StartFailureSnapshot(
+                        request_id, parameters.get("station", ""),
+                        record.get("diagnostic", ""), record.get("occurred_at", ""),
+                        parameters.get("round_id", ""),
+                    )
+            elif record.get("kind") == "start_failure_reset" and message_id == "app.start_failure_reset":
+                active.pop(parameters.get("request_id"), None)
+        return next(reversed(active.values()), None) if active else None
+
+    def record_start_failure(self, station: str, diagnostic: str,
+                             round_id: str = "") -> StartFailureSnapshot:
+        """Persist an unaccepted or accepted startup failure without inventing a round."""
+        with self._lock:
+            if (self._start_failure is not None and
+                    self._start_failure.round_id == round_id and
+                    self._start_failure.diagnostic == diagnostic):
+                return self._start_failure
+            if self._app_event_store is None:
+                raise RuntimeError("尚未註冊 App 事件保存來源")
+            request_id = uuid.uuid4().hex
+            event = self._app_event_store.record(
+                "app.start_failed",
+                {"request_id": request_id, "station": station, "round_id": round_id},
+                diagnostic, "start_failed",
+            )
+            failure = StartFailureSnapshot(
+                request_id, station, diagnostic, event.occurred_at, round_id)
+            self._start_failure = failure
+            return failure
+
+    def start_failure_snapshot(self) -> Optional[StartFailureSnapshot]:
+        with self._lock:
+            return self._start_failure
+
+    def reset_start_failure(self, diagnostic: str = "") -> bool:
+        """Acknowledge and reset a recorded start failure, keeping its evidence."""
+        with self._lock:
+            failure = self._start_failure
+            store = self._app_event_store
+            round_ = (self._tracked_rounds.get(failure.round_id)
+                      if failure and failure.round_id else None)
+            if failure is None or store is None:
+                return False
+            if round_ is not None and not round_.reset_start_failure(
+                    failure.request_id, diagnostic):
+                return False
+            if failure.round_id and round_ is None:
+                return False
+            store.record(
+                "app.start_failure_reset",
+                {"request_id": failure.request_id, "station": failure.station,
+                 "round_id": failure.round_id},
+                diagnostic, "start_failure_reset",
+            )
+            self._start_failure = None
+            return True
 
     def app_event_status(self):
         """Return App event durability state without exposing its queue or worker."""
@@ -1561,7 +1692,17 @@ class RoundCoordinator:
                     with self._lock:
                         self._archive_locations[round_id] = location
                 snapshot = round_.snapshot()
-                if snapshot.state in {RoundState.COMPLETED, RoundState.STOPPED} and snapshot.collection_stopped:
+                if (snapshot.completion_reason == "manual_stop" and
+                        not snapshot.source_ready):
+                    status = ArchiveSnapshot(
+                        round_id, "protected",
+                        message="尚未確認本輪監控就緒；輪次紀錄保留供人工核對",
+                        save_state=snapshot.save_state, station=round_.station,
+                        reason_message=_archive_reason("same_round_unverified"),
+                    )
+                    with self._lock:
+                        self._archive_states[round_id] = status
+                elif snapshot.state in {RoundState.COMPLETED, RoundState.STOPPED} and snapshot.collection_stopped:
                     if snapshot.save_state == "saving":
                         status = ArchiveSnapshot(
                             round_id, "saving", message="等待 Session 與 audit 完整保存",
@@ -1880,7 +2021,18 @@ class RoundCoordinator:
                                 if location is not None:
                                     with self._lock:
                                         self._archive_locations[round_id] = location
-                                archive = self._archive_tracked_round(round_id, round_)
+                                snapshot = round_.snapshot()
+                                if (snapshot.completion_reason == "manual_stop" and
+                                        not snapshot.source_ready):
+                                    archive = ArchiveSnapshot(
+                                        round_id, "protected",
+                                        message="尚未確認本輪監控就緒；輪次紀錄保留供人工核對",
+                                        save_state=snapshot.save_state,
+                                        station=round_.station,
+                                        reason_message=_archive_reason("same_round_unverified"),
+                                    )
+                                else:
+                                    archive = self._archive_tracked_round(round_id, round_)
                                 with self._lock:
                                     self._archive_states[round_id] = archive
                             elif location is not None:
@@ -2045,7 +2197,18 @@ class RoundCoordinator:
 
     def snapshot(self) -> Optional[RoundSnapshot]:
         with self._lock:
-            return self._current.snapshot() if self._current is not None else None
+            current = self._current
+            failure = self._start_failure
+        snapshot = current.snapshot() if current is not None else None
+        if failure is None:
+            return snapshot
+        if snapshot is None:
+            return RoundSnapshot(
+                "", failure.station, RoundState.AWAITING_REVIEW, (), False,
+                0, (), True, "start_failed", start_failure=failure,
+            )
+        return replace(snapshot, state=RoundState.AWAITING_REVIEW,
+                       result_available=False, start_failure=failure)
 
     def events_since(self, sequence: int = 0) -> Tuple[RoundEvent, ...]:
         with self._lock:
@@ -2060,6 +2223,8 @@ class RoundCoordinator:
         with self._lock:
             if event.round_id not in self._tracked_rounds:
                 return
+            tracked_round = self._tracked_rounds[event.round_id]
+            station = tracked_round.station
             previous = self._archive_states.get(event.round_id)
             if previous is not None and self._audit_root is not None:
                 self._archive_states[event.round_id] = ArchiveSnapshot(
@@ -2071,8 +2236,10 @@ class RoundCoordinator:
             if self._current is not None and event.round_id == self._current.round_id:
                 self._events.append(event)
             else:
-                old_round = self._tracked_rounds[event.round_id]
-                if old_round.snapshot().save_state == "complete":
+                if tracked_round.snapshot().save_state == "complete":
                     del self._tracked_rounds[event.round_id]
+            app_event_store = self._app_event_store
+        if event.event.kind == "start_failed" and app_event_store is not None:
+            self.record_start_failure(station, event.event.diagnostic, event.round_id)
         if self._on_event:
             self._on_event(event)

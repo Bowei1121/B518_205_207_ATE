@@ -956,6 +956,10 @@ class B518LogSolutionApp:
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 2))
+        self.reset_start_failure_button = ttk.Button(
+            controls, text="確認並復位啟動故障", command=self.reset_start_failure,
+            style="Main.TButton", state="disabled")
+        self.reset_start_failure_button.pack(fill="x", pady=(0, 2))
         self.monitor_state = ttk.Label(controls, text="", anchor="center",
                                        font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.monitor_state.pack(fill="x", pady=(0, 2))
@@ -1057,6 +1061,7 @@ class B518LogSolutionApp:
         for slot, row in self.status_rows.items():
             row["slot"].configure(text=self._t("main.slot", number=slot))
         self.start_button.configure(text=self._t("main.start_monitor"))
+        self.reset_start_failure_button.configure(text=self._t("main.reset_start_failure"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
@@ -1833,7 +1838,10 @@ class B518LogSolutionApp:
 
     def _apply_round_snapshot(self, snapshot) -> None:
         """Atomically render one current-round snapshot to cells and marker."""
-        if snapshot is None or snapshot.round_id != self.active_round_id:
+        if snapshot is None:
+            return
+        failure = getattr(snapshot, "start_failure", None)
+        if snapshot.round_id != self.active_round_id and failure is None:
             return
         if not snapshot.audit_complete and snapshot.audit_errors:
             reported = getattr(self, "_reported_audit_errors", set())
@@ -1864,6 +1872,12 @@ class B518LogSolutionApp:
             self._set_row(result.slot, result.sn, result.status)
         self._render_layout_marker(self._display_capacity())
         self._render_state_marker(snapshot)
+        if hasattr(self, "reset_start_failure_button"):
+            self.reset_start_failure_button.configure(
+                state="normal" if failure is not None and not self._closing_ui else "disabled")
+        if failure is not None:
+            self.start_button.configure(state="disabled")
+            self._set_main_monitor_state("monitor.start_failed")
 
     def retry_saves(self) -> None:
         """Ask the shared round coordinator to retry in a background worker."""
@@ -1889,7 +1903,15 @@ class B518LogSolutionApp:
     def _display_capacity(self) -> int:
         if self.active_profile_snapshot is not None:
             return self.active_profile_snapshot.capacity
-        return self._selected_profile().capacity
+        try:
+            capacity = self._selected_profile().capacity
+        except (AttributeError, ProfileError, ValueError):
+            # Keep the last valid row/layout geometry visible during an invalid
+            # configuration REVIEW state; validation failure must not hide the
+            # previous result strip or crash the Tk event pump.
+            return getattr(self, "_last_display_capacity", 1)
+        self._last_display_capacity = capacity
+        return capacity
 
     def _scroll_rows(self, *arguments) -> None:
         if not self.rows_scrollbar.instate(("disabled",)):
@@ -2064,16 +2086,21 @@ class B518LogSolutionApp:
                           diagnostic=self.hotkey.message)
 
     def _set_monitor_controls(self, monitoring: bool, state_message_id: Optional[str] = None) -> None:
+        failed_start = self.rounds.start_failure_snapshot() is not None
         if getattr(self, "_closing_ui", False):
             self.start_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
             self._set_main_monitor_state("monitor.closing")
         else:
-            self.start_button.configure(state="disabled" if monitoring else "normal")
+            self.start_button.configure(
+                state="disabled" if monitoring or failed_start else "normal")
             self.stop_button.configure(state="normal" if monitoring else "disabled")
-            self._set_main_monitor_state(
-                state_message_id or ("monitor.active" if monitoring else "monitor.idle")
-            )
+            self._set_main_monitor_state(state_message_id or (
+                "monitor.start_failed" if failed_start else
+                ("monitor.active" if monitoring else "monitor.idle")))
+        if hasattr(self, "reset_start_failure_button"):
+            self.reset_start_failure_button.configure(
+                state="normal" if failed_start and not self._closing_ui else "disabled")
         for name in ("project_choice", "machine_choice"):
             choice = getattr(self, name, None)
             if choice:
@@ -2096,6 +2123,8 @@ class B518LogSolutionApp:
     def start_monitor(self) -> None:
         if getattr(self, "_closing_ui", False):
             return
+        if self.rounds.start_failure_snapshot() is not None:
+            return
         current = self.rounds.snapshot()
         if current is not None and current.state in {"PREPARING", "RUNNING"}:
             return
@@ -2104,6 +2133,8 @@ class B518LogSolutionApp:
             profile = self._selected_profile()
         except (AttributeError, ProfileError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            self.rounds.record_start_failure(station, str(error))
+            self._apply_round_snapshot(self.rounds.snapshot())
             self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
                               {"reason": str(error)})
             return
@@ -2113,11 +2144,15 @@ class B518LogSolutionApp:
             )
         except RoundStartPathError as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            self.rounds.record_start_failure(station, str(error))
+            self._apply_round_snapshot(self.rounds.snapshot())
             self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
                               {"reason": str(error)})
             return
         except (AttributeError, ProfileError, ValueError) as error:
             self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
+            self.rounds.record_start_failure(station, str(error))
+            self._apply_round_snapshot(self.rounds.snapshot())
             self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
                               {"reason": str(error)})
             return
@@ -2134,8 +2169,8 @@ class B518LogSolutionApp:
             self._apply_round_snapshot(snapshot)
         except Exception as error:
             self.active_profile_snapshot = None
-            self._render_state_marker(None)
-            self._set_monitor_controls(False)
+            self.rounds.record_start_failure(station, str(error))
+            self._apply_round_snapshot(self.rounds.snapshot())
             self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
             self._show_notice("app.profile.save_title", "app.profile.save_failed",
                               {"reason": str(error)})
@@ -2143,6 +2178,16 @@ class B518LogSolutionApp:
         self._set_monitor_controls(True)
         if snapshot.state.value == "PREPARING":
             self._set_main_monitor_state("monitor.preparing")
+
+    def reset_start_failure(self) -> None:
+        """Acknowledge and reset the visible startup failure without retrying it."""
+        if getattr(self, "_closing_ui", False):
+            return
+        if not self.rounds.reset_start_failure():
+            return
+        self.active_profile_snapshot = None
+        self._set_monitor_controls(False)
+        self._apply_round_snapshot(self.rounds.snapshot())
 
     def stop_monitor(self) -> None:
         snapshot = self.rounds.snapshot()
@@ -2276,7 +2321,6 @@ class B518LogSolutionApp:
             self._set_monitor_controls(False, "monitor.timeout_stopped")
             self._open_round_alarm()
         if event.kind == "start_failed":
-            self.active_profile_snapshot = None
             self._set_monitor_controls(False, "monitor.start_failed")
             self._show_notice("monitor.start_failed", "round.start_failed",
                               {"station": self.station.get().upper()},

@@ -2,6 +2,8 @@
 import os
 import json
 import gc
+import shutil
+import subprocess
 import time
 import tkinter as tk
 import unittest
@@ -12,9 +14,11 @@ from tkinter import ttk
 from unittest.mock import patch
 
 from b518_log_solution import B518LogSolutionApp
+from b518_log_solution import STATUS_COLOURS
 from language_catalog import ENGLISH, TRADITIONAL_CHINESE
 from app_event_store import read_app_event_store
 from audit_records import read_round_audit
+from kvm_display_contract import MarkerState
 from machine_profiles import MachineProfileStore
 from monitoring_round import RoundCoordinator
 from round_start_preparation import RoundStartPreparation
@@ -466,6 +470,8 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     self.assertIn("FCT 監控來源準備失敗", body.get("1.0", "end"))
                     self.assertIn("source access denied", body.get("1.0", "end"))
                     self.assertEqual(app.rounds.snapshot().round_id, round_id)
+                    self.assertEqual(str(app.start_button.cget("state")), "disabled")
+                    self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
                     shown.append(notice)
                     next(child for child in widgets(notice) if isinstance(child, ttk.Button)).invoke()
                 except Exception as error:
@@ -485,11 +491,19 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 self.assertEqual(errors, [])
                 self.assertEqual(len(shown), 1)
                 round_id = app.rounds.snapshot().round_id
+                app.start_monitor()
+                self.assertEqual(app.rounds.snapshot().round_id, round_id)
+                self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                app.reset_start_failure_button.invoke()
+                self.assertEqual(app.rounds.round_snapshot(round_id).completion_reason,
+                                 "start_failed_cancelled")
                 app.close()
                 self.pump(root, lambda: app.rounds.close_status().status == "complete")
                 audit = read_round_audit(base / "sessions" / round_id / "audit.jsonl")
                 failures = [item for item in audit["events"] if item["kind"] == "start_failed"]
                 self.assertEqual(len(failures), 1)
+                self.assertTrue(any(item["kind"] == "start_failure_reset" for item in audit["events"]))
+                self.assertTrue(any(item["kind"] == "round_cancelled" for item in audit["events"]))
                 localized = failures[0]["localized_message"]
                 self.assertEqual(localized["en"], "FCT monitoring source preparation failed")
                 self.assertEqual(localized["zh-TW"], "FCT 監控來源準備失敗")
@@ -527,7 +541,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     root.update_idletasks()
                     self.assertEqual(notice.title(), "配置錯誤")
                     self.assertIn("所選配置無效", body.get("1.0", "end"))
-                    self.assertIsNone(app.rounds.snapshot())
+                    self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                    self.assertIsNotNone(app.rounds.snapshot().start_failure)
+                    self.assertEqual(str(app.start_button.cget("state")), "disabled")
+                    self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
                     button = next(child for child in widgets(notice) if isinstance(child, ttk.Button))
                     self.assertEqual(button.cget("text"), "確定")
                     observations.append(notice)
@@ -548,6 +565,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     legacy_modal.assert_not_called()
                 self.assertEqual(errors, [])
                 self.assertEqual(len(observations), 1)
+                self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                app.start_monitor()
+                self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                app.reset_start_failure_button.invoke()
                 self.assertIsNone(app.rounds.snapshot())
                 app.close()
                 self.pump(root, lambda: app.rounds.close_status().status == "complete")
@@ -557,7 +578,143 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 self.assertEqual(len(validation), 1)
                 self.assertTrue(validation[0]["localized_message"]["en"])
                 self.assertTrue(validation[0]["localized_message"]["zh-TW"])
+                self.assertTrue(any(item["kind"] == "start_failure_reset" for item in saved))
             finally:
+                app.hotkey.close()
+                app.app_events.stop()
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
+    def test_visible_prevalidation_failure_preserves_previous_complete_result_until_explicit_restart(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.APP_ROOT", Path(temporary)), \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            base = Path(temporary)
+            source = base / "source"
+            source.mkdir()
+            source_file = source / "events.jsonl"
+            source_file.write_text("", encoding="utf-8")
+            store = MachineProfileStore(base / "preferences.json")
+            catalog, _, _, _ = store.load()
+            profile = replace(catalog.get("B518", "FCT"), platform="sample-json", capacity=1,
+                              mapping=((1, 1),), paths={"active": str(source)},
+                              timeouts={"start": 30, "test": 60, "round": 120})
+            store.save(catalog.with_profile(profile), "B518", "FCT")
+            root = tk.Tk()
+            app = B518LogSolutionApp(root, hotkey_factory=LocalHotkey,
+                                     session_root=base / "sessions")
+            failures, errors = [], []
+
+            def inspect_failure():
+                try:
+                    notice = next(child for child in root.winfo_children()
+                                  if isinstance(child, tk.Toplevel) and
+                                  child.title() == "Configuration Error")
+                    body = next(child for child in widgets(notice) if isinstance(child, tk.Text))
+                    self.assertTrue(notice.winfo_viewable())
+                    self.assertIn("selected configuration is invalid", body.get("1.0", "end"))
+                    self.assertIn("受控 JSON Lines 樣本來源", body.get("1.0", "end"))
+                    failed = app.rounds.snapshot()
+                    self.assertEqual(failed.round_id, completed_round_id)
+                    self.assertEqual(failed.state.value, "AWAITING_REVIEW")
+                    self.assertFalse(failed.result_available)
+                    self.assertEqual(failed.results[0].status, "PASS")
+                    self.assertEqual(failed.results[0].sn, "SN-OLD-COMPLETE")
+                    self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+                    self.assertEqual(app.status_rows[1]["sn"].cget("text"), "SN-OLD-COMPLETE")
+                    self.assertEqual(app.kvm_result_blocks[1].cget("background"), pass_band)
+                    self.assertEqual(app._rendered_marker_state, MarkerState.REVIEW)
+                    self.assertEqual(str(app.start_button.cget("state")), "disabled")
+                    failures.append(notice)
+                    if os.environ.get("B518_TK_EVIDENCE_PATH"):
+                        subprocess.run(["screencapture", "-x",
+                                        os.environ["B518_TK_EVIDENCE_PATH"]], check=True)
+                    next(child for child in widgets(notice) if isinstance(child, ttk.Button)).invoke()
+                except Exception as error:
+                    errors.append(error)
+                    for child in root.winfo_children():
+                        if isinstance(child, tk.Toplevel):
+                            child.destroy()
+
+            try:
+                self.pump(root, lambda: app.rounds.retention_cleanup_status().status == "complete")
+                app.start_button.invoke()
+                self.pump(root, lambda: app.rounds.snapshot() is not None and
+                          app.rounds.snapshot().source_ready)
+                source_file.write_text(json.dumps({
+                    "kind": "final", "position": 1, "sn": "SN-OLD-COMPLETE", "status": "PASS",
+                    "batch_id": "li3-prior-complete",
+                    "source_time": "2026-10-19T10:00:00",
+                }) + "\n", encoding="utf-8")
+                self.pump(root, lambda: app.rounds.snapshot() is not None and
+                          app.rounds.snapshot().state.value == "COMPLETED" and
+                          app.rounds.snapshot().result_available and
+                          not app.rounds.snapshot().source_preparation_pending and
+                          app.status_rows[1]["status"].cget("text") == "PASS" and
+                          app.status_rows[1]["sn"].cget("text") == "SN-OLD-COMPLETE" and
+                          app._rendered_marker_state == MarkerState.COMPLETE)
+                completed = app.rounds.snapshot()
+                completed_round_id = completed.round_id
+                self.assertEqual(completed.results[0].status, "PASS")
+                self.assertEqual(completed.results[0].sn, "SN-OLD-COMPLETE")
+                self.assertEqual(app.status_rows[1]["status"].cget("text"), "PASS")
+                self.assertEqual(app.status_rows[1]["sn"].cget("text"), "SN-OLD-COMPLETE")
+                pass_band = app.kvm_result_blocks[1].cget("background")
+                self.assertEqual(pass_band, STATUS_COLOURS["PASS"])
+                self.assertEqual(app._rendered_marker_state, MarkerState.COMPLETE)
+
+                # A removed source path exercises the real synchronous profile/path
+                # validation branch after the old round has been visibly completed.
+                shutil.rmtree(source)
+                root.after(50, inspect_failure)
+                with patch("tkinter.messagebox.showerror") as legacy_modal:
+                    app.start_button.invoke()
+                    self.pump(root, lambda: failures or errors)
+                    legacy_modal.assert_not_called()
+                self.assertEqual(errors, [])
+                self.assertEqual(len(failures), 1)
+                self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                self.assertEqual(app.rounds.snapshot().round_id, completed_round_id)
+                self.assertFalse(app.rounds.snapshot().result_available)
+                app.start_monitor()
+                self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
+                self.assertEqual(app.rounds.snapshot().round_id, completed_round_id)
+                self.assertEqual(str(app.start_button.cget("state")), "disabled")
+
+                # Dismissing the visible notice and explicit reset both preserve
+                # the archived round; reset itself must not start another round.
+                self.assertFalse(failures[0].winfo_exists())
+                app.reset_start_failure_button.invoke()
+                reset = app.rounds.snapshot()
+                self.assertEqual(reset.round_id, completed_round_id)
+                self.assertEqual(reset.state.value, "COMPLETED")
+                self.assertTrue(reset.result_available)
+                self.assertEqual(app.status_rows[1]["sn"].cget("text"), "SN-OLD-COMPLETE")
+                self.assertEqual(app._rendered_marker_state, MarkerState.COMPLETE)
+                self.assertEqual(app._monitor_state_message, "monitor.idle")
+                self.assertEqual(app.monitor_state.cget("text"), "Standby")
+
+                source.mkdir()
+                source_file.write_text("", encoding="utf-8")
+                self.assertEqual(app.rounds.snapshot().round_id, completed_round_id)
+                app.start_button.invoke()
+                self.pump(root, lambda: app.rounds.snapshot().round_id != completed_round_id)
+                next_round = app.rounds.snapshot()
+                self.assertTrue(next_round.round_id)
+                self.assertFalse(next_round.result_available)
+                self.assertIsNone(next_round.start_failure)
+                app.close()
+                self.pump(root, lambda: app.rounds.close_status().status == "complete")
+            finally:
+                try:
+                    if app.rounds.close_status().status != "complete":
+                        app.close()
+                        self.pump(root, lambda: app.rounds.close_status().status in
+                                  {"complete", "failed"}, timeout=10)
+                except (tk.TclError, AssertionError):
+                    pass
                 app.hotkey.close()
                 app.app_events.stop()
                 try:
