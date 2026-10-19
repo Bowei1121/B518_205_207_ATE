@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import inspect
 import json
+import os
 import sys
 import subprocess
 import threading
@@ -14,6 +15,14 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
+
+try:
+    from AppKit import (NSApplication, NSApplicationActivateIgnoringOtherApps,
+                        NSWorkspace)
+except ImportError:  # AppKit is included in current macOS bundles, optional on legacy builds.
+    NSApplication = None
+    NSApplicationActivateIgnoringOtherApps = None
+    NSWorkspace = None
 
 from app_event_store import AppEventStore
 from cleanup_reasons import present_cleanup_reason
@@ -442,6 +451,11 @@ class B518LogSolutionApp:
         self._monitor_state_message = "monitor.idle"
         self._monitor_state_parameters: dict[str, object] = {}
         self._current_save_state = "waiting"
+        self._last_foreground_snapshot = None
+        self._foreground_after_id = None
+        self._pending_foreground_round_id = None
+        self._pending_foreground_key_window = None
+        self._pending_foreground_app = None
         self.project = tk.StringVar(master=self.root, value=selected_project)
         self.station = tk.StringVar(master=self.root, value=selected_machine)
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
@@ -1848,6 +1862,7 @@ class B518LogSolutionApp:
         failure = getattr(snapshot, "start_failure", None)
         if snapshot.round_id != self.active_round_id and failure is None:
             return
+        self._observe_foreground_transition(snapshot)
         if not snapshot.audit_complete and snapshot.audit_errors:
             reported = getattr(self, "_reported_audit_errors", set())
             for error in snapshot.audit_errors:
@@ -2307,14 +2322,131 @@ class B518LogSolutionApp:
         self._refresh_round_alarm()
         self._schedule_ui(150, self._drain_events)
 
-    def _bring_dashboard_to_front(self) -> None:
-        """Show the completed-result board without keeping it permanently on top."""
+    @staticmethod
+    def _foreground_result_signature(snapshot):
+        return tuple((result.slot, result.sn, result.status, result.source)
+                     for result in snapshot.results)
+
+    def _observe_foreground_transition(self, snapshot) -> None:
+        """Queue one foreground request for meaningful changes in this round."""
+        previous = self._last_foreground_snapshot
+        self._last_foreground_snapshot = snapshot
+        if previous is None or previous.round_id != snapshot.round_id:
+            if snapshot.state.value == "RUNNING":
+                self._queue_foreground_raise(snapshot.round_id)
+            if any(result.status == "TESTING" or result.status not in
+                   {"WAITING", "COMPLETING"} for result in snapshot.results):
+                self._queue_foreground_raise(snapshot.round_id)
+            if snapshot.state.value in {"COMPLETED", "STOPPED"}:
+                self._queue_foreground_raise(snapshot.round_id)
+            return
+
+        if previous.state.value != "RUNNING" and snapshot.state.value == "RUNNING":
+            self._queue_foreground_raise(snapshot.round_id)
+        if self._foreground_result_signature(previous) != \
+                self._foreground_result_signature(snapshot):
+            self._queue_foreground_raise(snapshot.round_id)
+        if previous.state.value not in {"COMPLETED", "STOPPED"} and \
+                snapshot.state.value in {"COMPLETED", "STOPPED"}:
+            self._queue_foreground_raise(snapshot.round_id)
+
+    def _queue_foreground_raise(self, round_id: str) -> None:
+        """Coalesce all meaningful changes drained in one Tk event-loop turn."""
+        if self._ui_destroyed or round_id != self.active_round_id:
+            return
+        self._pending_foreground_round_id = round_id
+        if self._foreground_after_id is not None:
+            return
+        if NSApplication is not None:
+            try:
+                self._pending_foreground_key_window = \
+                    NSApplication.sharedApplication().keyWindow()
+                self._pending_foreground_app = \
+                    NSWorkspace.sharedWorkspace().frontmostApplication()
+            except Exception:
+                self._pending_foreground_key_window = None
+                self._pending_foreground_app = None
         try:
-            self.root.deiconify()
-            self.root.lift()
-            self.root.focus_force()
-        except tk.TclError as error:
-            message = make_bilingual_message("app.dashboard.focus_failed", {}, str(error))
+            self._foreground_after_id = self._schedule_ui(
+                "idle", self._raise_dashboard_for_pending_round)
+        except Exception as error:
+            self._pending_foreground_round_id = None
+            self._record_foreground_failure(error)
+
+    def _raise_dashboard_for_pending_round(self) -> None:
+        self._foreground_after_id = None
+        round_id = self._pending_foreground_round_id
+        self._pending_foreground_round_id = None
+        previous_key_window = self._pending_foreground_key_window
+        self._pending_foreground_key_window = None
+        previous_app = self._pending_foreground_app
+        self._pending_foreground_app = None
+        if self._ui_destroyed or round_id != self.active_round_id:
+            return
+        try:
+            state = self.root.state()
+            native_window = self._native_main_window()
+            if state in {"iconic", "withdrawn"}:
+                if native_window is not None and native_window.isMiniaturized():
+                    native_window.deminiaturize_(None)
+                    # Aqua reorders windows again when the minimize animation
+                    # completes, so order the restored window after that pass.
+                    self._foreground_after_id = self._schedule_ui(
+                        250, self._finish_native_restore, round_id, native_window,
+                        previous_key_window, previous_app)
+                    return
+                else:
+                    self.root.deiconify()
+            if native_window is not None:
+                # AppKit orders the window without making it key or changing focus.
+                native_window.orderFrontRegardless()
+            else:
+                self.root.lift()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _finish_native_restore(self, round_id: str, native_window,
+                               previous_key_window, previous_app) -> None:
+        self._foreground_after_id = None
+        if self._ui_destroyed or round_id != self.active_round_id:
+            return
+        try:
+            native_window.orderFrontRegardless()
+            if NSApplication is not None:
+                current_pid = os.getpid()
+                if previous_app is not None and \
+                        previous_app.processIdentifier() != current_pid:
+                    current_app = NSWorkspace.sharedWorkspace().frontmostApplication()
+                    if current_app.processIdentifier() == current_pid:
+                        previous_app.activateWithOptions_(
+                            NSApplicationActivateIgnoringOtherApps)
+                elif previous_key_window is not None and \
+                        previous_key_window is not native_window and \
+                        previous_key_window.isVisible():
+                    current_key = NSApplication.sharedApplication().keyWindow()
+                    if current_key is native_window:
+                        previous_key_window.makeKeyWindow()
+                # Restoring the prior key/application can reorder its windows;
+                # put the Log window in front again without making it key.
+                native_window.orderFrontRegardless()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _native_main_window(self):
+        if NSApplication is None:
+            return None
+        app = NSApplication.sharedApplication()
+        title = self.root.title()
+        return next((window for window in app.windows()
+                     if window.title() == title), None)
+
+    def _record_foreground_failure(self, error: Exception) -> None:
+        diagnostic = "{}: {}".format(type(error).__name__, error)
+        try:
+            self._record_app_event("app.dashboard.foreground_failed", {}, diagnostic)
+        except Exception:
+            message = make_bilingual_message(
+                "app.dashboard.foreground_failed", {}, diagnostic)
             self._log(message.english, message)
 
     def _handle_event(self, event: MonitorEvent) -> None:
@@ -2349,8 +2481,6 @@ class B518LogSolutionApp:
             result = next((item for item in snapshot.results if item.slot == event.slot), None)
             if result is not None:
                 self._set_row(event.slot, result.sn, result.status)
-        if event.kind == "result" and event.status in {"PASS", "FAIL", "NOTEST"}:
-            self._bring_dashboard_to_front()
         if event.kind == "conflict_detected":
             self._open_conflict_review()
         if event.kind == "timeout" and event.detail.get("kind") == "start":
