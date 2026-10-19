@@ -34,3 +34,12 @@
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/82
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/83
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/84
+
+## LI8 implementation and acceptance result
+
+- LI8 candidate: `codex/li8-local-integration-acceptance`.
+- Integrated into `codex/log-instrument-1-2` at `577139ffb1b28c776c4e5a71b1bfea0c0e78971e` and pushed to GitHub and internal Gitea; both remote refs were verified at the same SHA.
+- GitHub Issue #85 completion record: https://github.com/Bowei1121/B518_205_207_ATE/issues/85#issuecomment-6265834594.
+- LI8 AC1–11 passed. Core/contract suite: 127 passed; real Tk M10 integration: 7 passed; real Tk/Quartz LI6 foreground regression: 1 passed. `compileall` and `git diff --check` passed.
+- Commands, environment, limits, and evidence locations are recorded in [`LI8_LOCAL_ACCEPTANCE.md`](LI8_LOCAL_ACCEPTANCE.md) and [`li8-integration evidence index`](../evidence/li8-integration/README.md).
+- No KVM_Log, JetKVM, Dock, LabVIEW, or field ATE acceptance is claimed. Parent Issue #77 remains open.
