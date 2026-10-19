@@ -35,13 +35,15 @@ The isolated candidate run and isolated baseline run both used this command, wit
 
 Both ran one test and reached only the final minimize/restore focus assertion before failing after about 16 seconds. Both reported `minimize-restore focus changed to .; key window=None`. Earlier checks in that test passed for activity/result events, normal completion, timeout, manual stop, preserving focus in another Entry, and not forcing topmost. This is a partial revalidation, not a pass for LI8 AC6. The prior completed LI6 run remains linked in the story matrix; no production focus code or assertion was changed here.
 
+A final isolated `pythonw` attempt used `B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li8-integration/li6-foreground-pythonw PYTHONPATH=src:tests /opt/anaconda3/bin/pythonw -X faulthandler -m unittest tests.test_li6_foreground.LI6ForegroundAcceptanceTests.test_round_events_raise_log_without_focus_and_without_topmost -v`. It also reached the same restore assertion and failed after 17.279s. Earlier setup attempts with no `PYTHONPATH` and then `PYTHONPATH=src` stopped at import (`b518_log_solution` then `test_log_solution_ui` missing); these were not acceptance runs. The final raw output is `li6-foreground-pythonw/pythonw-run.log`.
+
 ## Evidence folders
 
 - `li1-lifecycle/` — four lifecycle screens, original Quartz black PNGs retained as invalid, run metadata.
 - `li2-manual-stop/` — five review/cancel/manual-stop screens, disk reconstruction, original Quartz black PNGs retained as invalid.
 - `li4-start-alarm/` — review/alarm/complete screens, original Quartz black PNGs retained as invalid.
 - `li5-manual-cancel/` — review, alarm acknowledgement, cancellation and new-round screens.
-- `li6-foreground/` and `li6-foreground-rerun/` — earlier candidate evidence; `li6-foreground-isolated-candidate/` and `li6-foreground-isolated-baseline/` — isolated comparison evidence.
+- `li6-foreground/` and `li6-foreground-rerun/` — earlier candidate evidence; `li6-foreground-isolated-candidate/`, `li6-foreground-isolated-baseline/` and `li6-foreground-pythonw/` — isolated comparison evidence and final pythonw log.
 - `li7-geometry-language-matrix/` — 16-case scaling/capacity/language matrix and combined JSON.
 - `disk-ui-regression/` — save failure/retry, close protection and historical reader UI captures.
 

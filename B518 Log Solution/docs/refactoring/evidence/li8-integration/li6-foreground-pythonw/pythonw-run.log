@@ -1,0 +1,26 @@
+test_round_events_raise_log_without_focus_and_without_topmost (tests.test_li6_foreground.LI6ForegroundAcceptanceTests.test_round_events_raise_log_without_focus_and_without_topmost) ... FAIL
+
+======================================================================
+FAIL: test_round_events_raise_log_without_focus_and_without_topmost (tests.test_li6_foreground.LI6ForegroundAcceptanceTests.test_round_events_raise_log_without_focus_and_without_topmost)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-LI8-integration/B518 Log Solution/tests/test_li6_foreground.py", line 96, in assert_log_raises
+    self._wait(root, lambda: root.focus_get() is entry, timeout=0.5)
+  File "/private/tmp/B518-LI8-integration/B518 Log Solution/tests/test_li6_foreground.py", line 41, in _wait
+    self.fail("desktop condition did not become true")
+AssertionError: desktop condition did not become true
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/private/tmp/B518-LI8-integration/B518 Log Solution/tests/test_li6_foreground.py", line 202, in test_round_events_raise_log_without_focus_and_without_topmost
+    restore_record = assert_log_raises("minimize-restore")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/B518-LI8-integration/B518 Log Solution/tests/test_li6_foreground.py", line 99, in assert_log_raises
+    self.fail("{} focus changed to {}; key window={}".format(
+AssertionError: minimize-restore focus changed to .; key window=None
+
+----------------------------------------------------------------------
+Ran 1 test in 17.279s
+
+FAILED (failures=1)
