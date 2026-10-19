@@ -232,6 +232,63 @@ def capture_tk_window_evidence(window, key, language, widgets):
     return record
 
 
+def capture_tk_content_view_evidence(window, key, widgets):
+    """Capture the mapped Tk window's live NSView cache, not a synthetic redraw."""
+    from AppKit import NSApplication, NSBitmapImageFileTypePNG
+
+    window.update_idletasks()
+    window.lift()
+    window.update()
+    native_app = NSApplication.sharedApplication()
+    native_window = next((item for item in native_app.windows()
+                          if item.title() == window.title() and item.isVisible()), None)
+    if native_window is None:
+        raise AssertionError("mapped Tk App has no visible NSWindow: {}".format(window.title()))
+    content_view = native_window.contentView()
+    content_rect = content_view.bounds()
+    bitmap = content_view.bitmapImageRepForCachingDisplayInRect_(content_rect)
+    content_view.cacheDisplayInRect_toBitmapImageRep_(content_rect, bitmap)
+    png_data = bitmap.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
+    output_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = key + "-view-cache.png"
+    output_path = output_dir / filename
+    if not png_data.writeToFile_atomically_(str(output_path), True):
+        raise AssertionError("could not save Tk NSView cache: {}".format(output_path))
+
+    import Quartz
+    windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionAll,
+                                                Quartz.kCGNullWindowID)
+    screen_window = next((item for item in windows
+                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                          and item.get(Quartz.kCGWindowLayer) == 0
+                          and item.get(Quartz.kCGWindowName) == window.title()
+                          and item.get(Quartz.kCGWindowIsOnscreen) == 1), None)
+    if screen_window is None:
+        raise AssertionError("Tk window has no on-screen Quartz bounds")
+
+    def relative_bounds(widget):
+        x = y = 0
+        current = widget
+        while current is not window:
+            x += current.winfo_x()
+            y += current.winfo_y()
+            current = current.master
+        return [x, y, widget.winfo_width(), widget.winfo_height()]
+
+    return {
+        "title": window.title(),
+        "geometry": window.geometry(),
+        "size": [window.winfo_width(), window.winfo_height()],
+        "controls": {name: relative_bounds(widget) for name, widget in widgets.items()},
+        "native_bounds": {name: float(screen_window[Quartz.kCGWindowBounds][name])
+                          for name in ("X", "Y", "Width", "Height")},
+        "image_pixels": {"width": bitmap.pixelsWide(), "height": bitmap.pixelsHigh()},
+        "screenshot": filename,
+        "capture_method": "NSView bitmap cache of the live Tk contentView",
+    }
+
+
 def capture_native_window_with_hint(window, filename):
     """Capture the real App window and its on-screen tooltip in one native frame."""
     evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
@@ -337,6 +394,258 @@ def write_tk_bounds_evidence(key, value):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_li7_locator_is_visible_at_first_cell_with_fixed_other_geometry(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.kvm_locator_left.winfo_height() == 22)
+                self.assertFalse(hasattr(app, "kvm_result_title"))
+                self.assertEqual(
+                    (app.kvm_locator_left.winfo_x(), app.kvm_locator_left.winfo_y(),
+                     app.kvm_locator_left.winfo_width(), app.kvm_locator_left.winfo_height()),
+                    (0, 2, 22, 22),
+                )
+                self.assertEqual(
+                    (app.kvm_result_blocks[1].winfo_x(),
+                     app.kvm_result_blocks[1].winfo_y(),
+                     app.kvm_result_blocks[1].winfo_width(),
+                     app.kvm_result_blocks[1].winfo_height()),
+                    (0, 34, 34, 26),
+                )
+                self.assertEqual(
+                    (app.kvm_locator_right.winfo_x(), app.kvm_locator_right.winfo_y(),
+                     app.kvm_locator_right.winfo_width(), app.kvm_locator_right.winfo_height()),
+                    (320, 2, 22, 22),
+                )
+                self.assertEqual(
+                    (app.kvm_layout_marker.winfo_x(), app.kvm_layout_marker.winfo_y(),
+                     app.kvm_layout_marker.winfo_width(), app.kvm_layout_marker.winfo_height()),
+                    (130, 2, 26, 14),
+                )
+                self.assertEqual(
+                    (app.kvm_state_marker.winfo_x(), app.kvm_state_marker.winfo_y(),
+                     app.kvm_state_marker.winfo_width(), app.kvm_state_marker.winfo_height()),
+                    (278, 0, 26, 26),
+                )
+                self.assertEqual(app.kvm_locator_left.winfo_rootx(),
+                                 app.kvm_results.winfo_rootx())
+                self.assertEqual(app.kvm_locator_left.winfo_rootx(),
+                                 app.kvm_result_blocks[1].winfo_rootx())
+                self.assertGreaterEqual(
+                    app.kvm_locator_left.winfo_rootx() - root.winfo_rootx(), 2,
+                    "the App's white parent area must leave two visible Tk units before the locator",
+                )
+                self.assertEqual(
+                    (app.kvm_locator_left.white_cell.winfo_x(),
+                     app.kvm_locator_left.white_cell.winfo_y(),
+                     app.kvm_locator_left.white_cell.winfo_width(),
+                     app.kvm_locator_left.white_cell.winfo_height()),
+                    (3, 3, 8, 8),
+                )
+                self.assertEqual(
+                    (app.kvm_locator_right.white_cell.winfo_x(),
+                     app.kvm_locator_right.white_cell.winfo_y()), (11, 11),
+                )
+                self.assertEqual(app.kvm_locator_left.winfo_width(),
+                                 app.kvm_locator_right.winfo_width())
+                self.assertEqual(app.kvm_locator_left.winfo_y(),
+                                 app.kvm_locator_right.winfo_y())
+            finally:
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_li7_geometry_at_both_scalings_and_all_capacities(self):
+        evidence_dir = Path(os.environ.get("B518_TK_EVIDENCE_DIR", "."))
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        matrix = []
+        scaling_filter = os.environ.get("B518_LI7_SCALING")
+        scalings = (float(scaling_filter),) if scaling_filter else (1.0, 1.5)
+        for scaling in scalings:
+            with TemporaryDirectory() as temporary, \
+                    patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+                root = tk.Tk()
+                root.tk.call("tk", "scaling", scaling)
+                root.deiconify()
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey,
+                    session_root=Path(temporary) / "sessions",
+                    app_event_path=Path(temporary) / "app-events.json",
+                )
+                try:
+                    self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                     app.kvm_locator_left.winfo_height() == 22)
+                    original_profile = app._selected_profile()
+                    original_band = (app.kvm_results.winfo_rootx(),
+                                     app.kvm_results.winfo_rooty())
+                    original_fixed = {
+                        "right_locator": (app.kvm_locator_right.winfo_x(),
+                                          app.kvm_locator_right.winfo_y(),
+                                          app.kvm_locator_right.winfo_width(),
+                                          app.kvm_locator_right.winfo_height()),
+                        "layout_marker": (app.kvm_layout_marker.winfo_x(),
+                                          app.kvm_layout_marker.winfo_y(),
+                                          app.kvm_layout_marker.winfo_width(),
+                                          app.kvm_layout_marker.winfo_height()),
+                        "state_marker": (app.kvm_state_marker.winfo_x(),
+                                          app.kvm_state_marker.winfo_y(),
+                                          app.kvm_state_marker.winfo_width(),
+                                          app.kvm_state_marker.winfo_height()),
+                        "first_cell": (app.kvm_result_blocks[1].winfo_x(),
+                                       app.kvm_result_blocks[1].winfo_y(),
+                                       app.kvm_result_blocks[1].winfo_width(),
+                                       app.kvm_result_blocks[1].winfo_height()),
+                    }
+                    for capacity in (1, 10, 11, 20):
+                        app.profiles = app.profiles.with_profile(
+                            replace(original_profile, platform="sample-json",
+                                    capacity=capacity, paths={"active": "unused"},
+                                    mapping=tuple((display, display)
+                                                 for display in range(1, capacity + 1)))
+                        )
+                        app._render_rows()
+                        root.update()
+                        left = app.kvm_locator_left
+                        right = app.kvm_locator_right
+                        parent = app.kvm_results
+                        self.assertEqual(app._display_capacity(), capacity)
+                        self.assertEqual((left.winfo_x(), left.winfo_y(),
+                                          left.winfo_width(), left.winfo_height()),
+                                         (0, 2, 22, 22))
+                        self.assertEqual((left.winfo_rootx(), left.winfo_rooty()),
+                                         (app.kvm_result_blocks[1].winfo_rootx(),
+                                          parent.winfo_rooty() + 2))
+                        self.assertGreaterEqual(left.winfo_rootx() - root.winfo_rootx(), 2)
+                        self.assertEqual((right.winfo_x(), right.winfo_y(),
+                                          right.winfo_width(), right.winfo_height()),
+                                         original_fixed["right_locator"])
+                        self.assertEqual((app.kvm_layout_marker.winfo_x(),
+                                          app.kvm_layout_marker.winfo_y(),
+                                          app.kvm_layout_marker.winfo_width(),
+                                          app.kvm_layout_marker.winfo_height()),
+                                         original_fixed["layout_marker"])
+                        self.assertEqual((app.kvm_state_marker.winfo_x(),
+                                          app.kvm_state_marker.winfo_y(),
+                                          app.kvm_state_marker.winfo_width(),
+                                          app.kvm_state_marker.winfo_height()),
+                                         original_fixed["state_marker"])
+                        self.assertEqual((app.kvm_result_blocks[1].winfo_x(),
+                                          app.kvm_result_blocks[1].winfo_y(),
+                                          app.kvm_result_blocks[1].winfo_width(),
+                                          app.kvm_result_blocks[1].winfo_height()),
+                                         original_fixed["first_cell"])
+                        self.assertEqual((parent.winfo_rootx(), parent.winfo_rooty()),
+                                         original_band)
+                        expected_parent_height = KVM_BAND_HEIGHT if capacity > 10 else 61
+                        self.assertEqual(parent.winfo_height(), expected_parent_height)
+                        for slot, block in app.kvm_result_blocks.items():
+                            if slot > 10 and capacity <= 10:
+                                self.assertFalse(block.winfo_ismapped())
+                            else:
+                                self.assertTrue(block.winfo_ismapped())
+                                self.assertEqual(
+                                    block.cget("background"),
+                                    UNAVAILABLE_COLOUR if slot > capacity else
+                                    STATUS_COLOURS["WAITING"],
+                                )
+                        scale_readback = float(root.tk.call("tk", "scaling"))
+                        self.assertAlmostEqual(scale_readback, scaling, places=2)
+                        key = "li7-s{}-capacity-{}".format(str(scaling).replace(".", "p"),
+                                                            capacity)
+                        if NSApplication is not None:
+                            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                        root.lift()
+                        root.update()
+                        evidence = capture_tk_content_view_evidence(root, key, {
+                            "kvm": parent,
+                            "left_locator": left,
+                            "left_white_cell": left.white_cell,
+                            "right_locator": right,
+                            "right_white_cell": right.white_cell,
+                            "layout_marker": app.kvm_layout_marker,
+                            "state_marker": app.kvm_state_marker,
+                            "first_cell": app.kvm_result_blocks[1],
+                            "last_configured_cell": app.kvm_result_blocks[capacity],
+                            "last_cell": app.kvm_result_blocks[20],
+                        })
+                        physical_per_native_unit = (
+                            evidence["image_pixels"]["width"] / evidence["size"][0],
+                            evidence["image_pixels"]["height"] / evidence["size"][1],
+                        )
+                        self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
+                        self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
+                        record = {
+                            "tk_scaling": scale_readback,
+                            "capacity": capacity,
+                            "tk_bounds": {
+                                "root": [root.winfo_width(), root.winfo_height()],
+                                "kvm_parent": [parent.winfo_x(), parent.winfo_y(),
+                                               parent.winfo_width(), parent.winfo_height()],
+                                "left_locator": [left.winfo_x(), left.winfo_y(), 22, 22],
+                                "left_locator_root_offset": [
+                                    left.winfo_rootx() - root.winfo_rootx(),
+                                    left.winfo_rooty() - root.winfo_rooty()],
+                                "first_cell": [app.kvm_result_blocks[1].winfo_x(),
+                                               app.kvm_result_blocks[1].winfo_y(), 34, 26],
+                                "right_locator": [right.winfo_x(), right.winfo_y(), 22, 22],
+                                "locator_origin_distance": right.winfo_x() - left.winfo_x(),
+                                "locator_outer_span": right.winfo_x() + 22 - left.winfo_x(),
+                                "left_white_cell": [left.white_cell.winfo_x(),
+                                                    left.white_cell.winfo_y(), 8, 8],
+                                "left_inner_margins": [3, 11, 3, 11],
+                                "quiet_margins": {
+                                    "left_from_root": left.winfo_rootx() - root.winfo_rootx(),
+                                    "top": left.winfo_y(),
+                                    "right_within_parent": parent.winfo_width() -
+                                    (left.winfo_x() + left.winfo_width()),
+                                    "bottom_within_parent": parent.winfo_height() -
+                                    (left.winfo_y() + left.winfo_height()),
+                                },
+                            },
+                            "physical_pixels_per_tk_unit": physical_per_native_unit,
+                            "native_window_bounds_including_titlebar": evidence["native_bounds"],
+                            "window_frame_extra_tk_units": [
+                                evidence["native_bounds"]["Width"] - root.winfo_width(),
+                                evidence["native_bounds"]["Height"] - root.winfo_height()],
+                            "screenshot": evidence["screenshot"],
+                            "native_bounds": evidence["native_bounds"],
+                            "image_pixels": evidence["image_pixels"],
+                        }
+                        matrix.append(record)
+                        (evidence_dir / (key + ".json")).write_text(
+                            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+                    self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
+                                     (20, KVM_BAND_HEIGHT))
+                    app.profiles = app.profiles.with_profile(
+                        replace(original_profile, platform="sample-json", capacity=1,
+                                paths={"active": "unused"}, mapping=((1, 1),)))
+                    app._render_rows()
+                    root.update()
+                    self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
+                                     (1, 61))
+                finally:
+                    app.hotkey.close()
+                    app.rounds.request_close()
+                    self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                    self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                    root.destroy()
+        (evidence_dir / "li7-geometry-matrix.json").write_text(
+            json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def set_language_for_test_setup(self, app, root, language):
         """Set a test fixture's locale without opening the modal native Menu."""
         if app.current_language != language:
@@ -1053,8 +1362,9 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 toolbar = (app.settings_button, app.review_group,
                            app.round_alarm_button, app.language_button)
-                kvm = (app.kvm_results, app.kvm_result_title, app.kvm_state_marker,
-                       app.kvm_layout_marker, *app.kvm_result_blocks.values())
+                kvm = (app.kvm_results, app.kvm_locator_left, app.kvm_locator_right,
+                       app.kvm_state_marker, app.kvm_layout_marker,
+                       *app.kvm_result_blocks.values())
                 toolbar_bounds, kvm_bounds = bounds(toolbar), bounds(kvm)
                 profile_choice_bounds = bounds((app.project_choice, app.machine_choice))
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
@@ -2839,12 +3149,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.language_choice.get(), ENGLISH)
                 self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "Project")
-                self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
+                self.assertFalse(hasattr(app, "kvm_result_title"))
                 self.assertLessEqual(
                     app.language_button.winfo_x() + app.language_button.winfo_width(),
                     app.language_button.master.winfo_width(),
                 )
-                self.assertLess(app.language_button.winfo_rooty(), app.kvm_result_title.winfo_rooty())
+                self.assertLess(app.language_button.winfo_rooty(), app.kvm_results.winfo_rooty())
 
                 app.start_button.invoke()
                 deadline = time.monotonic() + 5
@@ -2924,7 +3234,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.settings_button.cget("text"), "⚙️")
                 self.assertEqual(app.project_label.cget("text"), "專案")
                 self.assertEqual(app.status_rows[1]["slot"].cget("text"), "通道 1")
-                self.assertEqual(app.kvm_result_title.cget("text"), "KVM RESULT")
+                self.assertFalse(hasattr(app, "kvm_result_title"))
                 self.assertTrue(any("FCT 已接受開始本輪" in line
                                     for line in app.event_lines),
                               (app.current_language, [

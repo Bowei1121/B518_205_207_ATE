@@ -15,13 +15,20 @@
 
 ## Acceptance criteria
 
-- [ ] KVM RESULT字樣移除且不移到其他位置；左定位點左緣對齊或超過第一格色帶左緣，左右維持22×22及同高，內嵌白格保持左右不對稱。
-- [ ] 定位點四周至少2 Tk單位白留白，父框不裁切、各標記不重疊；第一格x=0與留白約束以真實父框可繪範圍及畫面證明，不能只寫負座標假設有效。
-- [ ] 右定位點、排數格、狀態格、色帶的既有位置及顏色不移動；維持每排十格、一／兩排與容量外黑格。
-- [ ] 若約束實際無法同時成立，先提供明確座標／截圖阻擋證據，不擅自改動規格要求保持的其他元素。
-- [ ] Tk scaling1.0／1.5、容量1／10／11／20及正常容量切換，以真正App／Tk擷取及bounds量測驗證；分清Tk單位與實體像素。
-- [ ] 記錄精確新座標、定位點距離、留白與比例資料，不以「約320」當已定常數；本票輸出供LI8同步正式契約。
-- [ ] 說明上方定位點無法保證偵測所有僅遮色帶的視窗形狀；不把外部consumer或實際KVM判讀通過作為本票完成條件。
+- [x] KVM RESULT字樣移除且不移到其他位置；左定位點左緣與第一格色帶左緣同為x=0，左右維持22×22及同高，內嵌白格保持左右不對稱。
+- [x] 定位點四周至少2 Tk單位白留白，父框不裁切、各標記不重疊；父框實測起點為x=8、定位點為父框內(x=0,y=2)，其與第一格同左緣，定位點完整落在360 Tk單位寬父框中。真Tk contentView畫面及bounds見[LI7幾何證據](../evidence/li7-geometry/README.md)。
+- [x] 右定位點、排數格、狀態格、色帶的既有位置及顏色不移動；維持每排十格、一／兩排與容量外黑格。
+- [x] 條件式阻擋項不適用：所有幾何約束均成立。左定位點x=0且完整位於寬360 Tk單位父框內；root提供8單位左留白，真Tk畫面及bounds已證明沒有裁切，無需移動其他契約元素。
+- [x] Tk scaling1.0／1.5、容量1／10／11／20及正常容量切換，以真正App／Tk擷取及bounds量測驗證；Tk單位與實體像素分列。兩個scaling各跑四種容量，並測20→1切換。
+- [x] 凍結座標：左(0,2)、右(320,2)，原點距離320、外緣跨度342；左locator 22×22，白格(3,3) 8×8，內部黑邊距(左/上/右/下)=(3/3/11/11)。每邊至少2 Tk單位的外部淨空已量測，且父框未裁切。比例為每Tk內容單位2.0×2.0實體像素；Tk scaling讀值分別約1.0及1.4985。逐組bounds與畫面見證據README及JSON。
+- [x] 上方定位點無法保證偵測所有僅遮色帶的視窗形狀；本票不依賴外部consumer或實際KVM判讀驗收。
+
+### 驗證紀錄
+
+- `PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_kvm_display_contract`：通過。
+- `B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/li7-geometry PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_li7_locator_is_visible_at_first_cell_with_fixed_other_geometry tests.test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities`：通過；擷取8組真Tk contentView畫面與bounds，另驗證正常容量切換。
+- AppKit contentView bitmap cache 可讀並呈現執行中的Tk畫面；它不是WindowServer螢幕截圖。Quartz window capture曾產生黑圖，`screencapture -x` 回報 `could not create image from display 69734272`，因此不將其作為有效畫面證據。環境與證據細節見證據README。
+- 後續重跑 GUI 測試時，LaunchServices/hiservices XPC回報 `Connection invalid`，Tk在建立首個root期間由AppKit以 `Invalid parameter not satisfying: aString != nil` 原生中止。將兩個scaling拆成程序仍遇到相同錯誤；該次失敗沒有覆寫前次成功矩陣。完整紀錄見證據README。
 
 ## Blocked by
 

@@ -890,12 +890,10 @@ class B518LogSolutionApp:
         self.kvm_results = tk.Frame(body, background=LIGHT_BACKGROUND, height=KVM_BAND_HEIGHT)
         self.kvm_results.pack(fill="x", pady=(2, 4))
         self.kvm_results.pack_propagate(False)
-        self.kvm_result_title = tk.Label(self.kvm_results, text="KVM RESULT", background=LIGHT_BACKGROUND,
-                                         foreground=TEXT_COLOUR,
-                                         font=("Helvetica", 10, "bold"), anchor="w")
-        self.kvm_result_title.place(x=0, y=0, width=80, height=16)
-        self._build_kvm_locator(self.kvm_results, *LOCATOR_LEFT, mirrored=False)
-        self._build_kvm_locator(self.kvm_results, *LOCATOR_RIGHT, mirrored=True)
+        self.kvm_locator_left = self._build_kvm_locator(
+            self.kvm_results, *LOCATOR_LEFT, mirrored=False)
+        self.kvm_locator_right = self._build_kvm_locator(
+            self.kvm_results, *LOCATOR_RIGHT, mirrored=True)
         self.kvm_state_marker = tk.Canvas(
             self.kvm_results, width=MARKER_SIZE, height=MARKER_SIZE,
             background="#ffffff", highlightthickness=0, borderwidth=0,
@@ -1072,7 +1070,6 @@ class B518LogSolutionApp:
         self._refresh_language_entry()
         self.project_label.configure(text=self._t("main.project"))
         self.machine_label.configure(text=self._t("main.machine_type"))
-        self.kvm_result_title.configure(text=self._t("main.kvm_result"))
         self.kvm_legend_title.configure(text=self._t("main.kvm_legend"))
         for message_id, widget in self.main_headings.items():
             widget.configure(text=self._t(message_id))
@@ -1809,14 +1806,17 @@ class B518LogSolutionApp:
                      borderwidth=0).pack(fill="both", expand=True)
 
     @staticmethod
-    def _build_kvm_locator(parent: tk.Widget, x: int, y: int, mirrored: bool) -> None:
+    def _build_kvm_locator(parent: tk.Widget, x: int, y: int, mirrored: bool) -> tk.Frame:
         """Two asymmetric black/white marks let image analysis lock orientation and scale."""
         marker = tk.Frame(parent, background="#000000", width=LOCATOR_SIZE, height=LOCATOR_SIZE)
         marker.place(x=x, y=y, width=LOCATOR_SIZE, height=LOCATOR_SIZE)
         inset = LOCATOR_FAR_INSET if mirrored else LOCATOR_NEAR_INSET
-        tk.Frame(marker, background="#ffffff", width=LOCATOR_WHITE_SIZE,
-                 height=LOCATOR_WHITE_SIZE).place(
+        white_cell = tk.Frame(marker, background="#ffffff", width=LOCATOR_WHITE_SIZE,
+                              height=LOCATOR_WHITE_SIZE)
+        white_cell.place(
             x=inset, y=inset, width=LOCATOR_WHITE_SIZE, height=LOCATOR_WHITE_SIZE)
+        marker.white_cell = white_cell
+        return marker
 
     def _render_state_marker(self, snapshot) -> MarkerState:
         """Draw the machine marker and product band from the same round snapshot."""
