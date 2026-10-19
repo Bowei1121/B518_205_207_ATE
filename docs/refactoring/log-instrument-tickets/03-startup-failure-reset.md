@@ -28,3 +28,11 @@
 ## Blocked by
 
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/78
+
+## Code review follow-up (2026-10-19)
+
+- Fixed restart recovery: reset now finds the persisted accepted failed round, appends bilingual reset/cancellation audit events, preserves its failed-round evidence, and permits a subsequent explicit start. Regression: `test_accepted_start_failure_can_be_reset_after_app_restart_from_disk_records`.
+- Fixed false whole-round no-start alarm after accepted activity later times out. The round retains accepted activity evidence; per-slot TIMEOUT/NOTEST decisions remain independent. Regression: `test_partial_accepted_activity_suppresses_whole_round_no_start_alarm`.
+- Verification: `PYTHONPATH=src python3 -m unittest tests.test_monitoring_round` — 64 tests passed; combined domain suite (`test_machine_profiles`, `test_monitoring_round`, `test_round_start_preparation`, `test_app_event_store`, `test_audit_records`, `test_round_archival`) — 171 tests passed.
+- Cleanup race investigation: on clean baseline `8922bb5`, the manual-stop cancellation case passed alone and the baseline six-module suite passed 162 tests. Candidate six-module suite passed 171 tests, including that case; no cleanup error reproduced. The earlier candidate cleanup-only `OSError` remains recorded as a transient failure, not counted as a pass.
+- Limit: startup-failure rounds have no Session to archive; the restart regression verifies durable audit/reset and subsequent start without waiting for an inapplicable archive-settle state.

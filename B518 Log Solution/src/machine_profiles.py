@@ -14,7 +14,8 @@ from language_catalog import DEFAULT_LANGUAGE, is_supported_language
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
 
 
-PROFILE_SCHEMA_VERSION = 1
+PROFILE_SCHEMA_VERSION = 2
+_PREVIOUS_PROFILE_SCHEMA_VERSION = 1
 DEFAULT_RETENTION_DAYS = 365
 SUPPORTED_MACHINES = ("DFU", "FCT", "BT")
 SUPPORTED_PLATFORMS = DEFAULT_PLATFORM_REGISTRY.names
@@ -113,12 +114,25 @@ class ProfileCatalog:
         if not isinstance(payload, Mapping):
             raise ProfileError("配置檔必須是 JSON 物件。")
         version = payload.get("schema_version")
-        if type(version) is not int or version != PROFILE_SCHEMA_VERSION:
+        if type(version) is not int or version not in {
+                _PREVIOUS_PROFILE_SCHEMA_VERSION, PROFILE_SCHEMA_VERSION}:
             raise ProfileError("不支援的配置版本：{}。".format(version))
         records = payload.get("profiles")
         if not isinstance(records, list):
             raise ProfileError("配置缺少 profiles 清單。")
-        return cls(_profile_from_dict(record) for record in records)
+        profiles = [_profile_from_dict(record) for record in records]
+        if version == _PREVIOUS_PROFILE_SCHEMA_VERSION:
+            profiles = [
+                MachineProfile(
+                    profile.project, profile.machine, profile.platform, profile.capacity,
+                    profile.paths, profile.mapping,
+                    dict(profile.timeouts, start=120)
+                    if profile.key == ("B518", "FCT") and profile.timeouts["start"] == 30
+                    else profile.timeouts,
+                )
+                for profile in profiles
+            ]
+        return cls(profiles)
 
 
 class MachineProfileStore:
@@ -185,15 +199,16 @@ class MachineProfileStore:
             catalog, project, machine = migrate_legacy_preferences({})
             return catalog, project, machine, "無法讀取偏好檔：{}".format(error)
 
-        if type(raw.get("schema_version")) is int and raw.get("schema_version") == PROFILE_SCHEMA_VERSION:
+        if (type(raw.get("schema_version")) is int and raw.get("schema_version") in {
+                _PREVIOUS_PROFILE_SCHEMA_VERSION, PROFILE_SCHEMA_VERSION}):
             try:
-                catalog = _with_fct_start_timeout(ProfileCatalog.from_dict(raw))
+                catalog = ProfileCatalog.from_dict(raw)
                 retention_error = self._load_retention_days(raw)
                 language_error = self._load_language(raw)
                 project, machine = raw.get("project"), raw.get("machine")
                 try:
                     catalog.get(project, machine)
-                    if _catalog_has_noncanonical_fct_timeout(ProfileCatalog.from_dict(raw)):
+                    if raw.get("schema_version") != PROFILE_SCHEMA_VERSION:
                         self.save(catalog, project, machine)
                     return catalog, project, machine, retention_error
                 except ProfileError:
@@ -227,7 +242,6 @@ class MachineProfileStore:
 
     def save(self, catalog: ProfileCatalog, project: str, machine: str,
              preserve_legacy: bool = False) -> None:
-        catalog = _with_fct_start_timeout(catalog)
         catalog.get(project, machine)
         retention_days = self._retention_days
         language = self._language
@@ -270,7 +284,8 @@ class MachineProfileStore:
             raise ProfileError("偏好檔根節點必須是 JSON 物件。")
         version = raw.get("schema_version")
         if version is not None:
-            if type(version) is not int or version != PROFILE_SCHEMA_VERSION:
+            if type(version) is not int or version not in {
+                    _PREVIOUS_PROFILE_SCHEMA_VERSION, PROFILE_SCHEMA_VERSION}:
                 raise ProfileError("不支援的偏好版本：{}。".format(version))
             ProfileCatalog.from_dict(raw)
         payload = dict(raw)
@@ -292,7 +307,8 @@ class MachineProfileStore:
             raise ProfileError("偏好檔根節點必須是 JSON 物件。")
         version = raw.get("schema_version")
         if version is not None:
-            if type(version) is not int or version != PROFILE_SCHEMA_VERSION:
+            if type(version) is not int or version not in {
+                    _PREVIOUS_PROFILE_SCHEMA_VERSION, PROFILE_SCHEMA_VERSION}:
                 raise ProfileError("不支援的偏好版本：{}。".format(version))
             ProfileCatalog.from_dict(raw)
         payload = dict(raw)
@@ -303,7 +319,7 @@ class MachineProfileStore:
 
     def import_document(self, document: str, selected_project: str, selected_machine: str):
         """Validate a complete catalog, then atomically replace the saved catalog."""
-        catalog = _with_fct_start_timeout(ProfileCatalog.from_json(document))
+        catalog = ProfileCatalog.from_json(document)
         try:
             catalog.get(selected_project, selected_machine)
         except ProfileError:
@@ -354,8 +370,6 @@ def profile_from_editor_fields(project: str, machine: str, platform: str, capaci
         name: _editor_integer(timeouts.get(name, ""), "{} 期限（正整數秒）".format(label))
         for name, label in (("start", "開始"), ("test", "測試"), ("round", "整輪"))
     }
-    if project.strip() == "B518" and machine == "FCT":
-        parsed_timeouts["start"] = 120
     profile = MachineProfile(
         project=project.strip() if isinstance(project, str) else project,
         machine=machine, platform=platform, capacity=capacity_value,
@@ -374,23 +388,6 @@ def _editor_integer(value: str, field: str) -> int:
         raise ProfileError("{}必須是正整數。".format(field))
     return parsed
 
-
-def _with_fct_start_timeout(catalog: ProfileCatalog) -> ProfileCatalog:
-    """Pin every stored FCT profile to the field-approved 120 second start limit."""
-    return ProfileCatalog(
-        MachineProfile(
-            profile.project, profile.machine, profile.platform, profile.capacity,
-            dict(profile.paths), profile.mapping,
-            dict(profile.timeouts, start=120)
-            if profile.key == ("B518", "FCT") else profile.timeouts,
-        )
-        for profile in catalog.profiles
-    )
-
-
-def _catalog_has_noncanonical_fct_timeout(catalog: ProfileCatalog) -> bool:
-    return any(profile.key == ("B518", "FCT") and profile.timeouts["start"] != 120
-               for profile in catalog.profiles)
 
 def _profile_from_dict(record: object) -> MachineProfile:
     if not isinstance(record, Mapping):

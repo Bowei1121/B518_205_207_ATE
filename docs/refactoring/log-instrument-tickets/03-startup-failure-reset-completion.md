@@ -30,3 +30,10 @@
 ## 整合結果
 
 已整合至 `codex/log-instrument-1-2`，LI3 整合 commit `cd0ccb0698cc55ee2625f5b35e7e7c878e9e6c47`；票務紀錄修正後 commit `6e7842563e285ac0fb61ab08f0f9fc87e9ca8354`。整合後重跑核心+準備 64/64、audit/AppEvent/契約 61/61、真 Tk 7/7，`git diff --check` 通過。GitHub 與內部 Gitea 遠端 SHA 均核對為 `6e78425eda9d2eccc58614e1a0a1780e70b406fb`。GitHub #80 已新增完成紀錄並以 completed 關閉，回讀確認 CLOSED/COMPLETED。
+
+## Code review follow-up (2026-10-19)
+
+- Fixed the restart case where the accepted failed round was no longer in memory: reset now appends durable reset/cancellation events to its audit, preserves failure evidence, and permits a subsequent explicit start. Regression: `test_accepted_start_failure_can_be_reset_after_app_restart_from_disk_records`.
+- Added regression for a trusted activity event whose slot later TIMEOUTs before the round start deadline; that prior accepted activity now suppresses only the false whole-round no-start alarm. Per-slot decisions remain intact.
+- Verification: candidate domain suite (`test_machine_profiles`, `test_monitoring_round`, `test_round_start_preparation`, `test_app_event_store`, `test_audit_records`, `test_round_archival`) — 171 tests passed; `test_monitoring_round` — 64 tests passed; `python3 -m compileall -q 'B518 Log Solution/src' 'B518 Log Solution/tests'` and `git diff --check` passed.
+- Cleanup race check: clean baseline `8922bb5` manual-stop cancellation case passed alone and its six-module suite passed 162 tests; candidate six-module suite passed 171 tests including that case. The earlier candidate cleanup `OSError` did not reproduce in either rerun and is not counted as a pass.

@@ -28,7 +28,7 @@
         <a class="card" href="#developer"><span class="tag">開發者</span><h2>程式如何判讀 Log</h2><p>認識 UI、背景監控、事件、Log 格式與 Session 紀錄的資料流。</p></a>
       </section>
 
-      <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。出現 PASS、FAIL 或 NOTEST 時，Log Solution 會自動回到前景，方便 KVM 讀取；TIMEOUT 與 STOPPED 不會觸發此動作。</p>
+      <section id="hmi"><p class="section-label">先認識畫面</p><h2>主畫面功能導覽</h2><p>主畫面是供 TE 查看結果與 KVM 擷取的固定看板。先設定路徑、再開始監控；它不會代替 Atlas 或 BT HMI 啟動測試。開始監控、可信 TESTING、Slot 結果更新（含 TIMEOUT／STOPPED）及輪次完成或停止時，Log Solution 會短暫回到前景方便 KVM 讀取；它不會永久置頂，也不會強制鍵盤焦點。</p>
         <figure class="annotated-figure"><div class="image-stage"><img class="manual-image" src="Photo/截圖%202026-09-11%2012.28.23.png" alt="BT Log Solution 主畫面，含設定、KVM RESULT、狀態模板、Slot 表格及監控按鈕" data-caption="BT 主畫面功能導覽"><span class="callout c1">1</span><span class="callout c2">2</span><span class="callout c3">3</span><span class="callout c4">4</span><span class="callout c5">5</span><span class="callout c6">6</span><span class="callout c7">7</span></div><figcaption>圖 1：BT 主畫面。標記對應下方功能說明；DFU、FCT 使用相同畫面結構，只有有效 Slot 數不同。</figcaption></figure>
         <div class="table-wrap"><table><thead><tr><th>標記</th><th>區域／部件</th><th>功能</th></tr></thead><tbody>
           <tr><td>1</td><td>設定</td><td>開啟「監控設定」與「事件與 Session」視窗，可選工站、設定路徑及逾時秒數、查看即時事件與開啟 Session 紀錄。</td></tr>
@@ -37,7 +37,7 @@
           <tr><td>4</td><td>KVM RESULT 色帶</td><td>固定七格，左至右代表 Slot 1～7；兩端黑白標記用於定位及確認方向。DFU 使用 1～7、FCT 使用 1～6、BT 使用 1～4，其餘格固定黑色。</td></tr>
           <tr><td>5</td><td>KVM 狀態模板</td><td>PASS、FAIL、TESTING、NOTEST 的固定顏色範本，供 KVM 先建立取樣模板；這四格不是操作按鈕。</td></tr>
           <tr><td>6</td><td>結果表格</td><td>每個有效 Slot 顯示通道、目前狀態與產品 SN。BT 的 Slot 1～4 分別對應測試機 Thread 1～4。</td></tr>
-          <tr><td>7</td><td>開始／停止監控</td><td>「開始監控」會記錄本輪開始時間，並先記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果，可用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。開始不會啟動測試機；「停止監控」由人員結束本輪，尚未結束的通道改為 STOPPED，已完成的結果保留。</td></tr>
+          <tr><td>7</td><td>開始／停止監控</td><td>「開始監控」會記錄本輪開始時間，並先記錄資料夾裡原本有哪些 Log，避免把舊結果當成這一輪的結果，可用 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>。開始不會啟動測試機；「停止監控」由人員結束本輪，尚未結束的通道改為 STOPPED，已完成的結果保留。每次明確開始才建立新輪，不會自動重試。</td></tr>
         </tbody></table></div>
       </section>
 
@@ -78,9 +78,9 @@
         <tr><td><span class="state completing">COMPLETING</span></td><td>等待最終測試結果，尚不代表測試通過。此狀態可能只短暫出現，畫面也可能直接由 TESTING 跳到 PASS／FAIL。</td><td>等待 archive／TestData 寫入；若超過上限，依 TIMEOUT 處理。</td></tr>
         <tr><td><span class="state pass">PASS</span></td><td>最終 Log 判定通過。</td><td>依產線流程放行，必要時由 KVM 讀取色帶或畫面。</td></tr>
         <tr><td><span class="state fail">FAIL</span></td><td>最終 Log 判定失敗，或 DFU/FCT 測試活動結束前未讀到可信 SN。</td><td>依產線異常流程處理並保存原始 Log。</td></tr>
-        <tr><td><span class="state notest">NOTEST</span></td><td>DFU／FCT：本輪已有通道活動，且所有有效通道的 active 資料夾消失至少 3 秒後，未參與的通道由 WAITING 改為 NOTEST。BT：FAILED 最終 CSV 的 SN 為空時顯示 NOTEST。此狀態不表示整輪已完成。</td><td>確認該 Slot 是否本來就未測；不是預期情況時回報。</td></tr>
-        <tr><td><span class="state timeout">TIMEOUT</span></td><td>整輪等待開始逾時：期限內沒有任何通道活動或最終結果，所有有效 Slot 顯示 TIMEOUT 並停止監控。個別通道測試逾時：從首次活動起超過測試上限，只標記該 Slot，其餘未結束通道繼續監控。</td><td>TIMEOUT 不代表產品 FAIL。檢查測試機、路徑與 Log；個別通道逾時時先保留其他通道的監控，整輪結束或手動停止後再開始新一輪。</td></tr>
-        <tr><td><span class="state stopped">STOPPED</span></td><td>人員停止監控，尚未結束的通道改為 STOPPED，已完成的 PASS／FAIL／NOTEST 與已逾時的 TIMEOUT 保留。</td><td>這不是產品 FAIL。若要繼續測試，重新開始一輪監控。</td></tr>
+        <tr><td><span class="state notest">NOTEST</span></td><td>DFU／FCT：本輪已有通道活動，且所有有效通道的 active 資料夾消失至少 3 秒後，未參與的通道由 WAITING 改為 NOTEST。BT：FAILED 最終 CSV 的 SN 為空時顯示 NOTEST。若全輪期限到時沒有任何可信活動或有效結果，未開始的 Slot 也會定案為 NOTEST，來源停止並建立待確認警報。</td><td>確認該 Slot 是否本來就未測。若出現整輪未開始警報，須在警報視窗按「確認」；關閉視窗不等於確認。</td></tr>
+        <tr><td><span class="state timeout">TIMEOUT</span></td><td>整輪開始期限內完全沒有可信活動或有效結果時，所有未開始 Slot 定案為 NOTEST，停止來源並要求人工確認；若已有任何 Slot 活動或結果，則不建立「整輪未開始」警報。個別通道測試逾時只標記該 Slot，其餘未結束通道依各自規則繼續。</td><td>TIMEOUT 不代表產品 FAIL。檢查測試機、路徑與 Log；整輪警報須按「確認」，部分活動時未開始 Slot 會在開始期限到時定案 NOTEST。確認後仍有其他待處理事項時，先處理完再開始新輪。</td></tr>
+        <tr><td><span class="state stopped">STOPPED</span></td><td>人員停止監控，尚未結束的通道改為 STOPPED，已完成的 PASS／FAIL／NOTEST 與已逾時的 TIMEOUT 保留。若本輪尚未確認監控就緒，畫面不足以證明來源屬於本輪，須取消並保留紀錄。</td><td>這不是產品 FAIL。依畫面提示完成確認或取消；排除問題後再次明確按「開始監控」才會建立新一輪。</td></tr>
       </tbody></table></div>
         <h3>KVM 色帶與通道</h3><p>頂端 <code>KVM RESULT</code> 永遠由左至右代表 Slot 1–7。DFU 使用 1–7、FCT 使用 1–6、BT 使用 1–4；不存在的通道固定為黑色。兩端黑白定位標記協助影像辨識確認方向。主畫面上的 PASS、FAIL、TESTING、NOTEST 色塊是 KVM 取樣模板，不是按鈕。</p>
       </section>
@@ -106,9 +106,10 @@
 
       <section id="troubleshooting"><h2>異常處理</h2><div class="accordions">
         <details><summary>無法開始監控／出現路徑錯誤</summary><p>回到設定，確認必要欄位已選到根目錄、目錄仍存在且目前帳號有讀取權限。DFU/FCT 需要同時設定 active 與最終結果路徑；BT 必須設定 TestData，CaseInfo 可留空。</p></details>
-        <details><summary>一直是 WAITING 或等待開始逾時</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。全輪沒有任何通道活動或最終結果，且達「等待開始測試逾時」時，所有有效 Slot 會變 TIMEOUT 並停止監控；排除原因後須重新開始監控。</p></details>
+        <details><summary>一直是 WAITING 或整輪未開始警報</summary><p>請確認按開始監控後才開始測試，並確認測試程式實際寫入所選路徑。程式會刻意忽略開始前就存在且未變更的檔案，以免舊結果被當成本輪結果。若開始期限到時整輪仍沒有可信活動或有效結果，未開始 Slot 會定案 NOTEST、停止來源並進入待確認；在警報視窗按「確認」才算處理完成，關閉視窗不會確認。若本輪已有任一 Slot 的可信活動或結果，不會建立整輪未開始警報；各 Slot 仍依自己的測試期限處理。</p></details>
         <details><summary>顯示「SN 讀取失敗 / FAIL」</summary><p>DFU/FCT 從 active 的 records.csv 讀可信 SN；若 active 消失前都未讀到可信 SN，會判 FAIL。請提供該 Slot 的 active records.csv 與最終結果 records.csv 給開發者。</p></details>
         <details><summary>個別 Slot TIMEOUT</summary><p>從首次 TESTING／COMPLETING 起算，包含等待最終結果的時間；逾時只會標記該 Slot，其他未結束 Slot 繼續監控，已完成結果保留。先確認最終 CSV 是否遲到、寫在別的根目錄，或測試機本身停住。</p></details>
+        <details><summary>啟動失敗後如何復位或開始下一輪</summary><p>先依錯誤訊息修正路徑或權限，再按主畫面「確認並復位啟動故障」。這會結束失敗請求或取消並保留已建立的失敗輪次，不會重試或啟動測試機；App 重開後也可依保存的故障紀錄復位。之後須再次明確按「開始監控」才建立新輪。若畫面要求取消尚未確認的輪次，按「取消未確認輪次並保留紀錄」後再開始。</p></details>
         <details><summary>BT 出現「人工覆核」</summary><p>BT 會鎖定本輪第一個時間戳批次。若看到不同批次，或同一 Thread 出現另一個最終結果，程式會詢問是否接受新檔案。只有確認它屬於本輪、同一台機台要看的資料時才選「是」；不確定時選「否」並把 Session 和原始 Log 回報。</p></details>
         <details><summary>BT 為何先顯示 TESTING，再有 PASS／FAIL？</summary><p>設定 CaseInfo 後，程式會讀取 Thread1–4 的 CaseInfo 活動並對應主畫面 Slot 1–4，可在最終 CSV 到達前顯示測試中與條碼。最終結果仍以 TestData 下的 PASSED／FAILED CSV 判定。</p></details>
       </div></section>
@@ -130,7 +131,7 @@ Slot／Thread 與產品 SN：
       </section>
 
       <section id="developer"><p class="section-label">開發者原理說明</p><h2>資料如何流動</h2><div class="flow" role="img" aria-label="使用者介面、背景監控、Log 解析、事件與 Session 紀錄的資料流"><div>設定與主看板<br><small>b518_log_solution.py</small></div><b>啟動</b><div>背景輪詢<br><small>每 0.5 秒</small></div><b>讀取</b><div>DFU／FCT／BT Log<br><small>log_monitoring.py</small></div><b>事件</b><div>UI 更新與 Session<br><small>JSON、CSV、LOG</small></div></div>
-        <p>桌面 UI 建立監控器並把背景執行緒傳回的事件放進佇列；UI 定期取出事件，更新 Slot 與事件頁；收到 PASS／FAIL／NOTEST 結果事件時讓看板回到前景。核心監控邏輯不控制測試機，也沒有 Arduino、USB、TCP、KVM 或螢幕擷取依賴。</p>
+        <p>桌面 UI 建立監控器並把背景執行緒傳回的事件放進佇列；UI 定期取出事件，更新 Slot 與事件頁。開始監控、可信 TESTING、Slot 結果變更及輪次完成／停止會讓看板短暫回到前景，包括 TIMEOUT 和 STOPPED 更新；不會永久置頂或搶鍵盤焦點。核心監控邏輯不控制測試機，也沒有 Arduino、USB、TCP、KVM 或螢幕擷取依賴。</p>
         <div class="table-wrap"><table><thead><tr><th></th><th>DFU／FCT</th><th>BT</th></tr></thead><tbody>
           <tr><th>核心類別</th><td><code>AtlasActiveArchiveMonitor</code></td><td><code>BtLogMonitor</code></td></tr>
           <tr><th>即時來源</th><td><code>active/group0-slotN/.../records.csv</code></td><td>選填 <code>threadNCaseInfo_YYYY-MM-DD.txt</code></td></tr>

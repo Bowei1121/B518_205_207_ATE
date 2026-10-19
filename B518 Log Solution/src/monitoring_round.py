@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from log_monitoring import MonitorEvent, SlotResult, TERMINAL
-from audit_records import AuditEvent, AuditRecordError, RoundAuditStore
+from audit_records import AuditEvent, AuditRecordError, RoundAuditStore, read_round_audit
 from app_event_store import AppEventCleanupError
 from cleanup_reasons import capture_cleanup_reason
 from language_catalog import capture_round_event_message, make_bilingual_message
@@ -1068,7 +1068,10 @@ class MonitoringRound:
 
     def _has_start_evidence(self, results) -> bool:
         trusted_statuses = {"TESTING", "COMPLETING", "PASS", "FAIL"}
-        return any(result.status in trusted_statuses for result in results)
+        if any(result.status in trusted_statuses for result in results):
+            return True
+        with self._lock:
+            return bool(self._activity_slots)
 
     def _adjudicate_no_start_deadline(self, results, limit: int, elapsed: float, at: float) -> None:
         for result in results:
@@ -1742,7 +1745,8 @@ class RoundCoordinator:
             if round_ is not None and not round_.reset_start_failure(
                     failure.request_id, diagnostic):
                 return False
-            if failure.round_id and round_ is None:
+            if (failure.round_id and round_ is None and
+                    not self._reset_persisted_start_failure(failure, diagnostic)):
                 return False
             store.record(
                 "app.start_failure_reset",
@@ -1752,6 +1756,58 @@ class RoundCoordinator:
             )
             self._start_failure = None
             return True
+
+    def _reset_persisted_start_failure(self, failure: StartFailureSnapshot,
+                                       diagnostic: str) -> bool:
+        """Cancel a startup-failed round from its audit after the live object is gone."""
+        if self._audit_root is None:
+            return True
+        audit_path = self._audit_root / failure.round_id / "audit.jsonl"
+        if not audit_path.is_file():
+            return False
+        try:
+            audit = read_round_audit(audit_path)
+            if (audit["round"]["round_id"] != failure.round_id or
+                    audit["completion_reason"] not in {"start_failed", "start_failed_cancelled"}):
+                return False
+            if audit["completion_reason"] == "start_failed_cancelled":
+                return True
+            header = audit["round"]
+            started_monotonic = float(header["accepted_start_monotonic"])
+            journal = RoundAuditStore(
+                self._audit_root, failure.round_id, failure.station,
+                header["accepted_start_at"], started_monotonic,
+                config=header.get("config", {}),
+            )
+            present = {event["kind"] for event in audit["events"]}
+            operation_at = self._wall_clock().isoformat(timespec="seconds")
+            next_sequence = audit["events"][-1]["sequence"] + 1 if audit["events"] else 1
+            records = (
+                ("start_failure_reset", "round.start_failure_reset",
+                 "啟動故障已確認並復位"),
+                ("round_cancelled", "round.start_failure_cancelled",
+                 "啟動失敗輪次已取消並保留紀錄"),
+            )
+            for kind, message_id, message in records:
+                if kind in present:
+                    continue
+                detail = {"round_id": failure.round_id, "request_id": failure.request_id,
+                          "reason": "start_failed_cancelled", "operation_at": operation_at,
+                          "diagnostic": diagnostic}
+                localized = make_bilingual_message(
+                    message_id, {"station": failure.station}, diagnostic)
+                journal.append_event(
+                    AuditEvent(next_sequence, kind, "{}：{}".format(failure.station, message),
+                               None, detail=detail, localized_message=localized),
+                    operation_at, 0.0,
+                )
+                next_sequence += 1
+            if journal.flush(timeout=5.0):
+                return True
+            journal.retry()
+            return journal.flush(timeout=5.0)
+        except (OSError, AuditRecordError, KeyError, TypeError, ValueError):
+            return False
 
     def cancel_unverified_round(self, round_id: str, diagnostic: str = "") -> bool:
         """Cancel an eligible stopped/deadline round by explicit round identity."""

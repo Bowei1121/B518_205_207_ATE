@@ -23,7 +23,7 @@ def valid_profile():
 
 
 class MachineProfileTests(unittest.TestCase):
-    def test_fct_start_timeout_is_120_in_default_saved_and_imported_profiles(self):
+    def test_fct_default_and_legacy_migration_use_120_but_engineer_updates_are_preserved(self):
         catalog, _project, _machine = migrate_legacy_preferences({})
         self.assertEqual(catalog.get("B518", "FCT").timeouts["start"], 120)
         self.assertEqual(catalog.get("B518", "DFU").timeouts["start"], 30)
@@ -37,12 +37,14 @@ class MachineProfileTests(unittest.TestCase):
                                    timeouts={"start": 30, "test": 480, "round": 7200})],
             })
             raw = legacy_catalog.to_dict()
+            raw["schema_version"] = 1
             raw.update({"project": "B518", "machine": "FCT"})
             path.write_text(json.dumps(raw), encoding="utf-8")
             migrated, _, _, _ = MachineProfileStore(path).load()
             self.assertEqual(migrated.get("B518", "FCT").timeouts["start"], 120)
-            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["profiles"][0]
-                             ["timeouts"]["start"], 120)
+            upgraded = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(upgraded["schema_version"], 2)
+            self.assertEqual(upgraded["profiles"][0]["timeouts"]["start"], 120)
 
             store = MachineProfileStore(path)
             imported = ProfileCatalog.from_dict({
@@ -50,10 +52,32 @@ class MachineProfileTests(unittest.TestCase):
                 "profiles": [dict(valid_profile(), machine="FCT", platform="atlas",
                                    timeouts={"start": 30, "test": 480, "round": 7200})],
             })
-            imported, _, _ = store.import_document(imported.to_json(), "B518", "FCT")
+            legacy_import = json.dumps({"schema_version": 1,
+                                        "profiles": [dict(valid_profile(), machine="FCT",
+                                                           platform="atlas",
+                                                           timeouts={"start": 30, "test": 480,
+                                                                     "round": 7200})]})
+            imported, _, _ = store.import_document(legacy_import, "B518", "FCT")
             self.assertEqual(imported.get("B518", "FCT").timeouts["start"], 120)
             reloaded, _, _, _ = MachineProfileStore(path).load()
             self.assertEqual(reloaded.get("B518", "FCT").timeouts["start"], 120)
+
+            updated = imported.get("B518", "FCT")
+            updated = MachineProfile(
+                updated.project, updated.machine, updated.platform, updated.capacity,
+                updated.paths, updated.mapping, dict(updated.timeouts, start=180),
+            )
+            catalog = imported.with_profile(updated)
+            store.save(catalog, "B518", "FCT")
+            reloaded, _, _, _ = MachineProfileStore(path).load()
+            self.assertEqual(reloaded.get("B518", "FCT").timeouts["start"], 180)
+
+    def test_fct_editor_keeps_an_engineer_entered_start_timeout(self):
+        profile = profile_from_editor_fields(
+            "B518", "FCT", "atlas", "2", {"active": "/tmp/active", "final": "/tmp/final"},
+            "1:1,2:2", {"start": "180", "test": "480", "round": "7200"},
+        )
+        self.assertEqual(profile.timeouts["start"], 180)
 
     def test_global_language_defaults_to_english_and_reloads_from_preferences_disk(self):
         with TemporaryDirectory() as temporary:
@@ -298,7 +322,7 @@ class MachineProfileTests(unittest.TestCase):
 
     def test_unknown_schema_and_incompatible_platform_machine_pair_are_rejected(self):
         with self.assertRaises(ProfileError):
-            ProfileCatalog.from_dict({"schema_version": 2, "profiles": [valid_profile()]})
+            ProfileCatalog.from_dict({"schema_version": 3, "profiles": [valid_profile()]})
         incompatible = valid_profile()
         incompatible["machine"] = "BT"
         with self.assertRaises(ProfileError):

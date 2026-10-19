@@ -7336,6 +7336,24 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(MachineProfileStore(Path(temporary) / "preferences.json").load()[0]
                                  .get("Demo", "DFU"), saved)
 
+                app.profile_editor_project.set("B518")
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_platform.set("atlas")
+                app.profile_editor_capacity.set("2")
+                app.profile_editor_paths["active"].set("/deployment/fct-active")
+                app.profile_editor_paths["final"].set("/deployment/fct-final")
+                app.profile_editor_mapping.set("1:1, 2:2")
+                app.profile_editor_timeouts["start"].set("180")
+                app._apply_profile_editor()
+
+                fct_saved = app.profiles.get("B518", "FCT")
+                self.assertEqual(fct_saved.timeouts["start"], 180)
+                self.assertEqual(MachineProfileStore(Path(temporary) / "preferences.json").load()[0]
+                                 .get("B518", "FCT").timeouts["start"], 180)
+
+                app.profile_editor_project.set("Demo")
+                app.profile_editor_machine.set("DFU")
+                app._load_profile_editor_selection()
                 app.profile_editor_project.set("Unsaved")
                 app.profile_editor_capacity.set("3")
                 app._cancel_profile_editor()

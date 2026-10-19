@@ -161,11 +161,6 @@ class RoundStartPreparation:
                 monotonic: Optional[Callable] = None) -> PreparedRoundStart:
         """Validate source access and capture all values needed for one round."""
         validate_profile(profile, self._registry)
-        if profile.key == ("B518", "FCT") and profile.timeouts.get("start") != 120:
-            profile = MachineProfile(
-                profile.project, profile.machine, profile.platform, profile.capacity,
-                dict(profile.paths), profile.mapping, dict(profile.timeouts, start=120),
-            )
         fixed_profile = _fixed_profile(profile)
         definition = self._registry.get(fixed_profile.platform)
         resolved_paths = {}

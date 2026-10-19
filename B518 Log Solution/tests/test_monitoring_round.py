@@ -656,6 +656,35 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual([result.status for result in expired.results], ["TESTING", "NOTEST"])
         self.assertFalse(expired.collection_stopped)
 
+    def test_start_deadline_uses_accepted_activity_after_that_slot_times_out(self):
+        elapsed = [0.0]
+        holder = {}
+
+        def factory(callback):
+            monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2),
+                                      start=120, test=10, round_limit=7200)
+            holder["monitor"] = monitor
+            return monitor
+
+        coordinator = RoundCoordinator(monotonic=lambda: elapsed[0])
+        coordinator.start("FCT", factory, run_async=False, start_timeout_seconds=120,
+                          round_timeout_seconds=7200, capacity=2)
+        elapsed[0] = 1
+        holder["monitor"].apply_round_result(1, "TESTING", "SERIAL000001", "active.csv")
+        coordinator.poll_once()
+        elapsed[0] = 11
+        timed_out = coordinator.poll_once()
+        self.assertEqual(timed_out.results[0].status, "TIMEOUT")
+
+        elapsed[0] = 120
+        expired = coordinator.poll_once()
+
+        self.assertIsNone(expired.round_alarm)
+        self.assertEqual([result.status for result in expired.results], ["TIMEOUT", "NOTEST"])
+        self.assertFalse(any(event.event.kind == "round_alarm_created" and
+                             event.event.detail.get("reason") == "start_deadline_no_activity"
+                             for event in expired.events))
+
     def test_fct_activity_at_100_seconds_is_preserved_until_the_120_second_start_deadline(self):
         elapsed = [0.0]
         holder = {}
@@ -2222,6 +2251,49 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertTrue(rounds.start("FCT", lambda callback: FakeMonitor(callback),
                                         run_async=False).round_id != started.round_id)
             app_store.stop()
+
+    def test_accepted_start_failure_can_be_reset_after_app_restart_from_disk_records(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            def close_and_wait(coordinator):
+                coordinator.request_close()
+                deadline = time.monotonic() + 3
+                while coordinator.close_status().status != "complete" and time.monotonic() < deadline:
+                    threading.Event().wait(0.01)
+                self.assertEqual(coordinator.close_status().status, "complete")
+
+            root = Path(temporary)
+            app_path = root / "app-events.json"
+            audit_root = root / "rounds"
+            app_store = AppEventStore(app_path)
+            first = RoundCoordinator(audit_root=audit_root)
+            first.register_app_event_store(app_store)
+
+            started = first.start("FCT", lambda _callback: (_ for _ in ()).throw(
+                PermissionError("source permission denied")), run_async=False)
+            self.assertTrue(first.flush_audit(3))
+            self.assertTrue(app_store.flush(3))
+            app_store.stop()
+
+            restarted_store = AppEventStore(app_path)
+            restarted = RoundCoordinator(audit_root=audit_root)
+            restarted.register_app_event_store(restarted_store)
+            restored_failure = restarted.start_failure_snapshot()
+            self.assertEqual(restored_failure.round_id, started.round_id)
+
+            self.assertTrue(restarted.reset_start_failure("source permissions corrected"))
+            self.assertIsNone(restarted.start_failure_snapshot())
+            self.assertTrue(restarted_store.flush(3))
+            audit = read_round_audit(audit_root / started.round_id / "audit.jsonl")
+            self.assertEqual(audit["completion_reason"], "start_failed_cancelled")
+            self.assertEqual(audit["state"], "STOPPED")
+            self.assertFalse(audit["result_available"])
+            self.assertTrue(any(item["kind"] == "start_failure_reset" for item in audit["events"]))
+            self.assertTrue(any(item["kind"] == "round_cancelled" for item in audit["events"]))
+
+            new_round = restarted.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            self.assertNotEqual(new_round.round_id, started.round_id)
+            close_and_wait(restarted)
+            restarted_store.stop()
 
     def test_manual_stop_can_be_explicitly_cancelled_without_erasing_results(self):
         with tempfile.TemporaryDirectory() as temporary:

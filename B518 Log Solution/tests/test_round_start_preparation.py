@@ -44,7 +44,7 @@ class RoundStartPreparationTests(unittest.TestCase):
 
             self.assertEqual(prepared.capacity, 1)
 
-    def test_selected_b518_fct_profile_freezes_the_120_second_start_deadline(self):
+    def test_selected_b518_fct_profile_freezes_its_configured_start_deadline(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             active = root / "active"
@@ -54,13 +54,18 @@ class RoundStartPreparationTests(unittest.TestCase):
             profile = MachineProfile(
                 "B518", "FCT", "atlas", 1,
                 {"active": str(active), "final": str(final)}, ((1, 1),),
-                {"start": 30, "test": 480, "round": 7200},
+                {"start": 120, "test": 480, "round": 7200},
             )
 
             prepared = RoundStartPreparation().prepare(profile, root / "sessions")
 
             self.assertEqual(prepared.start_timeout_seconds, 120)
             self.assertEqual(prepared.profile.timeouts["start"], 120)
+
+            configured = replace(profile, timeouts={"start": 180, "test": 480, "round": 7200})
+            prepared = RoundStartPreparation().prepare(configured, root / "sessions-180")
+            self.assertEqual(prepared.start_timeout_seconds, 180)
+            self.assertEqual(prepared.profile.timeouts["start"], 180)
 
     def wait_for_archive_write(self, coordinator, round_id):
         deadline = time.monotonic() + 3

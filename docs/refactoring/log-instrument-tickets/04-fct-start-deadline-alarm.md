@@ -42,3 +42,10 @@
 ## Integration result
 
 已整合至 `codex/log-instrument-1-2`，LI4 merge commit `b9a41ed`；同步驗收文件 commit `18b628f`。整合後領域測試 133/133、真 Tk 回歸 2/2 通過，`git diff --check` 通過；真 App smoke 四場景證據均核對為本程式 B518 視窗。初始 conflict hover timeout 在整合基底與 LI4 source 同一桌面環境分別重跑均通過，未重現為 LI4 回歸。GitHub/Gitea 遠端 SHA 讀回一致。GitHub #81 完成紀錄與關閉狀態待本次票務收尾操作。
+
+## Code review follow-up (2026-10-19)
+
+- Corrected FCT profile version migration: legacy schema v1 B518/FCT start=30 migrates once to 120, while later valid engineer changes (for example 180) survive load, save, import, editor selection, and actual-start preparation. DFU/BT values remain independent.
+- Regression coverage includes v1 migration and save/reload/import/editor behavior, explicit 180-second preparation freeze, and a real Tk Profile Editor workflow.
+- Verification: `PYTHONPATH=src python3 -m unittest tests.test_machine_profiles tests.test_monitoring_round tests.test_round_start_preparation tests.test_app_event_store tests.test_audit_records tests.test_round_archival` — 171 tests passed. Real Tk: `PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_log_solution_ui.LogSolutionUiTests.test_engineer_can_apply_and_cancel_a_complete_profile_draft` — 1 test passed; selected B518/FCT, saved 180, and reloaded it from disk.
+- Updated Chinese and English manuals together for NOTEST/no-start alarm acknowledgement, cancellation/reset/new-round behavior, and LI6 foreground triggers; section IDs/order and relative asset links were statically checked.
