@@ -1,0 +1,6 @@
+test_round_events_raise_log_without_focus_and_without_topmost (tests.test_li6_foreground.LI6ForegroundAcceptanceTests.test_round_events_raise_log_without_focus_and_without_topmost) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 4.593s
+
+OK
