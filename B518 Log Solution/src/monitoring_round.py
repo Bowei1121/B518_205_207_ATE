@@ -193,6 +193,7 @@ class MonitoringRound:
         self._stop_requested = False
         self._collection_stopped = False
         self._completion_reason = ""
+        self._manual_stop_released = False
         self._test_started: Dict[int, float] = {}
         self._activity_slots = set()
         self._deadline_slots = set()
@@ -300,6 +301,8 @@ class MonitoringRound:
                 if self._state not in {RoundState.PREPARING, RoundState.RUNNING,
                                        RoundState.AWAITING_REVIEW}:
                     return self.snapshot()
+                if self._completion_reason == "manual_stop" and self._collection_stopped:
+                    return self.snapshot()
                 self._stop_requested = True
                 monitor = self._monitor
                 if monitor is None:
@@ -307,17 +310,31 @@ class MonitoringRound:
                     self._collection_stopped = True
                     self._completion_reason = "manual_stop"
                     self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
+                    self._preparation_results = tuple(
+                        RoundResult(slot, "", "STOPPED", "manual_stop",
+                                    self._collection_stopped_at)
+                        for slot in self._configured_slots()
+                    )
             if monitor is not None:
                 # Adapter callbacks can re-enter the round and coordinator. Do
                 # not call them while holding the round state lock.
-                self._stop_collection("manual_stop")
-                monitor.stop()
+                if not self._collection_stopped:
+                    self._stop_collection("manual_stop")
+                if self._state != RoundState.STOPPED:
+                    monitor.stop()
                 with self._lock:
-                    if self._state == RoundState.RUNNING:
-                        self._state = RoundState.STOPPED
-                        self._collection_stopped = True
-                        self._completion_reason = "manual_stop"
+                    self._state = RoundState.STOPPED
+                    self._collection_stopped = True
+                    self._completion_reason = "manual_stop"
+                    self._collection_stopped_at = self._collection_stopped_at or (
+                        self._wall_clock().isoformat(timespec="seconds"))
             else:
+                for result in self._preparation_results:
+                    self._publish_round_event(MonitorEvent(
+                        "result", "slot{} STOPPED".format(result.slot), result.slot,
+                        status="STOPPED", source="manual_stop",
+                        detail={"reason": "manual_stop", "display_position": str(result.slot)},
+                    ))
                 self._append_event(MonitorEvent(
                     "collection_stopped", "{} 已停止讀取本輪來源（manual_stop）".format(self.station),
                     detail={"round_id": self.round_id, "reason": "manual_stop",
@@ -327,6 +344,7 @@ class MonitoringRound:
                     "stopped", "{} 監控已由人員停止".format(self.station),
                     detail={"round_id": self.round_id, "reason": "manual_stop"},
                 ))
+            self._release_manual_stop_if_complete()
             return self.snapshot()
 
     def resolve_review(self, conflict_id: str, choice: str) -> RoundSnapshot:
@@ -388,7 +406,10 @@ class MonitoringRound:
                 elif not self._collection_stopped:
                     self._state = RoundState.RUNNING
             if self._collection_stopped:
-                self._finish_if_terminal()
+                if self._completion_reason == "manual_stop":
+                    self._release_manual_stop_if_complete()
+                else:
+                    self._finish_if_terminal()
             return self.snapshot()
 
     def acknowledge_round_alarm(self, round_id: str, alarm_id: str) -> RoundSnapshot:
@@ -423,6 +444,7 @@ class MonitoringRound:
                         "created_at": alarm.created_at, "acknowledged_at": alarm.acknowledged_at},
             ))
             self._finish_if_terminal()
+            self._release_manual_stop_if_complete()
             return self.snapshot()
 
     def snapshot(self) -> RoundSnapshot:
@@ -433,7 +455,9 @@ class MonitoringRound:
             results = tuple(
                 RoundResult(result.slot, result.sn, result.status, result.source, result.updated_at)
                 for result in sorted(self._monitor.round_results(), key=lambda result: result.slot)
-            ) if self._monitor is not None and self._monitor_persistence_ready else self._preparation_results
+            ) if (self._monitor is not None and self._monitor_persistence_ready and
+                  not (self._completion_reason == "manual_stop" and self._preparation_results)) \
+                else self._preparation_results
             monitor = self._monitor
             session = getattr(monitor, "session", None)
             session_pending = bool(getattr(session, "pending", False))
@@ -453,9 +477,11 @@ class MonitoringRound:
                 save_state = "complete"
             else:
                 save_state = "saving"
+            manual_stop_available = self._manual_stop_released and self._complete_result_positions(results)
             return RoundSnapshot(
                 self.round_id, self.station, self._state, results,
-                self._state == RoundState.COMPLETED, self._events[-1].sequence if self._events else 0,
+                self._state == RoundState.COMPLETED or manual_stop_available,
+                self._events[-1].sequence if self._events else 0,
                 tuple(self._events), self._collection_stopped, self._completion_reason,
                 tuple(self._pending_conflicts.values()), self._round_alarm, self._round_alarm_ready,
                 not self._monitor_persistence_ready,
@@ -672,6 +698,9 @@ class MonitoringRound:
             self._prepare_monitor()
         except Exception as error:
             with self._lock:
+                if self._completion_reason == "manual_stop":
+                    self._monitor_persistence_ready = True
+                    return
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
                 self._completion_reason = "start_failed"
@@ -731,6 +760,9 @@ class MonitoringRound:
             if stop_requested:
                 self._stop_collection("manual_stop")
                 monitor.stop()
+                with self._lock:
+                    self._monitor_persistence_ready = True
+                self._release_manual_stop_if_complete()
                 return
             self._apply_deadlines(self._monotonic())
             self._finish_if_terminal()
@@ -957,12 +989,15 @@ class MonitoringRound:
         with self._lock:
             if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return
+            if self._completion_reason == "manual_stop":
+                return
             if self._round_alarm is not None and not self._round_alarm.acknowledged_at:
                 return
             if self._round_alarm is not None and not self._round_alarm_ready:
                 return
         results = self._monitor.round_results()
-        if not results or any(result.status not in TERMINAL for result in results):
+        if not self._complete_result_positions(results) or any(
+                result.status not in TERMINAL for result in results):
             return
         self._stop_collection("results_terminal")
         if self._pending_conflicts:
@@ -985,6 +1020,47 @@ class MonitoringRound:
                     "results_released_at": self._wall_clock().isoformat(timespec="seconds")},
         ))
 
+    def _configured_slots(self) -> Tuple[int, ...]:
+        if self._capacity is not None:
+            return tuple(range(1, self._capacity + 1))
+        monitor = self._monitor
+        configured = getattr(monitor, "slots", ()) if monitor is not None else ()
+        if configured:
+            return tuple(sorted(set(configured)))
+        return tuple(result.slot for result in monitor.round_results()) if monitor else ()
+
+    def _complete_result_positions(self, results) -> bool:
+        positions = tuple(result.slot for result in results)
+        expected = self._configured_slots()
+        return bool(expected) and len(positions) == len(expected) and set(positions) == set(expected)
+
+    def _release_manual_stop_if_complete(self) -> None:
+        with self._lock:
+            if self._completion_reason != "manual_stop" or self._manual_stop_released:
+                return
+            if (self._monitor is not None and
+                    not (self._completion_reason == "manual_stop" and self._preparation_results)):
+                results = tuple(self._monitor.round_results())
+            else:
+                results = self._preparation_results
+            if (self._pending_conflicts or
+                    (self._round_alarm is not None and not self._round_alarm.acknowledged_at)):
+                self._state = RoundState.AWAITING_REVIEW
+                return
+            if (not self._complete_result_positions(results) or
+                    any(result.status not in TERMINAL for result in results)):
+                self._state = RoundState.STOPPED
+                return
+            self._manual_stop_released = True
+            self._state = RoundState.STOPPED
+        self._publish_round_event(MonitorEvent(
+            "manual_stop_completed", "{} 人工停止結果已完整放行".format(self.station),
+            message_id="round.manual_stop_completed",
+            message_parameters={"station": self.station},
+            detail={"round_id": self.round_id, "completion_reason": "manual_stop",
+                    "results_released_at": self._wall_clock().isoformat(timespec="seconds")},
+        ))
+
     def _receive_monitor_event(self, event: MonitorEvent) -> None:
         if id(event) in self._deferred_event_ids:
             self._deferred_event_ids.remove(id(event))
@@ -1003,6 +1079,17 @@ class MonitoringRound:
                 self._save_errors.append(message)
             self._save_history.append(message)
         with self._lock:
+            ignored_after_release = (
+                self._completion_reason == "manual_stop" and self._manual_stop_released and
+                event.kind == "result")
+            if ignored_after_release:
+                event = replace(
+                    event, kind="manual_stop_late_result_ignored",
+                    localized_message=None,
+                    detail=dict(event.detail, ignored_status=event.status,
+                                ignored_source=event.source),
+                )
+                self._capture_bilingual_message(event)
             self._prepare_monitor_event_locked(event)
             if event.kind == "result" and event.slot is not None:
                 result = next((item for item in self._monitor.round_results()

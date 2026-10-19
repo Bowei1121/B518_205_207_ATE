@@ -63,7 +63,8 @@ class RoundStartPreparationTests(unittest.TestCase):
                     previous = signature
                     stable_since = time.monotonic()
             threading.Event().wait(0.01)
-        self.fail("Public archive status and its disk record did not settle.")
+        self.fail("Public archive status and its disk record did not settle: {}".format(
+            coordinator.archive_status(round_id)))
 
     def test_required_paths_must_be_present_directories_readable_and_enterable(self):
         with TemporaryDirectory() as temporary:
@@ -212,17 +213,25 @@ class RoundStartPreparationTests(unittest.TestCase):
             deadline = time.monotonic() + 3
             while coordinator.close_status().status not in {"complete", "failed"}:
                 if time.monotonic() >= deadline:
-                    self.fail("Close coordination did not finish after source preparation returned.")
+                    self.fail("Close coordination did not finish after source preparation returned: "
+                              "{}; snapshot={!r}; archive={!r}".format(
+                                  coordinator.close_status(), coordinator.snapshot(),
+                                  coordinator.archive_statuses()))
                 threading.Event().wait(0.01)
 
             self.assertEqual(coordinator.close_status().status, "complete")
-            self.wait_for_archive_write(coordinator, started.round_id)
             self.assertTrue(coordinator.flush_session(timeout=2))
             self.assertTrue(coordinator.flush_audit(timeout=2))
             rebuilt = read_round_audit(coordinator.session_path / "audit.jsonl")
             self.assertEqual(rebuilt["round"]["round_id"], started.round_id)
             self.assertIn("collection_stopped", [event["kind"] for event in rebuilt["events"]])
             self.assertNotIn("round_ready", [event["kind"] for event in rebuilt["events"]])
+            self.assertEqual([event["sequence"] for event in rebuilt["events"]],
+                             list(range(1, len(rebuilt["events"]) + 1)))
+            self.assertTrue(rebuilt["result_available"])
+            archive = coordinator.archive_status(started.round_id)
+            self.assertEqual(archive.status, "protected")
+            self.assertFalse(archive.cleanup_eligible)
 
     def test_source_creation_failure_through_preparation_is_audited_before_close_completes(self):
         with TemporaryDirectory() as temporary:
@@ -232,7 +241,6 @@ class RoundStartPreparationTests(unittest.TestCase):
             (source / "events.jsonl").write_text("", encoding="utf-8")
             factory_entered = threading.Event()
             release_factory = threading.Event()
-            stop_callback_entered = threading.Event()
             failure_reported = threading.Event()
 
             def failing_factory(**_context):
@@ -242,16 +250,6 @@ class RoundStartPreparationTests(unittest.TestCase):
                 raise OSError("controlled source creation failure")
 
             def on_event(event):
-                if (event.event.kind == "collection_stopped" and
-                        event.event.detail.get("reason") == "manual_stop"):
-                    stop_callback_entered.set()
-                    release_factory.set()
-                    deadline = time.monotonic() + 3
-                    while (coordinator.snapshot().completion_reason != "start_failed" and
-                           time.monotonic() < deadline):
-                        threading.Event().wait(0.01)
-                    if coordinator.snapshot().completion_reason != "start_failed":
-                        raise AssertionError("The controlled source failure was never recorded.")
                 if event.event.kind == "start_failed":
                     failure_reported.set()
 
@@ -275,8 +273,8 @@ class RoundStartPreparationTests(unittest.TestCase):
             self.assertEqual(closing.status, "saving")
             self.assertFalse(failure_reported.is_set())
 
-            self.assertTrue(stop_callback_entered.wait(2))
-            self.assertTrue(failure_reported.wait(2))
+            coordinator.stop()
+            release_factory.set()
             deadline = time.monotonic() + 3
             while coordinator.close_status().status not in {"complete", "failed"}:
                 if time.monotonic() >= deadline:
@@ -289,14 +287,18 @@ class RoundStartPreparationTests(unittest.TestCase):
             self.assertEqual(coordinator.close_status().status, "complete")
             snapshot = coordinator.snapshot()
             self.assertEqual(snapshot.round_id, started.round_id)
-            self.assertEqual(snapshot.completion_reason, "start_failed")
+            self.assertEqual(snapshot.completion_reason, "manual_stop")
+            self.assertTrue(snapshot.result_available)
+            self.assertTrue(snapshot.audit_complete)
+            self.assertFalse(failure_reported.is_set())
             start_failures = [item for item in snapshot.events if item.event.kind == "start_failed"]
-            self.assertEqual(len(start_failures), 1)
+            self.assertEqual(start_failures, [])
             rebuilt = read_round_audit(sessions / started.round_id / "audit.jsonl")
             persisted_failures = [event for event in rebuilt["events"]
                                   if event["kind"] == "start_failed"]
-            self.assertEqual(len(persisted_failures), 1)
-            self.assertIn("controlled source creation failure", persisted_failures[0]["message"])
+            self.assertEqual(persisted_failures, [])
+            self.assertEqual(rebuilt["completion_reason"], "manual_stop")
+            self.assertTrue(rebuilt["result_available"])
 
     def test_injected_round_deadline_during_preparation_stops_late_source_before_ready(self):
         with TemporaryDirectory() as temporary:

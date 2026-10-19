@@ -64,6 +64,9 @@ def state_for_round_snapshot(snapshot: Optional[RoundSnapshot]) -> MarkerState:
         return MarkerState.REVIEW
     if snapshot.state == RoundState.COMPLETED and snapshot.result_available:
         return MarkerState.COMPLETE
+    if (snapshot.state == RoundState.STOPPED and snapshot.result_available and
+            snapshot.completion_reason == "manual_stop"):
+        return MarkerState.MANUAL_STOP_COMPLETE
     if snapshot.state == RoundState.PREPARING:
         return MarkerState.PREPARING
     if snapshot.state == RoundState.RUNNING:

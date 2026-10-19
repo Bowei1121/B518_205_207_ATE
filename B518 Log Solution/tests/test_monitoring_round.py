@@ -925,7 +925,8 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertTrue(entered.wait(1))
         stopped = coordinator.stop()
         self.assertEqual(stopped.state.value, "STOPPED")
-        self.assertFalse(stopped.result_available)
+        self.assertTrue(stopped.result_available)
+        self.assertEqual([result.status for result in stopped.results], ["STOPPED"])
         release.set()
         self.assertTrue(returned.wait(3))
         for _ in range(100):
@@ -935,7 +936,8 @@ class MonitoringRoundTests(unittest.TestCase):
         snapshot = coordinator.snapshot()
         self.assertEqual(snapshot.round_id, started.round_id)
         self.assertEqual(snapshot.state.value, "STOPPED")
-        self.assertFalse(snapshot.result_available)
+        self.assertTrue(snapshot.result_available)
+        self.assertEqual([result.status for result in snapshot.results], ["STOPPED"])
         self.assertEqual(holder["monitor"].poll_count, 0)
 
     def test_pending_bt_candidate_can_be_resolved_after_collection_stops(self):
@@ -1522,8 +1524,9 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual([(result.slot, result.status) for result in snapshot.results],
                          [(1, "PASS"), (2, "STOPPED")])
         self.assertEqual(snapshot.state, "STOPPED")
-        self.assertFalse(snapshot.result_available)
-        self.assertEqual(snapshot.events[-1].event.kind, "stopped")
+        self.assertTrue(snapshot.result_available)
+        self.assertEqual(snapshot.completion_reason, "manual_stop")
+        self.assertEqual(snapshot.events[-1].event.kind, "manual_stop_completed")
 
     def test_manual_stop_keeps_mixed_terminals_and_stops_only_incomplete_positions(self):
         elapsed = [0.0]
@@ -1547,9 +1550,98 @@ class MonitoringRoundTests(unittest.TestCase):
             "PASS", "FAIL", "NOTEST", "TIMEOUT", "STOPPED", "STOPPED", "STOPPED",
         ])
         self.assertEqual(snapshot.state, "STOPPED")
-        self.assertFalse(snapshot.result_available)
+        self.assertTrue(snapshot.result_available)
         self.assertTrue(snapshot.collection_stopped)
         self.assertEqual(snapshot.completion_reason, "manual_stop")
+        event_count = len(snapshot.events)
+        repeated = rounds.stop()
+        self.assertEqual(len(repeated.events), event_count)
+
+    def test_manual_stop_with_all_terminal_results_keeps_review_until_conflict_is_resolved(self):
+        holder = {}
+
+        def create(callback):
+            monitor = DeadlineMonitor(callback, lambda: 0.0, slots=(1,), start=100)
+            holder["monitor"] = monitor
+            return monitor
+
+        rounds = RoundCoordinator(monotonic=lambda: 0.0)
+        rounds.start("BT", create, run_async=False, capacity=1)
+        monitor = holder["monitor"]
+        original = {"round_evidence_id": "run-1", "source_id": "original.csv",
+                    "source_time": "2026-10-19T08:00:00"}
+        monitor.apply_round_result(1, "PASS", "SN-1", "original.csv", original)
+        monitor.offer_candidate(1, "FAIL", "SN-1", "candidate.csv", {
+            **original, "source_id": "candidate.csv", "source_time": "2026-10-19T08:01:00",
+        })
+
+        stopped = rounds.stop()
+        self.assertEqual(stopped.state.value, "AWAITING_REVIEW")
+        self.assertEqual([item.status for item in stopped.results], ["PASS"])
+        self.assertFalse(stopped.result_available)
+        conflict_id = stopped.pending_conflicts[0].conflict_id
+        released = rounds.resolve_review(conflict_id, "keep_original")
+        self.assertEqual(released.state.value, "STOPPED")
+        self.assertTrue(released.result_available)
+        self.assertEqual(released.completion_reason, "manual_stop")
+
+    def test_manual_stop_during_source_preparation_publishes_full_configured_results_immediately(self):
+        source_entered = threading.Event()
+        release_source = threading.Event()
+        monitors = []
+
+        def create(callback):
+            source_entered.set()
+            release_source.wait(2)
+            monitor = FakeMonitor(callback)
+            monitor.results = {slot: SlotResult(slot) for slot in range(1, 5)}
+            monitors.append(monitor)
+            return monitor
+
+        rounds = RoundCoordinator()
+        accepted = rounds.start("FCT", create, run_async=True, capacity=4)
+        self.assertTrue(source_entered.wait(1))
+        stopped = rounds.stop()
+
+        self.assertEqual(stopped.state, "STOPPED")
+        self.assertTrue(stopped.result_available)
+        self.assertEqual([item.status for item in stopped.results], ["STOPPED"] * 4)
+        self.assertEqual(stopped.completion_reason, "manual_stop")
+        release_source.set()
+        deadline = time.monotonic() + 2
+        while rounds.snapshot().source_preparation_pending and time.monotonic() < deadline:
+            threading.Event().wait(0.01)
+        self.assertFalse(rounds.snapshot().source_preparation_pending)
+        settled = rounds.snapshot()
+        self.assertEqual(settled.round_id, accepted.round_id)
+        self.assertEqual(settled.state, "STOPPED")
+        self.assertEqual([item.status for item in settled.results], ["STOPPED"] * 4)
+        self.assertEqual(settled.completion_reason, "manual_stop")
+
+    def test_late_source_factory_failure_cannot_relabel_a_manual_stop(self):
+        source_entered = threading.Event()
+        release_source = threading.Event()
+
+        def create(_callback):
+            source_entered.set()
+            release_source.wait(2)
+            raise OSError("late source failure")
+
+        rounds = RoundCoordinator()
+        accepted = rounds.start("FCT", create, run_async=True, capacity=2)
+        self.assertTrue(source_entered.wait(1))
+        stopped = rounds.stop()
+        self.assertTrue(stopped.result_available)
+        self.assertEqual(stopped.completion_reason, "manual_stop")
+        release_source.set()
+        deadline = time.monotonic() + 2
+        while rounds.snapshot().source_preparation_pending and time.monotonic() < deadline:
+            threading.Event().wait(0.01)
+        settled = rounds.snapshot()
+        self.assertEqual(settled.round_id, accepted.round_id)
+        self.assertEqual(settled.completion_reason, "manual_stop")
+        self.assertTrue(settled.result_available)
+        self.assertFalse(any(item.event.kind == "start_failed" for item in settled.events))
 
     def test_failed_previous_round_remains_queryable_and_retriable_after_new_round_starts(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,0 +1,133 @@
+{
+  "screens": [
+    {
+      "scenario": "preparing-stop",
+      "round_id": "a18d61e30d954a93b2b16b9cfbfd5574",
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ],
+      "state": "manual_stop_complete",
+      "file": "preparing-stop.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 87316,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "scenario": "mixed-terminal-stop",
+      "round_id": "16a28047c0c042fda9ca26a48e13d862",
+      "results": [
+        "PASS",
+        "STOPPED"
+      ],
+      "state": "manual_stop_complete",
+      "file": "mixed-terminal-stop.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 87316,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "scenario": "all-terminal-review",
+      "round_id": "2a8b660a11ae4b70ae94d77559394ae9",
+      "results": [
+        "PASS",
+        "FAIL"
+      ],
+      "state": "review",
+      "file": "all-terminal-review.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 87316,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "scenario": "manual-stop-released",
+      "round_id": "2a8b660a11ae4b70ae94d77559394ae9",
+      "results": [
+        "PASS",
+        "FAIL"
+      ],
+      "state": "manual_stop_complete",
+      "file": "manual-stop-released.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 87316,
+      "window_bounds": {
+        "X": 1052.0,
+        "Height": 695.0,
+        "Y": 32.0,
+        "Width": 376.0
+      },
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    }
+  ],
+  "disk_rebuild": [
+    {
+      "round_id": "a18d61e30d954a93b2b16b9cfbfd5574",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": true,
+      "results": [
+        "STOPPED",
+        "STOPPED"
+      ]
+    },
+    {
+      "round_id": "16a28047c0c042fda9ca26a48e13d862",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": true,
+      "results": [
+        "PASS",
+        "STOPPED"
+      ]
+    },
+    {
+      "round_id": "2a8b660a11ae4b70ae94d77559394ae9",
+      "state": "STOPPED",
+      "manual_stop": true,
+      "result_available": true,
+      "results": [
+        "PASS",
+        "FAIL"
+      ]
+    }
+  ],
+  "ticket": "LI2",
+  "environment": {
+    "macOS": "15.8.1",
+    "architecture": "x86_64",
+    "python": "3.11.7",
+    "tk": "8.6",
+    "capture": "Quartz window filtered by app process PID and exact title"
+  },
+  "physical_kvm_available": false
+}

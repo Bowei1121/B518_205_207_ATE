@@ -38,8 +38,8 @@ class KvmDisplayContractTests(unittest.TestCase):
                            collection_stopped=True), MarkerState.COMPLETE),
             (self.snapshot(RoundState.COMPLETED, available=False,
                            collection_stopped=True), MarkerState.STANDBY),
-            (self.snapshot(RoundState.STOPPED, completion_reason="manual_stop",
-                           collection_stopped=True), MarkerState.STANDBY),
+            (self.snapshot(RoundState.STOPPED, available=True, completion_reason="manual_stop",
+                           collection_stopped=True), MarkerState.MANUAL_STOP_COMPLETE),
             (self.snapshot(RoundState.STOPPED, completion_reason="start_failed",
                            collection_stopped=True), MarkerState.STANDBY),
         )
