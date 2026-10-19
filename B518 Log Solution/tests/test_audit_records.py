@@ -527,7 +527,8 @@ class RoundAuditRecordTests(unittest.TestCase):
         ))
         waiting = self.coordinator.stop()
         self.assertTrue(waiting.collection_stopped)
-        self.assertEqual(waiting.state.value, "STOPPED")
+        self.assertEqual(waiting.state.value, "AWAITING_REVIEW")
+        self.assertFalse(waiting.result_available)
         conflict_id = waiting.pending_conflicts[0].conflict_id
         self.assertTrue(self.coordinator.flush_audit())
 
@@ -535,13 +536,42 @@ class RoundAuditRecordTests(unittest.TestCase):
 
         completed = self.coordinator.resolve_review(conflict_id, "accept_candidate")
         self.assertEqual(completed.state.value, "STOPPED")
+        self.assertTrue(completed.result_available)
         rebuilt = self.rebuild_current_round(started.round_id)
+        self.assertTrue(rebuilt["manual_stop"])
+        self.assertTrue(rebuilt["result_available"])
+        self.assertEqual(rebuilt["completion_reason"], "manual_stop")
         resolution = next(event for event in rebuilt["events"]
                           if event["kind"] == "conflict_resolved")
         self.assertEqual(resolution["detail"]["choice"], "accept_candidate")
         self.assertEqual(resolution["localized_message"]["message_id"],
                          "round.conflict.accepted_candidate")
         self.assertEqual(rebuilt["results"][1]["sn"], "SN-NEW")
+
+    def test_preparation_stop_is_immediately_reconstructable_as_manual_release(self):
+        entered = threading.Event()
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def factory(callback):
+            entered.set()
+            release.wait(2)
+            return AuditFakeMonitor(callback, lambda: self.clock[0])
+
+        started = self.coordinator.start("FCT", factory, run_async=True, capacity=2,
+                                         audit_context={"capacity": 2})
+        self.assertTrue(entered.wait(1))
+        stopped = self.coordinator.stop()
+        self.assertTrue(stopped.result_available)
+        self.assertEqual([result.status for result in stopped.results], ["STOPPED", "STOPPED"])
+        self.assertTrue(self.coordinator.flush_audit(timeout=1))
+        rebuilt = read_round_audit(self.audit_path(started.round_id))
+        self.assertTrue(rebuilt["manual_stop"])
+        self.assertTrue(rebuilt["result_available"])
+        self.assertEqual(rebuilt["state"], "STOPPED")
+        self.assertEqual([result["status"] for result in rebuilt["results"].values()],
+                         ["STOPPED", "STOPPED"])
+        release.set()
 
     def test_concurrent_audit_events_near_idle_exit_are_all_reconstructed_in_order(self):
         started = self.start_round()

@@ -466,6 +466,12 @@ def read_round_audit(path: Path) -> dict:
             manual_stop = True
             state = "STOPPED"
             completion_reason = "manual_stop"
+        elif kind == "manual_stop_completed":
+            collection_stopped = True
+            manual_stop = True
+            released = True
+            state = "STOPPED"
+            completion_reason = "manual_stop"
         elif kind == "start_failed":
             state = "STOPPED"
             completion_reason = "start_failed"

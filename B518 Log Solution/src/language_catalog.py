@@ -463,6 +463,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.collection_stopped': '{station} stopped collecting new source data',
         'round.stopped': '{station} monitoring stopped by operator',
         'round.finished': '{station} round completed',
+        'round.manual_stop_completed': '{station} manually stopped results released',
         'round.timeout.slot': '{station} Slot {slot} timed out: {status} after {elapsed} seconds (limit {deadline} seconds)',
         'round.timeout.whole': '{station} round monitoring timed out after {elapsed} seconds (limit {deadline} seconds)',
         'round.alarm.created': '{station} round timeout alarm created',
@@ -960,6 +961,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         'round.collection_stopped': '{station} 已停止收集新來源資料',
         'round.stopped': '{station} 監控已由人員停止',
         'round.finished': '{station} 本輪已完成',
+        'round.manual_stop_completed': '{station} 人工停止結果已放行',
         'round.timeout.slot': '{station} 通道 {slot} 逾時：經過 {elapsed} 秒，期限 {deadline} 秒，結果 {status}',
         'round.timeout.whole': '{station} 整輪監控逾時：經過 {elapsed} 秒，期限 {deadline} 秒',
         'round.alarm.created': '{station} 已建立整輪逾時警報',
@@ -1102,6 +1104,8 @@ def capture_round_event_message(kind: str, station: str, slot: object, status: s
         message_id = "round.stopped"
     elif kind == "finished":
         message_id = "round.finished"
+    elif kind == "manual_stop_completed":
+        message_id = "round.manual_stop_completed"
     elif kind == "timeout":
         parameters.update(elapsed=detail.get("elapsed_seconds", "unknown"),
                           deadline=detail.get("deadline_seconds", "unknown"))
