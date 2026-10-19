@@ -28,7 +28,7 @@
 
 ## LI1 實作驗收紀錄（2026-10-19）
 
-實作候選已在 `codex/li1-ready-busy-preparation` 完成，尚待整合分支合併複驗及外部 Issue 完成紀錄；本段不表示 GitHub #78 已關閉。實作將已接受輪次公開為 `PREPARING`，只有來源工廠與監控基準啟動完成後才轉成 `RUNNING`／MONITORING；PREPARING 維持 BUSY、開始入口共用輪次鎖定、停用再次開始而保持停止操作可用。六種共用圖樣現有唯一碼表，PREPARING 圖樣接上真實狀態，人工停止碼只先定義、不接本票未實作的交付路徑。
+已整合至 `codex/log-instrument-1-2`，整合 commit `b929206f364a9439198cd9a526f1c153a3bf8f2b`；整合 worktree 核心驗收 112/112 通過，`git diff --check` 通過。GitHub／Gitea 遠端同步與 #78 狀態見本紀錄末尾。本段只表示 LI1 已驗收，不表示整套 1.2 已可發布。實作將已接受輪次公開為 `PREPARING`，只有來源工廠與監控基準啟動完成後才轉成 `RUNNING`／MONITORING；PREPARING 維持 BUSY、開始入口共用輪次鎖定、停用再次開始而保持停止操作可用。六種共用圖樣現有唯一碼表，PREPARING 圖樣接上真實狀態，人工停止碼只先定義、不接本票未實作的交付路徑。
 
 驗收命令及結果：
 
@@ -42,7 +42,7 @@
 
 真實 App 環境為 macOS 15.8.1、x86_64、Python 3.11.7、Tk 8.6；證據在 [li1-real-app](../../../B518%20Log%20Solution/docs/refactoring/evidence/li1-real-app/)：`preparing.png`、`monitoring.png`、`activity.png`、`complete.png`、`run.json`。Quartz 擷取以本次 App PID 及 Tk root title `B518 FCT ATE Log Solution-V0.1.0` 篩選，四張圖均直接顯示 B518 App 主視窗。
 
-限制：沒有執行外部 KVM／ATE／LabVIEW 驗收，依規格不屬本專案門檻。人工停止交付、啟動失敗復位、整輪未開始警報及契約幾何仍分別屬後續票；本紀錄不宣稱這些功能完成。整合後 SHA 與跨分支複驗結果待整合代理補入。
+限制：沒有執行外部 KVM／ATE／LabVIEW 驗收，依規格不屬本專案門檻。人工停止交付、啟動失敗復位、整輪未開始警報及契約幾何仍分別屬後續票；本紀錄不宣稱這些功能完成。LI1 GitHub Issue #78 已新增完成紀錄並以 completed 關閉，回讀確認狀態 closed。
 
 ## Blocked by
 
