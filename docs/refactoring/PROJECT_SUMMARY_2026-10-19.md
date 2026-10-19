@@ -1,5 +1,7 @@
 # 專案摘要 — 2026-10-19
 
+> 最新結論入口：[本專案儀器狀態與契約 1.2 討論定稿](LOG_INSTRUMENT_DISCUSSION_2026-10-19.md)。①～④需求討論已完成，產品尚未實作；下文保留逐輪歷史，早期「待確認」狀態以後續確認及定稿為準。
+
 ## 前次討論與結果
 
 - 2026-10-17 依 improve-codebase-architecture 與 codebase-design 分析程式，再讀契約 1.2 proposal；建議 P0 C1＋C2、P1 C4／C3／C6＋C5、P2 通知恢復、P3 歷史查詢互動。使用者尚未核可具體設計或產品實作。
@@ -68,3 +70,8 @@
 使用者同意用monitor_start確認Log監控就緒、check_start確認ATE可信測試活動、check_finish確認完整結果；check_start不能只看MONITORING或HID成功。TESTING／COMPLETING或本輪有效PASS／FAIL等結果可為活動證據；回報實際通道及證據類型，不推論全通道開始。若已取得完整可交付結果，可直接交付，不再強迫等待check_finish；NOTEST／TIMEOUT／STOPPED不當開測證據。每請求只回一次，活動回覆不消耗最終結果。
 
 唯讀查核KVM_Log PROTOCOL.md已文件化人工停止state=manual_stop_complete、缺監控就緒證據回manual_verification_required，程式仍待實作；交接文件同步引用此方向，未改寫現行TCP1.0。新命令完整欄位／版本、舊check遷移、精確幾何及配對實作驗收仍待完成。本次只更新兩專案交接文件、詞彙及摘要。
+
+
+## 本專案討論定稿與領域決策歸檔
+
+使用者要求確認記錄並使用 domain-modeling 保存結論。既有 CONTEXT.md、每日摘要及跨專案交接已持續記錄；本次另建立 LOG_INSTRUMENT_DISCUSSION_2026-10-19.md 作為本專案入口，補 ADR0010（儀器就緒／測試活動／交付分離）、ADR0011（人工停止保留證據／未知同輪取消）。修正「待確認」詞彙涵蓋衝突、警報、啟動失敗，釐清監控開始不等於實際開測，新增監控就緒及輪次取消詞彙；沿用既有CONTEXT，不新增重複GLOSSARY。①～④需求已談定，⑤⑥暫緩；精確幾何、Spec／開發票及實作驗收為後續工程，KVM TCP完整格式由該專案接續。本次不修改產品或兩邊既有交接快照。
