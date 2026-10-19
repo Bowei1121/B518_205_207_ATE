@@ -32,7 +32,8 @@
 來源分支：`codex/li6-foreground-without-focus` (`342345c29204d4334567297286e6a737a3def72c`)
 目標整合分支：`codex/log-instrument-1-2`（當前整合 SHA：`5d9b008477fcbbf80f6e1c7ab650f160ead9efe1`）
 Merger 候選分支：`codex/li6-merger-integration`
-LI6 merge commit：`35f757051a2e2938fc63716b6598cc7af3c4f383`，父 commits：`b2be9c66f0eb54796bf35c1f0016a64850131a28`、`342345c29204d4334567297286e6a737a3def72c`。整合分支已 fast-forward 至 `5d9b008477fcbbf80f6e1c7ab650f160ead9efe1`（含本機票務驗收紀錄）。
+LI6 merge commit：`35f757051a2e2938fc63716b6598cc7af3c4f383`，父 commits：`b2be9c66f0eb54796bf35c1f0016a64850131a28`、`342345c29204d4334567297286e6a737a3def72c`。整合分支已 fast-forward 並同步本機票務紀錄至 `c757920f15ed35ff87f4cbe71fedd21ae796f901`。
+GitHub Issue #83：已留言並讀回確認 `CLOSED / COMPLETED`；完成紀錄連結：[LI6 完成紀錄](https://github.com/Bowei1121/B518_205_207_ATE/issues/83#issuecomment-6264624598)。
 
 以輪次 snapshot 的實際狀態與結果轉換排程前景提示；同一 Tk idle 批次合併、輪詢不變時不重複提升，輪次 ID 不符時忽略。macOS 原生視窗使用非 key window 的 order-front 路徑；不設永久 topmost、不呼叫 `focus_force()`。原生提升失敗記錄雙語 App event 與原始診斷，仍繼續更新結果列。README、RS-WMT pilot 與 Ticket 17 驗收說明同步調整為雙語前景規則。
 
