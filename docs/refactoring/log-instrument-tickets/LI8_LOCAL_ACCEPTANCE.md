@@ -13,7 +13,7 @@
 | 3. 交叉情境及晚回事件 | 通過 | 127 core tests、4 項真正 Tk disk/UI regression、LI2/LI5 smoke 驗證人工停止與衝突、期限／factory 例外、取消／新輪及舊輪事件隔離。 |
 | 4. 新 reader、保存／關閉及歷史資料保護 | 通過 | 新 reader 重建一般結果、人工停止、啟動期限／警報及確認、prep stop 取消和復位；保存失敗可重試，保存未完成不關窗，歷史讀取不改寫。4 項真正 Tk UI regression 全過。 |
 | 5. 六圖樣、helper、容量／語言／scaling／幾何 | 通過 | 11 項契約測試；真 Tk 16 格矩陣（scaling 1.0/1.5 × capacity 1/10/11/20 × English/繁中），透過設定 profile editor 與 Apply 切換，16 張可讀 view-cache PNG 與 JSON。 |
-| 6. LI6 前景／焦點及控制回歸 | 通過 | 在 LI6 基線 5d9b008 已知通過後，候選 SHA `15d6796411128de18c3539716c6823cb7f52b035` 以相同授權 Aqua session、單一 python3 GUI process 重跑，1/1 通過（4.593s）。結果確認所有事件、焦點保持、最小化恢復及 non-topmost。舊失敗 run 的 probe 顯示當時 queue entry `keyWindow=None`、frontmost `loginwindow` PID184；最終通過 run 與基線在相同 session 成功，且期間未修改產品碼或斷言。有效 `run.json` 與截圖位於 `li6-foreground-final-candidate-pass/`。 |
+| 6. LI6 前景／焦點及控制回歸 | 通過 | 在 LI6 基線 5d9b008 已知通過後，候選 SHA `15d6796411128de18c3539716c6823cb7f52b035` 以相同授權 Aqua session、單一 python3 GUI process 重跑，1/1 通過（4.593s）。結果確認所有事件、焦點保持、最小化恢復及 non-topmost。舊失敗 run 的 probe 顯示當時 queue entry `keyWindow=None`、frontmost `loginwindow` PID184；最終通過 run 與基線在相同 session 成功，且期間未修改產品碼或斷言。有效 `run.json` 與截圖位於 `li6-foreground-final-candidate-pass/`。 Merger worktree 在 commit `ea0d6bd77841421c1214fcccf3cf270d70203800` 以 `PYTHONPATH=src:tests` 重跑同一真 Tk 測試，1/1 通過（4.577s）；結果與截圖位於 `B518 Log Solution/docs/refactoring/evidence/li8-integration/li6-merger-rerun/`。 |
 | 7. 顯示契約 1.2 文件同步 | 通過 | 正式契約與交接文件已更新為 1.2；列出正式色樣、幾何與不相容性。 |
 | 8. 交接責任及無橋接功能 | 通過 | 交接文件分清 Log 本機監控與 ATE 活動；`monitor_start`、`check_start`、`check_finish` 屬 KVM_Log，不新增 TCP／ACK／KVM 辨識。 |
 | 9. 本機驗收範圍 | 通過 | 僅驗 Log Solution 公開輪次、磁碟重建及真 App/Tk；外部 KVM、JetKVM、Dock、LabVIEW、現場 ATE 不列前置。 |
