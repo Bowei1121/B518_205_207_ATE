@@ -30,7 +30,7 @@
 - B518/FCT 的建立、舊設定正規化、儲存、匯入、載入及實際開始凍結皆固定 start=120 秒；DFU/BT 值維持既有行為。
 - deadline 從 accepted start 單調計時，涵蓋 source preparation；deadline polling 先裁決，再 poll source。空輪次停止並把未開始格寫為 NOTEST，建立單一警報並停在 AWAITING_REVIEW；部分活動不建立「整輪未開始」警報。人工 ack 才解除該警報的結果阻擋，晚到 preparation 不會重啟或改寫已裁決結果。
 - Audit/session 測試從磁碟重新讀取 alarm、停止與 ack 事件；開始期限事件保留雙語 message ID 和中英文內容。
-- 驗證：`PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_machine_profiles tests.test_log_monitoring tests.test_round_start_preparation tests.test_monitoring_round tests.test_language_catalog -v` — 132 tests passed；新增雙語覆蓋後又執行 `tests.test_language_catalog` 與磁碟 audit 測試，共 10 tests passed。
+- 驗證：`PYTHONPATH=src /opt/anaconda3/bin/python3 -m unittest tests.test_machine_profiles tests.test_log_monitoring tests.test_round_start_preparation tests.test_monitoring_round tests.test_language_catalog -v` — 133 tests passed；新增雙語覆蓋後又執行 `tests.test_language_catalog` 與磁碟 audit 測試，共 10 tests passed。
 - 真 App/Tk：`PYTHONPATH=src /opt/anaconda3/bin/python3 tools/smoke_li4_start_alarm_app.py` — macOS/Tk 8.6.12，使用 5 秒受控 monotonic deadline，未等待真實 120 秒；驗證真實 B518 App 視窗呈現兩格 NOTEST/REVIEW，Close 不會 ack，實際 Ack 後輪次 COMPLETE 且結果可交付。證據：`docs/refactoring/evidence/li4-real-app/{alarm-pending.png,main-review.png,main-complete.png,run.json}`。
 - 真 Tk 回歸：`test_real_tk_notification_badge_stays_until_alarm_is_acknowledged` passed。`test_real_tk_close_keeps_conflict_and_alarm_actions_available` 初次在 LI4 source 嘗試兩次，均於既有 conflict-control hover hint 等待逾時，未抵達 alarm 行為斷言。2026-10-19 在同一 macOS/Tk 桌面環境以相同命令分別於 LI4 integration base `08f5d38` 與 source `cc4f75c` 重跑，兩邊各 1/1 passed；現有實證顯示初次 timeout 為間歇性桌面 hover 事件，未能重現為 LI4 回歸。另於 LI4 source 重跑 badge regression，1/1 passed。LI4 真 App 操作 smoke 通過：使用 5 秒受控 monotonic deadline，真實 B518 FCT App 畫面呈現兩格 NOTEST/REVIEW；關閉警報不會 ack，實際 ack 後輪次 COMPLETE 且結果可交付。證據位置：`B518 Log Solution/docs/refactoring/evidence/li4-real-app/`。
 - 限制：只使用合成的等待來源與受控時鐘，沒有連接現場 ATE、bridge TCP、KVM_Log 或 JetKVM；這些不屬本票驗收範圍。
@@ -38,3 +38,7 @@
 ## Blocked by
 
 - https://github.com/Bowei1121/B518_205_207_ATE/issues/78
+
+## Integration result
+
+已整合至 `codex/log-instrument-1-2`，LI4 merge commit `b9a41ed`；同步驗收文件 commit `18b628f`。整合後領域測試 133/133、真 Tk 回歸 2/2 通過，`git diff --check` 通過；真 App smoke 四場景證據均核對為本程式 B518 視窗。初始 conflict hover timeout 在整合基底與 LI4 source 同一桌面環境分別重跑均通過，未重現為 LI4 回歸。GitHub/Gitea 遠端 SHA 讀回一致。GitHub #81 完成紀錄與關閉狀態待本次票務收尾操作。
