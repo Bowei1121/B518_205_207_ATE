@@ -24,4 +24,4 @@
 
 ## Blocked by
 
-- LI2（待核可後以實際GitHub子議題及原生阻擋關係取代）
+- https://github.com/Bowei1121/B518_205_207_ATE/issues/79

@@ -29,6 +29,6 @@
 
 ## Blocked by
 
-- LI5（待核可後以實際GitHub子議題及原生阻擋關係取代）
-- LI6（待核可後以實際GitHub子議題及原生阻擋關係取代）
-- LI7（待核可後以實際GitHub子議題及原生阻擋關係取代）
+- https://github.com/Bowei1121/B518_205_207_ATE/issues/82
+- https://github.com/Bowei1121/B518_205_207_ATE/issues/83
+- https://github.com/Bowei1121/B518_205_207_ATE/issues/84

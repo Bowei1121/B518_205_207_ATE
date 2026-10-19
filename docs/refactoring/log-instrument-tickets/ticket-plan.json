@@ -1,5 +1,5 @@
 {
-  "status": "draft-awaiting-user-approval",
+  "status": "published",
   "parent": "https://github.com/Bowei1121/B518_205_207_ATE/issues/77",
   "spec_sha256": "fbe541837a3e29c656b1830ae8f9e51c07bbd927ee5a13d34d3b09c9a8bb915a",
   "source_comments_read": 0,
@@ -55,7 +55,10 @@
       ],
       "deliver": "操作員開始本輪後立即看到 BUSY／準備中，不能重複開始；來源舊檔基準完成才顯示監控中，之後逐格顯示活動與結果，正常完整結束回 READY。",
       "scope": "以正常輪次做第一條完整路徑，建立後續票共用的狀態與公開可觀察事實；不全面重構，不實作人工停止交付、啟動故障復位或新開始警報。",
-      "number": 1
+      "number": 1,
+      "issue_number": 78,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/78",
+      "issue_id": 5918509139
     },
     {
       "id": "LI2",
@@ -98,7 +101,10 @@
       ],
       "deliver": "操作員在監控或來源準備中按停止，都立即取得完整格位結果；保留已完成值，未完成為 STOPPED，無待確認後顯示獨立人工停止完成圖樣，磁碟可重建同一事實。",
       "scope": "從停止操作到格位定案、結果放行、HMI／圖樣及稽核重建一次完成；未見監控就緒後取消本輪的本地操作由 LI5 接續。",
-      "number": 2
+      "number": 2,
+      "issue_number": 79,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/79",
+      "issue_id": 5918509272
     },
     {
       "id": "LI3",
@@ -135,7 +141,10 @@
       ],
       "deliver": "配置／路徑等接受前失敗或來源準備中的失敗，都形成持續可見的異常待確認；人員排除、確認並復位後才回 READY，再次明確開始才新輪。",
       "scope": "涵蓋 App 層無輪次故障及已接受輪次故障，包含該失敗請求結束／失敗輪次取消與保存；其他已完成／停止／逾時輪次的人工取消由 LI5 擴充。",
-      "number": 3
+      "number": 3,
+      "issue_number": 80,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/80",
+      "issue_id": 5918509397
     },
     {
       "id": "LI4",
@@ -178,7 +187,10 @@
       ],
       "deliver": "現場實際使用的FCT配置採120秒；整輪到期仍無可信活動／結果時停止、NOTEST並警報待確認，人員確認後才本地完成；準備尚未返回也按開始期限處理。",
       "scope": "同一條期限路徑包含profile更新／載入、受控時鐘裁決、警報操作、HMI與重建；不把DFU／BT一併改120，也不實作橋接確認。",
-      "number": 4
+      "number": 4,
+      "issue_number": 81,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/81",
+      "issue_id": 5918509518
     },
     {
       "id": "LI5",
@@ -209,7 +221,10 @@
       ],
       "deliver": "操作員面對需人工核對的準備中停止／逾時，能在本程式確認必要事項、取消該輪並保留原結果，排除問題後明確開始新輪，沒有強制交付或自動重測捷徑。",
       "scope": "擴充LI3失敗輪次取消能力到LI2人工停止與LI4準備逾時的本地操作路徑；不讓Log推測橋接有沒有看見MONITORING，不新增TCP、KVM輪次或遠端取消命令。",
-      "number": 5
+      "number": 5,
+      "issue_number": 82,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/82",
+      "issue_id": 5918509655
     },
     {
       "id": "LI6",
@@ -234,7 +249,10 @@
       ],
       "deliver": "開始監控、可信TESTING、結果更新及整輪完成時，Log視窗提升到前面但不強制鍵盤焦點、不永久置頂；同批事件合併，不隨輪詢持續提升。",
       "scope": "以LI2已有的一般／人工停止完整生命週期驗證指定前景時機；不新增Dock自動化、不要求現場ATE或KVM配合，也不把原衝突視窗移到會遮擋狀態格的位置。",
-      "number": 6
+      "number": 6,
+      "issue_number": 83,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/83",
+      "issue_id": 5918509768
     },
     {
       "id": "LI7",
@@ -258,7 +276,10 @@
       ],
       "deliver": "移除KVM RESULT文字、將左定位點移到第一格色帶正上方，保留其他元素位置，量測出唯一可重現的新座標與本機畫面證據。",
       "scope": "這是可獨立完成的顯示幾何切片，不等待輪次業務票，也不在本票宣告整套1.2完成；最終六狀態與幾何共同檢查由LI8完成。",
-      "number": 7
+      "number": 7,
+      "issue_number": 84,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/84",
+      "issue_id": 5918509884
     },
     {
       "id": "LI8",
@@ -313,7 +334,12 @@
       ],
       "deliver": "把已完成切片整合成可交付的Log Solution候選，核對88項故事、本機行為／保存／真App證據，凍結完整顯示契約1.2及交接資料；不等待KVM驗收。",
       "scope": "這張負責跨切片的完整生命週期與版本一致性，不承接前票未完成的功能／基本驗收，也不代做KVM、JetKVM或LabVIEW開發與測試。",
-      "number": 8
+      "number": 8,
+      "issue_number": 85,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/85",
+      "issue_id": 5918510190
     }
-  ]
+  ],
+  "published_date": "2026-10-19",
+  "relationship_type": "github-native-sub-issues-and-blocked-by"
 }
