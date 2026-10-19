@@ -49,6 +49,12 @@
 - `PYTHONPATH=src B518_LI5_EVIDENCE_DIR=docs/refactoring/evidence/li5-real-app /opt/anaconda3/bin/python3 tools/smoke_li5_manual_cancel_app.py` — 真正 B518 Tk App 通過；macOS 桌面，Python 3.11.7、Tk 8.6.12，進程 PID 5814。真實 Stop/Cancel/Start 操作驗證準備中停止→取消→新輪，以及準備逾時→實際警報 ACK→取消→新輪。擷取證明停止 review 時 Start disabled、timeout ACK 後且取消前 Start disabled、取消後 Start 可建立不同 round ID；舊來源完成 handoff 不會改寫舊取消輪。
 - 真 App 截圖及執行明細：`B518 Log Solution/docs/refactoring/evidence/li5-real-app/`，包含 `manual-stop-review.png`、`manual-stop-cancelled.png`、`new-round-after-manual-stop.png`、`preparation-timeout-alarm.png`、`preparation-timeout-review.png`、`preparation-timeout-acknowledged.png`、`preparation-timeout-cancelled.png`、`new-round-after-timeout.png`、`run.json`。
 
+## Code review follow-up (2026-10-19)
+
+- Synchronized both manuals with the implemented operator flow: acknowledge alarms and complete required round cancellation or startup-failure reset before explicitly starting the next round. Removed the stale direct-restart guidance.
+- Static verification on integrated HEAD `efd3efc3f09d3d3bd8b981154e65bd7dd567fce4` confirmed the bilingual section IDs/order, local asset links, timeout defaults, and next-round instructions. `git diff --check 8922bb5..HEAD` passed.
+- The documentation change is included in `efd3efc3f09d3d3bd8b981154e65bd7dd567fce4`; no LI5 runtime behavior changed in this follow-up.
+
 ### 範圍與限制
 
 只使用合成的本地來源與受控計時；未連接 bridge TCP、KVM_Log、JetKVM、LabVIEW 或現場 ATE。整合分支已推送至 GitHub 與內部 Gitea；本機／遠端 SHA 與 Issue #82 關閉狀態於完成紀錄確認。

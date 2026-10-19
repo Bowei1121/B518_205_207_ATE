@@ -46,6 +46,11 @@ GitHub Issue #83：已留言並讀回確認 `CLOSED / COMPLETED`；完成紀錄�
 - `python3 -m compileall -q src tests` 與 `git diff --check` — 通過。
 - 真桌面逐事件 JSON 與截圖：`B518 Log Solution/docs/refactoring/evidence/li6-foreground/`；執行命令與環境記於其中 README，執行觀測記於 `run.json`。
 
+## Code review follow-up (2026-10-19)
+
+- Updated the Chinese and English manuals to describe the LI6 foreground triggers consistently, including TIMEOUT and STOPPED slot updates, while retaining the rule that the app does not stay on top or steal keyboard focus.
+- Static verification on integrated HEAD `efd3efc3f09d3d3bd8b981154e65bd7dd567fce4` confirmed bilingual section IDs/order and local assets; `git diff --check 8922bb5..HEAD` passed. No LI6 runtime behavior changed in this follow-up.
+
 ### 範圍與限制
 
 本機合成輪次與第二個 Tk 視窗驗證；未連接現場 ATE、KVM_Log、JetKVM、Dock automation 或 LabVIEW。既有整套 `test_log_solution_ui` 基底有預存 UI 失敗／cleanup errors，分類和逐項基底比較見證據文件；不將其宣稱為通過。
