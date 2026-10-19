@@ -1579,6 +1579,9 @@ class RoundCoordinator:
         self._close_worker_active = False
         self._app_event_store = None
         self._start_failure: Optional[StartFailureSnapshot] = None
+        # Persisted reset audits have no live MonitoringRound to own their
+        # retry state. Keep their journals in the same close-save lifecycle.
+        self._pending_reset_journals: Dict[str, RoundAuditStore] = {}
         self._archive_states: Dict[str, ArchiveSnapshot] = {}
         self._archive_locations: Dict[str, ArchiveLocation] = {}
         self._archive_locks: Dict[str, threading.Lock] = {}
@@ -1794,6 +1797,8 @@ class RoundCoordinator:
                 header["accepted_start_at"], started_monotonic,
                 config=header.get("config", {}), existing_audit_path=audit_path,
             )
+            with self._lock:
+                self._pending_reset_journals[failure.round_id] = journal
             operation_at = self._wall_clock().isoformat(timespec="seconds")
             next_sequence = audit["events"][-1]["sequence"] + 1 if audit["events"] else 1
             records = (
@@ -1816,10 +1821,15 @@ class RoundCoordinator:
                     operation_at, 0.0,
                 )
                 next_sequence += 1
-            if journal.flush(timeout=5.0):
-                return True
-            journal.retry()
-            return journal.flush(timeout=5.0)
+            saved = journal.flush(timeout=5.0)
+            if not saved:
+                journal.retry()
+                saved = journal.flush(timeout=5.0)
+            if saved:
+                with self._lock:
+                    if self._pending_reset_journals.get(failure.round_id) is journal:
+                        del self._pending_reset_journals[failure.round_id]
+            return saved
         except (OSError, AuditRecordError, KeyError, TypeError, ValueError):
             return False
 
@@ -2009,7 +2019,7 @@ class RoundCoordinator:
                 return self._close_status
             self._closing = True
             generation = self._close_status.generation + 1
-            round_ids = tuple(self._archive_states)
+            round_ids = self._close_round_ids_locked()
             self._close_status = CloseSnapshot("saving", generation, round_ids)
             self._start_close_worker_locked(generation)
             return self._close_status
@@ -2156,15 +2166,20 @@ class RoundCoordinator:
             self._closing = True
             generation = self._close_status.generation + 1
             self._close_status = CloseSnapshot(
-                "saving", generation, tuple(self._archive_states))
+                "saving", generation, self._close_round_ids_locked())
             failed = tuple(round_ for round_ in self._tracked_rounds.values()
                            if round_.snapshot().save_state == "failed")
+            failed_reset_journals = tuple(
+                journal for journal in self._pending_reset_journals.values()
+                if journal.error is not None)
             failed_archive_ids = tuple(
                 round_id for round_id, status in self._archive_states.items()
                 if not status.cleanup_eligible)
             app_event_store = self._app_event_store
         for round_ in failed:
             round_.retry_saves()
+        for journal in failed_reset_journals:
+            journal.retry()
         if app_event_store is not None:
             app_event_store.retry()
         with self._lock:
@@ -2181,7 +2196,7 @@ class RoundCoordinator:
             self._closing = False
             self._close_status = CloseSnapshot(
                 "cancelled", self._close_status.generation + 1,
-                tuple(self._archive_states), self._close_status.message)
+                self._close_round_ids_locked(), self._close_status.message)
             if self._retention_trigger_pending and not self._retention_worker_active:
                 self._retention_worker_active = True
                 threading.Thread(target=self._run_retention_worker, daemon=True).start()
@@ -2198,6 +2213,31 @@ class RoundCoordinator:
         self._close_worker_active = True
         threading.Thread(target=self._coordinate_close, args=(generation,), daemon=True).start()
 
+    def _close_round_ids_locked(self) -> Tuple[str, ...]:
+        return tuple(dict.fromkeys((*self._archive_states, *self._pending_reset_journals)))
+
+    def _flush_pending_reset_journals(self, generation: int) -> bool:
+        with self._lock:
+            journals = tuple(self._pending_reset_journals.items())
+            round_ids = self._close_round_ids_locked()
+        failures = []
+        for round_id, journal in journals:
+            if journal.error is not None:
+                journal.retry()
+            if journal.flush(timeout=None):
+                with self._lock:
+                    if self._pending_reset_journals.get(round_id) is journal:
+                        del self._pending_reset_journals[round_id]
+            else:
+                failures.append("{}：{}".format(
+                    round_id[:10], journal.error or "稽核紀錄尚未完整保存"))
+        if failures:
+            self._set_close_failure(
+                generation, round_ids,
+                "啟動故障復位稽核尚未完整保存；視窗仍保持開啟。" + "; ".join(failures))
+            return False
+        return True
+
     def _coordinate_close(self, generation: int) -> None:
         try:
             while True:
@@ -2205,7 +2245,7 @@ class RoundCoordinator:
                     return
                 with self._lock:
                     cleanup_active = self._retention_worker_active
-                    round_ids = tuple(self._archive_states)
+                    round_ids = self._close_round_ids_locked()
                 if not cleanup_active:
                     break
                 self._set_close_waiting(generation, round_ids, "等待已開始的背景清理安全完成")
@@ -2219,7 +2259,9 @@ class RoundCoordinator:
                     return
                 with self._lock:
                     rounds = tuple(self._tracked_rounds.items())
-                    round_ids = tuple(self._archive_states)
+                    round_ids = self._close_round_ids_locked()
+                if not self._flush_pending_reset_journals(generation):
+                    return
                 waiting_for_preparation = False
                 for _round_id, round_ in rounds:
                     if not round_.wait_until_prepared(0.05):

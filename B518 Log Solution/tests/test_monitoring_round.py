@@ -2354,6 +2354,56 @@ class MonitoringRoundTests(unittest.TestCase):
                 "round_cancelled"), 1)
             restarted_store.stop()
 
+    def test_close_waits_for_persisted_reset_journal_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_path = root / "app-events.json"
+            audit_root = root / "rounds"
+            round_id = "round-reset-close-retry"
+            self._persist_start_failure(audit_root, app_path, round_id)
+
+            app_store = AppEventStore(app_path)
+            coordinator = RoundCoordinator(audit_root=audit_root)
+            coordinator.register_app_event_store(app_store)
+            real_append = audit_records.RoundAuditStore._append_complete_line
+
+            def fail_cancel_event(journal, record):
+                if record.get("kind") == "round_cancelled":
+                    raise OSError("cancel event disk fault")
+                return real_append(journal, record)
+
+            with patch.object(audit_records.RoundAuditStore, "_append_complete_line",
+                              new=fail_cancel_event):
+                self.assertFalse(coordinator.reset_start_failure("operator confirmed reset"))
+                partial = read_round_audit(audit_root / round_id / "audit.jsonl")
+                self.assertEqual([event["kind"] for event in partial["events"]].count(
+                    "start_failure_reset"), 1)
+                self.assertFalse(any(event["kind"] == "round_cancelled"
+                                     for event in partial["events"]))
+
+                requested = coordinator.request_close()
+                self.assertIn(round_id, requested.round_ids)
+                deadline = time.monotonic() + 3
+                while coordinator.close_status().status not in {"failed", "waiting"} and time.monotonic() < deadline:
+                    threading.Event().wait(0.01)
+                self.assertIn(coordinator.close_status().status, {"failed", "waiting"})
+                self.assertNotEqual(coordinator.close_status().status, "complete")
+                self.assertIn(round_id, coordinator.close_status().round_ids)
+
+            retried = coordinator.retry_close_saves()
+            self.assertIn(retried.status, {"saving", "waiting"})
+            deadline = time.monotonic() + 3
+            while coordinator.close_status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            self.assertEqual(coordinator.close_status().status, "complete")
+            self.assertIn(round_id, coordinator.close_status().round_ids)
+            repaired = read_round_audit(audit_root / round_id / "audit.jsonl")
+            self.assertEqual([event["kind"] for event in repaired["events"]].count(
+                "start_failure_reset"), 1)
+            self.assertEqual([event["kind"] for event in repaired["events"]].count(
+                "round_cancelled"), 1)
+            app_store.stop()
+
     def test_restart_reset_finds_start_failure_audit_attached_to_session_by_round_id(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
