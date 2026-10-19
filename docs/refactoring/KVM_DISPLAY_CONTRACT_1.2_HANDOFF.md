@@ -1,9 +1,9 @@
-# Log Solution ↔ KVM_Log：狀態辨識格交接契約 1.2（討論定稿／實作草案）
+# Log Solution ↔ KVM_Log：狀態辨識格交接契約 1.2（本機契約已實作）
 
 更新日期：2026-10-19（Asia/Taipei）  
 適用：B518 Log Solution、B518_JetKVM_Log（KVM_Log）、LabVIEW 測試流程控制者。
 
-> 已確認的是狀態語意、開始／交付流程、人工停止及整輪未開始警報政策；產品尚未實作。第五種黑白圖樣已於 2026-10-19 獲使用者確認：上排白白、下排黑黑（0011）；另外已確認加入 PREPARING（BUSY／準備中）語意；本文件將第六種圖樣配置為 0101。新左定位點的精確幾何仍未定。此文件不取代已發布的 1.1，不表示 1.2 已可部署。
+> Log Solution 本機 1.2 契約與六種圖樣已實作；精確幾何為左 `(0, 2)`、右 `(320, 2)`、狀態格 `(278, 0)`、排數格 `(130, 2)`，並由真 Tk/Profile Editor 矩陣驗證。這不表示 KVM_Log、JetKVM、Dock、LabVIEW 或現場 ATE 已驗收。1.1 consumer 不相容於 1.2 的新增圖樣及左定位點位置，配對部署前須先更新 KVM_Log。`monitor_start`、`check_start`、`check_finish` 的實作責任屬 KVM_Log；Log Solution 不新增 TCP、ACK 或 KVM 辨識功能。
 >
 > 本文件為兩專案同步的交接快照：Log Solution 的 `docs/refactoring/KVM_DISPLAY_CONTRACT_1.2_HANDOFF.md` 為主文件；KVM_Log 的 `docs/LOG_SOLUTION_CONTRACT_1.2_HANDOFF.md` 為相同內容副本。更新時須同步比對，不能把舊副本當成新版。
 
@@ -32,7 +32,7 @@
 
 ## 3. 六種整輪狀態：已確認語意
 
-下列名稱是文件中的辨識名稱；既有程式 enum、TCP 欄位與 HMI 文案須在實作時對齊，不表示它們現在已存在。
+下列名稱描述辨識語意；Log Solution 的本機 enum、顯示契約和 HMI 已按本表實作。橋接端傳輸欄位與 KVM_Log 的辨識行為仍由該專案負責。
 
 | 辨識名稱 | 儀器狀態／HMI | 意義 | 橋接動作 |
 | --- | --- | --- | --- |
@@ -103,13 +103,13 @@ REVIEW 就是橋接可辨識的「異常／需人員處理」共同狀態格，�
 - 灰階 0–80 判黑、176–255 判白，81–175 不可靠；這是最低取樣規則，不是實際 JetKVM 壓縮容差已驗收。
 - Tk 單位不是實體像素；橋接必須由定位點量測比例。
 
-### 5.2 幾何變更：方向已同意、精確座標待驗
+### 5.2 幾何變更：本機座標已驗證
 
 移除 `KVM RESULT` 字樣，左定位點移至第一格色帶正上方；其他定位點、排數格、狀態格及結果色帶位置維持。
 
 | 項目 | 現行 1.1 幾何 | 1.2 狀態 |
 | --- | --- | --- |
-| 左定位點 | (82, 2)，22×22 | 新 x 未定；左緣須不大於第一格色帶左緣；與右點同高 |
+| 左定位點 | (82, 2)，22×22 | `(0, 2)`，22×22；與右點同高，左緣對齊第一格色帶 |
 | 右定位點 | (320, 2)，22×22 | 維持 |
 | 排數格 | (130, 2)，26×14 | 維持 |
 | 狀態格 | (278, 0)，26×26 | 維持 |
@@ -117,7 +117,7 @@ REVIEW 就是橋接可辨識的「異常／需人員處理」共同狀態格，�
 
 四周須至少 2 單位白留白，維持左右不對稱內嵌白格；不與其他標記／色帶重疊。第一格 x=0 與左側留白須以父框範圍、實際畫面及裁切驗證，不可直接假設負座標有效。
 
-新定位點距離尚未定稿；consumer 不得把「約 320」當成已確認常數。兩定位點涵蓋左緣能改善遮擋偵測，但視窗頂邊位於定位點下方時仍可能只遮色帶，必須保留每格可讀性檢查。
+左右定位點原點距離為 `320 Tk units`；本機父框寬 `360 Tk units`，父框內含左定位點與第一格 x=0 色帶，沒有負座標或依賴裁切。測試環境 contentView 實測為 2.0 physical px/Tk unit，titlebar/window bounds 分開記錄。這個比例不代表遠端擷取比例。兩定位點能協助定位畫面，但若其他視窗只遮到色帶、未遮上方定位點，定位點無法偵測該情況；consumer 仍須逐格檢查可讀性。
 
 ## 6. 上位機／橋接／Log Solution 的順序
 
@@ -264,11 +264,11 @@ check_start 的判定：
 
 以上是既有 check 格式中的已文件化方向；轉至 check_start／check_finish 時須保留語意，但完整資料結構及版本仍需更新橋接／LabVIEW 規格。本文件未改寫現行 PROTOCOL.md，不宣稱這些新命令已上線。
 
-### 9.7 尚未定稿，不可自行猜測
+### 9.7 外部協定仍需由橋接專案定稿
 
 - **TCP 完整格式與版本**：check_start 的活動回覆種類、通道欄位、證據類型、timeout 參數及 check_finish 的完整範例須具體化；明確區分傳輸等待逾時與 Log Solution 的測試期限。不能直接把顯示契約 1.2 當成 TCP 協定版本。
 - **既有 check 遷移**：舊命令是否移除或暫保留別名、LabVIEW typedef／VI 如何配對改版仍待安排，不擅自保留或取消相容性。
-- **精確幾何及實際圖像驗收**：左定位點座標仍待驗證；準備期間畫面已定為 PREPARING／BUSY，六種圖樣仍須完成跨專案 fixtures 與驗收，才能凍結可部署契約。
+- **精確幾何及實際圖像驗收**：Log Solution 本機幾何、六種圖樣及 Tk 輸出已定稿；KVM_Log 仍須在自己的 consumer/replay seam 驗證幾何、縮放、遮擋與遠端影像特性，才能確認跨專案配對相容性。
 
 ## 10. 視窗前景：已確認
 
@@ -305,6 +305,6 @@ check_start 的判定：
 ## 12. 對現行文件／程式的影響
 
 - 原 `LOG_SOLUTION_CONTRACT_1.2_PROPOSAL.md` 保留提案歷史，本文件記錄後續討論；人工停止與準備中新增獨立圖樣、全輪未開始確認及人工核對後取消政策，是超出原 C1–C6 的補充。
-- 現行 Log Solution 與橋接的 CONTRACT_VERSION 均仍為 1.1，四種圖樣；不可把本文當成目前已上線行為。
-- Log Solution 的 stop／preparation／snapshot／marker／稽核重建都需共同調整；橋接的解碼、完整結果判定、穩定簽章及回覆也需配套。
+- Log Solution `src/kvm_display_contract.py` 的 CONTRACT_VERSION 為 1.2，共六種圖樣；詳細本機契約、幾何與重現方式見 `B518 Log Solution/docs/refactoring/KVM_DISPLAY_CONTRACT.md` 及 `B518 Log Solution/docs/refactoring/evidence/li7-geometry/README.md`。本文不代表已部署或跨專案驗收。
+- Log Solution 的 stop／preparation／snapshot／marker／稽核重建已在 LI1–LI7 各票交付；KVM_Log 的解碼、完整結果判定、穩定簽章及回覆仍須由其專案配套驗證。
 - 保留單工站整輪、待確認不得提前放行、保存完整性與結果放行分離、影格凍結防護及設備身分核對等既有決策。

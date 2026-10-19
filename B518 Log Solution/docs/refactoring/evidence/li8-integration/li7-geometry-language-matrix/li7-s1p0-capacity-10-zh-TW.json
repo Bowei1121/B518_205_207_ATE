@@ -1,0 +1,85 @@
+{
+  "tk_scaling": 0.9999999999999999,
+  "capacity": 10,
+  "language": "zh-TW",
+  "profile_change_path": "Settings profile editor entries + Apply button; verified persisted profile reload",
+  "tk_bounds": {
+    "root": [
+      376,
+      808
+    ],
+    "kvm_parent": [
+      8,
+      95,
+      360,
+      61
+    ],
+    "left_locator": [
+      0,
+      2,
+      22,
+      22
+    ],
+    "left_locator_root_offset": [
+      8,
+      97
+    ],
+    "first_cell": [
+      0,
+      34,
+      34,
+      26
+    ],
+    "right_locator": [
+      320,
+      2,
+      22,
+      22
+    ],
+    "locator_origin_distance": 320,
+    "locator_outer_span": 342,
+    "left_white_cell": [
+      3,
+      3,
+      8,
+      8
+    ],
+    "left_inner_margins": [
+      3,
+      11,
+      3,
+      11
+    ],
+    "quiet_margins": {
+      "left_from_root": 8,
+      "top": 2,
+      "right_within_parent": 338,
+      "bottom_within_parent": 37
+    }
+  },
+  "physical_pixels_per_tk_unit": [
+    2.0,
+    2.0
+  ],
+  "native_window_bounds_including_titlebar": {
+    "X": 1052.0,
+    "Y": 32.0,
+    "Width": 376.0,
+    "Height": 836.0
+  },
+  "window_frame_extra_tk_units": [
+    0.0,
+    28.0
+  ],
+  "screenshot": "li7-s1p0-capacity-10-zh-TW-view-cache.png",
+  "native_bounds": {
+    "X": 1052.0,
+    "Y": 32.0,
+    "Width": 376.0,
+    "Height": 836.0
+  },
+  "image_pixels": {
+    "width": 752,
+    "height": 1616
+  }
+}

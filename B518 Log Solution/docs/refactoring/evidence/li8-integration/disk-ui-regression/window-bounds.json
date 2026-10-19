@@ -1,0 +1,106 @@
+{
+  "close_progress": {
+    "en": {
+      "title": "Save Before Closing",
+      "geometry": "620x390+222+204",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          570,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 222.0,
+        "Y": 204.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-en.png"
+    },
+    "zh-TW": {
+      "title": "關閉前保存",
+      "geometry": "620x390+280+262",
+      "size": [
+        620,
+        390
+      ],
+      "controls": {
+        "status": [
+          18,
+          12,
+          584,
+          64
+        ],
+        "language_reason": [
+          18,
+          80,
+          584,
+          56
+        ],
+        "diagnostic": [
+          18,
+          140,
+          570,
+          188
+        ],
+        "retry": [
+          18,
+          340,
+          224,
+          34
+        ],
+        "cancel": [
+          414,
+          340,
+          188,
+          34
+        ]
+      },
+      "native_bounds": {
+        "X": 280.0,
+        "Y": 262.0,
+        "Width": 620.0,
+        "Height": 418.0
+      },
+      "image_pixels": {
+        "width": 1240,
+        "height": 836
+      },
+      "screenshot": "close-progress-zh-TW.png"
+    }
+  }
+}
