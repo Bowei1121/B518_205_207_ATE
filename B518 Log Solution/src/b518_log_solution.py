@@ -12,7 +12,7 @@ import time
 import tkinter as tk
 from datetime import date
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Dict, Optional
 
 from app_event_store import AppEventStore
@@ -960,6 +960,10 @@ class B518LogSolutionApp:
             controls, text="確認並復位啟動故障", command=self.reset_start_failure,
             style="Main.TButton", state="disabled")
         self.reset_start_failure_button.pack(fill="x", pady=(0, 2))
+        self.cancel_unverified_round_button = ttk.Button(
+            controls, text="取消未確認輪次並保留紀錄", command=self.cancel_unverified_round,
+            style="Main.TButton", state="disabled")
+        self.cancel_unverified_round_button.pack(fill="x", pady=(0, 2))
         self.monitor_state = ttk.Label(controls, text="", anchor="center",
                                        font=("Helvetica", MAIN_FONT_SIZE, "bold"))
         self.monitor_state.pack(fill="x", pady=(0, 2))
@@ -1062,6 +1066,7 @@ class B518LogSolutionApp:
             row["slot"].configure(text=self._t("main.slot", number=slot))
         self.start_button.configure(text=self._t("main.start_monitor"))
         self.reset_start_failure_button.configure(text=self._t("main.reset_start_failure"))
+        self.cancel_unverified_round_button.configure(text=self._t("main.cancel_unverified_round"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
@@ -1875,9 +1880,16 @@ class B518LogSolutionApp:
         if hasattr(self, "reset_start_failure_button"):
             self.reset_start_failure_button.configure(
                 state="normal" if failure is not None and not self._closing_ui else "disabled")
+        if hasattr(self, "cancel_unverified_round_button"):
+            self.cancel_unverified_round_button.configure(
+                state=("normal" if snapshot.cancellation_available and not self._closing_ui
+                       else "disabled"))
         if failure is not None:
             self.start_button.configure(state="disabled")
             self._set_main_monitor_state("monitor.start_failed")
+        elif snapshot.cancellation_available:
+            self.start_button.configure(state="disabled")
+            self._set_main_monitor_state("monitor.awaiting_manual_cancel")
 
     def retry_saves(self) -> None:
         """Ask the shared round coordinator to retry in a background worker."""
@@ -2087,17 +2099,20 @@ class B518LogSolutionApp:
 
     def _set_monitor_controls(self, monitoring: bool, state_message_id: Optional[str] = None) -> None:
         failed_start = self.rounds.start_failure_snapshot() is not None
+        snapshot = self.rounds.snapshot()
+        cancellation_pending = bool(snapshot and snapshot.cancellation_available)
         if getattr(self, "_closing_ui", False):
             self.start_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
             self._set_main_monitor_state("monitor.closing")
         else:
             self.start_button.configure(
-                state="disabled" if monitoring or failed_start else "normal")
+                state="disabled" if monitoring or failed_start or cancellation_pending else "normal")
             self.stop_button.configure(state="normal" if monitoring else "disabled")
             self._set_main_monitor_state(state_message_id or (
                 "monitor.start_failed" if failed_start else
-                ("monitor.active" if monitoring else "monitor.idle")))
+                ("monitor.awaiting_manual_cancel" if cancellation_pending else
+                 ("monitor.active" if monitoring else "monitor.idle"))))
         if hasattr(self, "reset_start_failure_button"):
             self.reset_start_failure_button.configure(
                 state="normal" if failed_start and not self._closing_ui else "disabled")
@@ -2126,6 +2141,9 @@ class B518LogSolutionApp:
         if self.rounds.start_failure_snapshot() is not None:
             return
         current = self.rounds.snapshot()
+        if current is not None and current.cancellation_available:
+            self._set_monitor_controls(False, "monitor.awaiting_manual_cancel")
+            return
         if current is not None and current.state in {"PREPARING", "RUNNING"}:
             return
         station = self.station.get().upper()
@@ -2184,6 +2202,26 @@ class B518LogSolutionApp:
         if getattr(self, "_closing_ui", False):
             return
         if not self.rounds.reset_start_failure():
+            return
+        self.active_profile_snapshot = None
+        self._set_monitor_controls(False)
+        self._apply_round_snapshot(self.rounds.snapshot())
+
+    def cancel_unverified_round(self) -> None:
+        """Require a separate local confirmation before withdrawing delivery."""
+        if self._closing_ui:
+            return
+        snapshot = self.rounds.snapshot()
+        if snapshot is None or not snapshot.cancellation_available:
+            return
+        confirmed = messagebox.askyesno(
+            self._t("app.round.cancel.title"),
+            self._t("app.round.cancel.confirm"), parent=self.root,
+        )
+        if not confirmed:
+            return
+        if not self.rounds.cancel_unverified_round(snapshot.round_id,
+                                                  "operator confirmed local cancellation"):
             return
         self.active_profile_snapshot = None
         self._set_monitor_controls(False)
@@ -2325,7 +2363,7 @@ class B518LogSolutionApp:
             self._show_notice("monitor.start_failed", "round.start_failed",
                               {"station": self.station.get().upper()},
                               diagnostic=event.diagnostic, captured=event.localized_message)
-        if event.kind in {"finished", "stopped"}:
+        if event.kind in {"finished", "stopped", "round_cancelled"}:
             self._set_monitor_controls(False)
 
     def _open_conflict_review(self) -> None:
@@ -3593,9 +3631,10 @@ class B518LogSolutionApp:
                 status=status,
             ))
         if self.round_alarm_ack_button and self.round_alarm_ack_button.winfo_exists():
+            preparation_pending = snapshot is not None and not snapshot.round_alarm_ready
             self.round_alarm_ack_button.configure(
                 state="disabled" if alarm.acknowledged_at or (
-                    snapshot is not None and not snapshot.round_alarm_ready) else "normal",
+                    preparation_pending) else "normal",
                 text=(self._t("alarm.button.acknowledged") if alarm.acknowledged_at
                       else self._t("alarm.button.acknowledge")),
             )
@@ -3627,7 +3666,8 @@ class B518LogSolutionApp:
         snapshot = self.rounds.snapshot()
         if snapshot is None:
             return
-        self.rounds.acknowledge_round_alarm(round_id, alarm_id)
+        updated = self.rounds.acknowledge_round_alarm(round_id, alarm_id)
+        self._apply_round_snapshot(updated)
         self._refresh_round_alarm()
         self._refresh_conflict_review()
 

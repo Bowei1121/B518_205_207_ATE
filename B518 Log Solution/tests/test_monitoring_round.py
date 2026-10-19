@@ -2223,6 +2223,141 @@ class MonitoringRoundTests(unittest.TestCase):
                                         run_async=False).round_id != started.round_id)
             app_store.stop()
 
+    def test_manual_stop_can_be_explicitly_cancelled_without_erasing_results(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entered, release = threading.Event(), threading.Event()
+
+            def factory(callback):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("test source gate timed out")
+                return DeadlineMonitor(callback, time.monotonic, slots=(1, 2))
+
+            rounds = RoundCoordinator(audit_root=root)
+            first = rounds.start("FCT", factory, run_async=True, capacity=2)
+            self.assertTrue(entered.wait(2))
+            rounds.stop()
+            stopped = rounds.round_snapshot(first.round_id)
+            original_results = stopped.results
+            self.assertTrue(stopped.result_available)
+            self.assertTrue(stopped.cancellation_available)
+            with self.assertRaisesRegex(RuntimeError, "本輪仍待人工核對"):
+                rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+
+            self.assertTrue(rounds.cancel_unverified_round(first.round_id, "人工核對後取消"))
+            cancelled = rounds.round_snapshot(first.round_id)
+            self.assertEqual(cancelled.completion_reason, "unverified_round_cancelled")
+            self.assertEqual(cancelled.results, original_results)
+            self.assertFalse(cancelled.result_available)
+            self.assertFalse(rounds.cancel_unverified_round(first.round_id, "重複取消"))
+            self.assertTrue(rounds.flush_audit(3))
+            release.set()
+            deadline = time.monotonic() + 3
+            while (rounds.round_snapshot(first.round_id).source_preparation_pending and
+                   time.monotonic() < deadline):
+                time.sleep(0.01)
+            self.assertFalse(rounds.round_snapshot(first.round_id).source_preparation_pending)
+            self.assertTrue(rounds._tracked_rounds[first.round_id].flush_audit(3))
+
+            rebuilt = read_round_audit(root / first.round_id / "audit.jsonl")
+            self.assertEqual(rebuilt["completion_reason"], "unverified_round_cancelled")
+            self.assertEqual({slot: result["status"]
+                              for slot, result in rebuilt["results"].items()},
+                             {result.slot: result.status for result in original_results})
+            self.assertFalse(rebuilt["result_available"])
+            self.assertTrue(any(event["kind"] == "round_cancelled" and
+                                event["detail"]["reason"] == "unverified_round_cancelled"
+                                for event in rebuilt["events"]))
+
+            second = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            self.assertNotEqual(first.round_id, second.round_id)
+
+    def test_acknowledged_preparation_deadline_can_be_cancelled_with_a_new_reader(self):
+        elapsed = [0.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=Path(temporary))
+            started = rounds.start(
+                "FCT", lambda callback: DeadlineMonitor(callback, lambda: elapsed[0],
+                                                        slots=(1, 2), start=5, round_limit=30),
+                run_async=False, start_timeout_seconds=5, round_timeout_seconds=30, capacity=2,
+            )
+            elapsed[0] = 5
+            expired = rounds.poll_once()
+            acknowledged = rounds.acknowledge_round_alarm(started.round_id,
+                                                          expired.round_alarm.alarm_id)
+            self.assertTrue(acknowledged.result_available)
+            self.assertTrue(acknowledged.cancellation_available)
+            with self.assertRaisesRegex(RuntimeError, "本輪仍待人工核對"):
+                rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            self.assertTrue(rounds.cancel_unverified_round(started.round_id, "未見監控就緒，人工核對後取消"))
+
+            cancelled = rounds.round_snapshot(started.round_id)
+            self.assertEqual([item.status for item in cancelled.results], ["NOTEST", "NOTEST"])
+            self.assertFalse(cancelled.result_available)
+            self.assertTrue(rounds.flush_audit(3))
+            rebuilt = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
+            self.assertEqual(rebuilt["completion_reason"], "unverified_round_cancelled")
+            self.assertEqual([item["status"] for item in rebuilt["results"].values()],
+                             ["NOTEST", "NOTEST"])
+            self.assertTrue(any(event["kind"] == "round_alarm_acknowledged"
+                                for event in rebuilt["events"]))
+
+    def test_blocked_preparation_deadline_can_be_acknowledged_cancelled_and_restarted(self):
+        entered, release = threading.Event(), threading.Event()
+        elapsed = [0.0]
+        holder = {}
+        with tempfile.TemporaryDirectory() as temporary:
+            def blocked_factory(callback):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("test source gate timed out")
+                monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1, 2), start=5)
+                holder["monitor"] = monitor
+                return monitor
+
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=Path(temporary))
+            first = rounds.start("FCT", blocked_factory, run_async=True,
+                                 start_timeout_seconds=5, round_timeout_seconds=30, capacity=2)
+            self.assertTrue(entered.wait(2))
+            elapsed[0] = 5
+            expired = rounds.poll_once()
+            self.assertEqual(expired.completion_reason, "start_deadline_no_activity")
+            acknowledged = rounds.acknowledge_round_alarm(first.round_id,
+                                                          expired.round_alarm.alarm_id)
+            self.assertFalse(acknowledged.round_alarm.acknowledged_at)
+            self.assertEqual(acknowledged.events[-1].event.detail.get("reason"),
+                             "source_preparation_pending")
+            release.set()
+            deadline = time.monotonic() + 3
+            while (rounds.round_snapshot(first.round_id).source_preparation_pending and
+                   time.monotonic() < deadline):
+                time.sleep(0.01)
+            expired = rounds.snapshot()
+            self.assertTrue(expired.round_alarm_ready)
+            acknowledged = rounds.acknowledge_round_alarm(first.round_id,
+                                                          expired.round_alarm.alarm_id)
+            self.assertTrue(acknowledged.result_available)
+            self.assertTrue(acknowledged.cancellation_available)
+            with self.assertRaisesRegex(RuntimeError, "本輪仍待人工核對"):
+                rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            self.assertTrue(rounds.cancel_unverified_round(first.round_id, "operator reviewed timeout"))
+
+            second = rounds.start("FCT", lambda callback: DeadlineMonitor(
+                callback, lambda: elapsed[0], slots=(1, 2)), run_async=False, capacity=2)
+            self.assertNotEqual(first.round_id, second.round_id)
+            while time.monotonic() < deadline:
+                old_progress = rounds.round_snapshot(first.round_id)
+                if old_progress is None or old_progress.audit_complete:
+                    break
+                time.sleep(0.01)
+            self.assertEqual(rounds.snapshot().round_id, second.round_id)
+            rebuilt = read_round_audit(Path(temporary) / first.round_id / "audit.jsonl")
+            self.assertEqual(rebuilt["completion_reason"], "unverified_round_cancelled")
+            self.assertEqual({slot: item["status"] for slot, item in rebuilt["results"].items()},
+                             {1: "NOTEST", 2: "NOTEST"})
+            release.set()
+
     def test_close_recovers_a_failed_previous_round_and_current_round_without_crossing_events(self):
         with tempfile.TemporaryDirectory() as temporary:
             failure_reported = threading.Event()

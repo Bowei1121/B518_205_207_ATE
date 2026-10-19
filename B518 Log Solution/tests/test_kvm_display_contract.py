@@ -20,12 +20,13 @@ from monitoring_round import RoundSnapshot, RoundState
 
 class KvmDisplayContractTests(unittest.TestCase):
     def snapshot(self, state, *, available=False, conflicts=(), alarm=None,
-                 collection_stopped=False, completion_reason=""):
+                 collection_stopped=False, completion_reason="", cancel_available=False):
         return RoundSnapshot(
             round_id="sample-round", station="FCT", state=state, results=(),
             result_available=available, event_sequence=0, events=(),
             collection_stopped=collection_stopped, completion_reason=completion_reason,
             pending_conflicts=conflicts, round_alarm=alarm,
+            cancellation_available=cancel_available,
         )
 
     def test_round_snapshot_maps_preparing_and_existing_machine_states(self):
@@ -62,6 +63,13 @@ class KvmDisplayContractTests(unittest.TestCase):
         snapshot = self.snapshot(
             RoundState.COMPLETED, available=True, conflicts=(object(),),
             collection_stopped=True,
+        )
+        self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
+
+    def test_locally_cancellable_round_remains_in_review_until_operator_cancels(self):
+        snapshot = self.snapshot(
+            RoundState.COMPLETED, available=True, collection_stopped=True,
+            completion_reason="round_deadline", cancel_available=True,
         )
         self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
 

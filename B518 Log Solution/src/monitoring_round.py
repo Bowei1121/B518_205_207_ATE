@@ -157,6 +157,7 @@ class RoundSnapshot:
     retry_in_progress: bool = False
     start_failure: Optional[StartFailureSnapshot] = None
     source_ready: bool = False
+    cancellation_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,7 @@ class MonitoringRound:
         self._collection_stopped = False
         self._completion_reason = ""
         self._manual_stop_released = False
+        self._cancelled_results: Optional[Tuple[RoundResult, ...]] = None
         self._test_started: Dict[int, float] = {}
         self._activity_slots = set()
         self._deadline_slots = set()
@@ -465,17 +467,75 @@ class MonitoringRound:
             self._release_manual_stop_if_complete()
             return self.snapshot()
 
+    def cancel_unverified_round(self, round_id: str, diagnostic: str = "") -> bool:
+        """Locally cancel a manually stopped or acknowledged deadline round.
+
+        This records the operator's decision without erasing results or choosing
+        a conflict candidate. The preserved results cease to be deliverable.
+        """
+        with self._poll_lock:
+            with self._lock:
+                if (round_id != self.round_id or self._close_finalized or
+                        self._completion_reason == "unverified_round_cancelled"):
+                    return False
+                manual_stop = self._completion_reason == "manual_stop" and self._collection_stopped
+                acknowledged_deadline = (
+                    self._completion_reason in {"start_deadline_no_activity", "round_deadline"} and
+                    self._collection_stopped and self._round_alarm is not None and
+                    bool(self._round_alarm.acknowledged_at))
+                if not (manual_stop or acknowledged_deadline):
+                    return False
+                if self._pending_conflicts:
+                    return False
+                if (self._round_alarm is not None and
+                        not self._round_alarm.acknowledged_at):
+                    return False
+                self._cancelled_results = self._snapshot_results_locked()
+                self._completion_reason = "unverified_round_cancelled"
+                self._manual_stop_released = False
+                self._state = RoundState.STOPPED
+                recorded_results = {
+                    event.event.slot: event.event.status
+                    for event in self._events if event.event.kind == "result"
+                }
+                missing_preparation_results = tuple(
+                    item for item in self._cancelled_results
+                    if item.slot not in recorded_results or recorded_results[item.slot] != item.status
+                ) if self._preparation_results else ()
+            for result in missing_preparation_results:
+                self._publish_round_event(MonitorEvent(
+                    "result", "slot{} {}".format(result.slot, result.status), result.slot,
+                    status=result.status, source=result.source,
+                    detail={"reason": "preparation_outcome_preserved_on_cancel",
+                            "display_position": str(result.slot)},
+                ))
+            self._publish_round_event(MonitorEvent(
+                "round_cancelled", "{} 本輪已由操作員取消；原結果及處理紀錄保留".format(self.station),
+                message_id="round.unverified_cancelled",
+                message_parameters={"station": self.station}, diagnostic=diagnostic,
+                detail={"round_id": self.round_id, "reason": "unverified_round_cancelled",
+                        "prior_reason": "manual_stop" if manual_stop else
+                        (self._round_alarm.reason if self._round_alarm else "unknown"),
+                        "cancelled_at": self._wall_clock().isoformat(timespec="seconds")},
+            ))
+        return True
+
+    def _snapshot_results_locked(self) -> Tuple[RoundResult, ...]:
+        if self._monitor is not None and self._monitor_persistence_ready and not (
+                self._completion_reason == "manual_stop" and self._preparation_results):
+            return tuple(
+                RoundResult(item.slot, item.sn, item.status, item.source, item.updated_at)
+                for item in sorted(self._monitor.round_results(), key=lambda item: item.slot)
+            )
+        return self._preparation_results
+
     def snapshot(self) -> RoundSnapshot:
         with self._audit_condition:
             audit_recovery_pending = bool(self._audit_recovery_events or
                                           self._audit_recovery_replaying)
         with self._lock:
-            results = tuple(
-                RoundResult(result.slot, result.sn, result.status, result.source, result.updated_at)
-                for result in sorted(self._monitor.round_results(), key=lambda result: result.slot)
-            ) if (self._monitor is not None and self._monitor_persistence_ready and
-                  not (self._completion_reason == "manual_stop" and self._preparation_results)) \
-                else self._preparation_results
+            results = (self._cancelled_results if self._cancelled_results is not None
+                       else self._snapshot_results_locked())
             monitor = self._monitor
             session = getattr(monitor, "session", None)
             session_pending = bool(getattr(session, "pending", False))
@@ -495,7 +555,16 @@ class MonitoringRound:
                 save_state = "complete"
             else:
                 save_state = "saving"
-            manual_stop_available = self._manual_stop_released and self._complete_result_positions(results)
+            manual_stop_available = (self._manual_stop_released and
+                                     self._completion_reason == "manual_stop" and
+                                     self._complete_result_positions(results))
+            cancellation_available = (
+                (self._completion_reason == "manual_stop" and self._collection_stopped and
+                 not self._source_ready) or
+                (self._completion_reason in {"start_deadline_no_activity", "round_deadline"} and
+                 self._collection_stopped and self._round_alarm is not None and
+                 bool(self._round_alarm.acknowledged_at))
+            ) and not self._pending_conflicts and not self._close_finalized
             return RoundSnapshot(
                 self.round_id, self.station, self._state, results,
                 self._state == RoundState.COMPLETED or manual_stop_available,
@@ -514,6 +583,7 @@ class MonitoringRound:
                 tuple(self._save_history),
                 self._retry_in_progress,
                 source_ready=self._source_ready,
+                cancellation_available=cancellation_available,
             )
 
     def finalize_close_snapshot(self) -> RoundSnapshot:
@@ -773,6 +843,15 @@ class MonitoringRound:
                                        "round_audit_schema_version": 1,
                                        "round_candidate_mode": True})
         self._flush_deferred_events(monitor)
+        with self._lock:
+            cancelled_during_preparation = (
+                self._completion_reason == "unverified_round_cancelled")
+        if cancelled_during_preparation:
+            monitor.stop_collection()
+            monitor.stop()
+            with self._lock:
+                self._monitor_persistence_ready = True
+            return
         with self._poll_lock:
             if self._preparation_deadline_expired:
                 self._finalize_preparation_deadline_locked(monitor)
@@ -985,6 +1064,7 @@ class MonitoringRound:
         with self._lock:
             self._round_alarm_ready = True
             self._completion_reason = "start_deadline_no_activity" if start_deadline else "round_deadline"
+        self._finish_if_terminal()
 
     def _has_start_evidence(self, results) -> bool:
         trusted_statuses = {"TESTING", "COMPLETING", "PASS", "FAIL"}
@@ -1229,14 +1309,15 @@ class MonitoringRound:
                             started_at = self._monotonic()
                         self._test_started.setdefault(event.slot, started_at)
                 self._result_evidence[event.slot] = dict(event.detail)
-            if event.kind == "finished":
+            if event.kind == "finished" and self._completion_reason != "unverified_round_cancelled":
                 self._state = RoundState.COMPLETED
                 self._collection_stopped = True
                 self._completion_reason = event.detail.get("completion_reason", "results_terminal")
-            elif event.kind == "stopped":
+            elif event.kind == "stopped" and self._completion_reason != "unverified_round_cancelled":
                 self._state = RoundState.STOPPED
                 self._collection_stopped = True
-                if self._completion_reason != "start_failed":
+                if self._completion_reason not in {
+                        "start_failed", "unverified_round_cancelled"}:
                     self._completion_reason = "manual_stop"
             round_event = RoundEvent(self.round_id, event.sequence, event)
             self._events.append(round_event)
@@ -1525,6 +1606,8 @@ class RoundCoordinator:
                 raise RuntimeError("啟動故障尚未確認並復位")
             if self._closing:
                 raise RuntimeError("關閉保存進行中，暫時不能開始新輪")
+            if self._current is not None and self._current.snapshot().cancellation_available:
+                raise RuntimeError("本輪仍待人工核對並在本機取消，不能直接開始新輪")
             if self._current is not None and self._current.snapshot().state in {
                     RoundState.PREPARING, RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return self._current.snapshot()
@@ -1669,6 +1752,14 @@ class RoundCoordinator:
             )
             self._start_failure = None
             return True
+
+    def cancel_unverified_round(self, round_id: str, diagnostic: str = "") -> bool:
+        """Cancel an eligible stopped/deadline round by explicit round identity."""
+        with self._lock:
+            round_ = self._tracked_rounds.get(round_id)
+        if round_ is None:
+            return False
+        return round_.cancel_unverified_round(round_id, diagnostic)
 
     def app_event_status(self):
         """Return App event durability state without exposing its queue or worker."""
