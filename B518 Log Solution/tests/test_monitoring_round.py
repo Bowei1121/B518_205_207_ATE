@@ -167,6 +167,77 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_accepted_round_stays_preparing_until_background_source_baseline_is_ready(self):
+        source_entered = threading.Event()
+        release_source = threading.Event()
+        ready_event = threading.Event()
+        factory_calls = []
+        holder = {}
+
+        def factory(callback):
+            factory_calls.append(callback)
+            source_entered.set()
+            release_source.wait(3)
+            monitor = FakeMonitor(callback)
+            holder["monitor"] = monitor
+            return monitor
+
+        def on_event(event):
+            if event.event.kind == "round_ready":
+                ready_event.set()
+
+        rounds = RoundCoordinator(on_event=on_event)
+        try:
+            accepted = rounds.start("FCT", factory, run_async=True)
+            self.assertTrue(source_entered.wait(2))
+            self.assertEqual(accepted.state.value, "PREPARING")
+            self.assertFalse(accepted.result_available)
+
+            repeated = rounds.start("BT", lambda callback: FakeMonitor(callback), run_async=True)
+
+            self.assertEqual(repeated.round_id, accepted.round_id)
+            self.assertEqual(len(factory_calls), 1)
+            self.assertEqual(rounds.snapshot().state.value, "PREPARING")
+            release_source.set()
+            self.assertTrue(ready_event.wait(2))
+            ready = rounds.snapshot()
+            self.assertEqual(ready.state.value, "RUNNING")
+            self.assertEqual(holder["monitor"].started, 1)
+        finally:
+            release_source.set()
+
+    def test_start_during_preparation_can_stop_and_late_source_does_not_restart_round(self):
+        source_entered = threading.Event()
+        release_source = threading.Event()
+        ready_event = threading.Event()
+        holder = {}
+
+        def factory(callback):
+            source_entered.set()
+            release_source.wait(3)
+            holder["monitor"] = FakeMonitor(callback)
+            return holder["monitor"]
+
+        rounds = RoundCoordinator(on_event=lambda event: ready_event.set()
+                                  if event.event.kind == "round_ready" else None)
+        try:
+            accepted = rounds.start("FCT", factory, run_async=True)
+            self.assertTrue(source_entered.wait(2))
+            stopped = rounds.stop()
+            self.assertEqual(stopped.state.value, "STOPPED")
+            release_source.set()
+            deadline = time.monotonic() + 2
+            while ("monitor" not in holder or holder["monitor"].stopped == 0) and time.monotonic() < deadline:
+                threading.Event().wait(0.01)
+            settled = rounds.snapshot()
+            self.assertEqual(settled.state.value, "STOPPED")
+            self.assertEqual(settled.completion_reason, "manual_stop")
+            self.assertEqual(holder["monitor"].started, 0)
+            self.assertEqual(holder["monitor"].stopped, 1)
+            self.assertFalse(ready_event.is_set())
+        finally:
+            release_source.set()
+
     def test_confirmed_same_round_conflict_is_captured_without_overwriting_original(self):
         elapsed = [0.0]
         holder = {}

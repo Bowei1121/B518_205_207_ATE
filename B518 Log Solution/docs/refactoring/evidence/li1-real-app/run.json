@@ -1,0 +1,70 @@
+{
+  "ticket": "LI1",
+  "command": "PYTHONPATH=src /opt/anaconda3/bin/python3 tools/smoke_li1_preparation_app.py",
+  "environment": {
+    "macOS": "15.8.1",
+    "architecture": "x86_64",
+    "python": "3.11.7",
+    "tk": "8.6",
+    "capture": "Quartz visible Tk window"
+  },
+  "physical_kvm_available": false,
+  "screens": [
+    {
+      "state": "preparing",
+      "round_id": "e6635c10fd7b49c79bd18453cdff2bf2",
+      "start_disabled": true,
+      "stop_enabled": true,
+      "file": "preparing.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 78378,
+      "tk_root_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "state": "monitoring",
+      "round_id": "e6635c10fd7b49c79bd18453cdff2bf2",
+      "factory_calls": 1,
+      "file": "monitoring.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 78378,
+      "tk_root_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "state": "monitoring",
+      "slot1": "TESTING",
+      "slot2": "WAITING",
+      "file": "activity.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 78378,
+      "tk_root_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    },
+    {
+      "state": "complete",
+      "results": [
+        "PASS",
+        "PASS"
+      ],
+      "result_available": true,
+      "file": "complete.png",
+      "window_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "window_owner_pid": 78378,
+      "tk_root_title": "B518 FCT ATE Log Solution-V0.1.0",
+      "physical_pixels": [
+        752,
+        1390
+      ]
+    }
+  ]
+}

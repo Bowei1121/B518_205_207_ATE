@@ -28,9 +28,10 @@ class KvmDisplayContractTests(unittest.TestCase):
             pending_conflicts=conflicts, round_alarm=alarm,
         )
 
-    def test_round_snapshot_maps_to_four_machine_readable_states(self):
+    def test_round_snapshot_maps_preparing_and_existing_machine_states(self):
         cases = (
             (self.snapshot(RoundState.READY), MarkerState.STANDBY),
+            (self.snapshot(RoundState.PREPARING), MarkerState.PREPARING),
             (self.snapshot(RoundState.RUNNING), MarkerState.MONITORING),
             (self.snapshot(RoundState.AWAITING_REVIEW), MarkerState.REVIEW),
             (self.snapshot(RoundState.COMPLETED, available=True,
@@ -64,10 +65,14 @@ class KvmDisplayContractTests(unittest.TestCase):
         )
         self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
 
-    def test_four_fixed_black_white_patterns_are_unique_and_decodable(self):
+    def test_six_fixed_black_white_patterns_are_unique_and_decodable(self):
         self.assertEqual(CONTRACT_VERSION, "1.1")
-        self.assertEqual(len(set(MARKER_PATTERNS.values())), 4)
+        self.assertEqual(len(set(MARKER_PATTERNS.values())), 6)
         self.assertEqual(MARKER_SIZE, 26)
+        self.assertEqual(MARKER_PATTERNS[MarkerState.PREPARING],
+                         ((False, True), (False, True)))
+        self.assertEqual(MARKER_PATTERNS[MarkerState.MANUAL_STOP_COMPLETE],
+                         ((False, False), (True, True)))
         for state, pattern in MARKER_PATTERNS.items():
             samples = tuple(0 if bit else 255 for row in pattern for bit in row)
             with self.subTest(state=state):

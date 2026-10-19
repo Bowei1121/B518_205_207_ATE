@@ -48,6 +48,7 @@ class RoundEvent:
 
 class RoundState(str, Enum):
     READY = "READY"
+    PREPARING = "PREPARING"
     RUNNING = "RUNNING"
     AWAITING_REVIEW = "AWAITING_REVIEW"
     COMPLETED = "COMPLETED"
@@ -247,7 +248,7 @@ class MonitoringRound:
             if self._started or self._state != RoundState.READY:
                 return self.snapshot()
             self._started = True
-            self._state = RoundState.RUNNING
+            self._state = RoundState.PREPARING
             self._publish_round_event(MonitorEvent(
                 "round_started", "{} 本輪已接受開始".format(self.station),
                 detail={"round_id": self.round_id, "accepted_start_at": self._accepted_start_at,
@@ -267,7 +268,8 @@ class MonitoringRound:
         """Read one deterministic source batch, then apply due deadlines."""
         with self._poll_lock:
             with self._lock:
-                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
+                if self._state not in {RoundState.PREPARING, RoundState.RUNNING,
+                                        RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     return self.snapshot()
                 if self._monitor is None or not self._monitor_persistence_ready:
                     self._apply_preparation_deadline(self._monotonic())
@@ -276,7 +278,8 @@ class MonitoringRound:
             self._apply_deadlines(poll_time)
             self._finish_if_terminal()
             with self._lock:
-                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW} or self._collection_stopped:
+                if self._state not in {RoundState.PREPARING, RoundState.RUNNING,
+                                       RoundState.AWAITING_REVIEW} or self._collection_stopped:
                     self._finish_if_terminal()
                     return self.snapshot()
             self._poll_started_at = poll_time
@@ -294,7 +297,8 @@ class MonitoringRound:
     def stop(self) -> RoundSnapshot:
         with self._poll_lock:
             with self._lock:
-                if self._state not in {RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                if self._state not in {RoundState.PREPARING, RoundState.RUNNING,
+                                       RoundState.AWAITING_REVIEW}:
                     return self.snapshot()
                 self._stop_requested = True
                 monitor = self._monitor
@@ -732,9 +736,12 @@ class MonitoringRound:
             self._finish_if_terminal()
             with self._lock:
                 if self._collection_stopped or self._state not in {
-                        RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                        RoundState.PREPARING, RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                     return
             monitor.start()
+            with self._lock:
+                if self._state == RoundState.PREPARING:
+                    self._state = RoundState.RUNNING
             self._publish_round_event(MonitorEvent("round_ready", "{} 監控來源準備就緒".format(self.station)))
 
     def _run(self) -> None:
@@ -813,7 +820,7 @@ class MonitoringRound:
             return
         created_at = self._wall_clock().isoformat(timespec="seconds")
         with self._lock:
-            if self._state != RoundState.RUNNING or (self._monitor is not None and
+            if self._state not in {RoundState.PREPARING, RoundState.RUNNING} or (self._monitor is not None and
                                                        self._monitor_persistence_ready):
                 return
             self._preparation_deadline_expired = True
@@ -1301,7 +1308,7 @@ class RoundCoordinator:
             if self._closing:
                 raise RuntimeError("關閉保存進行中，暫時不能開始新輪")
             if self._current is not None and self._current.snapshot().state in {
-                    RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
+                    RoundState.PREPARING, RoundState.RUNNING, RoundState.AWAITING_REVIEW}:
                 return self._current.snapshot()
             self._prune_saved_rounds_locked()
             session = MonitoringRound(station, monitor_factory, self._record_round_event, self._monotonic,
