@@ -54,3 +54,5 @@
 **證據：** `B518 Log Solution/docs/refactoring/evidence/li2-real-app/{preparing-stop,mixed-terminal-stop,all-terminal-review,manual-stop-released}.png`、`run.json` 及 `B518 Log Solution/tools/smoke_li2_manual_stop_app.py`。四張畫面均由 B518 主視窗截取；手動停止放行圖可見 PASS／FAIL 保留、Stopped 文案及 marker，待確認畫面顯示 REVIEW 與衝突數。
 
 **限制：** 未執行外部 KVM、JetKVM、LabVIEW、ATE 驗收；這些不在本票範圍。準備中停止建立的未 ready Session 不具有效開始／完成時間，因此保留為 protected 而不產生歸檔；輪次 audit 已保存並可重建，close 流程仍完成。
+
+**整合與 Issue 狀態：** 已整合至 `codex/log-instrument-1-2`，整合 commit `d3a9fca79b4ad9ab48efeef68ec59c60a4f18a4a`；整合分支核心回歸 90/90 與 26/26 通過，`git diff --check` 通過。GitHub 與內部 Gitea 遠端 SHA 均核對為 `d3a9fca79b4ad9ab48efeef68ec59c60a4f18a4a`。GitHub #79 已留下完成紀錄並以 completed 關閉，回讀確認 CLOSED/COMPLETED。
