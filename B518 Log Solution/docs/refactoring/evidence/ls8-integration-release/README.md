@@ -10,7 +10,7 @@ Issue：[#94 — LS8：整體桌面驗收、打包與交付證據](https://githu
 - Claude 橋接交接：[`CLAUDE_KVM_HANDOFF.md`](../../CLAUDE_KVM_HANDOFF.md)。交接描述的 bridge snapshot 尚宣告契約 `1.1`，跨專案配對／部署未驗收。
 - 主機：macOS `15.8.1`、`x86_64`（Intel）；M4/Apple Silicon 目標機未提供。
 - Python：`3.12.10`，使用專案 `.venv-python31210`。
-- macOS arm64 指定依賴：PyInstaller `6.16.0`，desktop test requirements 中 PyObjC Core/Cocoa/Quartz `11.1`；requirements 檔為 [`requirements-macos15-arm64.txt`](../../../requirements/requirements-macos15-arm64.txt) 及其引用檔。
+- macOS arm64 指定依賴：PyInstaller `6.16.0`，desktop test requirements 中 PyObjC Core/Cocoa/Quartz `11.1`；requirements 檔為 [`requirements-macos15-arm64.txt`](../../../../requirements/requirements-macos15-arm64.txt) 及其引用檔。
 - `check_macos_build_python.py --exact-version 3.12.10 --architecture "$(uname -m)" --requirements requirements/requirements-macos15-arm64.txt --require-virtualenv` 通過。
 - preflight 完整輸出：[`python-preflight.txt`](python-preflight.txt)。
 - `check_macos_native_test_access.py` 在登入桌面取得原生事件送出與監聽權限，未變更系統權限；完整輸出：[`native-test-access.txt`](native-test-access.txt)。
