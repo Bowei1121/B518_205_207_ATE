@@ -227,19 +227,30 @@ class MonitoringRoundTests(unittest.TestCase):
                 self.assertEqual(stopped.monitoring_elapsed_seconds, 7.5)
                 self.assertTrue(rounds.cancel_unverified_round(started.round_id, "operator verified"))
                 elapsed[0] = 900.0
+                old_round = rounds._tracked_rounds[started.round_id]
+
+                next_round = rounds.start(
+                    "FCT", lambda callback: FakeMonitor(callback), run_async=False, capacity=1
+                )
+                self.assertNotEqual(next_round.round_id, started.round_id)
+                self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+                elapsed[0] = 904.25
                 release_source.set()
 
                 deadline = time.monotonic() + 3
-                while (rounds.round_snapshot(started.round_id).source_preparation_pending and
+                while (old_round.snapshot().source_preparation_pending and
                        time.monotonic() < deadline):
                     time.sleep(0.01)
-                settled = rounds.round_snapshot(started.round_id)
+                settled = old_round.snapshot()
 
                 self.assertFalse(settled.source_preparation_pending)
                 self.assertEqual(settled.completion_reason, "unverified_round_cancelled")
                 self.assertEqual(settled.monitoring_elapsed_seconds, 7.5)
                 self.assertFalse(any(event.event.kind == "start_failed" for event in settled.events))
-                self.assertTrue(rounds.flush_audit(3))
+                current = rounds.snapshot()
+                self.assertEqual(current.round_id, next_round.round_id)
+                self.assertEqual(current.monitoring_elapsed_seconds, 4.25)
+                self.assertTrue(old_round.flush_audit(3))
                 audit = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
                 collection = next(event for event in audit["events"]
                                   if event["kind"] == "collection_stopped")
@@ -263,15 +274,22 @@ class MonitoringRoundTests(unittest.TestCase):
             root = Path(temporary)
             rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=root)
             started = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            old_round = rounds._tracked_rounds[started.round_id]
             self.assertTrue(rounds.flush_audit(3))
             elapsed[0] = 112.75
             original_write = audit_records.os.write
             failed = threading.Event()
+            retry_entered = threading.Event()
+            release_retry = threading.Event()
 
             def fail_collection_stop_once(descriptor, content):
                 if b"collection_stopped" in content and not failed.is_set():
                     failed.set()
                     raise OSError("simulated stop-event disk failure")
+                if b"collection_stopped" in content:
+                    retry_entered.set()
+                    if not release_retry.wait(5):
+                        raise AssertionError("save retry was not released")
                 return original_write(descriptor, content)
 
             with patch.object(audit_records.os, "write", side_effect=fail_collection_stop_once):
@@ -280,15 +298,28 @@ class MonitoringRoundTests(unittest.TestCase):
                 self.assertTrue(failed.wait(2))
                 self.assertFalse(rounds.flush_audit(timeout=2))
                 self.assertTrue(rounds.retry_saves(started.round_id))
+                self.assertTrue(retry_entered.wait(3))
+
+                elapsed[0] = 200.0
+                next_round = rounds.start(
+                    "FCT", lambda callback: FakeMonitor(callback), run_async=False, capacity=1
+                )
+                self.assertNotEqual(next_round.round_id, started.round_id)
+                self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+                elapsed[0] = 204.5
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 4.5)
+                release_retry.set()
                 deadline = time.monotonic() + 3
-                while rounds.round_snapshot(started.round_id).save_state != "complete" and time.monotonic() < deadline:
+                while old_round.snapshot().save_state != "complete" and time.monotonic() < deadline:
                     time.sleep(0.01)
+                self.assertEqual(rounds.snapshot().round_id, next_round.round_id)
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 4.5)
 
             elapsed[0] = 999.0
-            recovered = rounds.round_snapshot(started.round_id)
+            recovered = old_round.snapshot()
             self.assertEqual(recovered.monitoring_elapsed_seconds, 12.75)
             self.assertEqual(recovered.completion_reason, "manual_stop")
-            self.assertTrue(rounds.flush_audit(3))
+            self.assertTrue(old_round.flush_audit(3))
 
             reopened = read_round_audit(root / started.round_id / "audit.jsonl")
             collection_events = [event for event in reopened["events"]
@@ -301,9 +332,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(collection_events[0]["detail"]["reason"], "manual_stop")
             self.assertEqual(collection_events[0]["detail"]["monitoring_elapsed_seconds"], 12.75)
 
-            next_round = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
-            self.assertNotEqual(next_round.round_id, started.round_id)
-            self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+            self.assertEqual(rounds.snapshot().round_id, next_round.round_id)
             rounds.stop()
             self.assertTrue(rounds.flush_audit(3))
             rounds.request_close()

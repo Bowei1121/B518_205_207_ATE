@@ -541,7 +541,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
-    def test_real_tk_source_failure_keeps_the_accepted_round_time_frozen(self):
+    def test_real_tk_abort_paths_keep_accepted_round_time_frozen(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
