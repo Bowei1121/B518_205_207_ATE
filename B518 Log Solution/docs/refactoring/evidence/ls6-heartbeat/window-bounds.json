@@ -1,0 +1,306 @@
+{
+  "ls6-heartbeat": {
+    "title": "B518 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x808+1052+32",
+    "size": [
+      376,
+      808
+    ],
+    "controls": {
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "state_marker": [
+        258,
+        95,
+        26,
+        26
+      ],
+      "heartbeat_marker": [
+        286,
+        95,
+        26,
+        26
+      ],
+      "left_locator": [
+        8,
+        97,
+        22,
+        22
+      ],
+      "right_locator": [
+        328,
+        97,
+        22,
+        22
+      ],
+      "first_result": [
+        8,
+        129,
+        34,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 1052.0,
+      "Y": 32.0,
+      "Width": 376.0,
+      "Height": 836.0
+    },
+    "image_pixels": {
+      "width": 752,
+      "height": 1672
+    },
+    "screenshot": "ls6-heartbeat-state-00-en.png",
+    "capture_method": "window-server",
+    "heartbeat": {
+      "interval_ms": 500,
+      "states": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        0
+      ],
+      "patterns": [
+        [
+          [
+            false,
+            false
+          ],
+          [
+            false,
+            false
+          ]
+        ],
+        [
+          [
+            false,
+            false
+          ],
+          [
+            false,
+            true
+          ]
+        ],
+        [
+          [
+            false,
+            false
+          ],
+          [
+            true,
+            false
+          ]
+        ],
+        [
+          [
+            false,
+            false
+          ],
+          [
+            true,
+            true
+          ]
+        ],
+        [
+          [
+            false,
+            true
+          ],
+          [
+            false,
+            false
+          ]
+        ],
+        [
+          [
+            false,
+            true
+          ],
+          [
+            false,
+            true
+          ]
+        ],
+        [
+          [
+            false,
+            true
+          ],
+          [
+            true,
+            false
+          ]
+        ],
+        [
+          [
+            false,
+            true
+          ],
+          [
+            true,
+            true
+          ]
+        ],
+        [
+          [
+            true,
+            false
+          ],
+          [
+            false,
+            false
+          ]
+        ],
+        [
+          [
+            true,
+            false
+          ],
+          [
+            false,
+            true
+          ]
+        ],
+        [
+          [
+            true,
+            false
+          ],
+          [
+            true,
+            false
+          ]
+        ],
+        [
+          [
+            true,
+            false
+          ],
+          [
+            true,
+            true
+          ]
+        ],
+        [
+          [
+            true,
+            true
+          ],
+          [
+            false,
+            false
+          ]
+        ],
+        [
+          [
+            true,
+            true
+          ],
+          [
+            false,
+            true
+          ]
+        ],
+        [
+          [
+            true,
+            true
+          ],
+          [
+            true,
+            false
+          ]
+        ],
+        [
+          [
+            true,
+            true
+          ],
+          [
+            true,
+            true
+          ]
+        ],
+        [
+          [
+            false,
+            false
+          ],
+          [
+            false,
+            false
+          ]
+        ]
+      ],
+      "transition_elapsed_seconds": [
+        0.0,
+        0.423,
+        0.921,
+        1.455,
+        1.929,
+        2.435,
+        2.934,
+        3.462,
+        3.94,
+        4.442,
+        4.947,
+        5.459,
+        5.961,
+        6.47,
+        6.976,
+        7.472,
+        7.974
+      ],
+      "measured_intervals_seconds": [
+        0.423,
+        0.498,
+        0.534,
+        0.474,
+        0.506,
+        0.499,
+        0.527,
+        0.478,
+        0.503,
+        0.505,
+        0.512,
+        0.502,
+        0.508,
+        0.506,
+        0.496,
+        0.503
+      ],
+      "state_coverage": [
+        "standby",
+        "preparing",
+        "monitoring",
+        "review",
+        "complete",
+        "manual_stop_complete",
+        "standby"
+      ],
+      "actionable_close_save_ui_verified": true,
+      "blocked_ui_state_before_and_after_sleep": [
+        8,
+        8
+      ],
+      "state_after_ui_resumed": 10
+    }
+  }
+}

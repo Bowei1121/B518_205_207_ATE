@@ -4,6 +4,8 @@ from pathlib import Path
 
 from kvm_display_contract import (
     CONTRACT_VERSION,
+    HEARTBEAT_MARKER_ORIGIN,
+    HEARTBEAT_PATTERNS,
     KVM_FIRST_ROW_Y,
     KVM_CELL_STEP,
     KVM_CELL_WIDTH,
@@ -15,6 +17,7 @@ from kvm_display_contract import (
     LOCATOR_WHITE_SIZE,
     MARKER_PATTERNS,
     MARKER_SIZE,
+    STATE_MARKER_ORIGIN,
     MarkerState,
     classify_kvm_frame_samples,
     state_for_round_snapshot,
@@ -78,7 +81,7 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertEqual(state_for_round_snapshot(snapshot), MarkerState.REVIEW)
 
     def test_six_fixed_black_white_patterns_are_unique_and_decodable(self):
-        self.assertEqual(CONTRACT_VERSION, "1.2")
+        self.assertEqual(CONTRACT_VERSION, "1.3")
         self.assertEqual(len(set(MARKER_PATTERNS.values())), 6)
         self.assertEqual(MARKER_SIZE, 26)
         self.assertEqual(MARKER_PATTERNS[MarkerState.PREPARING],
@@ -89,6 +92,39 @@ class KvmDisplayContractTests(unittest.TestCase):
             samples = tuple(0 if bit else 255 for row in pattern for bit in row)
             with self.subTest(state=state):
                 self.assertEqual(classify_kvm_frame_samples((255, 0, 0, 255), samples), state)
+
+    def test_independent_heartbeat_contract_covers_all_binary_states_in_order(self):
+        expected = (
+            ((False, False), (False, False)),
+            ((False, False), (False, True)),
+            ((False, False), (True, False)),
+            ((False, False), (True, True)),
+            ((False, True), (False, False)),
+            ((False, True), (False, True)),
+            ((False, True), (True, False)),
+            ((False, True), (True, True)),
+            ((True, False), (False, False)),
+            ((True, False), (False, True)),
+            ((True, False), (True, False)),
+            ((True, False), (True, True)),
+            ((True, True), (False, False)),
+            ((True, True), (False, True)),
+            ((True, True), (True, False)),
+            ((True, True), (True, True)),
+        )
+        self.assertEqual(HEARTBEAT_PATTERNS, expected)
+        self.assertEqual(len(set(HEARTBEAT_PATTERNS)), 16)
+        self.assertTrue(all(len(row) == 2 for pattern in HEARTBEAT_PATTERNS for row in pattern))
+
+    def test_state_and_heartbeat_markers_are_adjacent_without_moving_locators_or_results(self):
+        self.assertEqual(STATE_MARKER_ORIGIN, (250, 0))
+        self.assertEqual(HEARTBEAT_MARKER_ORIGIN, (278, 0))
+        self.assertEqual(HEARTBEAT_MARKER_ORIGIN[0] -
+                         (STATE_MARKER_ORIGIN[0] + MARKER_SIZE), 2)
+        self.assertLess(HEARTBEAT_MARKER_ORIGIN[0] + MARKER_SIZE, LOCATOR_RIGHT[0])
+        self.assertEqual(LOCATOR_LEFT, (0, 2))
+        self.assertEqual(LOCATOR_RIGHT, (320, 2))
+        self.assertEqual(KVM_FIRST_ROW_Y, 34)
 
     def test_low_contrast_missing_or_unknown_marker_is_not_recognized(self):
         self.assertIsNone(classify_kvm_frame_samples((255, 0, 0, 255), (110, 145, 130, 120)))
@@ -114,12 +150,13 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertEqual(KVM_CELL_STEP, KVM_CELL_WIDTH)
         self.assertEqual(KVM_COLUMN_COUNT, 10)
 
-    def test_formal_contract_document_matches_the_shipped_1_2_display_contract(self):
+    def test_formal_contract_document_matches_the_shipped_1_3_display_contract(self):
         contract = (Path(__file__).resolve().parents[1] / "docs" / "refactoring" /
                     "KVM_DISPLAY_CONTRACT.md").read_text(encoding="utf-8")
-        self.assertIn("# KVM display contract 1.2", contract)
+        self.assertIn("# KVM display contract 1.3", contract)
         self.assertIn("(0, 2)", contract)
         self.assertIn("(320, 2)", contract)
+        self.assertIn("(250, 0)", contract)
         self.assertIn("(278, 0)", contract)
         self.assertIn("(130, 2)", contract)
         self.assertNotIn("KVM RESULT", contract)

@@ -52,6 +52,7 @@ from language_catalog import (
 )
 from kvm_display_contract import (
     KVM_CELL_HEIGHT, KVM_CELL_STEP, KVM_CELL_WIDTH, KVM_COLUMN_COUNT,
+    HEARTBEAT_INTERVAL_MS, HEARTBEAT_MARKER_ORIGIN, HEARTBEAT_PATTERNS,
     KVM_FIRST_ROW_Y, KVM_ROW_STEP,
     LOCATOR_FAR_INSET, LOCATOR_LEFT, LOCATOR_NEAR_INSET, LOCATOR_RIGHT,
     LOCATOR_SIZE, LOCATOR_WHITE_SIZE, MARKER_CELL_GAP, MARKER_CELL_SIZE,
@@ -416,6 +417,7 @@ class B518LogSolutionApp:
         self.root = root
         self._ui_destroyed = False
         self._after_ids: set[str] = set()
+        self._heartbeat_after_id = None
         self._close_after_id = None
         self.root.bind("<Destroy>", self._on_root_destroy, add="+")
         self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
@@ -587,6 +589,7 @@ class B518LogSolutionApp:
         self._configure_appearance()
         self._record_startup_diagnostics()
         self._build()
+        self._schedule_heartbeat_tick()
         self._language_refresh_notifications = LanguageRefreshNotifications(
             self.root, self._language_refresh_result)
         self._main_language_receiver = self.register_language_receiver(
@@ -659,6 +662,9 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        if self._heartbeat_after_id is not None:
+            self._cancel_ui_timer(self._heartbeat_after_id)
+            self._heartbeat_after_id = None
         if hasattr(self, "_historical_query_session"):
             self._historical_query_session.shutdown()
         if self._language_refresh_notifications is not None:
@@ -925,6 +931,16 @@ class B518LogSolutionApp:
         self.kvm_state_marker.place(x=STATE_MARKER_ORIGIN[0], y=STATE_MARKER_ORIGIN[1],
                                     width=MARKER_SIZE, height=MARKER_SIZE)
         self._render_state_marker(None)
+        self.kvm_heartbeat_marker = tk.Canvas(
+            self.kvm_results, width=MARKER_SIZE, height=MARKER_SIZE,
+            background="#ffffff", highlightthickness=0, borderwidth=0,
+        )
+        self.kvm_heartbeat_marker.place(
+            x=HEARTBEAT_MARKER_ORIGIN[0], y=HEARTBEAT_MARKER_ORIGIN[1],
+            width=MARKER_SIZE, height=MARKER_SIZE,
+        )
+        self._heartbeat_state = 0
+        self._render_heartbeat_marker()
         self.kvm_layout_marker = tk.Canvas(
             self.kvm_results, width=LAYOUT_MARKER_SIZE[0], height=LAYOUT_MARKER_SIZE[1],
             background="#ffffff", highlightthickness=0, borderwidth=0,
@@ -1884,6 +1900,36 @@ class B518LogSolutionApp:
                 )
         self._rendered_marker_state = state
         return state
+
+    def _render_heartbeat_marker(self) -> None:
+        marker = getattr(self, "kvm_heartbeat_marker", None)
+        if marker is None:
+            return
+        pattern = HEARTBEAT_PATTERNS[self._heartbeat_state]
+        marker.delete("heartbeat-cell")
+        for row in range(2):
+            for column in range(2):
+                x = MARKER_QUIET_ZONE + column * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
+                y = MARKER_QUIET_ZONE + row * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
+                colour = "#000000" if pattern[row][column] else "#ffffff"
+                marker.create_rectangle(
+                    x, y, x + MARKER_CELL_SIZE, y + MARKER_CELL_SIZE,
+                    fill=colour, outline=colour, tags=("heartbeat", "heartbeat-cell"),
+                )
+
+    def _schedule_heartbeat_tick(self) -> None:
+        if self._ui_destroyed or self._heartbeat_after_id is not None:
+            return
+        self._heartbeat_after_id = self._schedule_ui(
+            HEARTBEAT_INTERVAL_MS, self._advance_heartbeat)
+
+    def _advance_heartbeat(self) -> None:
+        self._heartbeat_after_id = None
+        if self._ui_destroyed:
+            return
+        self._heartbeat_state = (self._heartbeat_state + 1) % len(HEARTBEAT_PATTERNS)
+        self._render_heartbeat_marker()
+        self._schedule_heartbeat_tick()
 
     def _render_layout_marker(self, capacity: int) -> None:
         rows = 2 if capacity > KVM_COLUMN_COUNT else 1

@@ -1,6 +1,6 @@
-# KVM display contract 1.2
+# KVM display contract 1.3
 
-This is the local Log Solution display contract. It defines the Tk status band that a separate consumer may inspect. It does not define or implement a transport protocol, KVM recognition, or an ATE control path. A consumer must update with the App because version 1.2 adds PREPARING and MANUAL_STOP_COMPLETE patterns and moves the left locator; a version 1.1 consumer cannot safely interpret every 1.2 frame.
+This is the local Log Solution display contract. It defines the Tk status band that a separate consumer may inspect. It does not define or implement a transport protocol, KVM recognition, or an ATE control path. A consumer must update with the App because version 1.3 adds an independent heartbeat marker and moves the state marker; a version 1.2 consumer cannot safely interpret every 1.3 frame.
 
 ## Coordinate spaces and geometry
 
@@ -10,11 +10,14 @@ Coordinates are Tk units relative to the `KVM` parent frame. They are not physic
 | --- | --- | --- |
 | Left locator | origin `(0, 2)`, 22×22; white 8×8 inset at `(3, 3)` | Orientation/scale anchor above the first strip cell |
 | Row-count rail | origin `(130, 2)`, 26×14; two 10×10 cells with a 2-unit gap | `B W` = one row; `W B` = two rows |
-| State marker | origin `(278, 0)`, 26×26 | Four-cell state pattern |
+| State marker | origin `(250, 0)`, 26×26 | Four-cell state pattern |
+| Heartbeat marker | origin `(278, 0)`, 26×26 | Independent four-cell binary counter |
 | Right locator | origin `(320, 2)`, 22×22; white 8×8 inset at `(11, 11)` | Opposite asymmetric orientation anchor |
 | Result cells | first row y=34; 34×26 cells; 27-unit row step | Ten fixed columns; second row for positions 11–20 |
 
 The parent frame is 360 Tk units wide. The first result cell begins at x=0; the left locator is fully inside the parent and starts at x=0, so rendering does not rely on negative Canvas coordinates or clipping. The parent has a 2-unit top inset, 338-unit right inset, and 37-unit bottom inset for capacities 1–10 or 64-unit bottom inset for capacities 11–20. In the main window the parent begins 8 Tk units from the Tk content's left edge. The left locator's inset is asymmetric: its white cell is 3/3/11/11 units from the left/top/right/bottom edges; the right locator retains the opposite `(11, 11)` inset. The locators are 320 units apart.
+
+The state and heartbeat markers share a row and size, separated by a 2-Tk-unit gap. The heartbeat ends at x=304, leaving 16 Tk units before the right locator at x=320. Both locators and every result cell retain their prior coordinates.
 
 Each row always has ten cells. Capacity 1–10 displays one row; capacity 11–20 displays two. Unused capacity cells stay black. The row rail is rendered from the same frozen snapshot/capacity as the strip. It is independent of result availability. A top marker cannot detect every occlusion: a separate window covering only a result strip while leaving the upper locator visible may evade locator-based occlusion checks. Consumers must still validate each required result cell.
 
@@ -35,10 +38,35 @@ Review has priority over every released state. Monitoring is not proof that the 
 
 The classifier first validates both asymmetric locator samples, then the four state-cell samples. Its grayscale thresholds are part of the local helper; they are a minimum sample-quality gate, not a validated tolerance for remote compression, perspective, occlusion, or JetKVM capture.
 
+## Independent heartbeat
+
+The heartbeat is four 10×10 Tk-unit cells with 2-unit gaps and a 2-unit quiet zone, matching the state marker's 26×26 geometry. Bits are read top-to-bottom and left-to-right; `0` is white (`#ffffff`) and `1` is black (`#000000`). It starts at binary `0000`, advances by one every 500 ms, and wraps from `1111` to `0000`:
+
+| Decimal | Binary | Cells, top row / bottom row (`W` = white, `B` = black) |
+| ---: | :---: | :--- |
+| 0 | `0000` | `W W / W W` |
+| 1 | `0001` | `W W / W B` |
+| 2 | `0010` | `W W / B W` |
+| 3 | `0011` | `W W / B B` |
+| 4 | `0100` | `W B / W W` |
+| 5 | `0101` | `W B / W B` |
+| 6 | `0110` | `W B / B W` |
+| 7 | `0111` | `W B / B B` |
+| 8 | `1000` | `B W / W W` |
+| 9 | `1001` | `B W / W B` |
+| 10 | `1010` | `B W / B W` |
+| 11 | `1011` | `B W / B B` |
+| 12 | `1100` | `B B / W W` |
+| 13 | `1101` | `B B / W B` |
+| 14 | `1110` | `B B / B W` |
+| 15 | `1111` | `B B / B B` |
+
+Tk's main event loop owns the only heartbeat schedule. If that loop is blocked, the marker freezes; after it resumes, the counter advances once and does not replay missed ticks. The counter is independent of round timer, round acceptance, source work, and close-save progress. It remains active for the root lifetime, including standby, preparing, monitoring, review, completed, start-failure reset, and actionable close-save states. Destroying the root cancels the heartbeat's owned callback. Heartbeat changes do not append permanent events.
+
 ## Local verification artifacts
 
-The actual Tk acceptance matrix is documented in `evidence/li7-geometry/README.md`. It covers Tk scaling 1.0 and 1.5, capacities 1/10/11/20, Profile Editor apply/reload, widget bounds, capacity-external black cells, and Tk content-view captures. These captures are native App/Tk rendering, not WindowServer screenshots or remote KVM evidence. The content-view measurement was 2.0 physical pixels per Tk unit on the tested desktop; titlebar/window bounds are reported separately.
+The LS6 heartbeat acceptance evidence is in `evidence/ls6-heartbeat/README.md`, including real Tk frame samples, timing, state coverage, and destroy cleanup. The earlier geometry matrix is documented in `evidence/li7-geometry/README.md`; it covers Tk scaling 1.0 and 1.5, capacities 1/10/11/20, Profile Editor apply/reload, widget bounds, capacity-external black cells, and Tk content-view captures. These captures are native App/Tk rendering, not remote KVM evidence. Local Tk geometry and scaling do not establish remote pixels per Tk unit. Remote pixel thresholds and any required marker enlargement remain unmeasured and belong to LS7's physical KVM measurements.
 
 ## Compatibility and scope
 
-Version 1.1 predates the left locator at x=0 and has no PREPARING or MANUAL_STOP_COMPLETE state. Its samples and consumers remain historical and are not rewritten as 1.2 evidence. Do not send version 1.2 frames to a 1.1 consumer as if the versions were compatible. The `B518_JetKVM_Log` project owns its own recognition and bridge behavior; `monitor_start`, `check_start`, and `check_finish` are implemented there. Log Solution does not add TCP commands, ACK handling, JetKVM recognition, Dock automation, LabVIEW behavior, or field ATE validation.
+Version 1.1 predates the left locator at x=0 and has no PREPARING or MANUAL_STOP_COMPLETE state. Version 1.2 does not include the heartbeat marker. Their samples and consumers remain historical and are not rewritten as 1.3 evidence. Do not send version 1.3 frames to an older consumer as if the versions were compatible. The `B518_JetKVM_Log` project owns its own recognition and bridge behavior; `monitor_start`, `check_start`, and `check_finish` are implemented there. Log Solution does not add TCP commands, ACK handling, JetKVM recognition, Dock automation, LabVIEW behavior, or field ATE validation.

@@ -98,7 +98,7 @@ class SlotViewportTests(LogSolutionUiTests):
                     self.assertEqual(app.rows_canvas.cget("background"), LIGHT_BACKGROUND)
                     self.assertEqual((app.kvm_state_marker.winfo_x(), app.kvm_state_marker.winfo_y(),
                                       app.kvm_state_marker.winfo_width(), app.kvm_state_marker.winfo_height()),
-                                     (278, 0, 26, 26))
+                                     (250, 0, 26, 26))
                     for slot, block in app.kvm_result_blocks.items():
                         if block.winfo_ismapped():
                             self.assertEqual((block.winfo_x(), block.winfo_y(), block.winfo_width(), block.winfo_height()),

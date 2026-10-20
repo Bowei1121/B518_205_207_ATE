@@ -46,6 +46,7 @@ from log_monitoring import BaseMonitor, SessionStore, SlotResult
 from monitoring_round import (
     ConflictSide, RoundConflict, RoundCoordinator, RoundEvent, RoundSnapshot, RoundState,
 )
+from kvm_display_contract import HEARTBEAT_INTERVAL_MS, HEARTBEAT_PATTERNS, MarkerState
 import audit_records
 import app_event_store
 import historical_event_query
@@ -725,7 +726,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(
                     (app.kvm_state_marker.winfo_x(), app.kvm_state_marker.winfo_y(),
                      app.kvm_state_marker.winfo_width(), app.kvm_state_marker.winfo_height()),
-                    (278, 0, 26, 26),
+                    (250, 0, 26, 26),
                 )
                 self.assertEqual(app.kvm_locator_left.winfo_rootx(),
                                  app.kvm_results.winfo_rootx())
@@ -3487,6 +3488,181 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_ls6_real_tk_heartbeat_cycles_blocks_tracks_states_and_cleans_up(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and
+                                 app.kvm_heartbeat_marker.winfo_ismapped())
+                self.assertEqual(HEARTBEAT_INTERVAL_MS, 500)
+                self.assertEqual((app.kvm_state_marker.winfo_x(),
+                                  app.kvm_state_marker.winfo_y(),
+                                  app.kvm_state_marker.winfo_width(),
+                                  app.kvm_state_marker.winfo_height()), (250, 0, 26, 26))
+                self.assertEqual((app.kvm_heartbeat_marker.winfo_x(),
+                                  app.kvm_heartbeat_marker.winfo_y(),
+                                  app.kvm_heartbeat_marker.winfo_width(),
+                                  app.kvm_heartbeat_marker.winfo_height()), (278, 0, 26, 26))
+                self.assertEqual((app.kvm_locator_left.winfo_x(),
+                                  app.kvm_locator_right.winfo_x()), (0, 320))
+                self.assertEqual(app.kvm_result_blocks[1].winfo_y(), 34)
+
+                def rendered_cells():
+                    items = app.kvm_heartbeat_marker.find_withtag("heartbeat-cell")
+                    self.assertEqual(len(items), 4)
+                    colours = tuple(app.kvm_heartbeat_marker.itemcget(item, "fill")
+                                    for item in items)
+                    self.assertTrue(set(colours) <= {"#000000", "#ffffff"})
+                    return tuple(
+                        tuple(colours[row * 2 + column] == "#000000"
+                              for column in range(2))
+                        for row in range(2)
+                    )
+
+                observed_states = [app._heartbeat_state]
+                observed_patterns = [rendered_cells()]
+                transition_times = [time.monotonic()]
+                self.assertEqual(observed_states, [0])
+
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture = capture_tk_window_evidence(
+                        root, "ls6-heartbeat-state-00", "en", {
+                            "kvm": app.kvm_results,
+                            "state_marker": app.kvm_state_marker,
+                            "heartbeat_marker": app.kvm_heartbeat_marker,
+                            "left_locator": app.kvm_locator_left,
+                            "right_locator": app.kvm_locator_right,
+                            "first_result": app.kvm_result_blocks[1],
+                        })
+                else:
+                    capture = {"geometry": root.geometry()}
+
+                expected_next = 1
+                deadline = time.monotonic() + 10
+                while expected_next <= 16 and time.monotonic() < deadline:
+                    root.update()
+                    current = app._heartbeat_state
+                    if current == expected_next % 16 and len(observed_states) == expected_next:
+                        observed_states.append(current)
+                        observed_patterns.append(rendered_cells())
+                        transition_times.append(time.monotonic())
+                        expected_next += 1
+                    time.sleep(.005)
+                self.assertEqual(observed_states, list(range(16)) + [0])
+                self.assertEqual(observed_patterns,
+                                 [tuple(tuple(row) for row in pattern)
+                                  for pattern in HEARTBEAT_PATTERNS] + [HEARTBEAT_PATTERNS[0]])
+                intervals = [later - earlier for earlier, later in
+                             zip(transition_times, transition_times[1:])]
+                self.assertTrue(all(.35 <= interval <= 1.25 for interval in intervals),
+                                intervals)
+
+                state_samples = (
+                    (RoundState.READY, False, "", (), MarkerState.STANDBY),
+                    (RoundState.PREPARING, False, "", (), MarkerState.PREPARING),
+                    (RoundState.RUNNING, False, "", (), MarkerState.MONITORING),
+                    (RoundState.AWAITING_REVIEW, False, "", (), MarkerState.REVIEW),
+                    (RoundState.COMPLETED, True, "", (), MarkerState.COMPLETE),
+                    (RoundState.STOPPED, True, "manual_stop", (),
+                     MarkerState.MANUAL_STOP_COMPLETE),
+                    (RoundState.STOPPED, False, "start_failed", (), MarkerState.STANDBY),
+                )
+                for round_state, available, reason, conflicts, expected_state in state_samples:
+                    snapshot = RoundSnapshot(
+                        round_id="ls6-state-sample", station="FCT", state=round_state,
+                        results=(), result_available=available, event_sequence=0, events=(),
+                        collection_stopped=round_state in {RoundState.COMPLETED,
+                                                           RoundState.STOPPED},
+                        completion_reason=reason, pending_conflicts=conflicts,
+                        round_alarm=None, cancellation_available=False)
+                    before = app._heartbeat_state
+                    self.assertEqual(app._render_state_marker(snapshot), expected_state)
+                    self.assertEqual(app._heartbeat_state, before)
+                    self.wait_for_ui(root, lambda: app._heartbeat_state != before,
+                                     timeout=HEARTBEAT_INTERVAL_MS / 1000 + .8)
+
+                saving = SimpleNamespace(status="saving", generation=701, message="")
+                cancelled = SimpleNamespace(status="cancelled", generation=701, message="")
+                before_close = app._heartbeat_state
+                with patch.object(app.rounds, "request_close", return_value=saving), \
+                        patch.object(app.rounds, "close_status", return_value=saving), \
+                        patch.object(app.rounds, "cancel_close", return_value=cancelled):
+                    app.close()
+                    root.update()
+                    self.assertTrue(app._closing_ui)
+                    self.assertTrue(app._close_window.winfo_viewable())
+                    self.assertEqual(str(app._close_cancel_button.cget("state")), "normal")
+                    self.wait_for_ui(root, lambda: app._heartbeat_state != before_close,
+                                     timeout=HEARTBEAT_INTERVAL_MS / 1000 + .8)
+                    self.assertTrue(root.winfo_exists())
+                    app.cancel_close()
+                    self.assertFalse(app._closing_ui)
+
+                blocked = []
+
+                def block_ui_callback():
+                    state_before_block = app._heartbeat_state
+                    time.sleep(0.75)
+                    blocked.append((state_before_block, app._heartbeat_state))
+
+                root.after(100, block_ui_callback)
+                while not blocked:
+                    root.update()
+                    time.sleep(.005)
+                self.assertEqual(blocked[0][0], blocked[0][1])
+                state_after_resume = app._heartbeat_state
+                self.wait_for_ui(root, lambda: app._heartbeat_state != state_after_resume,
+                                 timeout=HEARTBEAT_INTERVAL_MS / 1000 + .8)
+                self.assertEqual(app._heartbeat_state, (state_after_resume + 1) % 16)
+
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture["heartbeat"] = {
+                        "interval_ms": HEARTBEAT_INTERVAL_MS,
+                        "states": observed_states,
+                        "patterns": observed_patterns,
+                        "transition_elapsed_seconds": [
+                            round(value - transition_times[0], 3)
+                            for value in transition_times],
+                        "measured_intervals_seconds": [round(value, 3)
+                                                       for value in intervals],
+                        "state_coverage": [state.value for *_, state in state_samples],
+                        "actionable_close_save_ui_verified": True,
+                        "blocked_ui_state_before_and_after_sleep": blocked[0],
+                        "state_after_ui_resumed": app._heartbeat_state,
+                    }
+                    write_tk_bounds_evidence("ls6-heartbeat", capture)
+
+                heartbeat_id = app._heartbeat_after_id
+                external_id = root.after(10_000, lambda: None)
+                self.assertIn(heartbeat_id, root.tk.call("after", "info"))
+                app._on_root_destroy(SimpleNamespace(widget=root))
+                scheduled_ids = root.tk.call("after", "info")
+                self.assertNotIn(heartbeat_id, scheduled_ids)
+                self.assertIn(external_id, scheduled_ids)
+                self.assertIsNone(app._heartbeat_after_id)
+                self.assertNotIn(heartbeat_id, app._after_ids)
+
+                app.hotkey.close()
+                app.rounds.request_close()
+                app.app_events.stop()
+                persisted_events = read_app_event_store(app.app_events.path)["events"]
+                self.assertFalse(any("heartbeat" in str(event).lower()
+                                     for event in persisted_events))
+            finally:
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_language_and_profile_controls_fit_fixed_hmi_width(self):
         for language in (ENGLISH, TRADITIONAL_CHINESE):
             with self.subTest(language=language), TemporaryDirectory() as temporary, \
@@ -3515,7 +3691,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     x = app.language_button.winfo_rootx() + app.language_button.winfo_width() // 2
                     y = app.language_button.winfo_rooty() + app.language_button.winfo_height() // 2
                     self.assertEqual(root.winfo_containing(x, y), app.language_button)
-                    self.assertEqual(app.kvm_state_marker.winfo_x(), 278)
+                    self.assertEqual(app.kvm_state_marker.winfo_x(), 250)
                     self.assertEqual(app.kvm_state_marker.winfo_y(), 0)
                 finally:
                     app.rounds.request_close()
@@ -7581,7 +7757,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                      window_height(capacity, root.winfo_screenheight()))
                     self.assertEqual(tuple(map(int, root.resizable())), (0, 0))
                     self.assertEqual((app.kvm_state_marker.winfo_x(),
-                                      app.kvm_state_marker.winfo_y()), (278, 0))
+                                      app.kvm_state_marker.winfo_y()), (250, 0))
         finally:
             root.destroy()
 
@@ -7632,7 +7808,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertLessEqual(root.winfo_height(), root.winfo_screenheight())
                 self.assertEqual(len(app.status_rows), 20)
                 self.assertEqual(len(app.kvm_result_blocks), 20)
-                self.assertEqual(app.kvm_state_marker.winfo_x(), 278)
+                self.assertEqual(app.kvm_state_marker.winfo_x(), 250)
                 self.assertEqual(app.kvm_state_marker.winfo_y(), 0)
                 self.assertEqual(app.kvm_state_marker.winfo_width(), 26)
                 self.assertGreater(app.kvm_result_blocks[1].winfo_y(),
