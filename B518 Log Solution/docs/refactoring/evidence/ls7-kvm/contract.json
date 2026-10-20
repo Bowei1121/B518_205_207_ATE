@@ -62,7 +62,43 @@
     "font": ["Menlo", 14, "bold"], "format": "MM:SS",
     "minutes": "minimum 2 digits, no upper limit", "seconds": "00-59",
     "hours_field": false, "fractional_digits": false,
-    "crop_rule": "measure full visible widget bounds in each actual captured frame"
+    "local_crop_matrix": "tk-matrix/timer-crop-matrix.json",
+    "local_sample_texts": ["00:00", "600:00"],
+    "local_matrix": {
+      "tk_scalings": [1.0, 1.5],
+      "capacities": [1, 10, 11, 20],
+      "languages": ["en", "zh-TW"]
+    },
+    "local_crop_coordinate_reference": "Tk content-view top-left",
+    "local_physical_pixels_per_tk_unit": [2.0, 2.0],
+    "local_measured_widget_bounds_tk": {
+      "normal_00_00": {
+        "capacity_1": [324, 516, 44, 20],
+        "capacity_10": [324, 704, 44, 20],
+        "capacity_11_or_20": [324, 731, 44, 20]
+      },
+      "long_minutes_600_00": {
+        "capacity_1": [316, 516, 52, 20],
+        "capacity_10": [316, 704, 52, 20],
+        "capacity_11_or_20": [316, 731, 52, 20]
+      }
+    },
+    "local_measured_crop_pixels": {
+      "normal_00_00": {
+        "capacity_1": [648, 1032, 88, 40],
+        "capacity_10": [648, 1408, 88, 40],
+        "capacity_11_or_20": [648, 1462, 88, 40]
+      },
+      "long_minutes_600_00": {
+        "capacity_1": [632, 1032, 104, 40],
+        "capacity_10": [632, 1408, 104, 40],
+        "capacity_11_or_20": [632, 1462, 104, 40]
+      }
+    },
+    "local_font": "Menlo 14 bold",
+    "local_foreground": "#111827",
+    "local_anchor": "e",
+    "crop_rule": "use measured content-view ROI for the matching local sample; remote ROI must be measured in its received frame"
   },
   "local_marker_classification": {
     "grayscale_threshold": 128, "minimum_contrast": 96,
@@ -71,13 +107,22 @@
   },
   "sampling_handoff": {
     "nominal_observation_interval_seconds": 1,
-    "stable_state_samples": 3, "first_to_third_span_seconds": 2,
-    "expected_heartbeat_delta_per_sample": 2, "heartbeat_delta_modulus": 16,
-    "raw_images_pixel_identical_when_healthy": false,
-    "pixel_identical_repeats_are_stale_candidates": true,
+    "anomaly_region": "heartbeat cells only",
+    "anomaly_rule": "three consecutive distinct, fresh, readable observations with an unchanged heartbeat-region image",
+    "anomaly_samples": 3, "first_to_third_span_seconds": 2,
+    "validity_requires_distinct_fresh_observations": true,
+    "invalid_samples": ["stale_or_reused_frame", "occluded_heartbeat_region", "compression_uncertain_region"],
+    "other_region_changes_cancel_heartbeat_anomaly": false,
+    "whole_frame_identity_required": false,
+    "four_cell_numeric_decoding_required": false,
+    "expected_heartbeat_delta_per_sample": 2,
+    "heartbeat_delta_modulus": 16,
+    "expected_delta_is_explanatory_only": true,
+    "whole_frame_replay_check": "separate optional stale-frame check",
     "open_decisions": [
       "maximum_observation_interval", "interruption_reset", "recovery_threshold",
-      "upper_computer_error_handling", "JetKVM presentation-timestamp freshness policy"
+      "upper_computer_error_handling", "JetKVM presentation-timestamp freshness policy",
+      "freshness timestamp gap tolerance", "remote compression tolerance"
     ]
   },
   "local_evidence": {

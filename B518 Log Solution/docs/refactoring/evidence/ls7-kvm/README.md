@@ -18,6 +18,25 @@ This evidence does not claim that remote marker cells meet 12×12 pixels. It als
 
 The complete App-side contract is [`../../KVM_DISPLAY_CONTRACT.md`](../../KVM_DISPLAY_CONTRACT.md); the bridge handoff is [`../../CLAUDE_KVM_HANDOFF.md`](../../CLAUDE_KVM_HANDOFF.md). Machine-readable contract constants are in [`contract.json`](contract.json).
 
+## Measured local timer crop
+
+[`tk-matrix/timer-crop-matrix.json`](tk-matrix/timer-crop-matrix.json) records the actual `monitor_elapsed` widget bounds and matching pixel crop for each combination of Tk scaling (1.0 and 1.5), capacity (1, 10, 11, 20), and language (`en`, `zh-TW`). Each entry includes its full content-view screenshot, dimensions, physical-pixel conversion, font, color, and anchor. Coordinates start at the Tk content-view top-left. These are local macOS captures only; do not use their pixel conversion as a remote KVM scale.
+
+| Capacity | `00:00` bounds (Tk x,y,w,h) | `00:00` crop (pixels x,y,w,h) | `600:00` bounds (Tk x,y,w,h) | `600:00` crop (pixels x,y,w,h) |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | `324,516,44,20` | `648,1032,88,40` | `316,516,52,20` | `632,1032,104,40` |
+| 10 | `324,704,44,20` | `648,1408,88,40` | `316,704,52,20` | `632,1408,104,40` |
+| 11 | `324,731,44,20` | `648,1462,88,40` | `316,731,52,20` | `632,1462,104,40` |
+| 20 | `324,731,44,20` | `648,1462,88,40` | `316,731,52,20` | `632,1462,104,40` |
+
+Both languages and both tested Tk scalings produced the same content-view Tk bounds. The local capture used 2 physical pixels per Tk unit. The crop includes the complete label widget, not only glyph ink, so it remains valid for matching `MM:SS` and long-minute samples.
+
+Reproduce the measurement on the macOS desktop with:
+
+```sh
+env B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=docs/refactoring/evidence/ls7-kvm/tk-matrix PYTHONPATH=src .venv-python31210/bin/python -X faulthandler scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities
+```
+
 ## Remote acceptance procedure when a real capture source is available
 
 1. Record App build/version, bridge build/version, JetKVM model/firmware, capture dimensions, stream scaling/cropping, compression settings, and capture timestamps. Save original received frames and checksums.

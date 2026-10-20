@@ -774,6 +774,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             str(Path(self._isolated_app_root.name) / "li7-evidence"))
         evidence_dir.mkdir(parents=True, exist_ok=True)
         matrix = []
+        timer_samples = []
         scaling_filter = os.environ.get("B518_LI7_SCALING")
         scalings = (float(scaling_filter),) if scaling_filter else (1.0, 1.5)
         for scaling in scalings:
@@ -936,6 +937,8 @@ class LogSolutionUiTests(unittest.TestCase):
                             root.update()
                             evidence = capture_tk_content_view_evidence(root, key, {
                                 "kvm": parent,
+                                "monitor_state": app.monitor_state,
+                                "monitor_elapsed": app.monitor_elapsed,
                                 "left_locator": app.kvm_locator_left,
                                 "left_white_cell": app.kvm_locator_left.white_cell,
                                 "right_locator": app.kvm_locator_right,
@@ -952,6 +955,68 @@ class LogSolutionUiTests(unittest.TestCase):
                             )
                             self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
                             self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
+
+                            def timer_measurement(sample_text, capture):
+                                timer = app.monitor_elapsed
+                                bounds = (
+                                    timer.winfo_rootx() - root.winfo_rootx(),
+                                    timer.winfo_rooty() - root.winfo_rooty(),
+                                    timer.winfo_width(),
+                                    timer.winfo_height(),
+                                )
+                                state_right = (app.monitor_state.winfo_rootx() -
+                                               root.winfo_rootx() +
+                                               app.monitor_state.winfo_width())
+                                self.assertEqual(timer.cget("text"), sample_text)
+                                self.assertGreaterEqual(timer.winfo_width(),
+                                                        timer.winfo_reqwidth())
+                                self.assertLessEqual(bounds[0] + bounds[2],
+                                                     root.winfo_width())
+                                self.assertLessEqual(state_right, bounds[0])
+                                scale_x = (capture["image_pixels"]["width"] /
+                                           capture["size"][0])
+                                scale_y = (capture["image_pixels"]["height"] /
+                                           capture["size"][1])
+                                roi = [round(bounds[0] * scale_x),
+                                       round(bounds[1] * scale_y),
+                                       round(bounds[2] * scale_x),
+                                       round(bounds[3] * scale_y)]
+                                return {
+                                    "text": sample_text,
+                                    "widget_bounds_tk_relative_to_content_view": list(bounds),
+                                    "capture_roi_pixels_relative_to_content_view": roi,
+                                    "capture_image": capture["screenshot"],
+                                    "capture_dimensions_pixels": [
+                                        capture["image_pixels"]["width"],
+                                        capture["image_pixels"]["height"]],
+                                    "physical_pixels_per_tk_unit": [scale_x, scale_y],
+                                    "font": str(timer.cget("font")),
+                                    "foreground": app.style.lookup(
+                                        "TLabel", "foreground"),
+                                    "anchor": str(timer.cget("anchor")),
+                                }
+
+                            timer_record = {
+                                "tk_scaling": scale_readback,
+                                "capacity": capacity,
+                                "language": "en" if language == ENGLISH else "zh-TW",
+                                "normal": timer_measurement("00:00", evidence),
+                            }
+                            app._render_monitoring_elapsed(SimpleNamespace(
+                                monitoring_elapsed_seconds=36000))
+                            root.update_idletasks()
+                            long_key = key + "-timer-600m"
+                            long_capture = capture_tk_content_view_evidence(
+                                root, long_key, {
+                                    "monitor_state": app.monitor_state,
+                                    "monitor_elapsed": app.monitor_elapsed,
+                                }, output_dir=evidence_dir)
+                            timer_record["long_minutes"] = timer_measurement(
+                                "600:00", long_capture)
+                            timer_samples.append(timer_record)
+                            app._render_monitoring_elapsed(SimpleNamespace(
+                                monitoring_elapsed_seconds=0))
+                            root.update_idletasks()
                             record = {
                             "tk_scaling": scale_readback,
                             "capacity": capacity,
@@ -1010,6 +1075,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.destroy()
         (evidence_dir / "li7-geometry-matrix.json").write_text(
             json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
+        (evidence_dir / "timer-crop-matrix.json").write_text(
+            json.dumps(timer_samples, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def set_language_for_test_setup(self, app, root, language):
         """Set a test fixture's locale without opening the modal native Menu."""

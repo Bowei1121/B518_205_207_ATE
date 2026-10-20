@@ -34,17 +34,21 @@ The App timer measures time since monitoring acceptance, including source prepar
 
 ## Sampling handoff for Claude to validate
 
-At a nominal one-second observation cadence:
+At a nominal one-second observation cadence, the anomaly decision is about the heartbeat region only:
 
-1. Reject a sample unless both locator patterns, orientation, and every required marker cell are readable with the local high-contrast gate. The gate is a starting value, not remote calibration.
-2. Treat three consecutive valid observations with the same decoded state and unchanged result/layout snapshot as a stable-state window. At exact one-second spacing, the first-to-third span is about two seconds.
-3. The heartbeat should advance by `+2 mod 16` between observations. Full-image byte identity is not a healthy-frame definition because heartbeat changes every 500 ms and the timer may change. Three byte-identical captures instead indicate a stale/frozen candidate.
-4. A full heartbeat cycle is 16 transitions × 0.5 seconds = 8 seconds. A one-second observer sees every other state, so its observed sequence repeats after eight seconds.
-5. Do not trust a repeated old frame as fresh evidence. Presentation-timestamp freshness, compression tolerance, maximum observation interval, interruption reset, recovery threshold, and upper-computer error handling remain open decisions for Claude. Do not present these decisions as finalized by LS7.
+1. Count only distinct, fresh observations whose heartbeat region is fully visible and readable. An old/reused frame, occluded region, or uncertain compression sample is invalid and cannot be one of the three. Freshness uses source presentation timestamps or equivalent capture freshness evidence; permitted timestamp gaps remain for Claude to decide.
+2. Compare the four-cell heartbeat-region image only. If the same readable heartbeat-cell image persists for three consecutive valid observations, report the heartbeat as abnormal. At one observation per second, the first-to-third span is about two seconds. Timer, state, result, and other pixels may change and do not cancel this rule.
+3. Reject compression noise as heartbeat movement. Compare valid cell appearance across the heartbeat crop without decoding the four cells into a 0–15 number. Remote compression tolerance has not been calibrated, so the local 0–80 / 176–255 gate is not a certified stream threshold.
+4. In healthy operation the App advances one state every 500 ms and wraps after 16 states (8 seconds). `+2 mod 16` is an explanatory expected cadence for one-second observations only; it is not an extra decoding requirement and does not replace the three-identical-heartbeat-region anomaly rule.
+5. A whole-frame identical replay can be retained as a separate stale-frame fixture. It is not required for detecting an unchanged heartbeat region, and three whole-frame-identical captures are not required when unrelated pixels change. Maximum observation interval, interruption reset, recovery threshold, and upper-computer error handling remain open decisions for Claude.
 
 Validate at least these cases: an old timer value still visible in standby before a new round; accepted start with timer advancing while state is `PREPARING`; transition to `MONITORING`; normal timer stop while heartbeat keeps advancing; quick completion before a two-second stable-state window; a deliverable result; and pending review. Timer movement alone must never be treated as ATE activity or a deliverable result.
 
 Occlusion must be tested independently for the state marker, heartbeat marker, and each required result cell. The top locators do not prove the result strip is visible. Keep the result cells, locators, and markers at their existing positions unless a real remote measurement shows a failure and a coordinated marker resize is measured to avoid overlap.
+
+## Local timer crop
+
+The companion `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json` records the current merged App's live Tk widget bounds and reproducible crop ROI for `00:00` and `600:00`, across Tk scaling 1.0/1.5, capacity 1/10/11/20, and English/Traditional Chinese. Each ROI is pixel coordinates relative to its named native content-view screenshot, derived from that capture's measured pixel-to-content-view scale. These are local capture coordinates, not remote KVM pixel coordinates. The JSON points to both normal and long-minute full-window captures and records the timer font, foreground, anchor, widget bounds, and screenshot dimensions.
 
 ## Evidence and release status
 
