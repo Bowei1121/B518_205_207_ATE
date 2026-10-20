@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 from monitoring_round import RoundSnapshot, RoundState
 
 
-CONTRACT_VERSION = "1.2"
+CONTRACT_VERSION = "1.3"
 MARKER_CELL_SIZE = 10
 MARKER_CELL_GAP = 2
 MARKER_QUIET_ZONE = 2
@@ -19,7 +19,16 @@ LOCATOR_NEAR_INSET = 3
 LOCATOR_FAR_INSET = 11
 LOCATOR_LEFT = (0, 2)
 LOCATOR_RIGHT = (320, 2)
-STATE_MARKER_ORIGIN = (278, 0)
+STATE_MARKER_ORIGIN = (250, 0)
+HEARTBEAT_MARKER_ORIGIN = (278, 0)
+HEARTBEAT_INTERVAL_MS = 500
+HEARTBEAT_PATTERNS = tuple(
+    tuple(
+        tuple(bool(state & (1 << (3 - (row * 2 + column)))) for column in range(2))
+        for row in range(2)
+    )
+    for state in range(16)
+)
 LAYOUT_MARKER_ORIGIN = (130, 2)
 LAYOUT_MARKER_SIZE = (MARKER_SIZE, MARKER_CELL_SIZE + MARKER_QUIET_ZONE * 2)
 # The independent two-cell rail encodes visible rows, not result availability.
