@@ -3642,12 +3642,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 heartbeat_id = app._heartbeat_after_id
                 external_id = root.after(10_000, lambda: None)
                 self.assertIn(heartbeat_id, root.tk.call("after", "info"))
-                app._on_root_destroy(SimpleNamespace(widget=root))
-                scheduled_ids = root.tk.call("after", "info")
-                self.assertNotIn(heartbeat_id, scheduled_ids)
-                self.assertIn(external_id, scheduled_ids)
+                cancelled_ids = []
+                original_after_cancel = root.after_cancel
+                root.after_cancel = lambda after_id: (
+                    cancelled_ids.append(after_id), original_after_cancel(after_id))[-1]
+                callback_errors = []
+                root.report_callback_exception = lambda *error: callback_errors.append(error)
+                root.destroy()
+                self.assertIn(heartbeat_id, cancelled_ids)
+                self.assertNotIn(external_id, cancelled_ids)
                 self.assertIsNone(app._heartbeat_after_id)
                 self.assertNotIn(heartbeat_id, app._after_ids)
+                self.assertTrue(app._ui_destroyed)
+                self.assertEqual(callback_errors, [])
 
                 app.hotkey.close()
                 app.rounds.request_close()
@@ -3656,10 +3663,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertFalse(any("heartbeat" in str(event).lower()
                                      for event in persisted_events))
             finally:
-                try:
-                    root.destroy()
-                except tk.TclError:
-                    pass
+                if not app._ui_destroyed:
+                    try:
+                        root.destroy()
+                    except tk.TclError:
+                        pass
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")

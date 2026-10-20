@@ -1888,7 +1888,13 @@ class B518LogSolutionApp:
             self._rendered_marker_state = state
             return state
         pattern = MARKER_PATTERNS[state]
-        marker.delete("marker")
+        self._render_marker_cells(marker, pattern, "marker")
+        self._rendered_marker_state = state
+        return state
+
+    def _render_marker_cells(self, marker, pattern, tag: str) -> None:
+        cell_tag = tag + "-cell"
+        marker.delete(cell_tag)
         for row in range(2):
             for column in range(2):
                 x = MARKER_QUIET_ZONE + column * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
@@ -1896,26 +1902,15 @@ class B518LogSolutionApp:
                 colour = "#000000" if pattern[row][column] else "#ffffff"
                 marker.create_rectangle(
                     x, y, x + MARKER_CELL_SIZE, y + MARKER_CELL_SIZE,
-                    fill=colour, outline=colour, tags=("marker", "marker-cell"),
+                    fill=colour, outline=colour, tags=(tag, cell_tag),
                 )
-        self._rendered_marker_state = state
-        return state
 
     def _render_heartbeat_marker(self) -> None:
         marker = getattr(self, "kvm_heartbeat_marker", None)
         if marker is None:
             return
         pattern = HEARTBEAT_PATTERNS[self._heartbeat_state]
-        marker.delete("heartbeat-cell")
-        for row in range(2):
-            for column in range(2):
-                x = MARKER_QUIET_ZONE + column * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
-                y = MARKER_QUIET_ZONE + row * (MARKER_CELL_SIZE + MARKER_CELL_GAP)
-                colour = "#000000" if pattern[row][column] else "#ffffff"
-                marker.create_rectangle(
-                    x, y, x + MARKER_CELL_SIZE, y + MARKER_CELL_SIZE,
-                    fill=colour, outline=colour, tags=("heartbeat", "heartbeat-cell"),
-                )
+        self._render_marker_cells(marker, pattern, "heartbeat")
 
     def _schedule_heartbeat_tick(self) -> None:
         if self._ui_destroyed or self._heartbeat_after_id is not None:
