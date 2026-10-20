@@ -2910,10 +2910,13 @@ class MonitoringRoundTests(unittest.TestCase):
                              "source_preparation_pending")
             release.set()
             deadline = time.monotonic() + 3
-            while (rounds.round_snapshot(first.round_id).source_preparation_pending and
-                   time.monotonic() < deadline):
+            while time.monotonic() < deadline:
+                expired = rounds.snapshot()
+                if not expired.source_preparation_pending and expired.round_alarm_ready:
+                    break
                 time.sleep(0.01)
-            expired = rounds.snapshot()
+            else:
+                self.fail("The late source did not finish deadline handoff.")
             self.assertTrue(expired.round_alarm_ready)
             acknowledged = rounds.acknowledge_round_alarm(first.round_id,
                                                           expired.round_alarm.alarm_id)
