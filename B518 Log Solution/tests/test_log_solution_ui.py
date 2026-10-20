@@ -5399,6 +5399,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                      session_root=Path(temporary) / "sessions")
             coordinator = RoundCoordinator(app.events.put, audit_root=Path(temporary) / "sessions")
             holder = {}
+            release_retry = threading.Event()
+            retry_waiting = threading.Event()
 
             class Monitor:
                 def __init__(self, callback):
@@ -5445,7 +5447,6 @@ class LogSolutionUiTests(unittest.TestCase):
                 original_write = audit_records.os.write
                 failed = threading.Event()
                 retry_entered = threading.Event()
-                release_retry = threading.Event()
                 write_number = [0]
 
                 def inject_fault(descriptor, content):
@@ -5458,7 +5459,8 @@ class LogSolutionUiTests(unittest.TestCase):
                                 for i in range(80)))
                         if write_number[0] == 2:
                             retry_entered.set()
-                            release_retry.wait(2)
+                            retry_waiting.set()
+                            release_retry.wait()
                             raise OSError("disk still unavailable")
                     return original_write(descriptor, content)
 
@@ -5514,14 +5516,14 @@ class LogSolutionUiTests(unittest.TestCase):
 
                     app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
+                    self.assertTrue(retry_waiting.wait(2))
                     self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
                     heartbeat_before_retry = app._heartbeat_state
-                    heartbeat_deadline = time.monotonic() + 1.5
-                    while (app._heartbeat_state == heartbeat_before_retry and
-                           time.monotonic() < heartbeat_deadline):
-                        root.update()
-                        time.sleep(0.01)
+                    self.wait_for_ui(root,
+                                     lambda: app._heartbeat_state != heartbeat_before_retry,
+                                     timeout=1.5)
                     self.assertNotEqual(app._heartbeat_state, heartbeat_before_retry)
+                    self.assertFalse(release_retry.is_set())
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
@@ -5563,6 +5565,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(any("保存復原" in event["message"] for event in session_events))
                 self.assertTrue(coordinator.snapshot().save_history)
             finally:
+                release_retry.set()
                 app.hotkey.close()
                 root.destroy()
 
