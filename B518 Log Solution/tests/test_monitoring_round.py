@@ -544,6 +544,8 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(holder["monitor"].started, 1)
         finally:
             release_source.set()
+            rounds.stop()
+            self.assertTrue(rounds.flush_audit(timeout=3))
 
     def test_start_during_preparation_can_stop_and_late_source_does_not_restart_round(self):
         source_entered = threading.Event()
@@ -576,6 +578,8 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertFalse(ready_event.is_set())
         finally:
             release_source.set()
+            rounds.stop()
+            self.assertTrue(rounds.flush_audit(timeout=3))
 
     def test_confirmed_same_round_conflict_is_captured_without_overwriting_original(self):
         elapsed = [0.0]

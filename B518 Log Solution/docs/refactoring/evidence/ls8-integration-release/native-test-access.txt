@@ -1,0 +1,1 @@
+{"post_event_access": true, "listen_event_access": true, "activation_policy": 0}
