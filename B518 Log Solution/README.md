@@ -131,11 +131,26 @@ python3 tools/replay_rswmt.py /完整路徑/2026-09-11_05-45-44
 
 美國同事可使用 [英文試用說明](docs/RSWMT_US_PILOT.md)。建置候選 App 後需在 15.4.1 確認實際檔案更新時機、四個 DUT、Fail（含無 SN）、快捷鍵、前景顯示與逾時。
 
-## 桌面 Python 選擇
+## 桌面 Python 與 macOS 15 開發環境
 
-`./scripts/run_macos_desktop.sh` 會優先選擇已安裝的 Python.org Framework（先找正式建置使用的 3.12，再找 Current 與其他已安裝版本），印出實際 interpreter 後啟動 App。可用 `PYTHON_BIN=/完整路徑/python3 ./scripts/run_macos_desktop.sh` 明確指定。腳本會切到 App 目錄，不受 Terminal 的 `(base)` PATH 影響；不安裝或修改全域 Python。
+桌面與 macOS 15 arm64 打包共用 Python 3.12.10 基準。`./scripts/run_macos_desktop.sh` 會在啟動前核對實際 interpreter 的完整版本、原生架構及 Tk；可用 `PYTHON_BIN=/完整路徑/python3.12` 明確指定。錯誤版本、Rosetta 架構或缺少 Tk 會在 App 啟動前指出原因。
 
-2026-10-16 本機 macOS 15.7.9 的同一最小原生單擊 probe：Anaconda Python 3.11.7／Tk 8.6.12（`python3` 與 `pythonw`）沒有收到滑鼠按下／放開，Python.org Framework 3.8.10／Tk 8.6.8 收到兩個事件並執行一次 callback。這是本機實驗，不代表所有 Conda 或 Tk 8.6.12 都有同樣問題。3.12 的正式建置規格維持原定，未在本機測試的 runtime 不宣稱已通過。
+建立開發虛擬環境後安裝與 macOS 15 打包相同的固定依賴，再從該 interpreter 執行檢查。`git pull` 只更新程式碼，不會更新虛擬環境或套件：
+
+```zsh
+/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12 -m venv .venv-python31210
+.venv-python31210/bin/python -m pip install -r requirements/requirements-macos15-arm64.txt
+.venv-python31210/bin/python scripts/check_macos_build_python.py \
+  --exact-version 3.12.10 --architecture "$(uname -m)" \
+  --requirements requirements/requirements-macos15-arm64.txt --require-virtualenv
+PYTHON_BIN="$PWD/.venv-python31210/bin/python" ./scripts/run_macos_desktop.sh
+B518_TK_TESTS=1 .venv-python31210/bin/python scripts/run_tests.py
+```
+
+檢查會列出實際執行檔、Python 修訂版、目前／目標架構、是否位於虛擬環境，以及 requirements 檔（包含 `-r` 引入檔）中的每個固定套件版本。環境不符時會在桌面或完整測試開始前失敗；不會修改系統權限。這些檢查不取代 macOS 15 arm64 bundle 或目標機驗收，也不調整 macOS 10.14／26 的交付目標。
+
+
+2026-10-16 本機 macOS 15.7.9 的最小原生單擊 probe：Anaconda Python 3.11.7／Tk 8.6.12（`python3` 與 `pythonw`）沒有收到滑鼠按下／放開；Python.org Framework 3.8.10／Tk 8.6.8 收到兩個事件並執行一次 callback。這是當日的本機實驗，不代表所有 Conda 或 Tk 8.6.12 都有同樣問題；Python 3.12.10 的本次環境檢查與桌面／目標機驗收範圍見上節及 LS8。
 
 ## 開發目錄與驗證
 

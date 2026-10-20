@@ -110,3 +110,9 @@
 - 獨立唯讀情境檢查驗證：舊SHA的通過不可合併新版、原session修完不能自行通過、全部條件符合可沿既有授權合併但不能擅自下一票；另據實際CLI確認match-head-commit支援。
 - 本次只建立流程與skill，不實作LS票、不新增或操作PR審查。skill驗證器所需PyYAML固定版僅安裝在暫存目錄，不改專案Python或requirements。
 - skill已安裝於使用者層`~/.agents/skills/issue-pr-review-loop`，三檔與儲存庫來源逐位元相同；安裝位置依官方目前使用者技能目錄。沒有替Claude或Cursor建立工具專屬安裝，兩者可讀取同一協作文件。
+
+## LS1：Python 3.12.10 開發／打包環境檢查
+
+- Issue #87 的實作分支從 `B518-Log-Solution` HEAD `6aab05d` 開始；PR 尚待建立。開發入口和 macOS 15 arm64 打包入口共用環境檢查器，核對完整 Python 3.12.10、目前／目標架構、Tk、虛擬環境及 requirements（含遞迴 `-r`）套件固定版；維持 PyInstaller 6.16.0 及 PyObjC core／Cocoa／Quartz 11.1，不改 macOS 10.14／26 交付目標或權限門檻。
+- 新增開發環境建立、檢查與執行命令，明確說明 `git pull` 不會同步虛擬環境／套件。24 項環境與 bundle 檢查測試通過；真實 Python 3.12.10 x86_64 venv 套件檢查通過，要求 arm64 時正確拒絕。macOS 15 arm64 bundle／目標機驗收留待 LS8。
+- 詳見 [LS1 驗證紀錄](evidence/log-solution-improvements/ls1-validation.md)。
