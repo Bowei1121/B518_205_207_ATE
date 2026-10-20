@@ -7746,7 +7746,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
-    def test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects(self):
+    def test_awaiting_review_start_entrypoints_share_admission_without_side_effects(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
@@ -7758,6 +7758,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app.profiles = app.profiles.with_profile(replace(
                 dfu_profile, paths={"active": temporary, "final": temporary, "caseinfo": ""},
             ))
+            app._save_preferences()
+            preferences_before = (Path(temporary) / "preferences.json").read_bytes()
             sources = []
 
             def source_factory(callback):
@@ -7784,30 +7786,28 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.rounds.snapshot().state == RoundState.AWAITING_REVIEW)
                 original_round_id = app.rounds.snapshot().round_id
 
-                # The direct start method historically saves the newly selected profile
-                # and resets the board before RoundCoordinator returns the existing round.
+                # The button and both shortcuts share the same admission gate while a
+                # round awaits review; rejected starts must not persist changed settings.
                 app.station.set("DFU")
                 app._profile_changed()
-                app.start_monitor()
-                saved = json.loads((Path(temporary) / "preferences.json").read_text(encoding="utf-8"))
-                self.assertEqual(saved["machine"], "DFU")
+                app.start_button.invoke()
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
                 self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
 
-                # Both shortcut paths reject AWAITING_REVIEW before saving preferences.
                 app.station.set("FCT")
                 root.event_generate("<Command-Shift-M>")
                 root.update()
                 self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
-                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
-                    encoding="utf-8"))
-                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
 
                 app.station.set("DFU")
                 app.hotkey.callback()
                 root.update()
-                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
-                    encoding="utf-8"))
-                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
                 self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
             finally:
                 app.rounds.stop()
@@ -7937,7 +7937,7 @@ class LogSolutionUiTests(unittest.TestCase):
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
                     patch("b518_log_solution.show_notice") as show_error:
-                app.start_monitor()
+                app.start_button.invoke()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
             self.assertEqual(show_error.call_args.args[:2], (
@@ -8260,7 +8260,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("source access denied")), \
                         patch("b518_log_solution.show_notice") as show_error:
-                    app.start_monitor()
+                    app.start_button.invoke()
                     deadline = time.monotonic() + 3
                     while not show_error.called and time.monotonic() < deadline:
                         root.update()
