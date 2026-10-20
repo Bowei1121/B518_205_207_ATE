@@ -4865,13 +4865,14 @@ class B518LogSolutionApp:
             self._refresh_historical_event_window()
             self._schedule_historical_query_poll(window, view_generation, generation)
             return
+        previous_result = self._historical_query_result
         completion = self._historical_query_session.take_query_result(generation)
         if completion is None and self._historical_query_session.query_is_pending(generation):
             self._schedule_historical_query_poll(window, view_generation, generation)
             return
         self.historical_event_cancel_button.configure(state="disabled")
         if completion is not None and completion.succeeded:
-            if completion.result is self._historical_query_result:
+            if completion.result is previous_result:
                 preparation_error = completion.result.preparation_error
                 if preparation_error is not None:
                     self._historical_query_status_key = (

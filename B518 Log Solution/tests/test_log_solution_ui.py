@@ -9516,6 +9516,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     latest_result = app._historical_query_result
                     self.assertNotEqual(app._historical_query_status_key,
                                         "app.settings.history.query_failed")
+                    self.assertEqual(
+                        app.historical_event_list.size(), len(latest_result.events),
+                        "visible list must match newly published query")
 
                     set_dates(date(2026, 4, 1))
                     click(app.historical_event_refresh_button)
