@@ -5,7 +5,7 @@ Issue：[#94 — LS8：整體桌面驗收、打包與交付證據](https://githu
 ## 版本與執行環境
 
 - App 版本：`0.1.0`（`VERSION`）
-- App commit：以本文件所屬 PR head 為準；合併前可由 PR commit SHA 追溯。
+- App 整合 commit：`b24ab21c3bd498518fbff2a036e8e2d85dc5dd26`（PR [#102](https://github.com/Bowei1121/B518_205_207_ATE/pull/102) 的 merge commit）。完整套件在 PR head `f8043c608e73432e1a6551cc34bc7db1a7690639` 執行；該 head 與 merge commit 的 tree 相同，因此這份驗收記錄對應的整合版本可由上述 commit 重現。
 - 顯示契約：`1.3`，定義見 [`KVM_DISPLAY_CONTRACT.md`](../../KVM_DISPLAY_CONTRACT.md)。
 - Claude 橋接交接：[`CLAUDE_KVM_HANDOFF.md`](../../CLAUDE_KVM_HANDOFF.md)。交接描述的 bridge snapshot 尚宣告契約 `1.1`，跨專案配對／部署未驗收。
 - 主機：macOS `15.8.1`、`x86_64`（Intel）；M4/Apple Silicon 目標機未提供。
