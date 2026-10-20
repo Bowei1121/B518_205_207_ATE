@@ -13,15 +13,17 @@ OS_MAJOR="${OS_VERSION%%.*}"
 
 PYTHON_BIN="${PYTHON_BIN:-/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN (install Python.org 3.12.10 universal2 or set PYTHON_BIN)"; exit 1; }
-"$PYTHON_BIN" scripts/check_macos_build_python.py
+"$PYTHON_BIN" scripts/check_macos_build_python.py --exact-version 3.12.10
 
 export MACOSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_DEPLOYMENT_TARGET=15.0 CMAKE_OSX_ARCHITECTURES=arm64
 
 VENV=.venv-macos15_0-arm64-log-solution
 [[ -d "$VENV" ]] || "$PYTHON_BIN" -m venv "$VENV"
-"$VENV/bin/python" scripts/check_macos_build_python.py
+"$VENV/bin/python" scripts/check_macos_build_python.py --exact-version 3.12.10 --require-virtualenv
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
+"$VENV/bin/python" scripts/check_macos_build_python.py --exact-version 3.12.10 \
+  --requirements requirements/requirements-macos15-arm64.txt --require-virtualenv
 "$VENV/bin/python" scripts/check_macos_native_test_access.py
 B518_TK_TESTS=1 "$VENV/bin/python" scripts/run_tests.py
 

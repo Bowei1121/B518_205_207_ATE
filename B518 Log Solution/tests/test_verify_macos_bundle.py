@@ -1,11 +1,15 @@
+import os
+import platform
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 from types import SimpleNamespace
 
-from check_macos_build_python import check_python
+from check_macos_build_python import check_python, read_pinned_requirements
 from verify_macos_bundle import inspect_bundle, load_commands, version_tuple
 
 
@@ -163,10 +167,108 @@ class PythonPreflightTests(unittest.TestCase):
         errors = check_python((3, 11, 9), "x86_64", lambda name: None)
         self.assertEqual(len(errors), 2)
 
+    def test_exact_patch_version_is_enforced_when_requested(self):
+        errors = check_python((3, 12, 9), "arm64", lambda name: None,
+                              required_version=(3, 12, 10))
+        self.assertTrue(any("Python 3.12.10 required" in error for error in errors))
+        self.assertEqual(check_python((3, 12, 10), "arm64", lambda name: None,
+                                      required_version=(3, 12, 10)), [])
+
+    def test_pinned_packages_are_checked_against_the_active_interpreter(self):
+        versions = {"pyinstaller": "6.16.0", "pyobjc-core": "11.0"}
+
+        def package_version(name):
+            try:
+                return versions[name]
+            except KeyError:
+                from importlib.metadata import PackageNotFoundError
+                raise PackageNotFoundError(name)
+
+        errors = check_python((3, 12, 10), "arm64", lambda name: None,
+                              required_version=(3, 12, 10),
+                              required_packages=(("pyinstaller", "6.16.0"),
+                                                 ("pyobjc-core", "11.1"),
+                                                 ("pyobjc-framework-cocoa", "11.1")),
+                              package_version=package_version)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(any("pyobjc-core==11.1 required; found 11.0" in error for error in errors))
+        self.assertTrue(any("Missing pyobjc-framework-cocoa==11.1" in error for error in errors))
+
+    def test_virtual_environment_requirement_is_enforced(self):
+        errors = check_python((3, 12, 10), "arm64", lambda name: None,
+                              required_version=(3, 12, 10), in_virtualenv=False,
+                              require_virtualenv=True)
+        self.assertTrue(any("virtual environment is required" in error for error in errors))
+        self.assertEqual(check_python((3, 12, 10), "arm64", lambda name: None,
+                                      required_version=(3, 12, 10), in_virtualenv=True,
+                                      require_virtualenv=True), [])
+
+    def test_requirements_file_includes_are_resolved_and_pins_are_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "base.txt").write_text("pyobjc_core==11.1\n", encoding="utf-8")
+            (root / "macos15.txt").write_text(
+                "pyinstaller==6.16.0\n-r base.txt\n", encoding="utf-8")
+            self.assertEqual(read_pinned_requirements(root / "macos15.txt"), [
+                ("pyinstaller", "6.16.0"), ("pyobjc-core", "11.1")])
+
     def test_missing_tk(self):
         def missing(name):
             raise ModuleNotFoundError("No module named '_tkinter'")
         self.assertIn("Tk unavailable", check_python((3, 12, 10), "arm64", missing)[0])
+
+
+@unittest.skipUnless(platform.system() == "Darwin" and sys.version_info[:3] == (3, 12, 10),
+                     "desktop launcher integration requires macOS and Python 3.12.10")
+class DesktopLauncherTests(unittest.TestCase):
+    app_dir = Path(__file__).resolve().parents[1]
+    launcher = app_dir / "scripts" / "run_macos_desktop.sh"
+
+    def run_launcher(self, python_bin):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("VIRTUAL_ENV", None)
+        env["PYTHON_BIN"] = str(python_bin)
+        return subprocess.run(
+            ["bash", str(self.launcher), "-c", 'print("APPLICATION_REACHED")'],
+            cwd=self.app_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_launcher_rejects_missing_and_wrong_pins_before_running_app(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "empty-venv"
+            venv.EnvBuilder(with_pip=False).create(environment)
+            site_packages = environment / "lib" / "python3.12" / "site-packages"
+            wrong_version = site_packages / "pyinstaller-0.0.dist-info"
+            wrong_version.mkdir()
+            (wrong_version / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: pyinstaller\nVersion: 0.0\n", encoding="utf-8")
+
+            result = self.run_launcher(environment / "bin" / "python")
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("pyinstaller==6.16.0 required; found 0.0", output)
+        self.assertIn("Missing pyobjc-core==11.1", output)
+        self.assertIn("Missing pyobjc-framework-cocoa==11.1", output)
+        self.assertIn("Missing pyobjc-framework-quartz==11.1", output)
+        self.assertNotIn("APPLICATION_REACHED", output)
+
+    def test_launcher_rejects_global_python_before_running_app(self):
+        global_python = Path(sys.base_prefix) / "bin" / "python3.12"
+        if not global_python.is_file():
+            self.skipTest("base Python executable is not available")
+
+        result = self.run_launcher(global_python)
+        output = result.stdout + result.stderr
+
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("A Python virtual environment is required", output)
+        self.assertNotIn("APPLICATION_REACHED", output)
 
 
 if __name__ == "__main__":
