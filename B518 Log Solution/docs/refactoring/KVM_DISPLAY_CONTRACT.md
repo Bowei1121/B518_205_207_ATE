@@ -70,3 +70,13 @@ The LS6 heartbeat acceptance evidence is in `evidence/ls6-heartbeat/README.md`, 
 ## Compatibility and scope
 
 Version 1.1 predates the left locator at x=0 and has no PREPARING or MANUAL_STOP_COMPLETE state. Version 1.2 does not include the heartbeat marker. Their samples and consumers remain historical and are not rewritten as 1.3 evidence. Do not send version 1.3 frames to an older consumer as if the versions were compatible. The `B518_JetKVM_Log` project owns its own recognition and bridge behavior; `monitor_start`, `check_start`, and `check_finish` are implemented there. Log Solution does not add TCP commands, ACK handling, JetKVM recognition, Dock automation, LabVIEW behavior, or field ATE validation.
+
+## LS7 handoff status (2026-10-20)
+
+Version 1.3 is the frozen **App-side local contract** for the merged timer and heartbeat behavior. It is not a remotely validated pixel contract. See [`CLAUDE_KVM_HANDOFF.md`](CLAUDE_KVM_HANDOFF.md) and [`evidence/ls7-kvm/README.md`](evidence/ls7-kvm/README.md) for the consumer handoff and evidence status. The 12×12 remote-pixel threshold has not been measured, so the available evidence does not justify enlarging either marker.
+
+The monitoring timer is outside the `KVM` result-band frame. It is the right-aligned `monitor_elapsed` label in `monitor_status_row`, rendered in bold Menlo at `MAIN_FONT_SIZE` (currently 14 Tk points). Its text is `MM:SS`: seconds are `00–59`, minutes have a minimum width of two digits and continue without an upper limit, with no hours field or sub-second digits. The label width follows its rendered text. A consumer must crop the visible label from each actual capture; these dynamic Tk layout values do not define remote capture coordinates.
+
+App-side marker classification uses grayscale threshold 128 with a 96-level minimum contrast: black samples are at most 80 and white samples at least 176; values between them are unknown. These are local helper defaults, not remote compression tolerances. Result-cell colors are defined in `src/b518_log_solution.py`; the machine-readable values and sample matrix are in the LS7 handoff evidence. Remote color tolerances remain unvalidated.
+
+At one observation per second, heartbeat values are expected to advance by two modulo 16 while the state pattern and result snapshot remain semantically stable. A three-sample stable-state window spans about two seconds, but its raw images are **not pixel-identical**: the heartbeat changes every 500 ms and the timer may also change. A byte-identical repeated capture is a stale/frozen candidate, not the definition of three healthy observations. This sampling interpretation still needs validation against real JetKVM frames.
