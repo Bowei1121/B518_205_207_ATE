@@ -17,6 +17,7 @@ from historical_event_query import (HistoricalEventDateError, HistoricalEventDat
                                     HistoricalEventQueryResult,
                                     HistoricalEventDetailService,
                                     HistoricalEventQueryService,
+                                    HistoricalEventQuerySession,
                                     HistoricalEventSnapshotUnavailable,
                                     parse_historical_event_date_range,
                                     query_historical_events,
@@ -2741,6 +2742,95 @@ class HistoricalEventQueryTests(unittest.TestCase):
             self.assertEqual((audit.audit_path.read_bytes(), legacy_path.read_bytes(),
                               app_store.path.read_bytes()), before)
             app_store.stop()
+
+    def test_query_session_owns_snapshot_and_routes_page_detail_cancel_and_close(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._write_audit(root / "sessions", ["2026-10-13T10:00:00+00:00"])
+            session = HistoricalEventQuerySession(
+                root / "sessions", None,
+                index_path=root / "historical-event-query-index.sqlite3")
+            try:
+                view_generation = session.open_view()
+                query_generation = session.submit(HistoricalEventDateRange(
+                    date(2026, 10, 13), date(2026, 10, 13)))
+                initial = None
+                deadline = time.monotonic() + 3
+                while initial is None and time.monotonic() < deadline:
+                    initial = session.take_initial_result(query_generation)
+                    if initial is None:
+                        time.sleep(0.01)
+                self.assertIsNotNone(initial)
+                self.assertTrue(initial.succeeded)
+                result = initial.result
+                self.assertIs(session.result, result)
+                self.assertEqual(session.view_generation, view_generation)
+
+                completion = None
+                deadline = time.monotonic() + 3
+                while completion is None and time.monotonic() < deadline:
+                    completion = session.take_query_result(query_generation)
+                    if completion is None:
+                        time.sleep(0.01)
+                self.assertIsNotNone(completion)
+                self.assertIs(completion.result, result)
+
+                page_request = session.submit_page(1)
+                page = None
+                deadline = time.monotonic() + 3
+                while page is None and time.monotonic() < deadline:
+                    page = session.take_page_result(page_request)
+                    if page is None:
+                        time.sleep(0.01)
+                self.assertTrue(page.succeeded)
+                self.assertEqual(page.page.events[0].key, "round:round-1:1")
+
+                detail_request = session.submit_detail("round:round-1:1")
+                detail = None
+                deadline = time.monotonic() + 3
+                while detail is None and time.monotonic() < deadline:
+                    detail = session.take_detail_result(detail_request)
+                    if detail is None:
+                        time.sleep(0.01)
+                self.assertTrue(detail.succeeded)
+                self.assertEqual(detail.event.key, "round:round-1:1")
+
+                replaced_generation = session.submit(HistoricalEventDateRange(
+                    date(2026, 10, 14), date(2026, 10, 14)))
+                self.assertTrue(session.cancel_query(replaced_generation))
+                self.assertIs(session.result, result)
+                self.assertEqual(result.get_detail("round:round-1:1").key,
+                                 "round:round-1:1")
+
+                detail_entered, release_detail = threading.Event(), threading.Event()
+                original_get_detail = HistoricalEventQueryResult.get_detail
+
+                def held_detail(query_result, event_key):
+                    detail_entered.set()
+                    if not release_detail.wait(3):
+                        raise RuntimeError("controlled session detail gate timed out")
+                    return original_get_detail(query_result, event_key)
+
+                with unittest.mock.patch.object(HistoricalEventQueryResult, "get_detail",
+                                                 held_detail):
+                    session.submit_detail("round:round-1:1")
+                    self.assertTrue(detail_entered.wait(2))
+                    snapshot_path = result._store_path
+                    session.close_view()
+                    self.assertTrue(snapshot_path.is_file())
+                    release_detail.set()
+                    deadline = time.monotonic() + 3
+                    while (session._detail_service._worker is not None and
+                           time.monotonic() < deadline):
+                        time.sleep(0.01)
+                    self.assertIsNone(session._detail_service._worker)
+                    self.assertFalse(snapshot_path.exists())
+                self.assertIsNone(session.result)
+                self.assertGreater(session.view_generation, view_generation)
+                with self.assertRaises(RuntimeError):
+                    result.get_page(1)
+            finally:
+                session.shutdown()
 
 
 if __name__ == "__main__":

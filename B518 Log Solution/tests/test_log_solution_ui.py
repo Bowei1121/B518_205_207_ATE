@@ -12144,7 +12144,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     # through the visible Cancel button while its source read is gated.
                     previous_result = app._historical_query_result
                     query_entered, release_query = threading.Event(), threading.Event()
-                    query_function = app._historical_query_service._query_function
+                    query_function = app._historical_query_session._query_service._query_function
 
                     def gated_query(*args, **kwargs):
                         query_entered.set()
@@ -12152,7 +12152,7 @@ class LogSolutionUiTests(unittest.TestCase):
                             raise RuntimeError("controlled QP3 requery gate timed out")
                         return query_function(*args, **kwargs)
 
-                    app._historical_query_service._query_function = gated_query
+                    app._historical_query_session._query_service._query_function = gated_query
                     self.click_tk_widget(root, app.historical_event_refresh_button)
                     self.wait_for_ui(root, query_entered.is_set)
                     self.assertIs(app._historical_query_result, previous_result)
@@ -12161,7 +12161,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertIs(app._historical_query_result, previous_result)
                     release_query.set()
                     self.wait_for_ui(
-                        root, lambda: app._historical_query_service._worker is None)
+                        root, lambda: app._historical_query_session._query_service._worker is None)
                     root.update()
                     self.assertIs(app._historical_query_result, previous_result)
                     self.assertEqual(audit_path.read_bytes(), source_bytes)
@@ -12338,7 +12338,7 @@ class LogSolutionUiTests(unittest.TestCase):
             app = B518LogSolutionApp(
                 root, hotkey_factory=FakeHotkey, session_root=sessions,
                 app_event_path=root_path / "app-events.json")
-            app._historical_query_service._index_path = None
+            app._historical_query_session._query_service._index_path = None
             try:
                 self.wait_for(lambda: app.app_events.status().complete)
                 app.open_historical_events()
