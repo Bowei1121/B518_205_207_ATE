@@ -1,0 +1,50 @@
+{
+  "evidence_kind": "local-only fixtures; not JetKVM capture evidence",
+  "normal_local_frame": {
+    "image": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png",
+    "sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd",
+    "dimensions_pixels": [752, 1672],
+    "capture_kind": "native mapped Tk window on local macOS desktop",
+    "displayed_state": "standby",
+    "heartbeat": "0000",
+    "timer": "00:00",
+    "remote_measurement": false
+  },
+  "frozen_local_replay": {
+    "source_image": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png",
+    "source_sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd",
+    "observations": [
+      {"sequence": 1, "image_sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd", "heartbeat": "0000"},
+      {"sequence": 2, "image_sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd", "heartbeat": "0000"},
+      {"sequence": 3, "image_sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd", "heartbeat": "0000"}
+    ],
+    "interpretation": "offline repeat of one local screenshot; stale-frame detector fixture only",
+    "heartbeat_region_observation": "same readable local heartbeat crop in all three replay entries",
+    "whole_frame_identity_is_required_for_heartbeat_rule": false,
+    "illustrates_heartbeat_anomaly_input": true,
+    "jetkvm_presentation_timestamps": null,
+    "remote_measurement": false
+  },
+  "expected_healthy_one_second_observations": {
+    "heartbeat_states_from_phase_zero": ["0000", "0010", "0100"],
+    "basis": "contract-derived expectation (+2 mod 16); explanatory only, not required decoding or a captured time series",
+    "remote_measurement": false
+  },
+  "heartbeat_anomaly_rule": {
+    "region": "heartbeat cells only",
+    "same_heartbeat_region_observations": 3,
+    "nominal_observation_interval_seconds": 1,
+    "first_to_third_span_seconds": 2,
+    "require_four_cell_numeric_decoding": false,
+    "unrelated_timer_state_result_or_compression_bytes_changed": "does not cancel identical-heartbeat finding",
+    "freshness_and_readability_required": true,
+    "remote_measurement": false
+  },
+  "unavailable_remote_samples": [
+    "normal live JetKVM stream",
+    "frozen JetKVM stream with source presentation timestamps",
+    "state-marker-occluded stream",
+    "heartbeat-marker-occluded stream",
+    "result-cell-occluded stream"
+  ]
+}

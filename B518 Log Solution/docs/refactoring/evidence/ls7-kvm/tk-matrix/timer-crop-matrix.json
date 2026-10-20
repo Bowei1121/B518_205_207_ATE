@@ -1,0 +1,946 @@
+[
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 1,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        516,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1032,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-1-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        516,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1032,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-1-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 1,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        516,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1032,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-1-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        516,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1032,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-1-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 10,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        704,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1408,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-10-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        704,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1408,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-10-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 10,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        704,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1408,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-10-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        704,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1408,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-10-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 11,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-11-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-11-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 11,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-11-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-11-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 20,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-20-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-20-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 0.9999999999999999,
+    "capacity": 20,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-20-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p0-capacity-20-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 1,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        516,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1032,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-1-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        516,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1032,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-1-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 1,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        516,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1032,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-1-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        516,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1032,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-1-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1240
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 10,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        704,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1408,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-10-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        704,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1408,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-10-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 10,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        704,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1408,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-10-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        704,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1408,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-10-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1616
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 11,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-11-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-11-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 11,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-11-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-11-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 20,
+    "language": "en",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-20-en-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-20-en-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  },
+  {
+    "tk_scaling": 1.4985250737463125,
+    "capacity": 20,
+    "language": "zh-TW",
+    "normal": {
+      "text": "00:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        324,
+        731,
+        44,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        648,
+        1462,
+        88,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-20-zh-TW-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    },
+    "long_minutes": {
+      "text": "600:00",
+      "widget_bounds_tk_relative_to_content_view": [
+        316,
+        731,
+        52,
+        20
+      ],
+      "capture_roi_pixels_relative_to_content_view": [
+        632,
+        1462,
+        104,
+        40
+      ],
+      "capture_image": "li7-s1p5-capacity-20-zh-TW-timer-600m-view-cache.png",
+      "capture_dimensions_pixels": [
+        752,
+        1670
+      ],
+      "physical_pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "font": "Menlo 14 bold",
+      "foreground": "#111827",
+      "anchor": "e"
+    }
+  }
+]

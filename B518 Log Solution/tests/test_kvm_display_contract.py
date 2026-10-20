@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -9,12 +10,14 @@ from kvm_display_contract import (
     KVM_FIRST_ROW_Y,
     KVM_CELL_STEP,
     KVM_CELL_WIDTH,
+    KVM_CELL_HEIGHT,
     KVM_COLUMN_COUNT,
     KVM_ROW_STEP,
     LOCATOR_LEFT,
     LOCATOR_RIGHT,
     LOCATOR_SIZE,
     LOCATOR_WHITE_SIZE,
+    LAYOUT_MARKER_ORIGIN,
     MARKER_PATTERNS,
     MARKER_SIZE,
     STATE_MARKER_ORIGIN,
@@ -159,8 +162,30 @@ class KvmDisplayContractTests(unittest.TestCase):
         self.assertIn("(250, 0)", contract)
         self.assertIn("(278, 0)", contract)
         self.assertIn("(130, 2)", contract)
+
+    def test_ls7_machine_readable_handoff_matches_app_contract_constants(self):
+        path = (Path(__file__).resolve().parents[1] / "docs" / "refactoring" /
+                "evidence" / "ls7-kvm" / "contract.json")
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(contract["contract_version"], CONTRACT_VERSION)
+        self.assertEqual(tuple(contract["markers"]["state"]["origin"]),
+                         STATE_MARKER_ORIGIN)
+        self.assertEqual(tuple(contract["markers"]["heartbeat"]["origin"]),
+                         HEARTBEAT_MARKER_ORIGIN)
+        self.assertEqual(contract["markers"]["heartbeat"]["interval_ms"], 500)
+        self.assertEqual(tuple(contract["locators"]["left_origin"]), LOCATOR_LEFT)
+        self.assertEqual(tuple(contract["locators"]["right_origin"]), LOCATOR_RIGHT)
+        self.assertEqual(tuple(contract["row_rail"]["origin"]), LAYOUT_MARKER_ORIGIN)
+        self.assertEqual(tuple(contract["result_strip"]["first_cell_origin"]),
+                         (0, KVM_FIRST_ROW_Y))
+        self.assertEqual(contract["result_strip"]["cell_size"],
+                         [KVM_CELL_WIDTH, KVM_CELL_HEIGHT])
+        self.assertEqual(contract["sampling_handoff"]["expected_heartbeat_delta_per_sample"], 2)
+        self.assertTrue(contract["remote_measurement"][
+            "local_pixel_scale_must_not_be_used_as_remote_scale"])
         self.assertNotIn("KVM RESULT", contract)
-        self.assertIn("MANUAL_STOP_COMPLETE", contract)
+        self.assertIn("MANUAL_STOP_COMPLETE",
+                      contract["markers"]["state"]["state_names"])
 
     def test_handoff_labels_local_monitoring_and_external_activity_owners(self):
         handoff = (Path(__file__).resolve().parents[2] / "docs" / "refactoring" /
