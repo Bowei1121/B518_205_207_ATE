@@ -420,6 +420,7 @@ def read_round_audit(path: Path) -> dict:
     round_cancelled = False
     state = "READY"
     completion_reason = ""
+    monitoring_elapsed_seconds = None
     alarms = {}
     conflicts = {}
     save_failure_pending = False
@@ -468,6 +469,12 @@ def read_round_audit(path: Path) -> dict:
         elif kind == "collection_stopped":
             collection_stopped = True
             completion_reason = event.get("detail", {}).get("reason", "")
+            elapsed = event["detail"].get("monitoring_elapsed_seconds")
+            if elapsed is not None:
+                if (not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool)
+                        or not math.isfinite(elapsed) or elapsed < 0):
+                    raise AuditRecordError("輪次監控耗時格式不正確")
+                monitoring_elapsed_seconds = float(elapsed)
         elif kind == "stopped":
             collection_stopped = True
             manual_stop = True
@@ -504,6 +511,7 @@ def read_round_audit(path: Path) -> dict:
             completion_reason = event.get("detail", {}).get("completion_reason", "")
     return {"round": header, "events": events, "results": results,
             "collection_stopped": collection_stopped, "manual_stop": manual_stop,
+            "monitoring_elapsed_seconds": monitoring_elapsed_seconds,
             "result_available": released, "state": state, "completion_reason": completion_reason,
             "alarms": alarms, "conflicts": conflicts,
             "audit_complete": all(event["sequence"] == index

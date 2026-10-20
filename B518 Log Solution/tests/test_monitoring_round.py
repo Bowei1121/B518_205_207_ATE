@@ -1,6 +1,7 @@
 import csv
 import gc
 import io
+import json
 import os
 import tempfile
 import threading
@@ -167,6 +168,90 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_completed_round_stops_timer_before_review_and_archive_wait(self):
+        elapsed = [20.0]
+        holder = {}
+        with tempfile.TemporaryDirectory() as temporary:
+            audit_root = Path(temporary) / "audit"
+
+            def factory(callback):
+                monitor = DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,))
+                holder["monitor"] = monitor
+                return monitor
+
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=audit_root)
+            started = rounds.start("FCT", factory, run_async=False, capacity=1)
+            elapsed[0] = 930.0
+            holder["monitor"].apply_round_result(
+                1, "PASS", "SERIAL000001", "final.csv",
+                {"round_evidence_id": "round-timer-normal", "source_time": "2026-10-20T10:00:00"})
+            completed = rounds.poll_once()
+
+            self.assertEqual(completed.state.value, "COMPLETED")
+            self.assertTrue(completed.collection_stopped)
+            self.assertEqual(completed.monitoring_elapsed_seconds, 910.0)
+            elapsed[0] = 5000.0
+            self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 910.0)
+            self.assertTrue(rounds.flush_audit(timeout=3))
+
+            audit = read_round_audit(audit_root / started.round_id / "audit.jsonl")
+            self.assertEqual(audit["monitoring_elapsed_seconds"], 910.0)
+            self.assertEqual(audit["round"]["round_id"], started.round_id)
+            stopped_event = next(event for event in audit["events"]
+                                 if event["kind"] == "collection_stopped")
+            self.assertEqual(stopped_event["detail"]["monitoring_elapsed_seconds"], 910.0)
+
+            next_round = rounds.start("FCT", factory, run_async=False, capacity=1)
+            self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+            next_stopped = rounds.stop()
+            self.assertEqual(next_stopped.monitoring_elapsed_seconds, 0.0)
+            self.assertTrue(rounds.flush_audit(timeout=3))
+
+    def test_monitoring_elapsed_includes_preparation_then_freezes_and_round_trips(self):
+        entered = threading.Event()
+        release = threading.Event()
+        elapsed = [100.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            audit_root = Path(temporary) / "audit"
+
+            def factory(callback):
+                entered.set()
+                release.wait(3)
+                return DeadlineMonitor(callback, lambda: elapsed[0], slots=(1,))
+
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=audit_root)
+            started = rounds.start("FCT", factory, run_async=True)
+            self.assertTrue(entered.wait(2))
+            elapsed[0] = 161.25
+            self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 61.25)
+
+            stopped = rounds.stop()
+            self.assertEqual(stopped.monitoring_elapsed_seconds, 61.25)
+            elapsed[0] = 1000.0
+            self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 61.25)
+            release.set()
+            deadline = time.monotonic() + 2
+            while rounds.snapshot().source_preparation_pending and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(rounds.snapshot().source_preparation_pending)
+            self.assertTrue(rounds.flush_audit(timeout=3))
+
+            audit_path = audit_root / started.round_id / "audit.jsonl"
+            rebuilt = read_round_audit(audit_path)
+            self.assertEqual(rebuilt["monitoring_elapsed_seconds"], 61.25)
+            stop_event = next(event for event in rebuilt["events"]
+                              if event["kind"] == "collection_stopped")
+            self.assertEqual(stop_event["detail"]["monitoring_elapsed_seconds"], 61.25)
+
+            records = [json.loads(line) for line in audit_path.read_text().splitlines()]
+            for event in records[1:]:
+                if event["kind"] == "collection_stopped":
+                    event["detail"].pop("monitoring_elapsed_seconds")
+            audit_path.write_text("".join(json.dumps(record) + "\n" for record in records))
+            legacy = read_round_audit(audit_path)
+            self.assertIsNone(legacy["monitoring_elapsed_seconds"])
+        release.set()
+
     def _persist_start_failure(self, audit_root, app_path, round_id, session_path=None):
         store = AppEventStore(app_path)
         recorder = RoundCoordinator(audit_root=audit_root)
@@ -290,6 +375,9 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(conflict.original.sn, "SERIAL000001")
         self.assertEqual(conflict.candidate.sn, "SERIAL000099")
         self.assertEqual(conflict.candidate.source_time, "2026-10-02T10:00:03")
+        elapsed[0] = 90.0
+        self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 90.0)
+        self.assertFalse(rounds.snapshot().collection_stopped)
 
     def test_each_same_slot_candidate_is_resolved_independently_in_user_selected_order(self):
         def run_choices(choices):

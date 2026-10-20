@@ -159,6 +159,7 @@ class RoundSnapshot:
     start_failure: Optional[StartFailureSnapshot] = None
     source_ready: bool = False
     cancellation_available: bool = False
+    monitoring_elapsed_seconds: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,7 @@ class MonitoringRound:
         self._started = False
         self._stop_requested = False
         self._collection_stopped = False
+        self._monitoring_elapsed_seconds: Optional[float] = None
         self._completion_reason = ""
         self._manual_stop_released = False
         self._cancelled_results: Optional[Tuple[RoundResult, ...]] = None
@@ -286,6 +288,11 @@ class MonitoringRound:
                     self._prepared_event.set()
             return self.snapshot()
 
+    def _elapsed_seconds_locked(self) -> float:
+        if self._monitoring_elapsed_seconds is not None:
+            return self._monitoring_elapsed_seconds
+        return max(0.0, self._monotonic() - self._started_monotonic)
+
     def poll_once(self) -> RoundSnapshot:
         """Read one deterministic source batch, then apply due deadlines."""
         with self._poll_lock:
@@ -329,6 +336,7 @@ class MonitoringRound:
                 if monitor is None:
                     self._state = RoundState.STOPPED
                     self._collection_stopped = True
+                    self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
                     self._completion_reason = "manual_stop"
                     self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
                     self._preparation_results = tuple(
@@ -359,7 +367,8 @@ class MonitoringRound:
                 self._append_event(MonitorEvent(
                     "collection_stopped", "{} 已停止讀取本輪來源（manual_stop）".format(self.station),
                     detail={"round_id": self.round_id, "reason": "manual_stop",
-                            "collection_stopped_at": self._collection_stopped_at},
+                            "collection_stopped_at": self._collection_stopped_at,
+                            "monitoring_elapsed_seconds": self._monitoring_elapsed_seconds},
                 ))
                 self._append_event(MonitorEvent(
                     "stopped", "{} 監控已由人員停止".format(self.station),
@@ -585,6 +594,7 @@ class MonitoringRound:
                 self._retry_in_progress,
                 source_ready=self._source_ready,
                 cancellation_available=cancellation_available,
+                monitoring_elapsed_seconds=self._elapsed_seconds_locked(),
             )
 
     def finalize_close_snapshot(self) -> RoundSnapshot:
@@ -802,6 +812,7 @@ class MonitoringRound:
                 return
             self._state = RoundState.AWAITING_REVIEW
             self._collection_stopped = True
+            self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
             self._completion_reason = "start_failed"
             self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
             # Failed source setup has no Session to wait for. The audit journal
@@ -810,7 +821,8 @@ class MonitoringRound:
         self._append_event(MonitorEvent(
             "collection_stopped", "{} 啟動失敗後停止收集".format(self.station),
             detail={"round_id": self.round_id, "reason": "start_failed",
-                    "collection_stopped_at": self._collection_stopped_at},
+                    "collection_stopped_at": self._collection_stopped_at,
+                    "monitoring_elapsed_seconds": self._monitoring_elapsed_seconds},
         ))
         self._receive_monitor_event(MonitorEvent(
             "start_failed", "無法準備監控來源：{}".format(error),
@@ -1007,6 +1019,7 @@ class MonitoringRound:
                 return
             self._preparation_deadline_expired = True
             self._collection_stopped = True
+            self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
             reason = "start_deadline_no_activity" if start_deadline else "round_deadline"
             self._completion_reason = reason
             self._collection_stopped_at = created_at
@@ -1054,7 +1067,8 @@ class MonitoringRound:
         deadline_reason = alarm.reason if alarm else "round_deadline"
         detail = {"round_id": self.round_id, "reason": deadline_reason,
                   "collection_stopped_at": self._collection_stopped_at or
-                  (alarm.created_at if alarm else self._wall_clock().isoformat(timespec="seconds"))}
+                  (alarm.created_at if alarm else self._wall_clock().isoformat(timespec="seconds")),
+                  "monitoring_elapsed_seconds": self._elapsed_seconds_locked()}
         if alarm:
             detail["alarm_id"] = alarm.alarm_id
         self._publish_round_event(MonitorEvent(
@@ -1176,6 +1190,7 @@ class MonitoringRound:
             if self._collection_stopped or self._monitor is None:
                 return
             self._collection_stopped = True
+            self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
             self._completion_reason = reason
             self._collection_stopped_at = self._wall_clock().isoformat(timespec="seconds")
             monitor = self._monitor
@@ -1184,6 +1199,7 @@ class MonitoringRound:
             "round_id": self.round_id,
             "reason": reason,
             "collection_stopped_at": self._collection_stopped_at,
+            "monitoring_elapsed_seconds": self._monitoring_elapsed_seconds,
         }
         if self._round_alarm is not None:
             detail["alarm_id"] = self._round_alarm.alarm_id
@@ -1315,10 +1331,14 @@ class MonitoringRound:
                 self._result_evidence[event.slot] = dict(event.detail)
             if event.kind == "finished" and self._completion_reason != "unverified_round_cancelled":
                 self._state = RoundState.COMPLETED
+                if not self._collection_stopped:
+                    self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
                 self._collection_stopped = True
                 self._completion_reason = event.detail.get("completion_reason", "results_terminal")
             elif event.kind == "stopped" and self._completion_reason != "unverified_round_cancelled":
                 self._state = RoundState.STOPPED
+                if not self._collection_stopped:
+                    self._monitoring_elapsed_seconds = self._elapsed_seconds_locked()
                 self._collection_stopped = True
                 if self._completion_reason not in {
                         "start_failed", "unverified_round_cancelled"}:
