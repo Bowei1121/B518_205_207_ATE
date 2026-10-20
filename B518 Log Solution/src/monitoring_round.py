@@ -329,7 +329,9 @@ class MonitoringRound:
                 if self._state not in {RoundState.PREPARING, RoundState.RUNNING,
                                        RoundState.AWAITING_REVIEW}:
                     return self.snapshot()
-                if self._completion_reason == "manual_stop" and self._collection_stopped:
+                # A deadline or another terminal path may still be awaiting
+                # operator review. Stopping again must not relabel that outcome.
+                if self._collection_stopped:
                     return self.snapshot()
                 self._stop_requested = True
                 monitor = self._monitor
@@ -805,7 +807,10 @@ class MonitoringRound:
 
     def _fail_start(self, error: Exception) -> None:
         with self._lock:
-            if self._completion_reason in {"manual_stop", "start_deadline_no_activity"}:
+            if self._collection_stopped:
+                # Source preparation can finish after manual stop, deadline,
+                # or explicit cancellation. Its late failure belongs to the
+                # discarded preparation attempt and cannot rewrite this round.
                 self._monitor_persistence_ready = True
                 if self._preparation_deadline_expired:
                     self._round_alarm_ready = True

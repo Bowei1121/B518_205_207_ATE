@@ -168,6 +168,243 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_stopping_after_deadline_preserves_the_deadline_reason_and_frozen_time(self):
+        elapsed = [40.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=Path(temporary))
+            started = rounds.start(
+                "FCT", lambda callback: DeadlineMonitor(callback, lambda: elapsed[0],
+                                                        slots=(1,), start=5, round_limit=30),
+                run_async=False, start_timeout_seconds=5, round_timeout_seconds=30, capacity=1,
+            )
+            elapsed[0] = 47.25
+            expired = rounds.poll_once()
+            self.assertEqual(expired.monitoring_elapsed_seconds, 7.25)
+            self.assertEqual(expired.completion_reason, "start_deadline_no_activity")
+
+            elapsed[0] = 400.0
+            stopped_again = rounds.stop()
+            repeated = rounds.stop()
+
+            self.assertEqual(stopped_again.completion_reason, "start_deadline_no_activity")
+            self.assertEqual(stopped_again.monitoring_elapsed_seconds, 7.25)
+            self.assertEqual(repeated.completion_reason, "start_deadline_no_activity")
+            self.assertEqual(repeated.monitoring_elapsed_seconds, 7.25)
+            self.assertTrue(rounds.flush_audit(3))
+            audit = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
+            collection = next(event for event in audit["events"]
+                              if event["kind"] == "collection_stopped")
+            self.assertEqual(collection["detail"]["reason"], "start_deadline_no_activity")
+            self.assertEqual(collection["detail"]["monitoring_elapsed_seconds"], 7.25)
+            self.assertEqual(audit["monitoring_elapsed_seconds"], 7.25)
+            rounds.acknowledge_round_alarm(started.round_id, expired.round_alarm.alarm_id)
+            self.assertEqual(rounds.snapshot().completion_reason, "start_deadline_no_activity")
+            self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 7.25)
+            rounds.request_close()
+            deadline = time.monotonic() + 3
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+
+    def test_late_source_failure_after_cancel_keeps_the_cancelled_round_frozen(self):
+        elapsed = [80.0]
+        source_entered = threading.Event()
+        release_source = threading.Event()
+
+        def fail_after_release(_callback):
+            source_entered.set()
+            if not release_source.wait(5):
+                raise AssertionError("source factory was not released")
+            raise OSError("late source failure")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=Path(temporary))
+            try:
+                started = rounds.start("FCT", fail_after_release, run_async=True, capacity=1)
+                self.assertTrue(source_entered.wait(2))
+                elapsed[0] = 87.5
+                stopped = rounds.stop()
+                self.assertEqual(stopped.monitoring_elapsed_seconds, 7.5)
+                self.assertTrue(rounds.cancel_unverified_round(started.round_id, "operator verified"))
+                elapsed[0] = 900.0
+                old_round = rounds._tracked_rounds[started.round_id]
+
+                next_round = rounds.start(
+                    "FCT", lambda callback: FakeMonitor(callback), run_async=False, capacity=1
+                )
+                self.assertNotEqual(next_round.round_id, started.round_id)
+                self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+                elapsed[0] = 904.25
+                release_source.set()
+
+                deadline = time.monotonic() + 3
+                while (old_round.snapshot().source_preparation_pending and
+                       time.monotonic() < deadline):
+                    time.sleep(0.01)
+                settled = old_round.snapshot()
+
+                self.assertFalse(settled.source_preparation_pending)
+                self.assertEqual(settled.completion_reason, "unverified_round_cancelled")
+                self.assertEqual(settled.monitoring_elapsed_seconds, 7.5)
+                self.assertFalse(any(event.event.kind == "start_failed" for event in settled.events))
+                current = rounds.snapshot()
+                self.assertEqual(current.round_id, next_round.round_id)
+                self.assertEqual(current.monitoring_elapsed_seconds, 4.25)
+                self.assertTrue(old_round.flush_audit(3))
+                audit = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
+                collection = next(event for event in audit["events"]
+                                  if event["kind"] == "collection_stopped")
+                cancellation = next(event for event in audit["events"]
+                                    if event["kind"] == "round_cancelled")
+                self.assertEqual(collection["detail"]["reason"], "manual_stop")
+                self.assertEqual(collection["detail"]["monitoring_elapsed_seconds"], 7.5)
+                self.assertEqual(cancellation["detail"]["prior_reason"], "manual_stop")
+                self.assertEqual(audit["completion_reason"], "unverified_round_cancelled")
+            finally:
+                release_source.set()
+                rounds.request_close()
+                deadline = time.monotonic() + 5
+                while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(rounds.close_status().status, "complete")
+
+    def test_failed_stop_event_write_retries_once_with_original_round_and_frozen_time(self):
+        elapsed = [100.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=root)
+            started = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            old_round = rounds._tracked_rounds[started.round_id]
+            self.assertTrue(rounds.flush_audit(3))
+            elapsed[0] = 112.75
+            original_write = audit_records.os.write
+            failed = threading.Event()
+            retry_entered = threading.Event()
+            release_retry = threading.Event()
+
+            def fail_collection_stop_once(descriptor, content):
+                if b"collection_stopped" in content and not failed.is_set():
+                    failed.set()
+                    raise OSError("simulated stop-event disk failure")
+                if b"collection_stopped" in content:
+                    retry_entered.set()
+                    if not release_retry.wait(5):
+                        raise AssertionError("save retry was not released")
+                return original_write(descriptor, content)
+
+            with patch.object(audit_records.os, "write", side_effect=fail_collection_stop_once):
+                stopped = rounds.stop()
+                self.assertEqual(stopped.monitoring_elapsed_seconds, 12.75)
+                self.assertTrue(failed.wait(2))
+                self.assertFalse(rounds.flush_audit(timeout=2))
+                self.assertTrue(rounds.retry_saves(started.round_id))
+                self.assertTrue(retry_entered.wait(3))
+
+                elapsed[0] = 200.0
+                next_round = rounds.start(
+                    "FCT", lambda callback: FakeMonitor(callback), run_async=False, capacity=1
+                )
+                self.assertNotEqual(next_round.round_id, started.round_id)
+                self.assertEqual(next_round.monitoring_elapsed_seconds, 0.0)
+                elapsed[0] = 204.5
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 4.5)
+                release_retry.set()
+                deadline = time.monotonic() + 3
+                while old_round.snapshot().save_state != "complete" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(rounds.snapshot().round_id, next_round.round_id)
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 4.5)
+
+            elapsed[0] = 999.0
+            recovered = old_round.snapshot()
+            self.assertEqual(recovered.monitoring_elapsed_seconds, 12.75)
+            self.assertEqual(recovered.completion_reason, "manual_stop")
+            self.assertTrue(old_round.flush_audit(3))
+
+            reopened = read_round_audit(root / started.round_id / "audit.jsonl")
+            collection_events = [event for event in reopened["events"]
+                                 if event["kind"] == "collection_stopped"]
+            self.assertEqual(len(collection_events), 1)
+            self.assertEqual(reopened["round"]["round_id"], started.round_id)
+            self.assertEqual(reopened["completion_reason"], "manual_stop")
+            self.assertEqual(reopened["monitoring_elapsed_seconds"], 12.75)
+            self.assertEqual(collection_events[0]["detail"]["round_id"], started.round_id)
+            self.assertEqual(collection_events[0]["detail"]["reason"], "manual_stop")
+            self.assertEqual(collection_events[0]["detail"]["monitoring_elapsed_seconds"], 12.75)
+
+            self.assertEqual(rounds.snapshot().round_id, next_round.round_id)
+            rounds.stop()
+            self.assertTrue(rounds.flush_audit(3))
+            rounds.request_close()
+            deadline = time.monotonic() + 3
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+
+    def test_unaccepted_start_failure_keeps_previous_round_elapsed_time(self):
+        elapsed = [25.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            app_store = AppEventStore(Path(temporary) / "app-events.json")
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0])
+            rounds.register_app_event_store(app_store)
+            started = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            elapsed[0] = 40.5
+            stopped = rounds.stop()
+            self.assertEqual(stopped.monitoring_elapsed_seconds, 15.5)
+
+            rounds.record_start_failure("FCT", "preferences disk full")
+            during_failure = rounds.snapshot()
+            self.assertEqual(during_failure.round_id, started.round_id)
+            self.assertEqual(during_failure.monitoring_elapsed_seconds, 15.5)
+            self.assertEqual(during_failure.start_failure.diagnostic, "preferences disk full")
+            self.assertEqual(rounds.current_round_id, started.round_id)
+
+            elapsed[0] = 900.0
+            self.assertTrue(rounds.reset_start_failure("settings repaired"))
+            self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 15.5)
+            self.assertTrue(app_store.flush(3))
+            app_store.stop()
+
+    def test_accepted_source_failure_freezes_time_through_reset_and_audit_readback(self):
+        elapsed = [60.0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_store = AppEventStore(root / "app-events.json")
+            rounds = RoundCoordinator(monotonic=lambda: elapsed[0], audit_root=root / "rounds")
+            rounds.register_app_event_store(app_store)
+
+            def fail_source(_callback):
+                elapsed[0] = 66.125
+                raise PermissionError("source permission denied")
+
+            started = rounds.start("FCT", fail_source, run_async=False)
+            failed = rounds.snapshot()
+            self.assertEqual(failed.round_id, started.round_id)
+            self.assertEqual(failed.completion_reason, "start_failed")
+            self.assertEqual(failed.monitoring_elapsed_seconds, 6.125)
+            self.assertTrue(rounds.flush_audit(3))
+
+            elapsed[0] = 500.0
+            self.assertTrue(rounds.reset_start_failure("source access repaired"))
+            self.assertEqual(rounds.round_snapshot(started.round_id).monitoring_elapsed_seconds, 6.125)
+            self.assertTrue(rounds.flush_audit(3))
+            audit = read_round_audit(root / "rounds" / started.round_id / "audit.jsonl")
+            collection = next(event for event in audit["events"]
+                              if event["kind"] == "collection_stopped")
+            self.assertEqual(collection["detail"]["reason"], "start_failed")
+            self.assertEqual(collection["detail"]["round_id"], started.round_id)
+            self.assertEqual(collection["detail"]["monitoring_elapsed_seconds"], 6.125)
+            self.assertEqual(audit["monitoring_elapsed_seconds"], 6.125)
+            self.assertEqual(sum(event["kind"] == "collection_stopped" for event in audit["events"]), 1)
+
+            rounds.request_close()
+            deadline = time.monotonic() + 5
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+            self.assertTrue(app_store.flush(3))
+            app_store.stop()
+
     def test_completed_round_stops_timer_before_review_and_archive_wait(self):
         elapsed = [20.0]
         holder = {}
@@ -663,6 +900,7 @@ class MonitoringRoundTests(unittest.TestCase):
         self.assertEqual(expired.results[0].status, "PASS")
         self.assertEqual(expired.results[1].status, "NOTEST")
         self.assertFalse(expired.result_available)
+        self.assertEqual(expired.monitoring_elapsed_seconds, 5.0)
         alarm_event = next(event.event for event in expired.events
                            if event.event.kind == "timeout" and
                            event.event.detail.get("kind") == "round")
@@ -681,6 +919,7 @@ class MonitoringRoundTests(unittest.TestCase):
 
         released = coordinator.acknowledge_round_alarm(started.round_id, alarm.alarm_id)
         self.assertEqual(released.state.value, "COMPLETED")
+        self.assertEqual(released.monitoring_elapsed_seconds, 5.0)
         self.assertTrue(released.result_available)
         self.assertTrue(released.round_alarm.acknowledged_at)
         acknowledged = next(event.event for event in released.events
@@ -718,6 +957,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertEqual(expired.state.value, "AWAITING_REVIEW")
             self.assertEqual([result.status for result in expired.results], ["NOTEST", "NOTEST"])
             self.assertTrue(expired.collection_stopped)
+            self.assertEqual(expired.monitoring_elapsed_seconds, 120.0)
             self.assertFalse(expired.result_available)
             self.assertEqual(expired.completion_reason, "start_deadline_no_activity")
             self.assertEqual(expired.round_alarm.reason, "start_deadline_no_activity")
@@ -728,6 +968,8 @@ class MonitoringRoundTests(unittest.TestCase):
             acknowledged = coordinator.acknowledge_round_alarm(
                 started.round_id, expired.round_alarm.alarm_id)
             self.assertEqual(acknowledged.state.value, "COMPLETED")
+            elapsed[0] = 500.0
+            self.assertEqual(acknowledged.monitoring_elapsed_seconds, 120.0)
             self.assertTrue(acknowledged.result_available)
             self.assertTrue(coordinator.flush_audit(timeout=3))
             rebuilt = read_round_audit(Path(temporary) / started.round_id / "audit.jsonl")
@@ -739,6 +981,10 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertTrue(any(event["kind"] == "collection_stopped" and
                                 event["detail"]["reason"] == "start_deadline_no_activity"
                                 for event in rebuilt["events"]))
+            collection_event = next(event for event in rebuilt["events"]
+                                    if event["kind"] == "collection_stopped")
+            self.assertEqual(collection_event["detail"]["monitoring_elapsed_seconds"], 120.0)
+            self.assertEqual(rebuilt["monitoring_elapsed_seconds"], 120.0)
 
     def test_start_deadline_does_not_alarm_after_any_position_activity(self):
         elapsed = [0.0]
@@ -2664,10 +2910,13 @@ class MonitoringRoundTests(unittest.TestCase):
                              "source_preparation_pending")
             release.set()
             deadline = time.monotonic() + 3
-            while (rounds.round_snapshot(first.round_id).source_preparation_pending and
-                   time.monotonic() < deadline):
+            while time.monotonic() < deadline:
+                expired = rounds.snapshot()
+                if not expired.source_preparation_pending and expired.round_alarm_ready:
+                    break
                 time.sleep(0.01)
-            expired = rounds.snapshot()
+            else:
+                self.fail("The late source did not finish deadline handoff.")
             self.assertTrue(expired.round_alarm_ready)
             acknowledged = rounds.acknowledge_round_alarm(first.round_id,
                                                           expired.round_alarm.alarm_id)

@@ -541,6 +541,151 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_abort_paths_keep_accepted_round_time_frozen(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            elapsed = [700.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=Path(temporary) / "sessions")
+
+            try:
+                app.rounds = rounds
+                rounds.register_app_event_store(app.app_events, Path(temporary))
+                app._show_notice = lambda *_args, **_kwargs: None
+
+                def fail_source(_callback):
+                    elapsed[0] = 707.5
+                    raise PermissionError("source permission denied")
+
+                started = rounds.start("FCT", fail_source, run_async=False)
+                app.active_round_id = started.round_id
+                app._apply_round_snapshot(started)
+                self.assertEqual(started.completion_reason, "start_failed")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:07")
+
+                elapsed[0] = 1200.0
+                app._apply_round_snapshot(rounds.snapshot())
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 7.5)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:07")
+                self.assertTrue(rounds.reset_start_failure("source access repaired"))
+                self.assertEqual(rounds.round_snapshot(started.round_id).monitoring_elapsed_seconds, 7.5)
+
+                class TimerMonitor:
+                    def __init__(self, callback, start_timeout=5, round_timeout=20):
+                        self.callback = callback
+                        self.results = {1: SlotResult(1)}
+                        self.start_timeout = start_timeout
+                        self.round_timeout = round_timeout
+
+                    def update_round_settings(self, _settings):
+                        return
+
+                    def publish_round_event(self, event):
+                        self.callback(event)
+
+                    def start(self):
+                        return
+
+                    def timeout_seconds(self, kind):
+                        return {"start": self.start_timeout, "test": 60,
+                                "round": self.round_timeout}[kind]
+
+                    def round_results(self):
+                        return tuple(self.results.values())
+
+                    def apply_round_result(self, slot, status, *args, **_kwargs):
+                        self.results[slot].status = status
+                        self.callback(MonitorEvent("result", "slot{} {}".format(slot, status),
+                                                   slot, status=status))
+
+                    def stop_collection(self):
+                        return
+
+                    def has_pending_review(self):
+                        return False
+
+                    def resolve_review(self, _choice):
+                        return
+
+                    def poll_once(self):
+                        return
+
+                    def stop(self):
+                        return
+
+                    def finish(self):
+                        return
+
+                deadline_round = rounds.start(
+                    "FCT", lambda callback: TimerMonitor(callback), run_async=False,
+                    start_timeout_seconds=5, round_timeout_seconds=20, capacity=1,
+                )
+                app.active_round_id = deadline_round.round_id
+                app._apply_round_snapshot(deadline_round)
+                elapsed[0] = 1205.0
+                expired = rounds.poll_once()
+                app._apply_round_snapshot(expired)
+                self.assertEqual(expired.completion_reason, "start_deadline_no_activity")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+
+                elapsed[0] = 1500.0
+                app.stop_button.invoke()
+                stopped_again = rounds.snapshot()
+                app._apply_round_snapshot(stopped_again)
+                self.assertEqual(stopped_again.completion_reason, "start_deadline_no_activity")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+                acknowledged = rounds.acknowledge_round_alarm(
+                    deadline_round.round_id, expired.round_alarm.alarm_id)
+                self.assertTrue(acknowledged.cancellation_available)
+                app._apply_round_snapshot(acknowledged)
+                with patch("b518_log_solution.messagebox.askyesno", return_value=True):
+                    app.cancel_unverified_round()
+                self.assertEqual(rounds.snapshot().completion_reason, "unverified_round_cancelled")
+                self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 5.0)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+
+                round_timeout = rounds.start(
+                    "FCT", lambda callback: TimerMonitor(callback, start_timeout=100,
+                                                         round_timeout=5),
+                    run_async=False, capacity=1,
+                )
+                app.active_round_id = round_timeout.round_id
+                app._apply_round_snapshot(round_timeout)
+                elapsed[0] = 1505.0
+                expired_round = rounds.poll_once()
+                app._apply_round_snapshot(expired_round)
+                self.assertEqual(expired_round.completion_reason, "round_deadline")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+
+                elapsed[0] = 1800.0
+                app.stop_button.invoke()
+                stopped_round = rounds.snapshot()
+                app._apply_round_snapshot(stopped_round)
+                self.assertEqual(stopped_round.completion_reason, "round_deadline")
+                self.assertEqual(stopped_round.monitoring_elapsed_seconds, 5.0)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+                rounds.acknowledge_round_alarm(
+                    round_timeout.round_id, expired_round.round_alarm.alarm_id)
+            finally:
+                rounds.flush_audit(timeout=3)
+                rounds.request_close()
+                deadline = time.monotonic() + 5
+                while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.01)
+                self.assertEqual(rounds.close_status().status, "complete")
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_li7_locator_is_visible_at_first_cell_with_fixed_other_geometry(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
