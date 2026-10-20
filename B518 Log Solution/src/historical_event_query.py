@@ -60,7 +60,8 @@ class _LocalTimezoneSnapshot:
             from Foundation import NSDate
             moment = NSDate.dateWithTimeIntervalSince1970_(epoch)
             offset = self._foundation_zone.secondsFromGMTForDate_(moment)
-            return datetime.utcfromtimestamp(epoch) + timedelta(seconds=offset)
+            utc_wall_time = datetime.fromtimestamp(epoch, timezone.utc).replace(tzinfo=None)
+            return utc_wall_time + timedelta(seconds=offset)
         return datetime.fromtimestamp(epoch, self._fallback)
 
 
@@ -215,6 +216,9 @@ class HistoricalEventQueryResult:
         self._preparation_lock = threading.Lock()
         self._prepared_condition = threading.Condition(self._preparation_lock)
         self._closed = False
+        self._close_requested = False
+        self._active_read_leases = 0
+        self._lease_lock = threading.Lock()
         self._active_detail_reads = 0
         self._next_preparation_page = 1
         if self._index_path is not None and self._query_id is not None:
@@ -612,11 +616,34 @@ class HistoricalEventQueryResult:
         return _event_from_json(row[0])
 
     def close(self) -> None:
-        """Release this query's temporary snapshot; safe to call more than once."""
-        if self._closed:
-            return
-        self._closed = True
-        if self._finalizer.alive:
+        """Request release after every submitted reader relinquishes its lease."""
+        with self._lease_lock:
+            if self._closed or self._close_requested:
+                return
+            self._close_requested = True
+            should_release = self._active_read_leases == 0
+            if should_release:
+                self._closed = True
+        if should_release and self._finalizer.alive:
+            self._finalizer()
+
+    def _retain_reader(self) -> None:
+        """Keep snapshot files and indexed content alive for one worker request."""
+        with self._lease_lock:
+            if self._closed or self._close_requested:
+                raise RuntimeError("historical query snapshot is closed")
+            self._active_read_leases += 1
+
+    def _release_reader(self) -> None:
+        should_release = False
+        with self._lease_lock:
+            if self._active_read_leases <= 0:
+                raise RuntimeError("historical query reader lease was already released")
+            self._active_read_leases -= 1
+            if self._close_requested and self._active_read_leases == 0:
+                self._closed = True
+                should_release = True
+        if should_release and self._finalizer.alive:
             self._finalizer()
 
     def _ensure_open(self) -> None:
@@ -772,6 +799,7 @@ class _HistoricalEventDetailRequest:
     diagnostic_key: Optional[str] = None
     diagnostic_page_number: Optional[int] = None
     cancellation_event: threading.Event = field(default_factory=threading.Event)
+    read_lease_active: bool = True
 
 
 class HistoricalEventDetailService:
@@ -818,6 +846,7 @@ class HistoricalEventDetailService:
         with self._condition:
             if self._closed:
                 raise RuntimeError("historical detail service is closed")
+            result._retain_reader()
             self._next_request_id += 1
             request = _HistoricalEventDetailRequest(
                 self._next_request_id, result, event_key, page_number,
@@ -873,7 +902,14 @@ class HistoricalEventDetailService:
             self._active.cancellation_event.set()
         if self._pending is not None:
             self._pending.cancellation_event.set()
+            self._release_request_lease(self._pending)
             self._pending = None
+
+    @staticmethod
+    def _release_request_lease(request: _HistoricalEventDetailRequest) -> None:
+        if request.read_lease_active:
+            request.read_lease_active = False
+            request.result._release_reader()
 
     def _run(self) -> None:
         while True:
@@ -911,6 +947,7 @@ class HistoricalEventDetailService:
             except Exception as error:
                 completion = HistoricalEventDetailCompletion(
                     request.request_id, request.event_key, False, error=error)
+            self._release_request_lease(request)
             with self._condition:
                 if self._active is request:
                     self._active = None
@@ -940,6 +977,8 @@ class _HistoricalEventQueryRequest:
     date_range: HistoricalEventDateRange
     resume_result: Optional[HistoricalEventQueryResult] = None
     cancellation_event: threading.Event = field(default_factory=threading.Event)
+    resume_lease_active: bool = False
+    initial_result_lease: Optional[HistoricalEventQueryResult] = None
 
 
 class HistoricalEventQueryService:
@@ -983,13 +1022,17 @@ class HistoricalEventQueryService:
         with self._condition:
             if self._closed:
                 raise RuntimeError("historical query service is closed")
+            if resume_result is not None:
+                resume_result._retain_reader()
             self._next_generation += 1
             request = _HistoricalEventQueryRequest(
-                self._next_generation, date_range, resume_result)
+                self._next_generation, date_range, resume_result,
+                resume_lease_active=resume_result is not None)
             if self._active is not None:
                 self._active.cancellation_event.set()
             if self._pending is not None:
                 self._pending.cancellation_event.set()
+                self._release_request_leases(self._pending)
             self._pending = request
             self._latest_generation = request.generation
             for generation, completion in self._completed.items():
@@ -1020,6 +1063,7 @@ class HistoricalEventQueryService:
                 self._active.cancellation_event.set()
             if self._pending is not None and self._pending.generation == generation:
                 self._pending.cancellation_event.set()
+                self._release_request_leases(self._pending)
                 self._pending = None
             completion = self._completed.pop(generation, None)
             if completion is not None and generation not in self._initial_taken:
@@ -1080,8 +1124,8 @@ class HistoricalEventQueryService:
                 self._active.cancellation_event.set()
             if self._pending is not None:
                 self._pending.cancellation_event.set()
+                self._release_request_leases(self._pending)
                 self._pending = None
-            self._condition.notify_all()
 
     def _run(self) -> None:
         while True:
@@ -1133,6 +1177,8 @@ class HistoricalEventQueryService:
                 completion = HistoricalEventQueryCompletion(
                     request.generation, request.date_range, False, error=error)
 
+            self._release_request_leases(request)
+
             with self._condition:
                 if self._active is request:
                     self._active = None
@@ -1160,8 +1206,191 @@ class HistoricalEventQueryService:
                     request.cancellation_event.is_set()):
                 result.close()
                 raise RuntimeError("historical event query cancelled")
+            result._retain_reader()
+            request.initial_result_lease = result
             self._initial_results[request.generation] = completion
             self._condition.notify_all()
+
+    @staticmethod
+    def _release_request_leases(request: _HistoricalEventQueryRequest) -> None:
+        if request.resume_lease_active:
+            request.resume_lease_active = False
+            request.resume_result._release_reader()
+        if request.initial_result_lease is not None:
+            result, request.initial_result_lease = request.initial_result_lease, None
+            result._release_reader()
+
+
+class HistoricalEventQuerySession:
+    """Own one history view's requests and the fixed snapshot they publish.
+
+    Tk code submits operator actions and polls completions through this object.
+    The session is the sole owner responsible for replacing and releasing the
+    published result; its two bounded workers remain implementation details.
+    """
+
+    def __init__(self, session_root: Path, app_event_path: Optional[Path],
+                 query_function: Optional[Callable] = None,
+                 index_path: Optional[Path] = None):
+        self._query_service = HistoricalEventQueryService(
+            session_root, app_event_path, query_function, index_path)
+        self._detail_service = HistoricalEventDetailService()
+        self.result: Optional[HistoricalEventQueryResult] = None
+        self.generation: Optional[int] = None
+        self.inflight_range: Optional[HistoricalEventDateRange] = None
+        self.view_generation = 0
+        self.page_request_id: Optional[int] = None
+        self.detail_request_id: Optional[int] = None
+        self.requested_page_number: Optional[int] = None
+        self._closed = False
+
+    def open_view(self) -> int:
+        if self._closed:
+            raise RuntimeError("historical query session is closed")
+        self.view_generation += 1
+        return self.view_generation
+
+    def submit(self, date_range: HistoricalEventDateRange) -> int:
+        self._ensure_open()
+        self.cancel_page()
+        self.generation = self._query_service.submit(date_range)
+        self.inflight_range = date_range
+        return self.generation
+
+    def retry_preparation(self) -> int:
+        self._ensure_open()
+        if self.result is None:
+            raise RuntimeError("there is no published query to retry")
+        self.generation = self._query_service.retry_preparation(self.result)
+        self.inflight_range = self.result.date_range
+        return self.generation
+
+    def cancel_query(self, generation: Optional[int] = None) -> bool:
+        current = self.generation
+        if current is None or (generation is not None and generation != current):
+            return False
+        if not self._query_service.cancel(current):
+            return False
+        self.generation = None
+        self.inflight_range = None
+        return True
+
+    def take_initial_result(self, generation: int) -> Optional[HistoricalEventQueryCompletion]:
+        if generation != self.generation:
+            return None
+        completion = self._query_service.take_initial_result(generation)
+        if completion is not None and completion.succeeded:
+            self._publish(completion.result)
+        return completion
+
+    def take_query_result(self, generation: int) -> Optional[HistoricalEventQueryCompletion]:
+        if generation != self.generation:
+            return None
+        completion = self._query_service.take_result(generation)
+        if completion is not None:
+            self.generation = None
+            self.inflight_range = None
+            if completion.succeeded:
+                self._publish(completion.result)
+        return completion
+
+    def query_is_pending(self, generation: int) -> bool:
+        return generation == self.generation and self._query_service.is_pending(generation)
+
+    def submit_page(self, page_number: int, diagnostics: bool = False) -> int:
+        result = self._require_result()
+        self.cancel_detail()
+        self.cancel_page()
+        submit = (self._detail_service.submit_diagnostic_page if diagnostics else
+                  self._detail_service.submit_page)
+        request_id = submit(result, page_number)
+        self.page_request_id = request_id
+        self.requested_page_number = page_number
+        return request_id
+
+    def submit_detail(self, event_key: str, diagnostics: bool = False) -> int:
+        result = self._require_result()
+        self.cancel_page()
+        self.cancel_detail()
+        submit = (self._detail_service.submit_diagnostic if diagnostics else
+                  self._detail_service.submit)
+        request_id = submit(result, event_key)
+        self.detail_request_id = request_id
+        return request_id
+
+    def take_page_result(self, request_id: int) -> Optional[HistoricalEventDetailCompletion]:
+        if request_id != self.page_request_id:
+            return None
+        completion = self._detail_service.take_result(request_id)
+        if completion is not None:
+            self.page_request_id = None
+            self.requested_page_number = None
+        return completion
+
+    def take_detail_result(self, request_id: int) -> Optional[HistoricalEventDetailCompletion]:
+        if request_id != self.detail_request_id:
+            return None
+        completion = self._detail_service.take_result(request_id)
+        if completion is not None:
+            self.detail_request_id = None
+        return completion
+
+    def page_is_pending(self, request_id: int) -> bool:
+        return (request_id == self.page_request_id and
+                self._detail_service.is_pending(request_id))
+
+    def detail_is_pending(self, request_id: int) -> bool:
+        return (request_id == self.detail_request_id and
+                self._detail_service.is_pending(request_id))
+
+    def cancel_page(self) -> None:
+        if self.page_request_id is not None:
+            self._detail_service.cancel(self.page_request_id)
+        self.page_request_id = None
+        self.requested_page_number = None
+
+    def cancel_detail(self) -> None:
+        if self.detail_request_id is not None:
+            self._detail_service.cancel(self.detail_request_id)
+        self.detail_request_id = None
+
+    def close_view(self) -> None:
+        if self._closed:
+            return
+        self.cancel_query()
+        self.cancel_page()
+        self.cancel_detail()
+        result, self.result = self.result, None
+        if result is not None:
+            result.close()
+        self.view_generation += 1
+
+    def shutdown(self) -> None:
+        if self._closed:
+            return
+        self.close_view()
+        self._closed = True
+        self._query_service.shutdown()
+        self._detail_service.shutdown()
+
+    def _publish(self, result: Optional[HistoricalEventQueryResult]) -> None:
+        if result is None or result is self.result:
+            return
+        self.cancel_page()
+        self.cancel_detail()
+        previous, self.result = self.result, result
+        if previous is not None:
+            previous.close()
+
+    def _require_result(self) -> HistoricalEventQueryResult:
+        self._ensure_open()
+        if self.result is None:
+            raise RuntimeError("there is no published historical query result")
+        return self.result
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("historical query session is closed")
 
 
 def _discard_query_completion(completion: HistoricalEventQueryCompletion) -> None:
