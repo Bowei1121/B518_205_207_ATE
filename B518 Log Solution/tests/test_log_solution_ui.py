@@ -8204,6 +8204,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNotNone(snapshot)
                 self.assertEqual(snapshot.round_id, app.active_round_id)
                 self.assertIsNone(app.rounds.start_failure_snapshot())
+                self.assertEqual(str(app.stop_button.cget("state")), "normal")
                 diagnostic = next(
                     record for record in app.app_events.records
                     if record["localized_message"]["message_id"] == "app.round.presentation_failed"

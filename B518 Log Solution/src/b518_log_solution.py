@@ -2176,10 +2176,10 @@ class B518LogSolutionApp:
         self.active_round_id = snapshot.round_id
         try:
             self.start_button.configure(state="disabled")
+            self._set_monitor_controls(True)
             self._set_main_monitor_state("monitor.starting")
             self._reset_rows()
             self._apply_round_snapshot(snapshot)
-            self._set_monitor_controls(True)
             if snapshot.state.value == "PREPARING":
                 self._set_main_monitor_state("monitor.preparing")
         except Exception as error:
@@ -2224,7 +2224,13 @@ class B518LogSolutionApp:
         parameters = {"reason": diagnostic, "round_id": round_id}
         message_id = "app.round.presentation_failed" if round_id else "app.start.presentation_failed"
         self._record_app_event(message_id, parameters, diagnostic)
-        if not round_id:
+        if round_id:
+            try:
+                self.start_button.configure(state="disabled")
+                self.stop_button.configure(state="normal")
+            except Exception:
+                pass
+        else:
             self.rounds.record_start_failure(self.station.get().upper(), diagnostic)
             try:
                 self._apply_round_snapshot(self.rounds.snapshot())
