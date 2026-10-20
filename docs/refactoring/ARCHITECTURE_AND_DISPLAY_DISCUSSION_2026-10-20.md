@@ -91,3 +91,11 @@
 ## 同日版本同步補充
 
 本輪訪談原以ce690f4查核；使用者要求同步後，已整合GitHub2f09988的既有Tk修正與測試。這不表示本文件的計時器／心跳／架構整理已實作。2f09988的建置證據見[當日診斷](evidence/macos-build-2026-10-20/validation.md)，本機驗證仍分開記錄。
+
+
+## 正式規格與議題對照（to-spec）
+
+- 本文件保留為A1～A16原始討論；正式規格已依to-spec七章模板更新至[App改善規格](LOG_SOLUTION_IMPROVEMENT_SPEC_2026-10-20.md)，作為後續實作依據。
+- GitHub追蹤：[Issue #86 — Log Solution 架構優化、監控計時與獨立畫面心跳](https://github.com/Bowei1121/B518_205_207_ATE/issues/86)，標籤ready-for-agent。
+- 使用者已確認沿用「實際輪次操作與保存結果」「歷史查詢完整操作流程」「真實Tk畫面與KVM配對影像」三個高層驗收入口。
+- 此次只轉換並發布規格，不代表App或橋接功能已實作。

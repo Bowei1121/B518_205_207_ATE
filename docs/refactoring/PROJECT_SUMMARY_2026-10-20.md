@@ -73,3 +73,11 @@
 - Python3.12.10執行test_historical_event_query、test_monitoring_round、test_round_retention、test_round_start_preparation：173項、39.822秒，全部通過。紀錄：`/private/tmp/b518-sync-tests-20261020.log`。本次沒有重跑Tk桌面測試或arm64打包；遠端的549項建置證據屬其原建置環境。
 - 合併後全部src的AST語法檢查通過；`git diff --exit-code github/B518-Log-Solution -- "B518 Log Solution"`無差異，證明產品目錄與抓取的GitHub2f09988完全一致。
 - 文件相對連結與空白檢查通過；原遠端摘要及本機備份摘要在整合檔中均逐字保留。GitHub與Gitea工作分支會以正常快轉推送至同一個合併提交，不改main、不force push。
+
+
+## to-spec 正式規格發布
+
+- 依使用者指定to-spec技能，將當日架構／顯示討論整理為七章正式規格，直接更新既有App改善規格，不另外建立競爭版本。
+- 規格包含52個使用情境、19組驗收情境；使用者已確認三個高層測試入口。保留原始訪談與Claude交接稿；未量測的幾何不冒充定案值，橋接實作與恢復策略仍由Claude工作接續。
+- 發布至[GitHub Issue #86](https://github.com/Bowei1121/B518_205_207_ATE/issues/86)，套用ready-for-agent；本機文件與議題對照記錄於原始討論。
+- 本次僅修改文件；檢查模板章節、需求覆蓋、檔案連結、文字格式及遠端議題正文／標籤，不重跑無關的產品測試，也不宣稱新增功能已驗收。
