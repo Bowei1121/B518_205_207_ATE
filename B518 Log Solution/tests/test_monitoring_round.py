@@ -2470,43 +2470,54 @@ class MonitoringRoundTests(unittest.TestCase):
                 return DeadlineMonitor(callback, time.monotonic, slots=(1, 2))
 
             rounds = RoundCoordinator(audit_root=root)
-            first = rounds.start("FCT", factory, run_async=True, capacity=2)
-            self.assertTrue(entered.wait(2))
-            rounds.stop()
-            stopped = rounds.round_snapshot(first.round_id)
-            original_results = stopped.results
-            self.assertTrue(stopped.result_available)
-            self.assertTrue(stopped.cancellation_available)
-            with self.assertRaisesRegex(RuntimeError, "本輪仍待人工核對"):
-                rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+            try:
+                first = rounds.start("FCT", factory, run_async=True, capacity=2)
+                self.assertTrue(entered.wait(2))
+                rounds.stop()
+                stopped = rounds.round_snapshot(first.round_id)
+                original_results = stopped.results
+                self.assertTrue(stopped.result_available)
+                self.assertTrue(stopped.cancellation_available)
+                with self.assertRaisesRegex(RuntimeError, "本輪仍待人工核對"):
+                    rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
 
-            self.assertTrue(rounds.cancel_unverified_round(first.round_id, "人工核對後取消"))
-            cancelled = rounds.round_snapshot(first.round_id)
-            self.assertEqual(cancelled.completion_reason, "unverified_round_cancelled")
-            self.assertEqual(cancelled.results, original_results)
-            self.assertFalse(cancelled.result_available)
-            self.assertFalse(rounds.cancel_unverified_round(first.round_id, "重複取消"))
-            self.assertTrue(rounds.flush_audit(3))
-            release.set()
-            deadline = time.monotonic() + 3
-            while (rounds.round_snapshot(first.round_id).source_preparation_pending and
-                   time.monotonic() < deadline):
-                time.sleep(0.01)
-            self.assertFalse(rounds.round_snapshot(first.round_id).source_preparation_pending)
-            self.assertTrue(rounds._tracked_rounds[first.round_id].flush_audit(3))
+                self.assertTrue(rounds.cancel_unverified_round(first.round_id, "人工核對後取消"))
+                cancelled = rounds.round_snapshot(first.round_id)
+                self.assertEqual(cancelled.completion_reason, "unverified_round_cancelled")
+                self.assertEqual(cancelled.results, original_results)
+                self.assertFalse(cancelled.result_available)
+                self.assertFalse(rounds.cancel_unverified_round(first.round_id, "重複取消"))
+                self.assertTrue(rounds.flush_audit(3))
+                release.set()
+                deadline = time.monotonic() + 3
+                while (rounds.round_snapshot(first.round_id).source_preparation_pending and
+                       time.monotonic() < deadline):
+                    time.sleep(0.01)
+                self.assertFalse(rounds.round_snapshot(first.round_id).source_preparation_pending)
+                self.assertTrue(rounds._tracked_rounds[first.round_id].flush_audit(3))
 
-            rebuilt = read_round_audit(root / first.round_id / "audit.jsonl")
-            self.assertEqual(rebuilt["completion_reason"], "unverified_round_cancelled")
-            self.assertEqual({slot: result["status"]
-                              for slot, result in rebuilt["results"].items()},
-                             {result.slot: result.status for result in original_results})
-            self.assertFalse(rebuilt["result_available"])
-            self.assertTrue(any(event["kind"] == "round_cancelled" and
-                                event["detail"]["reason"] == "unverified_round_cancelled"
-                                for event in rebuilt["events"]))
+                rebuilt = read_round_audit(root / first.round_id / "audit.jsonl")
+                self.assertEqual(rebuilt["completion_reason"], "unverified_round_cancelled")
+                self.assertEqual({slot: result["status"]
+                                  for slot, result in rebuilt["results"].items()},
+                                 {result.slot: result.status for result in original_results})
+                self.assertFalse(rebuilt["result_available"])
+                self.assertTrue(any(event["kind"] == "round_cancelled" and
+                                    event["detail"]["reason"] == "unverified_round_cancelled"
+                                    for event in rebuilt["events"]))
 
-            second = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
-            self.assertNotEqual(first.round_id, second.round_id)
+                second = rounds.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
+                self.assertNotEqual(first.round_id, second.round_id)
+            finally:
+                # Join the source preparation and audit workers before removing their files.
+                release.set()
+                rounds.stop()
+                rounds.request_close()
+                deadline = time.monotonic() + 5
+                while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                    threading.Event().wait(0.01)
+                self.assertEqual(rounds.close_status().status, "complete")
+
 
     def test_acknowledged_preparation_deadline_can_be_cancelled_with_a_new_reader(self):
         elapsed = [0.0]

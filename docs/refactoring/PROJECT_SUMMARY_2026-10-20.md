@@ -13,3 +13,8 @@
 完整原因、證據及最終驗證見 [診斷報告](evidence/macos-build-2026-10-20/validation.md)。
 
 最終原始 build script exit 0：549 項、193.257 秒，548 通過、1 項既有人工外觀測試未執行，零失敗／錯誤。包括 50K 資料、所有自動 Tk、原生互動、雙縮放、復位與關閉回歸。macOS 15.0 arm64 相容性、簽章及 ZIP 打包成功；產品 src 與打包副本相同。最後僅調整 LI7 測試證據預設輸出位置，專項矩陣再通過，原 VERSION/spec 保持原樣。準備依 AGENTS 規則提交推送修正及證據。
+
+
+## Terminal 原生輸入權限與測試收尾補充
+
+使用者確認 Terminal 原生輸入權限由 post=False/listen=False 變為 True/True。新增建置前唯讀事件投遞權限檢查及兩項回歸測試；修正取消後新輪測試未等待背景保存便刪除暫存目錄的競態。隔離原建置腳本 exit 0，Python 3.12.10 完整 551 項測試、550 通過、1 項既有人工外觀驗收未執行（193.962 秒）；相容性、簽章與 ZIP 均完成。原 VERSION/spec 保留。使用者 Terminal 重跑仍待回報。詳見 [驗證紀錄](evidence/macos-native-input-2026-10-20/validation.md)。

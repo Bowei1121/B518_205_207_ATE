@@ -22,6 +22,7 @@ VENV=.venv-macos15_0-arm64-log-solution
 "$VENV/bin/python" scripts/check_macos_build_python.py
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements/requirements-macos15-arm64.txt
+"$VENV/bin/python" scripts/check_macos_native_test_access.py
 B518_TK_TESTS=1 "$VENV/bin/python" scripts/run_tests.py
 
 VERSION="$($VENV/bin/python - <<'PY'
