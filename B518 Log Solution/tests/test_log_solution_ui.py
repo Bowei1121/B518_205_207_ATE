@@ -169,6 +169,27 @@ def conflict_summary_rows(app):
     return [tuple(line.split("\t")[:3]) for line in lines]
 
 
+def native_window_for_capture(window):
+    """Resolve this Tk window even when AppKit retains older same-title windows."""
+    from AppKit import NSApplication
+
+    title = window.title()
+    token = "{} [capture-{}]".format(title, window.winfo_id())
+    try:
+        window.title(token)
+        window.update_idletasks()
+        matches = [item for item in NSApplication.sharedApplication().windows()
+                   if item.title() == token and item.isVisible()]
+        if len(matches) != 1:
+            raise AssertionError("expected one native window for {}: {}".format(
+                window, len(matches)))
+        return matches[0]
+    finally:
+        # The rendered capture and returned metadata retain the real App title.
+        window.title(title)
+        window.update_idletasks()
+
+
 def capture_tk_window_image(window, native_window):
     """Manual assets may use the live NSView cache without screen recording.
 
@@ -189,10 +210,7 @@ def capture_tk_window_image(window, native_window):
         while time.monotonic() < deadline:
             window.update()
             time.sleep(.01)
-        native = next((item for item in NSApplication.sharedApplication().windows()
-                       if item.title() == window.title() and item.isVisible()), None)
-        if native is None:
-            raise AssertionError("missing visible NSWindow: " + window.title())
+        native = native_window_for_capture(window)
         view = native.contentView()
         rect = view.bounds()
         bitmap = view.bitmapImageRepForCachingDisplayInRect_(rect)
@@ -236,9 +254,10 @@ def capture_tk_window_evidence(window, key, language, widgets):
 
     native_windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    native_number = native_window_for_capture(window).windowNumber()
     native_window = next((item for item in native_windows
                           if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+                          and item.get(Quartz.kCGWindowNumber) == native_number), None)
     if native_window is None:
         raise AssertionError("missing native window: {}".format(key))
     image = capture_tk_window_image(window, native_window)
@@ -265,24 +284,31 @@ def capture_tk_window_evidence(window, key, language, widgets):
     return record
 
 
-def capture_tk_content_view_evidence(window, key, widgets):
+def capture_tk_content_view_evidence(window, key, widgets, output_dir=None):
     """Capture the mapped Tk window's live NSView cache, not a synthetic redraw."""
     from AppKit import NSApplication, NSBitmapImageFileTypePNG
 
     window.update_idletasks()
     window.lift()
     window.update()
-    native_app = NSApplication.sharedApplication()
-    native_window = next((item for item in native_app.windows()
-                          if item.title() == window.title() and item.isVisible()), None)
-    if native_window is None:
-        raise AssertionError("mapped Tk App has no visible NSWindow: {}".format(window.title()))
+    native_window = native_window_for_capture(window)
     content_view = native_window.contentView()
-    content_rect = content_view.bounds()
+    deadline = time.monotonic() + 5
+    while True:
+        window.update()
+        content_rect = content_view.bounds()
+        native_size = (round(content_rect.size.width), round(content_rect.size.height))
+        tk_size = (window.winfo_width(), window.winfo_height())
+        if native_size == tk_size:
+            break
+        if time.monotonic() >= deadline:
+            raise AssertionError("Aqua contentView did not settle: native={}, Tk={}".format(
+                native_size, tk_size))
+        time.sleep(.01)
     bitmap = content_view.bitmapImageRepForCachingDisplayInRect_(content_rect)
     content_view.cacheDisplayInRect_toBitmapImageRep_(content_rect, bitmap)
     png_data = bitmap.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
-    output_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+    output_dir = Path(output_dir or os.environ["B518_TK_EVIDENCE_DIR"])
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = key + "-view-cache.png"
     output_path = output_dir / filename
@@ -295,7 +321,7 @@ def capture_tk_content_view_evidence(window, key, widgets):
     screen_window = next((item for item in windows
                           if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
                           and item.get(Quartz.kCGWindowLayer) == 0
-                          and item.get(Quartz.kCGWindowName) == window.title()
+                          and item.get(Quartz.kCGWindowNumber) == native_window.windowNumber()
                           and item.get(Quartz.kCGWindowIsOnscreen) == 1), None)
     if screen_window is None:
         raise AssertionError("Tk window has no on-screen Quartz bounds")
@@ -337,9 +363,10 @@ def capture_native_window_with_hint(window, filename):
     window.update()
     native_windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    native_number = native_window_for_capture(window).windowNumber()
     native_window = next((item for item in native_windows
                           if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+                          and item.get(Quartz.kCGWindowNumber) == native_number), None)
     if native_window is None:
         raise AssertionError("missing native window: {}".format(window.title()))
     bounds = native_window[Quartz.kCGWindowBounds]
@@ -503,7 +530,17 @@ class LogSolutionUiTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_li7_geometry_at_both_scalings_and_all_capacities(self):
-        evidence_dir = Path(os.environ.get("B518_TK_EVIDENCE_DIR", "."))
+        # Scaling belongs to the shared interpreter, not to this Toplevel.
+        scaling_before = float(self._desktop_root.tk.call("tk", "scaling"))
+
+        def restore_scaling():
+            self._desktop_root.tk.call("tk", "scaling", scaling_before)
+            self.assertAlmostEqual(float(self._desktop_root.tk.call("tk", "scaling")),
+                                   scaling_before, places=6)
+
+        self.addCleanup(restore_scaling)
+        evidence_dir = Path(os.environ.get("B518_TK_EVIDENCE_DIR") or
+                            str(Path(self._isolated_app_root.name) / "li7-evidence"))
         evidence_dir.mkdir(parents=True, exist_ok=True)
         matrix = []
         scaling_filter = os.environ.get("B518_LI7_SCALING")
@@ -677,7 +714,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 "first_cell": app.kvm_result_blocks[1],
                                 "last_configured_cell": app.kvm_result_blocks[capacity],
                                 "last_cell": app.kvm_result_blocks[20],
-                            })
+                            }, output_dir=evidence_dir)
                             physical_per_native_unit = (
                                 evidence["image_pixels"]["width"] / evidence["size"][0],
                                 evidence["image_pixels"]["height"] / evidence["size"][1],
@@ -2562,8 +2599,24 @@ class LogSolutionUiTests(unittest.TestCase):
         # Timers scheduled by a test itself are also its responsibility. App
         # timers are checked independently by the destruction regressions.
         pending = set(self._desktop_root.tk.call("after", "info")) - self._after_before_test
+        owners = {}
+
+        def remember_commands(widget):
+            for command in widget._tclCommands or ():
+                owners[command] = widget
+            for child in widget.winfo_children():
+                remember_commands(child)
+
+        remember_commands(self._desktop_root)
         for after_id in pending:
-            self._desktop_root.after_cancel(after_id)
+            script = self._desktop_root.tk.call("after", "info", after_id)[0]
+            command = self._desktop_root.tk.splitlist(script)[0]
+            owner = owners.get(command)
+            if owner is not None:
+                owner.after_cancel(after_id)
+            else:
+                # Raw Tcl timers do not own a Python-registered Tcl command.
+                self._desktop_root.tk.call("after", "cancel", after_id)
         for window in self._test_windows:
             if window.winfo_exists():
                 window.destroy()
@@ -2604,6 +2657,38 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertNotEqual(store.status().status, "saving",
                                 "App event write must finish before temporary data cleanup")
             store.stop()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1", "requires desktop Tk")
+    def test_native_capture_selects_current_window_with_duplicate_title(self):
+        first = tk.Tk()
+        second = tk.Tk()
+        first.title("Duplicate capture title")
+        second.title("Duplicate capture title")
+        first.geometry("220x150+30+30")
+        second.geometry("320x210+300+30")
+        first.update()
+        second.update()
+        # Emulate the observed AppKit order deterministically; both entries
+        # remain real NSWindows and both rendered caches remain real NSViews.
+        ordered = sorted(NSApplication.sharedApplication().windows(),
+                         key=lambda item: item.contentView().bounds().size.width)
+        application = SimpleNamespace(windows=lambda: ordered)
+        with TemporaryDirectory() as temporary, patch(
+                "AppKit.NSApplication", SimpleNamespace(sharedApplication=lambda: application)):
+            evidence = capture_tk_content_view_evidence(
+                second, "duplicate-title", {"target": second}, output_dir=temporary)
+            self.assertEqual(evidence["size"], [320, 210])
+            self.assertEqual(evidence["image_pixels"], {"width": 640, "height": 420})
+        self.assertEqual(first.title(), "Duplicate capture title")
+        self.assertEqual(second.title(), "Duplicate capture title")
+
+    def test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete(self):
+        root = tk.Tk()
+        button = ttk.Button(root)
+        timer = button.after(60000, lambda: None)
+        self._destroy_test_windows()
+        self.assertFalse(root.winfo_exists())
+        self.assertNotIn(timer, self._desktop_root.tk.call("after", "info"))
 
     def test_destroy_cancels_owned_timers_without_cancelling_embedding_timer(self):
         root = tk.Tk()
@@ -4227,6 +4312,17 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.recovery_window.deiconify()
                         app.recovery_window.lift()
 
+                    # Acknowledging a timeout is separate from cancelling its
+                    # unverified round under LI5; neither clears pending saves.
+                    self.assertTrue(rounds.snapshot().cancellation_available)
+                    with self.assertRaisesRegex(RuntimeError, "人工核對"):
+                        rounds.start("FCT", AlarmMonitor, run_async=False,
+                                     round_timeout_seconds=1, capacity=1)
+                    self.assertTrue(rounds.cancel_unverified_round(
+                        started.round_id, "operator verified and cancelled timed-out round"))
+                    self.assertEqual(rounds.snapshot().completion_reason,
+                                     "unverified_round_cancelled")
+                    self.assertEqual(app._pending_notification_count(), 1)
                     second_started = rounds.start("FCT", AlarmMonitor, run_async=False,
                                                    round_timeout_seconds=1, capacity=1)
                     second_monitor = monitors[1]
@@ -5981,7 +6077,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.active_round_id = started.round_id
                 pump_until(lambda: sources and app.rounds.snapshot()
                            and app.rounds.snapshot().results
-                           and app.rounds.snapshot().results[0].status == "PASS")
+                           and app.rounds.snapshot().results[0].status == "PASS"
+                           and app.rounds.snapshot().source_ready
+                           and app.rounds.snapshot().results[1].status == "TESTING")
                 source = sources[0]
                 for sn, name, stamp in (
                         ("SN-CANDIDATE-1", "candidate-1.csv", "10:01:00"),
@@ -7803,6 +7901,32 @@ class LogSolutionUiTests(unittest.TestCase):
             app.hotkey.close()
             root.destroy()
 
+    def assert_start_failure_blocks_until_explicit_reset(self, app, root, diagnostic,
+                                                       accepted=False):
+        failed = app.rounds.snapshot()
+        self.assertEqual(failed.state, RoundState.AWAITING_REVIEW)
+        self.assertEqual(bool(failed.round_id), accepted)
+        self.assertEqual(failed.completion_reason, "start_failed")
+        self.assertEqual(failed.start_failure.diagnostic, diagnostic)
+        self.assertFalse(failed.result_available)
+        self.assertEqual(str(app.start_button.cget("state")), "disabled")
+        self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
+        request_id = failed.start_failure.request_id
+        app.start_monitor()
+        self.assertEqual(app.rounds.snapshot().start_failure.request_id, request_id)
+        app.reset_start_failure_button.invoke()
+        root.update()
+        self.assertIsNone(app.rounds.start_failure_snapshot())
+        self.assertFalse(app._round_is_active())
+        self.assertEqual(str(app.start_button.cget("state")), "normal")
+        if accepted:
+            reset = app.rounds.snapshot()
+            self.assertEqual(reset.round_id, failed.round_id)
+            self.assertEqual(reset.completion_reason, "start_failed_cancelled")
+            self.assertFalse(reset.result_available)
+        else:
+            self.assertIsNone(app.rounds.snapshot())
+
     def test_empty_paths_are_rejected_before_monitor_creation(self):
         root = tk.Tk()
         root.deiconify()
@@ -7821,7 +7945,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 "The selected configuration is invalid: See the original diagnostic below.\n\n"
                 "Original diagnostic: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
             ))
-            self.assertIsNone(app.rounds.snapshot())
+            self.assert_start_failure_blocks_until_explicit_reset(
+                app, root, "請設定存在且可讀取的Atlas 即時 Log 路徑。")
+            monitor_type.assert_not_called()
         finally:
             cleanup_deadline = time.monotonic() + 5
             while (app.rounds.retention_cleanup_status().status not in {"complete", "failed"}
@@ -7857,8 +7983,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         patch("b518_log_solution.show_notice") as show_error:
                     app.start_button.invoke()
 
-                self.assertIsNone(app.rounds.snapshot())
-                self.assertEqual(str(app.start_button.cget("state")), "normal")
+                self.assert_start_failure_blocks_until_explicit_reset(app, root, "disk full")
                 self.assertEqual(app.monitor_state.cget("text"), "Standby")
                 self.assertEqual(app.profile_store.path.read_bytes(), preferences_before)
                 self.assertEqual(show_error.call_args.args[:2], (
@@ -7995,10 +8120,12 @@ class LogSolutionUiTests(unittest.TestCase):
                     while not show_error.called and time.monotonic() < deadline:
                         root.update()
                         time.sleep(0.01)
-                self.assertFalse(app._round_is_active())
+                self.assertTrue(app._round_is_active())
                 self.assertEqual(app.monitor_state.cget("text"), "Start Failed")
                 self.assertIn("denied", app.event_lines[-1])
                 show_error.assert_called_once()
+                self.assert_start_failure_blocks_until_explicit_reset(
+                    app, root, "denied", accepted=True)
             finally:
                 app.hotkey.close()
                 root.destroy()
@@ -9597,7 +9724,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         Quartz.kCGNullWindowID)
                     native_window = next((item for item in native_windows
                                           if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                                          and item.get(Quartz.kCGWindowName) == window.title()), None)
+                                          and item.get(Quartz.kCGWindowNumber) ==
+                          native_window_for_capture(window).windowNumber()), None)
                     self.assertIsNotNone(native_window,
                                          "Settings window missing from Aqua window list")
                     native_id = native_window[Quartz.kCGWindowNumber]
@@ -10678,7 +10806,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
                 native_window = next((item for item in native_windows
                                       if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                                      and item.get(Quartz.kCGWindowName) == window.title()), None)
+                                      and item.get(Quartz.kCGWindowNumber) ==
+                          native_window_for_capture(window).windowNumber()), None)
                 self.assertIsNotNone(native_window,
                                      "Window missing from Aqua window list: {}".format(
                                          window.title()))
@@ -13083,7 +13212,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
                 native_window = next((item for item in native_windows
                                       if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                                      and item.get(Quartz.kCGWindowName) == window.title()), None)
+                                      and item.get(Quartz.kCGWindowNumber) ==
+                          native_window_for_capture(window).windowNumber()), None)
                 self.assertIsNotNone(native_window, "missing native window: {}".format(key))
                 image = capture_tk_window_image(window, native_window)
                 self.assertIsNotNone(image)

@@ -1,0 +1,6 @@
+test_native_capture_selects_current_window_with_duplicate_title (test_log_solution_ui.LogSolutionUiTests.test_native_capture_selects_current_window_with_duplicate_title) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.272s
+
+OK

@@ -1,0 +1,8 @@
+test_li7_geometry_at_both_scalings_and_all_capacities (test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities) ... ok
+test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen (test_log_solution_ui.LogSolutionUiTests.test_conflict_review_tracks_same_slot_candidates_through_refresh_resolution_and_reopen) ... ok
+test_accepted_source_start_failure_requires_reset_and_audits_cancellation (test_monitoring_round.MonitoringRoundTests.test_accepted_source_start_failure_requires_reset_and_audits_cancellation) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 3.058s
+
+OK

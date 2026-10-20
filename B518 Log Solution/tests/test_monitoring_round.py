@@ -2267,6 +2267,13 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertTrue(any(item["kind"] == "round_cancelled" for item in audit["events"]))
             self.assertTrue(rounds.start("FCT", lambda callback: FakeMonitor(callback),
                                         run_async=False).round_id != started.round_id)
+            rounds.stop()
+            rounds.request_close()
+            deadline = time.monotonic() + 5
+            while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+                threading.Event().wait(.01)
+            self.assertEqual(rounds.close_status().status, "complete")
+            self.assertTrue(app_store.flush(3))
             app_store.stop()
 
     def test_accepted_start_failure_can_be_reset_after_app_restart_from_disk_records(self):
@@ -2310,6 +2317,7 @@ class MonitoringRoundTests(unittest.TestCase):
             new_round = restarted.start("FCT", lambda callback: FakeMonitor(callback), run_async=False)
             self.assertNotEqual(new_round.round_id, started.round_id)
             close_and_wait(restarted)
+            self.assertTrue(restarted_store.flush(3))
             restarted_store.stop()
 
     def test_restart_reset_repairs_partial_persisted_cancellation_without_duplicate_events(self):
@@ -2352,6 +2360,7 @@ class MonitoringRoundTests(unittest.TestCase):
                 "start_failure_reset"), 1)
             self.assertEqual([item["kind"] for item in repaired["events"]].count(
                 "round_cancelled"), 1)
+            self.assertTrue(restarted_store.flush(3))
             restarted_store.stop()
 
     def test_close_waits_for_persisted_reset_journal_retry(self):
@@ -2426,6 +2435,7 @@ class MonitoringRoundTests(unittest.TestCase):
             self.assertTrue(any(item["kind"] == "start_failure_reset" for item in repaired["events"]))
             self.assertTrue(any(item["kind"] == "round_cancelled" for item in repaired["events"]))
             self.assertFalse((session_root / round_id / "audit.jsonl").exists())
+            self.assertTrue(restarted_store.flush(3))
             restarted_store.stop()
 
     def test_restart_reset_rejects_duplicate_audit_sources_for_same_round_id(self):
@@ -2445,6 +2455,7 @@ class MonitoringRoundTests(unittest.TestCase):
             restarted.register_app_event_store(restarted_store)
             self.assertFalse(restarted.reset_start_failure("must not guess source"))
             self.assertEqual(restarted.start_failure_snapshot().round_id, round_id)
+            self.assertTrue(restarted_store.flush(3))
             restarted_store.stop()
 
     def test_manual_stop_can_be_explicitly_cancelled_without_erasing_results(self):

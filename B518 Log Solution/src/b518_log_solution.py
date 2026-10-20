@@ -10,6 +10,7 @@ import sys
 import subprocess
 import threading
 import time
+import weakref
 import tkinter as tk
 from datetime import date
 from pathlib import Path
@@ -1795,7 +1796,7 @@ class B518LogSolutionApp:
         """Reserve one fixed logo slot; missing or unreadable artwork stays blank."""
         if COMPANY_LOGO_PATH.is_file():
             try:
-                self.company_logo = tk.PhotoImage(file=str(COMPANY_LOGO_PATH))
+                self.company_logo = tk.PhotoImage(master=self.root, file=str(COMPANY_LOGO_PATH))
             except tk.TclError:
                 self.company_logo = None
         self.company_logo_slot = tk.Frame(parent, background=LIGHT_BACKGROUND, width=137, height=35)
@@ -1815,7 +1816,9 @@ class B518LogSolutionApp:
                               height=LOCATOR_WHITE_SIZE)
         white_cell.place(
             x=inset, y=inset, width=LOCATOR_WHITE_SIZE, height=LOCATOR_WHITE_SIZE)
-        marker.white_cell = white_cell
+        # Tk already owns the child in marker.children. A second strong edge
+        # would survive destroy as marker -> white_cell -> master -> marker.
+        marker.white_cell = weakref.proxy(white_cell)
         return marker
 
     def _render_state_marker(self, snapshot) -> MarkerState:
@@ -2557,7 +2560,7 @@ class B518LogSolutionApp:
                 "conflict.position", position=self._t("conflict.unknown"),
             ))
             self.conflict_position_label.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-            comparison_font = tkfont.nametofont("TkDefaultFont")
+            comparison_font = tkfont.nametofont("TkDefaultFont", root=self.root)
             self.conflict_comparison = tk.Text(
                 summary, wrap="none", height=5, state="disabled", font=comparison_font,
                 background=LIGHT_BACKGROUND, foreground=TEXT_COLOUR, relief="solid",
@@ -2930,7 +2933,7 @@ class B518LogSolutionApp:
             if differs:
                 for start, end in row_ranges:
                     self.conflict_comparison.tag_add("comparison_difference", start, end)
-        display_font = tkfont.nametofont("TkDefaultFont")
+        display_font = tkfont.nametofont("TkDefaultFont", root=self.root)
         label_width = max(display_font.measure(self._t("conflict.comparison.item")),
                           max(display_font.measure(row[0]) for row in display_rows)) + 24
         original_width = max(display_font.measure(self._t("conflict.comparison.original")),

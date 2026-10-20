@@ -1,0 +1,12 @@
+OWNER 5 Tk <tkinter.Tk object .> BY Frame <tkinter.Frame object .!frame>
+OWNER 4 Frame <tkinter.Frame object .!frame> BY Frame <tkinter.Frame object .!frame.!frame3>
+OWNER 3 Frame <tkinter.Frame object .!frame.!frame3> BY Frame <tkinter.Frame object .!frame.!frame3.!frame>
+OWNER 2 Frame <tkinter.Frame object .!frame.!frame3.!frame> BY Frame <tkinter.Frame object .!frame.!frame3.!frame.!frame>
+OWNER 1 Frame <tkinter.Frame object .!frame.!frame3.!frame.!frame> BY Frame <tkinter.Frame object .!frame.!frame3.!frame>
+OWNER 3 Frame <tkinter.Frame object .!frame.!frame3> BY Frame <tkinter.Frame object .!frame.!frame3.!frame2>
+OWNER 2 Frame <tkinter.Frame object .!frame.!frame3.!frame2> BY Frame <tkinter.Frame object .!frame.!frame3.!frame2.!frame>
+OWNER 1 Frame <tkinter.Frame object .!frame.!frame3.!frame2.!frame> BY Frame <tkinter.Frame object .!frame.!frame3.!frame2>
+Traceback (most recent call last):
+  File "/tmp/b518-20261020/lifecycle-script.py", line 41, in <module>
+    raise AssertionError('retained')
+AssertionError: retained

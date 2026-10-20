@@ -1,0 +1,9 @@
+test_destroyed_locator_releases_widget_graph_without_collection (test_m10_tk_lifecycle.M10TkLifecycleTests.test_destroyed_locator_releases_widget_graph_without_collection) ... ok
+test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete (test_log_solution_ui.LogSolutionUiTests.test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete) ... ok
+test_destroyed_ui_is_safe_when_next_worker_collects_cycles (test_log_solution_ui.LogSolutionUiTests.test_destroyed_ui_is_safe_when_next_worker_collects_cycles) ... ok
+test_li7_geometry_at_both_scalings_and_all_capacities (test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 2.401s
+
+OK

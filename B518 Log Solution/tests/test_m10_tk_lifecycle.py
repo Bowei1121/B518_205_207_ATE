@@ -43,6 +43,27 @@ class M10TkLifecycleTests(unittest.TestCase):
                     peer.close()
                     root.destroy()
 
+    def test_destroyed_locator_releases_widget_graph_without_collection(self):
+        import gc
+        import tkinter as tk
+        import weakref
+        from b518_log_solution import B518LogSolutionApp
+
+        enabled = gc.isenabled()
+        gc.disable()
+        try:
+            root = tk.Tk()
+            locator = B518LogSolutionApp._build_kvm_locator(root, 0, 0, False)
+            references = [weakref.ref(widget) for widget in
+                          (root, locator, locator.winfo_children()[0])]
+            root.destroy()
+            del root, locator
+            self.assertTrue(all(reference() is None for reference in references))
+        finally:
+            gc.collect()
+            if enabled:
+                gc.enable()
+
     def test_closed_source_app_scenario_releases_interpreter_before_worker_gc(self):
         # Fault-injection exceptions can keep their traceback/widget graph in a
         # cycle. A later writer's collection must never dispose of that graph
