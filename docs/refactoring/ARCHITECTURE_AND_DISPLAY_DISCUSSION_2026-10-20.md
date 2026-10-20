@@ -99,3 +99,8 @@
 - GitHub追蹤：[Issue #86 — Log Solution 架構優化、監控計時與獨立畫面心跳](https://github.com/Bowei1121/B518_205_207_ATE/issues/86)，標籤ready-for-agent。
 - 使用者已確認沿用「實際輪次操作與保存結果」「歷史查詢完整操作流程」「真實Tk畫面與KVM配對影像」三個高層驗收入口。
 - 此次只轉換並發布規格，不代表App或橋接功能已實作。
+
+
+## 開發票發布（to-tickets）
+
+使用者已確認八票拆法與依賴，發布為父規格#86的子議題#87～#94，均為ready-for-agent；已設定7條原生阻擋關係。完整對照、逐票驗收與覆蓋表見[開發票總覽](log-solution-improvement-tickets-2026-10-20/README.md)。原父規格正文、標題、狀態、標籤與留言保留；此步驟不代表產品功能已實作。
