@@ -578,9 +578,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(rounds.round_snapshot(started.round_id).monitoring_elapsed_seconds, 7.5)
 
                 class TimerMonitor:
-                    def __init__(self, callback):
+                    def __init__(self, callback, start_timeout=5, round_timeout=20):
                         self.callback = callback
                         self.results = {1: SlotResult(1)}
+                        self.start_timeout = start_timeout
+                        self.round_timeout = round_timeout
 
                     def update_round_settings(self, _settings):
                         return
@@ -592,7 +594,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         return
 
                     def timeout_seconds(self, kind):
-                        return {"start": 5, "test": 60, "round": 20}[kind]
+                        return {"start": self.start_timeout, "test": 60,
+                                "round": self.round_timeout}[kind]
 
                     def round_results(self):
                         return tuple(self.results.values())
@@ -647,6 +650,29 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(rounds.snapshot().completion_reason, "unverified_round_cancelled")
                 self.assertEqual(rounds.snapshot().monitoring_elapsed_seconds, 5.0)
                 self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+
+                round_timeout = rounds.start(
+                    "FCT", lambda callback: TimerMonitor(callback, start_timeout=100,
+                                                         round_timeout=5),
+                    run_async=False, capacity=1,
+                )
+                app.active_round_id = round_timeout.round_id
+                app._apply_round_snapshot(round_timeout)
+                elapsed[0] = 1505.0
+                expired_round = rounds.poll_once()
+                app._apply_round_snapshot(expired_round)
+                self.assertEqual(expired_round.completion_reason, "round_deadline")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+
+                elapsed[0] = 1800.0
+                app.stop_button.invoke()
+                stopped_round = rounds.snapshot()
+                app._apply_round_snapshot(stopped_round)
+                self.assertEqual(stopped_round.completion_reason, "round_deadline")
+                self.assertEqual(stopped_round.monitoring_elapsed_seconds, 5.0)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:05")
+                rounds.acknowledge_round_alarm(
+                    round_timeout.round_id, expired_round.round_alarm.alarm_id)
             finally:
                 rounds.flush_audit(timeout=3)
                 rounds.request_close()
