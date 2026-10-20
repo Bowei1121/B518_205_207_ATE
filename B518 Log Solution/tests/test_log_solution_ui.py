@@ -35,6 +35,7 @@ except ImportError:  # macOS desktop-only acceptance helper
 
 from b518_log_solution import (
     APP_VERSION, B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
+    format_monitoring_elapsed,
     KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
     sn_font_size, visible_detail_rows, window_height,
@@ -454,6 +455,90 @@ def write_tk_bounds_evidence(key, value):
 
 
 class LogSolutionUiTests(unittest.TestCase):
+    def test_monitoring_elapsed_format_keeps_full_minutes(self):
+        cases = ((None, "00:00"), (59.9, "00:59"), (60, "01:00"),
+                 (901, "15:01"), (36000, "600:00"))
+        for elapsed, expected in cases:
+            with self.subTest(elapsed=elapsed):
+                self.assertEqual(format_monitoring_elapsed(elapsed), expected)
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_round_timer_stays_fixed_through_language_and_long_minutes(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            session_root = Path(temporary) / "sessions"
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey,
+                                     session_root=session_root)
+            elapsed = [500.0]
+            rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
+                                      audit_root=session_root)
+
+            try:
+                app.rounds = rounds
+                rounds.register_app_event_store(app.app_events, session_root.parent)
+                self.wait_for_ui(root, lambda: app.monitor_elapsed.cget("text") == "00:00")
+                self.assertLess(app.monitor_state.winfo_rootx(),
+                                app.monitor_elapsed.winfo_rootx())
+
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+                app.start_button.invoke()
+                started = rounds.snapshot()
+                self.assertIsNotNone(started)
+                self.assertEqual(app.active_round_id, started.round_id)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "00:00")
+                self.wait_for_ui(root, lambda: not rounds.snapshot().source_preparation_pending)
+
+                elapsed[0] = 1401.0
+                app._apply_round_snapshot(rounds.snapshot())
+                self.assertEqual(app.monitor_elapsed.cget("text"), "15:01")
+                app._select_language(ENGLISH)
+                root.update_idletasks()
+                right_edge = (app.monitor_elapsed.winfo_rootx() +
+                              app.monitor_elapsed.winfo_width())
+
+                app._select_language(TRADITIONAL_CHINESE)
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "15:01")
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                elapsed[0] = 36500.0
+                app._apply_round_snapshot(rounds.snapshot())
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+                self.assertGreaterEqual(app.monitor_elapsed.winfo_width(),
+                                        app.monitor_elapsed.winfo_reqwidth(),
+                                        (app.monitor_elapsed.winfo_width(),
+                                         app.monitor_elapsed.winfo_reqwidth(),
+                                         app._main_controls.winfo_width(),
+                                         app.monitor_elapsed.winfo_width(),
+                                         app.monitor_state.winfo_width()))
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                stopped = rounds.stop()
+                self.assertEqual(stopped.monitoring_elapsed_seconds, 36000.0)
+                elapsed[0] = 50000.0
+                app._apply_round_snapshot(rounds.snapshot())
+                self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+            finally:
+                rounds.stop()
+                rounds.flush_audit(timeout=3)
+                app.hotkey.close()
+                root.destroy()
+
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_li7_locator_is_visible_at_first_cell_with_fixed_other_geometry(self):

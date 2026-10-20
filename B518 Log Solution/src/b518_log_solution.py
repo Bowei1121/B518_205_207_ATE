@@ -77,6 +77,13 @@ def _invoke_historical_query_with_supported_options(sessions, app_path, date_ran
     return query_function(sessions, app_path, date_range, **kwargs)
 
 
+def format_monitoring_elapsed(seconds: Optional[float]) -> str:
+    """Render elapsed monotonic time without rolling minutes at an hour."""
+    total_seconds = max(0, int(seconds or 0))
+    minutes, remaining_seconds = divmod(total_seconds, 60)
+    return "{:02d}:{:02d}".format(minutes, remaining_seconds)
+
+
 APP_ROOT = Path.home() / "Library" / "Application Support" / "B518LogSolution"
 PREFS_PATH = APP_ROOT / "preferences.json"
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
@@ -993,9 +1000,17 @@ class B518LogSolutionApp:
             controls, text="取消未確認輪次並保留紀錄", command=self.cancel_unverified_round,
             style="Main.TButton", state="disabled")
         self.cancel_unverified_round_button.pack(fill="x", pady=(0, 2))
-        self.monitor_state = ttk.Label(controls, text="", anchor="center",
+        monitor_status_row = ttk.Frame(controls)
+        self._monitor_status_row = monitor_status_row
+        monitor_status_row.pack(fill="x", pady=(0, 2))
+        self.monitor_state = ttk.Label(monitor_status_row, text="", anchor="w",
                                        font=("Helvetica", MAIN_FONT_SIZE, "bold"))
-        self.monitor_state.pack(fill="x", pady=(0, 2))
+        self.monitor_state.grid(row=0, column=0, sticky="ew")
+        self.monitor_elapsed = ttk.Label(
+            monitor_status_row, text="00:00", anchor="e",
+            font=("Menlo", MAIN_FONT_SIZE, "bold"))
+        self.monitor_elapsed.grid(row=0, column=1, sticky="e")
+        monitor_status_row.columnconfigure(0, weight=1)
         save_controls = ttk.Frame(controls)
         save_controls.pack(fill="x")
         self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
@@ -1345,6 +1360,7 @@ class B518LogSolutionApp:
     def _refresh_main_round_labels(self) -> None:
         """Refresh only main-page round labels; language changes do not touch dialogs."""
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
+        self._render_monitoring_elapsed(snapshot)
         conflicts = snapshot.pending_conflicts if snapshot else ()
         self._render_conflict_review_button(snapshot)
         alarm = snapshot.round_alarm if snapshot else None
@@ -1372,6 +1388,15 @@ class B518LogSolutionApp:
 
     def _render_station_title(self) -> None:
         self._render_main_title()
+
+    def _render_monitoring_elapsed(self, snapshot) -> None:
+        if not hasattr(self, "monitor_elapsed"):
+            return
+        text = format_monitoring_elapsed(
+            getattr(snapshot, "monitoring_elapsed_seconds", None))
+        self.monitor_elapsed.configure(text=text, width=len(text))
+        self._monitor_status_row.columnconfigure(
+            1, minsize=self.monitor_elapsed.winfo_reqwidth())
 
     def _render_main_title(self) -> None:
         if hasattr(self, "project") and hasattr(self, "station"):
@@ -1881,6 +1906,7 @@ class B518LogSolutionApp:
         failure = getattr(snapshot, "start_failure", None)
         if snapshot.round_id != self.active_round_id and failure is None:
             return
+        self._render_monitoring_elapsed(snapshot)
         self._observe_foreground_transition(snapshot)
         if not snapshot.audit_complete and snapshot.audit_errors:
             reported = getattr(self, "_reported_audit_errors", set())
