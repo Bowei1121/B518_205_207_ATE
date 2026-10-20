@@ -1,7 +1,11 @@
+import os
+import platform
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -212,6 +216,59 @@ class PythonPreflightTests(unittest.TestCase):
         def missing(name):
             raise ModuleNotFoundError("No module named '_tkinter'")
         self.assertIn("Tk unavailable", check_python((3, 12, 10), "arm64", missing)[0])
+
+
+@unittest.skipUnless(platform.system() == "Darwin" and sys.version_info[:3] == (3, 12, 10),
+                     "desktop launcher integration requires macOS and Python 3.12.10")
+class DesktopLauncherTests(unittest.TestCase):
+    app_dir = Path(__file__).resolve().parents[1]
+    launcher = app_dir / "scripts" / "run_macos_desktop.sh"
+
+    def run_launcher(self, python_bin):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("VIRTUAL_ENV", None)
+        env["PYTHON_BIN"] = str(python_bin)
+        return subprocess.run(
+            ["bash", str(self.launcher), "-c", 'print("APPLICATION_REACHED")'],
+            cwd=self.app_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_launcher_rejects_missing_and_wrong_pins_before_running_app(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "empty-venv"
+            venv.EnvBuilder(with_pip=False).create(environment)
+            site_packages = environment / "lib" / "python3.12" / "site-packages"
+            wrong_version = site_packages / "pyinstaller-0.0.dist-info"
+            wrong_version.mkdir()
+            (wrong_version / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: pyinstaller\nVersion: 0.0\n", encoding="utf-8")
+
+            result = self.run_launcher(environment / "bin" / "python")
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("pyinstaller==6.16.0 required; found 0.0", output)
+        self.assertIn("Missing pyobjc-core==11.1", output)
+        self.assertIn("Missing pyobjc-framework-cocoa==11.1", output)
+        self.assertIn("Missing pyobjc-framework-quartz==11.1", output)
+        self.assertNotIn("APPLICATION_REACHED", output)
+
+    def test_launcher_rejects_global_python_before_running_app(self):
+        global_python = Path(sys.base_prefix) / "bin" / "python3.12"
+        if not global_python.is_file():
+            self.skipTest("base Python executable is not available")
+
+        result = self.run_launcher(global_python)
+        output = result.stdout + result.stderr
+
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("A Python virtual environment is required", output)
+        self.assertNotIn("APPLICATION_REACHED", output)
 
 
 if __name__ == "__main__":

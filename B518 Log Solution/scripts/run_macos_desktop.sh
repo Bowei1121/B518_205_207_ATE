@@ -13,7 +13,9 @@ cd "$APP_DIR"
   exit 1
 }
 "$desktop_python" scripts/check_macos_build_python.py --exact-version 3.12.10 \
-  --architecture "$(uname -m)"
+  --architecture "$(uname -m)" \
+  --requirements requirements/requirements-macos15-arm64.txt \
+  --require-virtualenv
 if [[ $# -eq 0 ]]; then
   set -- src/b518_log_solution.py
 fi
