@@ -5515,6 +5515,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.recovery_save_retry_button.invoke()
                     self.assertTrue(retry_entered.wait(2))
                     self.assertEqual(str(app.recovery_save_retry_button["state"]), "disabled")
+                    heartbeat_before_retry = app._heartbeat_state
+                    heartbeat_deadline = time.monotonic() + 1.5
+                    while (app._heartbeat_state == heartbeat_before_retry and
+                           time.monotonic() < heartbeat_deadline):
+                        root.update()
+                        time.sleep(0.01)
+                    self.assertNotEqual(app._heartbeat_state, heartbeat_before_retry)
                     ui_tick = threading.Event()
                     root.after(0, ui_tick.set)
                     root.update()
@@ -11152,11 +11159,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 started = rounds.start("FCT", create, run_async=True, capacity=1)
                 app.active_round_id = started.round_id
                 self.assertTrue(preparation_entered.wait(2))
+                heartbeat_before_close = app._heartbeat_state
                 app.close()
                 ticks = []
                 root.after(0, lambda: ticks.append("responsive"))
-                pump_until(lambda: rounds.close_status().status == "waiting")
+                pump_until(lambda: (rounds.close_status().status == "waiting" and
+                                    app._heartbeat_state != heartbeat_before_close))
                 self.assertIn("responsive", ticks)
+                self.assertNotEqual(app._heartbeat_state, heartbeat_before_close)
                 self.assertTrue(root_is_alive())
                 self.assertTrue(app._close_window.winfo_exists())
                 self.assertNotIn("monitor", monitor_holder)
