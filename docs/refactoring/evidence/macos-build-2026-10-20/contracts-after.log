@@ -1,0 +1,10 @@
+test_empty_paths_are_rejected_before_monitor_creation (test_log_solution_ui.LogSolutionUiTests.test_empty_paths_are_rejected_before_monitor_creation) ... ok
+test_monitor_creation_error_is_visible_and_returns_to_standby (test_log_solution_ui.LogSolutionUiTests.test_monitor_creation_error_is_visible_and_returns_to_standby) ... ok
+test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy (test_log_solution_ui.LogSolutionUiTests.test_real_tk_preference_replace_failure_does_not_accept_round_or_leave_start_busy) ... ok
+test_real_tk_notification_badge_stays_until_alarm_is_acknowledged (test_log_solution_ui.LogSolutionUiTests.test_real_tk_notification_badge_stays_until_alarm_is_acknowledged) ... ok
+test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking (test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 8.173s
+
+OK

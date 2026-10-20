@@ -86,3 +86,8 @@
 - docs/refactoring/PROJECT_SUMMARY_2026-10-20.md；docs/adr/0004、0005、0008、0010、0011。
 - 同層 B518_JetKVM_Log/host-app/tcp_server.py：68、677–683、757；round_frame_consumer.py：12–17、401–435；kvm_pool.py：89–90、203–238。
 - https://docs.python.org/3.12/whatsnew/3.12.html
+
+
+## 同日版本同步補充
+
+本輪訪談原以ce690f4查核；使用者要求同步後，已整合GitHub2f09988的既有Tk修正與測試。這不表示本文件的計時器／心跳／架構整理已實作。2f09988的建置證據見[當日診斷](evidence/macos-build-2026-10-20/validation.md)，本機驗證仍分開記錄。

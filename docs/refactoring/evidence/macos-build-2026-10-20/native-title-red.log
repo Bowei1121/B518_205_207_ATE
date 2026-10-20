@@ -1,0 +1,17 @@
+test_native_capture_selects_current_window_with_duplicate_title (test_log_solution_ui.LogSolutionUiTests.test_native_capture_selects_current_window_with_duplicate_title) ... FAIL
+
+======================================================================
+FAIL: test_native_capture_selects_current_window_with_duplicate_title (test_log_solution_ui.LogSolutionUiTests.test_native_capture_selects_current_window_with_duplicate_title)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2662, in test_native_capture_selects_current_window_with_duplicate_title
+    evidence = capture_tk_content_view_evidence(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 290, in capture_tk_content_view_evidence
+    raise AssertionError("Aqua contentView did not settle: native={}, Tk={}".format(
+AssertionError: Aqua contentView did not settle: native=(220, 150), Tk=(320, 210)
+
+----------------------------------------------------------------------
+Ran 1 test in 5.285s
+
+FAILED (failures=1)

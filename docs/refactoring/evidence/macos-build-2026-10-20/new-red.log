@@ -1,0 +1,32 @@
+test_destroyed_locator_releases_widget_graph_without_collection (test_m10_tk_lifecycle.M10TkLifecycleTests.test_destroyed_locator_releases_widget_graph_without_collection) ... FAIL
+test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete (test_log_solution_ui.LogSolutionUiTests.test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete) ... ERROR
+
+======================================================================
+ERROR: test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete (test_log_solution_ui.LogSolutionUiTests.test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2612, in test_fixture_cleanup_cancels_nested_widget_timer_without_double_delete
+    self._destroy_test_windows()
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_log_solution_ui.py", line 2569, in _destroy_test_windows
+    window.destroy()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2668, in destroy
+    for c in list(self.children.values()): c.destroy()
+                                           ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 2672, in destroy
+    Misc.destroy(self)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/tkinter/__init__.py", line 689, in destroy
+    self.tk.deletecommand(name)
+_tkinter.TclError: can't delete Tcl command
+
+======================================================================
+FAIL: test_destroyed_locator_releases_widget_graph_without_collection (test_m10_tk_lifecycle.M10TkLifecycleTests.test_destroyed_locator_releases_widget_graph_without_collection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/tests/test_m10_tk_lifecycle.py", line 61, in test_destroyed_locator_releases_widget_graph_without_collection
+    self.assertTrue(all(reference() is None for reference in references))
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.514s
+
+FAILED (failures=1, errors=1)

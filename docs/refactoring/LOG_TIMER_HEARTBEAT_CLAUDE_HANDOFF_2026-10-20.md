@@ -88,3 +88,8 @@
 部署時須核對App與橋接相容版本及回復方式；不要將新格位App交給僅支援舊座標的橋接。部署切換與錯誤恢復政策由橋接工作另行定案。
 
 參照：[完整App規格](LOG_SOLUTION_IMPROVEMENT_SPEC_2026-10-20.md)、[逐輪回答](ARCHITECTURE_AND_DISPLAY_DISCUSSION_2026-10-20.md)、[ADR0012](../adr/0012-monitor-elapsed-time-and-independent-display-heartbeat.md)。
+
+
+## 同日版本同步補充
+
+本輪訪談原以ce690f4查核；使用者要求同步後，已整合GitHub2f09988的既有Tk修正與測試。這不表示本文件的計時器／心跳／架構整理已實作。2f09988的建置證據見[當日診斷](evidence/macos-build-2026-10-20/validation.md)，本機驗證仍分開記錄。
