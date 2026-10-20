@@ -185,6 +185,7 @@ class RoundStartPreparationTests(unittest.TestCase):
                     self.assertTrue((coordinator.session_path / "session.json").is_file())
                     self.assertTrue((coordinator.session_path / "audit.jsonl").is_file())
                     coordinator.stop()
+                    self.close_and_wait(coordinator)
                     self.assertTrue(coordinator.flush_session(timeout=2))
                     self.assertTrue(coordinator.flush_audit(timeout=2))
 

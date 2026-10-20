@@ -2268,16 +2268,17 @@ class B518LogSolutionApp:
 
     def _handle_start_flow_failure(self, failure, profile, station: str) -> None:
         reason = failure.diagnostic
+        notice = None
         if failure.phase == StartFailurePhase.PROFILE_VALIDATION:
             self._record_app_event("app.profile.validation_failed", {"reason": reason}, reason)
             self.rounds.record_start_failure(station, reason)
-            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
-                              {"reason": reason})
+            notice = ("app.profile.validation_title", "app.profile.validation_failed",
+                      {"reason": reason}, "")
         elif failure.phase == StartFailurePhase.PREFERENCE_SAVE:
             self._record_app_event("app.profile.save_failed", {"reason": reason}, reason)
             self.rounds.record_start_failure(station, reason)
-            self._show_notice("app.profile.save_title", "app.profile.save_failed",
-                              {"reason": reason})
+            notice = ("app.profile.save_title", "app.profile.save_failed",
+                      {"reason": reason}, "")
         else:
             snapshot = failure.snapshot
             round_id = snapshot.round_id if snapshot is not None else ""
@@ -2288,8 +2289,8 @@ class B518LogSolutionApp:
             if snapshot is not None and snapshot.round_id:
                 self.active_round_id = snapshot.round_id
                 self.active_profile_snapshot = profile
-            self._show_notice("app.start.source_title", "app.start.source_failed",
-                              {"reason": reason}, diagnostic=reason)
+            notice = ("app.start.source_title", "app.start.source_failed",
+                      {"reason": reason}, reason)
         try:
             snapshot = self.rounds.snapshot()
             self._apply_round_snapshot(snapshot)
@@ -2299,6 +2300,10 @@ class B518LogSolutionApp:
                 self._set_monitor_controls(True)
         except Exception as error:
             self._record_start_presentation_failure(str(error), failure.snapshot)
+            return
+        if notice is not None:
+            title_id, message_id, parameters, diagnostic = notice
+            self._show_notice(title_id, message_id, parameters, diagnostic=diagnostic)
 
     def _record_start_presentation_failure(self, diagnostic: str, snapshot) -> None:
         round_id = snapshot.round_id if snapshot is not None else ""

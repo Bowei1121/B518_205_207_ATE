@@ -1,0 +1,5 @@
+Environment check passed: /Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python (Python 3.12.10, x86_64, target x86_64, virtualenv yes)
+  pyinstaller==6.16.0
+  pyobjc-core==11.1
+  pyobjc-framework-cocoa==11.1
+  pyobjc-framework-quartz==11.1
