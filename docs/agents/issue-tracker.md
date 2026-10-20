@@ -11,7 +11,7 @@
 - 留言：`gh issue comment <編號> --repo Bowei1121/B518_205_207_ATE --body-file <檔案>`
 - 關閉：`gh issue close <編號> --repo Bowei1121/B518_205_207_ATE`
 
-PRs as a request surface: no.
+Spec 父 Issue 與子 Issue 是需求來源；PR 承載實作差異、獨立審查及修正留言。程式票的認領、PR、複查與結票依 [協作流程](../../skills/issue-pr-review-loop/references/workflow.md) 執行。
 
 既有 docs/refactoring/ 規格與 tickets 保留為原始紀錄；
 本次設定不自動建立對應遠端議題。若後續遷移，記錄本機文件與 issue 的對照。
@@ -20,4 +20,4 @@ PRs as a request surface: no.
 子議題使用 wayfinder:research、wayfinder:prototype、wayfinder:grilling 或 wayfinder:task。
 優先使用 GitHub 子議題及原生依賴；不支援時以任務清單、
 Part of #編號 與 Blocked by: #編號 記錄關係。
-只認領無未完成依賴且未指派的工作；完成後記錄結果、關閉議題並更新總覽。
+只認領無未完成依賴且未指派的工作；產品程式票以 PR 已合併且驗收完成作為結票依據，再記錄結果與更新總覽。

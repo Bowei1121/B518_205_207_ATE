@@ -99,3 +99,14 @@
 - 7條原生Blocked by：#90←#88、#91←#90、#93←#91／#92、#94←#87／#89／#93。起始可認領#87、#88、#89、#92。
 - 原始52個使用情境與19組驗收情境已對照至各票，逐票完整內容及機器可讀編號對照保存在[開發票總覽](log-solution-improvement-tickets-2026-10-20/README.md)。橋接程式仍由Claude另案實作。
 - 發布後讀回各票確認正文、標籤及父子／阻擋關係，父規格正文、標題、狀態、標籤及留言保持不變；本次只處理票務與文件，不重跑產品測試、不宣稱功能已實作。
+
+
+## Issue／PR 獨立審查流程與 skill
+
+- 使用者確認的工作方式：grill-with-docs＋bro訪談 → Spec父Issue → 開發子票 → 新session實作／開PR → 新session獨立審查並留言 → 原session同PR修正／複查 → 合併與結票 → 下一票。
+- 模型偏好為Luna6／High實作、Sol6.1／Medium獨立審查；由使用者在各session選取，skill不自動換模型、建新session、監看或合併。
+- 已建立[協作文件](../../skills/issue-pr-review-loop/references/workflow.md)及[skill版本來源](../../skills/issue-pr-review-loop/SKILL.md)，同步專案AGENTS與追蹤器指引，避免舊的推送／結票規則衝突。
+- 每輪審查記錄確切HEAD與結論；實作session自查不取代獨立審查。修正後舊審查失效；自動合併須具既有授權、最新審查／驗證通過，且合併操作以expected SHA綁定已審版本。
+- 獨立唯讀情境檢查驗證：舊SHA的通過不可合併新版、原session修完不能自行通過、全部條件符合可沿既有授權合併但不能擅自下一票；另據實際CLI確認match-head-commit支援。
+- 本次只建立流程與skill，不實作LS票、不新增或操作PR審查。skill驗證器所需PyYAML固定版僅安裝在暫存目錄，不改專案Python或requirements。
+- skill已安裝於使用者層`~/.agents/skills/issue-pr-review-loop`，三檔與儲存庫來源逐位元相同；安裝位置依官方目前使用者技能目錄。沒有替Claude或Cursor建立工具專屬安裝，兩者可讀取同一協作文件。
