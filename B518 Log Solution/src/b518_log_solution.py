@@ -45,7 +45,8 @@ from machine_profiles import (
     MachineProfile, MachineProfileStore, ProfileError, profile_from_editor_fields,
 )
 from platform_registry import DEFAULT_PLATFORM_REGISTRY
-from round_start_preparation import RoundStartPathError, RoundStartPreparation
+from round_start_preparation import RoundStartPreparation
+from round_start_flow import RoundStartFlow, StartFailurePhase, StartFlowStatus
 from language_catalog import (
     DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, TRADITIONAL_CHINESE, language_name,
     make_bilingual_message, render_bilingual_message, save_state_message_id, translate,
@@ -444,6 +445,7 @@ class B518LogSolutionApp:
         self.active_profile_snapshot: Optional[MachineProfile] = None
         self.profile_store = MachineProfileStore(PREFS_PATH)
         self.round_start_preparation = RoundStartPreparation()
+        self.round_start_flow = RoundStartFlow(self.round_start_preparation)
         self.profiles, selected_project, selected_machine, self.profile_error = self.profile_store.load()
         self.current_language = self.profile_store.language
         self._language_save_error: Optional[str] = None
@@ -2107,8 +2109,7 @@ class B518LogSolutionApp:
         self.hotkey_events.put(True)
 
     def _start_from_hotkey(self) -> None:
-        if not getattr(self, "_closing_ui", False) and not self._round_is_active():
-            self.start_monitor()
+        self.start_monitor()
 
     def _show_hotkey_warning(self) -> None:
         self._record_app_event("app.hotkey.unavailable", {}, self.hotkey.message)
@@ -2154,66 +2155,93 @@ class B518LogSolutionApp:
             self._set_row(slot, "", "WAITING")
 
     def start_monitor(self) -> None:
-        if getattr(self, "_closing_ui", False):
-            return
-        if self.rounds.start_failure_snapshot() is not None:
-            return
-        current = self.rounds.snapshot()
-        if current is not None and current.cancellation_available:
-            self._set_monitor_controls(False, "monitor.awaiting_manual_cancel")
-            return
-        if current is not None and current.state in {"PREPARING", "RUNNING"}:
-            return
         station = self.station.get().upper()
-        try:
-            profile = self._selected_profile()
-        except (AttributeError, ProfileError) as error:
-            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            self.rounds.record_start_failure(station, str(error))
-            self._apply_round_snapshot(self.rounds.snapshot())
-            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
-                              {"reason": str(error)})
+        result = self.round_start_flow.run(
+            self.rounds, self._selected_profile, self.session_root,
+            self._save_preferences, closing=getattr(self, "_closing_ui", False),
+        )
+        if result.status == StartFlowStatus.REJECTED:
+            current = self.rounds.snapshot()
+            if current is not None and current.cancellation_available:
+                self._set_monitor_controls(False, "monitor.awaiting_manual_cancel")
             return
-        try:
-            prepared = self.round_start_preparation.prepare(
-                profile, self.session_root, async_session_writes=True,
-            )
-        except RoundStartPathError as error:
-            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            self.rounds.record_start_failure(station, str(error))
-            self._apply_round_snapshot(self.rounds.snapshot())
-            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
-                              {"reason": str(error)})
-            return
-        except (AttributeError, ProfileError, ValueError) as error:
-            self._record_app_event("app.profile.validation_failed", {"reason": str(error)}, str(error))
-            self.rounds.record_start_failure(station, str(error))
-            self._apply_round_snapshot(self.rounds.snapshot())
-            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
-                              {"reason": str(error)})
+        if result.status == StartFlowStatus.FAILED:
+            assert result.failure is not None
+            self._handle_start_flow_failure(result.failure, result.profile, station)
             return
 
-        self.active_profile_snapshot = prepared.profile
-        self.start_button.configure(state="disabled")
-        self._set_main_monitor_state("monitor.starting")
-        self.root.update_idletasks()
+        snapshot = result.snapshot
+        assert snapshot is not None
+        self.active_profile_snapshot = result.profile
+        self.active_round_id = snapshot.round_id
         try:
-            self._save_preferences()
-            snapshot = prepared.start(self.rounds, run_async=True)
-            self.active_round_id = snapshot.round_id
+            self.start_button.configure(state="disabled")
+            self._set_monitor_controls(True)
+            self._set_main_monitor_state("monitor.starting")
             self._reset_rows()
             self._apply_round_snapshot(snapshot)
+            if snapshot.state.value == "PREPARING":
+                self._set_main_monitor_state("monitor.preparing")
         except Exception as error:
-            self.active_profile_snapshot = None
-            self.rounds.record_start_failure(station, str(error))
-            self._apply_round_snapshot(self.rounds.snapshot())
-            self._record_app_event("app.profile.save_failed", {"reason": str(error)}, str(error))
+            self._record_start_presentation_failure(str(error), snapshot)
+
+    def _handle_start_flow_failure(self, failure, profile, station: str) -> None:
+        reason = failure.diagnostic
+        if failure.phase == StartFailurePhase.PROFILE_VALIDATION:
+            self._record_app_event("app.profile.validation_failed", {"reason": reason}, reason)
+            self.rounds.record_start_failure(station, reason)
+            self._show_notice("app.profile.validation_title", "app.profile.validation_failed",
+                              {"reason": reason})
+        elif failure.phase == StartFailurePhase.PREFERENCE_SAVE:
+            self._record_app_event("app.profile.save_failed", {"reason": reason}, reason)
+            self.rounds.record_start_failure(station, reason)
             self._show_notice("app.profile.save_title", "app.profile.save_failed",
-                              {"reason": str(error)})
-            return
-        self._set_monitor_controls(True)
-        if snapshot.state.value == "PREPARING":
-            self._set_main_monitor_state("monitor.preparing")
+                              {"reason": reason})
+        else:
+            snapshot = failure.snapshot
+            round_id = snapshot.round_id if snapshot is not None else ""
+            self._record_app_event("app.start.source_failed",
+                                   {"reason": reason, "round_id": round_id}, reason)
+            if snapshot is None:
+                self.rounds.record_start_failure(station, reason)
+            if snapshot is not None and snapshot.round_id:
+                self.active_round_id = snapshot.round_id
+                self.active_profile_snapshot = profile
+            self._show_notice("app.start.source_title", "app.start.source_failed",
+                              {"reason": reason}, diagnostic=reason)
+        try:
+            snapshot = self.rounds.snapshot()
+            self._apply_round_snapshot(snapshot)
+            if (snapshot is not None and snapshot.start_failure is None and
+                    not snapshot.cancellation_available and
+                    snapshot.state.value in {"PREPARING", "RUNNING", "AWAITING_REVIEW"}):
+                self._set_monitor_controls(True)
+        except Exception as error:
+            self._record_start_presentation_failure(str(error), failure.snapshot)
+
+    def _record_start_presentation_failure(self, diagnostic: str, snapshot) -> None:
+        round_id = snapshot.round_id if snapshot is not None else ""
+        parameters = {"reason": diagnostic, "round_id": round_id}
+        message_id = "app.round.presentation_failed" if round_id else "app.start.presentation_failed"
+        self._record_app_event(message_id, parameters, diagnostic)
+        if round_id:
+            try:
+                self.start_button.configure(state="disabled")
+                self.stop_button.configure(state="normal")
+            except Exception:
+                pass
+        else:
+            self.rounds.record_start_failure(self.station.get().upper(), diagnostic)
+            try:
+                self._apply_round_snapshot(self.rounds.snapshot())
+            except Exception:
+                pass
+        try:
+            self._show_notice("app.start.presentation_title", message_id,
+                              parameters, diagnostic=diagnostic)
+        except Exception:
+            # The presentation boundary itself failed; the diagnostic is already durable.
+            pass
 
     def reset_start_failure(self) -> None:
         """Acknowledge and reset the visible startup failure without retrying it."""

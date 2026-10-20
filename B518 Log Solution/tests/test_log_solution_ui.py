@@ -7746,7 +7746,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
-    def test_awaiting_review_start_entrypoints_preserve_their_existing_side_effects(self):
+    def test_awaiting_review_start_entrypoints_share_admission_without_side_effects(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
@@ -7758,6 +7758,8 @@ class LogSolutionUiTests(unittest.TestCase):
             app.profiles = app.profiles.with_profile(replace(
                 dfu_profile, paths={"active": temporary, "final": temporary, "caseinfo": ""},
             ))
+            app._save_preferences()
+            preferences_before = (Path(temporary) / "preferences.json").read_bytes()
             sources = []
 
             def source_factory(callback):
@@ -7784,30 +7786,28 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.rounds.snapshot().state == RoundState.AWAITING_REVIEW)
                 original_round_id = app.rounds.snapshot().round_id
 
-                # The direct start method historically saves the newly selected profile
-                # and resets the board before RoundCoordinator returns the existing round.
+                # The button and both shortcuts share the same admission gate while a
+                # round awaits review; rejected starts must not persist changed settings.
                 app.station.set("DFU")
                 app._profile_changed()
-                app.start_monitor()
-                saved = json.loads((Path(temporary) / "preferences.json").read_text(encoding="utf-8"))
-                self.assertEqual(saved["machine"], "DFU")
+                app.start_button.invoke()
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
                 self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
 
-                # Both shortcut paths reject AWAITING_REVIEW before saving preferences.
                 app.station.set("FCT")
                 root.event_generate("<Command-Shift-M>")
                 root.update()
                 self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
-                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
-                    encoding="utf-8"))
-                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
 
                 app.station.set("DFU")
                 app.hotkey.callback()
                 root.update()
-                unchanged = json.loads((Path(temporary) / "preferences.json").read_text(
-                    encoding="utf-8"))
-                self.assertEqual(unchanged["machine"], "DFU")
+                self.assertEqual(app.rounds.snapshot().round_id, original_round_id)
+                self.assertEqual((Path(temporary) / "preferences.json").read_bytes(),
+                                 preferences_before)
                 self.assertEqual(app.rounds.snapshot().state, RoundState.AWAITING_REVIEW)
             finally:
                 app.rounds.stop()
@@ -7937,7 +7937,7 @@ class LogSolutionUiTests(unittest.TestCase):
         try:
             with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor") as monitor_type, \
                     patch("b518_log_solution.show_notice") as show_error:
-                app.start_monitor()
+                app.start_button.invoke()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
             self.assertEqual(show_error.call_args.args[:2], (
@@ -8130,6 +8130,96 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.hotkey.close()
                 root.destroy()
 
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_button_and_hotkey_share_start_admission(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+
+                app.start_button.invoke()
+                accepted = app.rounds.snapshot()
+                self.assertIsNotNone(accepted)
+                self.assertIn(accepted.state, {RoundState.PREPARING, RoundState.RUNNING})
+
+                self.assertEqual(app._on_local_hotkey(None), "break")
+                app._on_global_hotkey()
+                app._drain_events()
+
+                self.assertEqual(app.rounds.snapshot().round_id, accepted.round_id)
+                self.assertEqual(app.active_round_id, accepted.round_id)
+            finally:
+                app.rounds.stop()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_real_tk_presentation_failure_keeps_accepted_round_and_diagnostic(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            active = Path(temporary) / "active"
+            final = Path(temporary) / "final"
+            active.mkdir()
+            final.mkdir()
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                app.profile_editor_machine.set("FCT")
+                app.profile_editor_paths["active"].set(str(active))
+                app.profile_editor_paths["final"].set(str(final))
+                app._apply_profile_editor()
+                app._close_settings()
+
+                with patch.object(app, "_apply_round_snapshot",
+                                  side_effect=RuntimeError("render fault")), \
+                        patch("b518_log_solution.show_notice") as show_notice:
+                    app.start_button.invoke()
+
+                snapshot = app.rounds.snapshot()
+                self.assertIsNotNone(snapshot)
+                self.assertEqual(snapshot.round_id, app.active_round_id)
+                self.assertIsNone(app.rounds.start_failure_snapshot())
+                self.assertEqual(str(app.stop_button.cget("state")), "normal")
+                diagnostic = next(
+                    record for record in app.app_events.records
+                    if record["localized_message"]["message_id"] == "app.round.presentation_failed"
+                )
+                self.assertEqual(diagnostic["diagnostic"], "render fault")
+                self.assertEqual(diagnostic["localized_message"]["parameters"]["round_id"],
+                                 snapshot.round_id)
+                show_notice.assert_called_once()
+            finally:
+                app.rounds.stop()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status in {"complete", "failed"})
+                app.hotkey.close()
+                root.destroy()
+
     def test_settings_expose_profile_editor_and_session_log_without_legacy_monitor_tab(self):
         root = tk.Tk()
         root.deiconify()
@@ -8170,7 +8260,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("source access denied")), \
                         patch("b518_log_solution.show_notice") as show_error:
-                    app.start_monitor()
+                    app.start_button.invoke()
                     deadline = time.monotonic() + 3
                     while not show_error.called and time.monotonic() < deadline:
                         root.update()
