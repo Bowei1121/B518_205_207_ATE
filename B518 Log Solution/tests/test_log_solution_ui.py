@@ -3499,6 +3499,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 app_event_path=Path(temporary) / "app-events.json",
             )
             try:
+                def rendered_cells():
+                    items = app.kvm_heartbeat_marker.find_withtag("heartbeat-cell")
+                    self.assertEqual(len(items), 4)
+                    colours = tuple(app.kvm_heartbeat_marker.itemcget(item, "fill")
+                                    for item in items)
+                    self.assertTrue(set(colours) <= {"#000000", "#ffffff"})
+                    return tuple(
+                        tuple(colours[row * 2 + column] == "#000000"
+                              for column in range(2))
+                        for row in range(2)
+                    )
+
+                initial_state = app._heartbeat_state
+                initial_pattern = rendered_cells()
+                self.assertEqual(initial_state, 0)
+                self.assertEqual(initial_pattern, HEARTBEAT_PATTERNS[0])
                 self.wait_for_ui(root, lambda: root.winfo_ismapped() and
                                  app.kvm_heartbeat_marker.winfo_ismapped())
                 self.assertEqual(HEARTBEAT_INTERVAL_MS, 500)
@@ -3514,23 +3530,6 @@ class LogSolutionUiTests(unittest.TestCase):
                                   app.kvm_locator_right.winfo_x()), (0, 320))
                 self.assertEqual(app.kvm_result_blocks[1].winfo_y(), 34)
 
-                def rendered_cells():
-                    items = app.kvm_heartbeat_marker.find_withtag("heartbeat-cell")
-                    self.assertEqual(len(items), 4)
-                    colours = tuple(app.kvm_heartbeat_marker.itemcget(item, "fill")
-                                    for item in items)
-                    self.assertTrue(set(colours) <= {"#000000", "#ffffff"})
-                    return tuple(
-                        tuple(colours[row * 2 + column] == "#000000"
-                              for column in range(2))
-                        for row in range(2)
-                    )
-
-                observed_states = [app._heartbeat_state]
-                observed_patterns = [rendered_cells()]
-                transition_times = [time.monotonic()]
-                self.assertEqual(observed_states, [0])
-
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     capture = capture_tk_window_evidence(
                         root, "ls6-heartbeat-state-00", "en", {
@@ -3544,23 +3543,36 @@ class LogSolutionUiTests(unittest.TestCase):
                 else:
                     capture = {"geometry": root.geometry()}
 
-                expected_next = 1
+                self.wait_for_ui(root, lambda: app._heartbeat_state != initial_state,
+                                 timeout=HEARTBEAT_INTERVAL_MS / 1000 + .8)
+                cycle_start_state = app._heartbeat_state
+                expected_cycle_states = [
+                    (cycle_start_state + offset) % len(HEARTBEAT_PATTERNS)
+                    for offset in range(1, len(HEARTBEAT_PATTERNS) + 1)
+                ]
+                observed_states = [initial_state, cycle_start_state]
+                observed_patterns = [initial_pattern, rendered_cells()]
+                transition_times = [time.monotonic()]
+                expected_index = 0
                 deadline = time.monotonic() + 10
-                while expected_next <= 16 and time.monotonic() < deadline:
+                while (expected_index < len(expected_cycle_states) and
+                       time.monotonic() < deadline):
                     root.update()
                     current = app._heartbeat_state
-                    if current == expected_next % 16 and len(observed_states) == expected_next:
+                    if current == expected_cycle_states[expected_index]:
                         observed_states.append(current)
                         observed_patterns.append(rendered_cells())
                         transition_times.append(time.monotonic())
-                        expected_next += 1
+                        expected_index += 1
                     time.sleep(.005)
-                self.assertEqual(observed_states, list(range(16)) + [0])
+                self.assertEqual(observed_states, [initial_state, cycle_start_state] +
+                                 expected_cycle_states)
                 self.assertEqual(observed_patterns,
-                                 [tuple(tuple(row) for row in pattern)
-                                  for pattern in HEARTBEAT_PATTERNS] + [HEARTBEAT_PATTERNS[0]])
+                                 [HEARTBEAT_PATTERNS[state]
+                                  for state in observed_states])
                 intervals = [later - earlier for earlier, later in
                              zip(transition_times, transition_times[1:])]
+                self.assertEqual(len(intervals), 16)
                 self.assertTrue(all(.35 <= interval <= 1.25 for interval in intervals),
                                 intervals)
 
@@ -3627,6 +3639,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         "interval_ms": HEARTBEAT_INTERVAL_MS,
                         "states": observed_states,
                         "patterns": observed_patterns,
+                        "initial_state_zero_verified": True,
+                        "cycle_start_state": cycle_start_state,
                         "transition_elapsed_seconds": [
                             round(value - transition_times[0], 3)
                             for value in transition_times],
