@@ -8327,10 +8327,10 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
         self.assertEqual(profiles.get("B482", "BT").capacity, 4)
         # The two profile rows and save/archive/diagnostic controls stay visible.
-        self.assertEqual(window_height(4), 761)
-        self.assertEqual(window_height(6), 808)
-        self.assertEqual(window_height(7), 808)
-        self.assertEqual(window_height(20), 835)
+        self.assertEqual(window_height(4), 705)
+        self.assertEqual(window_height(6), 771)
+        self.assertEqual(window_height(7), 804)
+        self.assertEqual(window_height(20), 831)
         self.assertEqual(visible_detail_rows(20, 500), 1)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 

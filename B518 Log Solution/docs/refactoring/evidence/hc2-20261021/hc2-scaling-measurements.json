@@ -1,0 +1,260 @@
+[
+  {
+    "title": "HC2 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x986+50+40",
+    "size": [
+      376,
+      986
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "first_slot": [
+        9,
+        276,
+        59,
+        32
+      ],
+      "last_slot": [
+        9,
+        903,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 1014.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1014
+    },
+    "screenshot": "hc2-cap20-scale-1.0-top-zh-TW.png",
+    "capture_method": "window-server",
+    "tk_scaling": 1.0,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ],
+    "visible_rows": 14,
+    "statuses": [
+      "PASS",
+      "FAIL",
+      "TESTING",
+      "NOTEST"
+    ],
+    "yview": [
+      0.0,
+      0.7
+    ]
+  },
+  {
+    "title": "HC2 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x986+50+40",
+    "size": [
+      376,
+      986
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "first_slot": [
+        9,
+        78,
+        59,
+        32
+      ],
+      "last_slot": [
+        9,
+        705,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 1014.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1014
+    },
+    "screenshot": "hc2-cap20-scale-1.0-bottom-zh-TW.png",
+    "capture_method": "window-server",
+    "tk_scaling": 1.0,
+    "last_row_fully_visible": true,
+    "yview": [
+      0.3,
+      1.0
+    ]
+  },
+  {
+    "title": "HC2 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x986+50+40",
+    "size": [
+      376,
+      986
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "first_slot": [
+        9,
+        276,
+        59,
+        32
+      ],
+      "last_slot": [
+        9,
+        903,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 1014.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1014
+    },
+    "screenshot": "hc2-cap20-scale-1.5-top-zh-TW.png",
+    "capture_method": "window-server",
+    "tk_scaling": 1.5,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ],
+    "visible_rows": 14,
+    "statuses": [
+      "PASS",
+      "FAIL",
+      "TESTING",
+      "NOTEST"
+    ],
+    "yview": [
+      0.0,
+      0.7
+    ]
+  },
+  {
+    "title": "HC2 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x986+50+40",
+    "size": [
+      376,
+      986
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "first_slot": [
+        9,
+        78,
+        59,
+        32
+      ],
+      "last_slot": [
+        9,
+        705,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 1014.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1014
+    },
+    "screenshot": "hc2-cap20-scale-1.5-bottom-zh-TW.png",
+    "capture_method": "window-server",
+    "tk_scaling": 1.5,
+    "last_row_fully_visible": true,
+    "yview": [
+      0.3,
+      1.0
+    ]
+  }
+]
