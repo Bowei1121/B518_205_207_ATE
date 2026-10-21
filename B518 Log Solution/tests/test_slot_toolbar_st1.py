@@ -171,6 +171,7 @@ class SlotViewportTests(LogSolutionUiTests):
         app.machine_choice.event_generate("<<ComboboxSelected>>")
         root.update()
         self.assertEqual(app.rows_canvas.yview(), (0.0, 1.0))
+        self.assertTrue(app.rows_scrollbar.instate(("disabled",)))
         self.assertEqual(app.rows_canvas.winfo_width(), before_width)
         self.assertTrue(app.rows_scrollbar.winfo_ismapped())
         if os.environ.get("B518_TK_EVIDENCE_DIR"):
