@@ -542,6 +542,180 @@ class LogSolutionUiTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
+    def test_real_tk_start_and_cancel_hints_cover_recovery_states(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json")
+            elapsed = [0.0]
+            rounds = app.rounds
+            errors = []
+            root.report_callback_exception = lambda *error: errors.append(error)
+
+            class Monitor:
+                def __init__(self, callback):
+                    self.callback = callback
+                    self.results = (SlotResult(1), SlotResult(2))
+
+                def round_results(self):
+                    return self.results
+
+                def timeout_seconds(self, kind):
+                    return {"start": 30, "test": 60, "round": 1}[kind]
+
+                def update_round_settings(self, _settings):
+                    pass
+
+                def start(self):
+                    pass
+
+                def stop_collection(self):
+                    pass
+
+                def finish(self):
+                    pass
+
+                def stop(self):
+                    pass
+
+                def poll_once(self):
+                    pass
+
+            def wait(predicate, message):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    root.update()
+                    if predicate():
+                        return
+                    time.sleep(.01)
+                self.fail(message)
+
+            def check_start_hint(expected_en, expected_zh, evidence_prefix):
+                hint = app._main_action_hints[app.start_button]
+                app.start_button.event_generate("<Enter>")
+                wait(lambda: hint._window is not None,
+                     "start-button hover hint did not appear")
+                self.assertIn(expected_en, hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        root, evidence_prefix + "-en.png")
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertIn(expected_zh, hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        root, evidence_prefix + "-zh-TW.png")
+                app.start_button.event_generate("<Leave>")
+                wait(lambda: hint._window is None,
+                     "start-button hover hint did not clear on pointer leave")
+                app.start_button.focus_force()
+                wait(lambda: hint._window is not None,
+                     "start-button focus hint did not appear")
+                self.assertIn(expected_zh, hint._label.cget("text"))
+                app._select_language(ENGLISH)
+                self.assertIn(expected_en, hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        root, evidence_prefix + "-focus-en.png")
+                app.app_diagnostics_button.focus_force()
+                wait(lambda: hint._window is None,
+                     "start-button focus hint did not clear on focus loss")
+
+            try:
+                wait(lambda: app.start_button.winfo_viewable(),
+                     "main window did not become visible")
+                start_calls = []
+                app.start_monitor = lambda: start_calls.append(True)
+                rounds.record_start_failure("FCT", "source folder is unavailable")
+                app._set_monitor_controls(False)
+                self.assertTrue(app.start_button.instate(("disabled",)))
+                check_start_hint(
+                    "startup failure must be cleared in Notifications and Recovery",
+                    "請先到「通知與恢復中心」解除啟動異常",
+                    "hc5-start-disabled-failure")
+                self.assertIsNotNone(rounds.start_failure_snapshot(),
+                                     "showing the hint must not reset the startup failure")
+                self.assertIsNone(rounds.snapshot(),
+                                  "showing the hint must not start a monitoring round")
+                self.assertEqual(start_calls, [])
+
+                app.reset_start_failure()
+                self.assertIsNone(rounds.start_failure_snapshot())
+                elapsed = [0.0]
+                rounds = RoundCoordinator(
+                    app.events.put, monotonic=lambda: elapsed[0],
+                    audit_root=Path(temporary) / "sessions")
+                app.rounds = rounds
+                started = rounds.start("FCT", lambda callback: Monitor(callback),
+                                       run_async=False, round_timeout_seconds=1, capacity=2)
+                app.active_round_id = started.round_id
+                elapsed[0] = 2.0
+                snapshot = rounds.poll_once()
+                self.assertIsNotNone(snapshot.round_alarm)
+                rounds.acknowledge_round_alarm(
+                    snapshot.round_id, snapshot.round_alarm.alarm_id)
+                snapshot = rounds.snapshot()
+                self.assertTrue(snapshot.cancellation_available)
+                app._apply_round_snapshot(snapshot)
+                app._set_monitor_controls(False)
+                self.assertTrue(app.start_button.instate(("disabled",)))
+                check_start_hint(
+                    "confirm its cancellation in Notifications and Recovery",
+                    "請先到「通知與恢復中心」確認取消，才能開始下一輪",
+                    "hc5-start-disabled-cancellation")
+                self.assertTrue(rounds.snapshot().cancellation_available,
+                                "showing the hint must not cancel the round")
+
+                app._open_recovery_center()
+                app.recovery_tabs.select(2)
+                root.update()
+                app.recovery_action_list.selection_set(0)
+                app.recovery_action_list.event_generate("<<ListboxSelect>>")
+                root.update()
+                self.assertEqual(app._recovery_selected_action,
+                                 ("cancel_round", started.round_id))
+                button = app.recovery_action_cancel_button
+                self.assertTrue(button.instate(("!disabled",)))
+                hint = app._recovery_control_hints[button]
+                cancel_calls = []
+                app.cancel_unverified_round = lambda *arguments: cancel_calls.append(arguments)
+                button.focus_force()
+                wait(lambda: hint._window is not None,
+                     "enabled cancel-action focus hint did not appear")
+                self.assertIn("withdraws delivery", hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        app.recovery_window, "hc5-cancel-enabled-en.png")
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertIn("撤回本輪結果交付", hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        app.recovery_window, "hc5-cancel-enabled-zh-TW.png")
+                app.recovery_action_list.focus_force()
+                wait(lambda: hint._window is None,
+                     "enabled cancel-action hint did not clear after focus loss")
+                self.assertTrue(rounds.snapshot().cancellation_available,
+                                "viewing the enabled hint must not cancel the round")
+                self.assertEqual(cancel_calls, [])
+                app.recovery_action_cancel_button.focus_force()
+                wait(lambda: hint._window is not None,
+                     "enabled cancel-action focus hint did not reappear")
+                app.recovery_window.destroy()
+                root.update()
+                self.assertIsNone(hint._window,
+                                  "closing recovery center must clear its action hint")
+                self.assertTrue(rounds.snapshot().cancellation_available,
+                                "closing recovery center must not cancel the round")
+                self.assertEqual(cancel_calls, [])
+                self.assertEqual(errors, [])
+            finally:
+                app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
     def test_real_tk_abort_paths_keep_accepted_round_time_frozen(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -1348,7 +1522,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNone(app.rounds.snapshot())
                 hint_controls = (
                     (app.start_button, "Start Log monitoring", "依所選專案"),
-                    (app.stop_button, "Stop collecting", "停止目前監控輪次"),
+                    (app.stop_button, "Stop collecting", "停止收集本輪結果"),
                     (app.retry_save_button, "Retry saving", "重試保存先前"),
                     (app.app_diagnostics_button, "App diagnostics", "開啟 App 診斷"),
                 )
@@ -1503,7 +1677,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 disabled_stop_hint = app._main_action_hints[app.stop_button]
                 post_mouse(app.stop_button, Quartz.kCGEventMouseMoved)
                 self.wait_for_ui(root, lambda: disabled_stop_hint._window is not None)
-                self.assertIn("停止目前監控輪次", disabled_stop_hint._label.cget("text"))
+                self.assertIn("停止收集本輪結果", disabled_stop_hint._label.cget("text"))
                 self.assertTrue(app.stop_button.instate(("disabled",)))
                 if evidence_dir:
                     capture_tk_window_evidence(root, "st3-main-disabled-hover", "zh-TW", controls)
@@ -12373,7 +12547,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 alarm_before_hover = rounds.snapshot().round_alarm.acknowledged_at
                 alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("Confirm the selected round alarm", alarm_hint)
+                self.assertIn("Manually acknowledge this round alarm", alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-en.png",
                               app.round_alarm_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
@@ -12393,7 +12567,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.round_alarm_window.winfo_viewable())
                 app._select_language(TRADITIONAL_CHINESE)
                 translated_alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("確認所選整輪警報", translated_alarm_hint)
+                self.assertIn("由人員手動確認此整輪警報", translated_alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-zh-TW.png",
                               app.round_alarm_window)
                 translated_alarm_close_hint = hover_hint(app.round_alarm_close_button)

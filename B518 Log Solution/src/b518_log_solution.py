@@ -1074,6 +1074,13 @@ class B518LogSolutionApp:
         if action == "start":
             if closing:
                 return self._t("main.hint.start.closing")
+            rounds = getattr(self, "rounds", None)
+            if rounds is not None:
+                if rounds.start_failure_snapshot() is not None:
+                    return self._t("main.hint.start.start_failure")
+                snapshot = rounds.snapshot()
+                if snapshot is not None and snapshot.cancellation_available:
+                    return self._t("main.hint.start.cancellation_pending")
             if self._round_is_active():
                 return self._t("main.hint.start.active")
             return self._t("main.hint.start")

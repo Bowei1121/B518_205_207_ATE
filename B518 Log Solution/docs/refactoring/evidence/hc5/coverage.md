@@ -7,7 +7,7 @@
 | 畫面／視窗 | 按鈕或入口 | English／繁中提示 key | 停用原因 |
 | --- | --- | --- | --- |
 | 主畫面工具列 | 設定、待確認、通知鈴鐺、語言 | `main.hint.settings`, `main.hint.review_count[.none]`, `main.hint.round_alarm`, `main.hint.language` | 待確認與鈴鐺入口在無事項時仍可開啟；提示會說明查看不會裁決或處理事項 |
-| 主畫面操作 | 開始監控、停止、重試保存、診斷 | `main.hint.start[.active/.closing]`, `main.hint.stop[.idle/.closing]`, `main.hint.retry_save[.none/.saving/.closing]`, `main.hint.diagnostics` | 各動態狀態補上原因；無保存失敗時仍可查看提示 |
+| 主畫面操作 | 開始監控、停止、重試保存、診斷 | `main.hint.start[.active/.closing/.start_failure/.cancellation_pending]`, `main.hint.stop[.idle/.closing]`, `main.hint.retry_save[.none/.saving/.closing]`, `main.hint.diagnostics` | 開始停用時指出先解除啟動異常或先取消待處理輪次；其他動態狀態也會說明原因；無保存失敗時仍可查看提示 |
 | 設定／工程師配置 | 瀏覽來源資料夾、載入、驗證、套用保存、匯入、匯出、重新載入、取消草稿 | `app.settings.hint.profile.*` | 按鈕皆有提示；說明草稿、目前輪次與後續輪次的差異 |
 | 設定／事件與 Session | 開啟 Session 紀錄、歷史事件 | `app.settings.hint.session.open`, `app.settings.hint.history.open` | 按鈕皆有提示；說明只開啟資料，不改變紀錄 |
 | 設定／保存期限 | 保存期限、重試背景清理 | `app.settings.hint.retention.save`, `app.settings.hint.retention.cleanup.retry` | 重試按鈕說明會移除已過保存期限的紀錄 |
@@ -31,6 +31,8 @@
 | 停止監控 | Stop collecting results for this monitoring round. Unfinished positions are recorded as stopped and the round record is kept; this does not cancel or delete the round. | 停止收集本輪結果；未完成位置會記為已停止，輪次紀錄會保留；這不會取消輪次或刪除紀錄。 |
 | 解除啟動異常 | After fixing the startup issue, confirm it to allow a new manual start. This does not retry monitoring or start the ATE. | 排除啟動問題後確認，即可解除限制並由人員手動重新開始；不會重試監控或啟動 ATE。 |
 | 取消本輪 | Review the round, then confirm cancellation. This withdraws delivery but keeps its results and handling record; it does not delete records or mark products as failed. | 核對本輪後再確認取消。取消會撤回本輪結果交付，但保留結果與處置紀錄；不會刪除紀錄或把產品判為失敗。 |
+| 開始按鈕停用（啟動異常） | A startup failure must be cleared in Notifications and Recovery before starting again. | 請先到「通知與恢復中心」解除啟動異常，才能再次開始。 |
+| 開始按鈕停用（待取消輪次） | A round is awaiting cancellation; confirm its cancellation in Notifications and Recovery before starting another round. | 本輪待取消；請先到「通知與恢復中心」確認取消，才能開始下一輪。 |
 | 重試長期保存 | Retry putting fully saved round records into long-term storage. Only records that need another attempt are included. | 重試將已完整保存的輪次紀錄放入長期保存區；只處理需要再次嘗試的紀錄。 |
 
 啟動異常與輪次取消在尚未選取對應事項時，提示會先解釋操作，再補充停用原因，例如：
@@ -39,3 +41,7 @@
 - **繁中：**「排除啟動問題後確認，即可解除限制並由人員手動重新開始；不會重試監控或啟動 ATE。請選取啟動異常，才能使用此操作。」
 - **English:** “Review the round, then confirm cancellation. This withdraws delivery but keeps its results and handling record; it does not delete records or mark products as failed. Select a round awaiting cancellation to enable this action.”
 - **繁中：**「核對本輪後再確認取消。取消會撤回本輪結果交付，但保留結果與處置紀錄；不會刪除紀錄或把產品判為失敗。請選取待取消輪次，才能使用此操作。」
+
+真 App 驗收 `test_real_tk_start_and_cancel_hints_cover_recovery_states` 會建立啟動異常及待取消輪次，檢查開始按鈕停用提示與恢復中心可用取消提示的雙語 hover／focus、切換語言即時更新、離開／關窗清除，以及提示不觸發開始或取消。設定 `B518_TK_EVIDENCE_DIR` 後，此案例輸出兩種開始停用狀態與取消可用狀態的中英文真實視窗截圖，供人工檢查提示是否遮住必要資訊。
+
+本次執行環境的原生 Tk 驗收以 exit 134 結束，且 Python 缺少 Quartz，因此沒有產生真實 App 截圖；該驗收仍須在可啟動 Aqua Tk 並可匯入 Quartz 的桌面環境執行後，才能完成視覺遮擋複查。
