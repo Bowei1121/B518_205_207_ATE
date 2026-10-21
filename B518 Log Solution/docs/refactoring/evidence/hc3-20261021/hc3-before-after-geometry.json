@@ -1,0 +1,234 @@
+{
+  "environment": {
+    "display": "1440x900",
+    "work_area_top_inset": 25,
+    "work_area_bottom_inset": 0,
+    "runtime": "macOS Tk/Aqua, Python 3.12.10",
+    "before_source": "dc79be197fb2acfd7ca4358eff1183b9115eca6c",
+    "after_source": "HC3 implementation under test"
+  },
+  "before": [
+    {
+      "capacity": 1,
+      "window": "376x606+1052+32",
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "table": [
+        8,
+        248,
+        346,
+        35
+      ],
+      "start": [
+        8,
+        382,
+        360,
+        38
+      ],
+      "status": [
+        8,
+        502,
+        316,
+        20
+      ],
+      "timer": [
+        324,
+        502,
+        44,
+        20
+      ],
+      "table_to_start_gap": 99
+    },
+    {
+      "capacity": 10,
+      "window": "376x804+1052+32",
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "table": [
+        8,
+        248,
+        346,
+        299
+      ],
+      "start": [
+        8,
+        580,
+        360,
+        38
+      ],
+      "status": [
+        8,
+        700,
+        316,
+        20
+      ],
+      "timer": [
+        324,
+        700,
+        44,
+        20
+      ],
+      "table_to_start_gap": 33
+    },
+    {
+      "capacity": 11,
+      "window": "376x831+1052+32",
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "table": [
+        8,
+        275,
+        346,
+        299
+      ],
+      "start": [
+        8,
+        607,
+        360,
+        38
+      ],
+      "status": [
+        8,
+        727,
+        316,
+        20
+      ],
+      "timer": [
+        324,
+        727,
+        44,
+        20
+      ],
+      "table_to_start_gap": 33
+    },
+    {
+      "capacity": 20,
+      "window": "376x831+1052+32",
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "table": [
+        8,
+        275,
+        346,
+        299
+      ],
+      "start": [
+        8,
+        607,
+        360,
+        38
+      ],
+      "status": [
+        8,
+        727,
+        316,
+        20
+      ],
+      "timer": [
+        324,
+        727,
+        44,
+        20
+      ],
+      "table_to_start_gap": 33
+    }
+  ],
+  "after": {
+    "window": "376x806+1052+33",
+    "native_window": [
+      1052,
+      33,
+      376,
+      834
+    ],
+    "capacities": [
+      1,
+      10,
+      11,
+      20
+    ],
+    "languages": [
+      "zh-TW",
+      "en",
+      "zh-TW",
+      "en"
+    ],
+    "controls_for_every_capacity": {
+      "kvm": [
+        8,
+        123,
+        360,
+        88
+      ],
+      "table": [
+        8,
+        303,
+        346,
+        266
+      ],
+      "start": [
+        8,
+        573,
+        360,
+        38
+      ],
+      "status": [
+        8,
+        693,
+        292,
+        20
+      ],
+      "timer": [
+        300,
+        693,
+        68,
+        20
+      ],
+      "notification_reminder": [
+        8,
+        715,
+        360,
+        40
+      ],
+      "table_to_start_gap": 4,
+      "timer_text": "10000:00",
+      "timer_measured_width": 64,
+      "timer_label_width": 68,
+      "reminder_reserved_height": 40
+    },
+    "normal_display": {
+      "screen": "1440x900",
+      "visible_detail_rows": 8,
+      "fixed_content_height": 542,
+      "minimum_supported_screen_height": 648
+    },
+    "small_display": {
+      "screen": "1152x720",
+      "window": "376x641+764+33",
+      "native_window": [
+        764,
+        33,
+        376,
+        669
+      ],
+      "visible_detail_rows": 3
+    }
+  },
+  "coordinate_space": "Tk client window coordinates (x, y), excluding native titlebar and screen origin"
+}

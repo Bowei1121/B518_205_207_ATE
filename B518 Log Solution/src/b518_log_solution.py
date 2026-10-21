@@ -19,10 +19,11 @@ from typing import Dict, Optional
 
 try:
     from AppKit import (NSApplication, NSApplicationActivateIgnoringOtherApps,
-                        NSWorkspace)
+                        NSScreen, NSWorkspace)
 except ImportError:  # AppKit is included in current macOS bundles, optional on legacy builds.
     NSApplication = None
     NSApplicationActivateIgnoringOtherApps = None
+    NSScreen = None
     NSWorkspace = None
 
 from app_event_store import AppEventStore
@@ -106,8 +107,10 @@ ROW_GAP = 1
 ROW_GRID_COLOUR = "#000000"
 ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
-KVM_SINGLE_ROW_HEIGHT = 61
-WINDOW_FIXED_HEIGHT = 600
+WINDOW_DECORATION_ALLOWANCE = 32
+SCREEN_EDGE_GAP = 8
+MONITOR_ELAPSED_WIDTH = 8
+NOTIFICATION_REMINDER_HEIGHT = 40
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -389,15 +392,37 @@ class _LocalizedControlHint:
             self._menu = None
 
 
-def visible_detail_rows(capacity: int, screen_height: int) -> int:
-    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
-    screen_limit = max(1, (screen_height - 64 - fixed_height) // (ROW_HEIGHT + ROW_GAP))
-    return min(max(1, capacity), screen_limit)
+def visible_detail_rows(available_client_height: int, fixed_content_height: int,
+                       max_rows: int = KVM_BLOCK_COUNT) -> int:
+    row_stride = ROW_HEIGHT + ROW_GAP
+    screen_limit = max(1, (available_client_height - fixed_content_height) // row_stride)
+    return min(max(1, max_rows), screen_limit)
 
 
-def window_height(capacity: int, screen_height: int = 900) -> int:
-    fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
-    return fixed_height + visible_detail_rows(capacity, screen_height) * (ROW_HEIGHT + ROW_GAP)
+def window_height(fixed_content_height: int, visible_rows: int) -> int:
+    return fixed_content_height + max(1, visible_rows) * (ROW_HEIGHT + ROW_GAP)
+
+
+def minimum_supported_screen_height(fixed_content_height: int, top_inset: int = 0,
+                                   bottom_inset: int = 0) -> int:
+    return (fixed_content_height + ROW_HEIGHT + ROW_GAP + WINDOW_DECORATION_ALLOWANCE
+            + 2 * SCREEN_EDGE_GAP + top_inset + bottom_inset)
+
+
+def main_screen_work_area(root: tk.Tk) -> tuple[int, int, int, int]:
+    """Return screen size and work-area insets in Tk logical pixels."""
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    if NSScreen is not None:
+        screen = NSScreen.mainScreen()
+        if screen is not None:
+            frame = screen.visibleFrame()
+            top_inset = max(0, round(screen_height - (frame.origin.y + frame.size.height)))
+            bottom_inset = max(0, round(frame.origin.y))
+            return screen_width, screen_height, top_inset, bottom_inset
+    virtual_top = max(0, root.winfo_vrooty())
+    virtual_bottom = max(0, screen_height - (virtual_top + root.winfo_vrootheight()))
+    return screen_width, screen_height, virtual_top, virtual_bottom
 
 
 def kvm_block_colour(capacity: int, slot: int, status: str) -> str:
@@ -421,6 +446,9 @@ class B518LogSolutionApp:
         self._after_ids: set[str] = set()
         self._heartbeat_after_id = None
         self._close_after_id = None
+        self._fixed_visible_detail_rows = 1
+        self._fixed_main_window_geometry = None
+        self._main_screen_metrics = None
         self.root.bind("<Destroy>", self._on_root_destroy, add="+")
         self.session_root = Path(session_root) if session_root else APP_ROOT / "sessions"
         self.root.resizable(False, False)
@@ -739,6 +767,10 @@ class B518LogSolutionApp:
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1,
                              focuscolor="#2563eb", focusthickness=2)
+        self.style.configure(
+            "Main.NotificationReminder.TLabel", foreground="#b91c1c",
+            background=LIGHT_BACKGROUND, font=("Helvetica", 11, "bold"),
+        )
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
                              foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
                              focuscolor="#2563eb", focusthickness=2,
@@ -1004,10 +1036,9 @@ class B518LogSolutionApp:
         self.rows_canvas_window = self.rows_canvas.create_window((0, 0), anchor="nw", window=self.rows_box)
         self.rows_box.bind("<Configure>", self._update_rows_scroll_region)
         self.rows_canvas.bind("<Configure>", self._resize_rows_content)
-        controls = tk.Frame(body, background=LIGHT_BACKGROUND, pady=9)
+        controls = tk.Frame(body, background=LIGHT_BACKGROUND, pady=4)
         controls.pack(fill="x", side="bottom", before=self.rows_panel)
         self._main_controls = controls
-        self.root.bind("<Configure>", self._fit_rows_viewport, add="+")
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 2))
@@ -1027,9 +1058,19 @@ class B518LogSolutionApp:
         self.monitor_state.grid(row=0, column=0, sticky="ew")
         self.monitor_elapsed = ttk.Label(
             monitor_status_row, text="00:00", anchor="e",
-            font=("Menlo", MAIN_FONT_SIZE, "bold"))
+            font=("Menlo", MAIN_FONT_SIZE, "bold"), width=MONITOR_ELAPSED_WIDTH)
         self.monitor_elapsed.grid(row=0, column=1, sticky="e")
         monitor_status_row.columnconfigure(0, weight=1)
+        monitor_status_row.columnconfigure(1, minsize=self.monitor_elapsed.winfo_reqwidth())
+        self.notification_reminder_frame = tk.Frame(
+            controls, background=LIGHT_BACKGROUND, height=NOTIFICATION_REMINDER_HEIGHT)
+        self.notification_reminder_frame.pack(fill="x", pady=(0, 2))
+        self.notification_reminder_frame.pack_propagate(False)
+        self.notification_reminder = ttk.Label(
+            self.notification_reminder_frame, text="", anchor="center", justify="center",
+            wraplength=WINDOW_WIDTH - 20, style="Main.NotificationReminder.TLabel",
+        )
+        self.notification_reminder.pack(fill="both", expand=True)
         save_controls = ttk.Frame(controls)
         save_controls.pack(fill="x")
         self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
@@ -1413,9 +1454,7 @@ class B518LogSolutionApp:
             return
         text = format_monitoring_elapsed(
             getattr(snapshot, "monitoring_elapsed_seconds", None))
-        self.monitor_elapsed.configure(text=text, width=len(text))
-        self._monitor_status_row.columnconfigure(
-            1, minsize=self.monitor_elapsed.winfo_reqwidth())
+        self.monitor_elapsed.configure(text=text)
 
     def _render_main_title(self) -> None:
         if hasattr(self, "project") and hasattr(self, "station"):
@@ -2040,26 +2079,10 @@ class B518LogSolutionApp:
         self.rows_scrollbar.set(first, last)
 
     def _fit_rows_viewport(self, event=None) -> None:
-        if event is not None and event.widget is not self.root:
-            return
         if not hasattr(self, "_main_controls"):
             return
-        # Reserve the actual requested size of every other panel, including
-        # translated operation controls; never shrink type or hide operations.
-        body = self.rows_panel.master
-        occupied = 0
-        for widget in body.winfo_children():
-            if widget is self.rows_panel or widget.winfo_manager() != "pack":
-                continue
-            padding = widget.pack_info().get("pady", 0)
-            if isinstance(padding, tuple):
-                vertical_padding = sum(map(int, padding))
-            else:
-                vertical_padding = 2 * int(padding)
-            occupied += widget.winfo_reqheight() + vertical_padding
-        available = self.root.winfo_height() - occupied - 2 * int(body.cget("pady"))
-        rows = min(self._display_capacity(),
-                   max(1, (available - 2) // (ROW_HEIGHT + ROW_GAP)))
+        rows = self._fixed_visible_detail_rows
+        self.rows_canvas.configure(height=rows * (ROW_HEIGHT + ROW_GAP))
         self.rows_panel.configure(height=rows * (ROW_HEIGHT + ROW_GAP) + 2)
 
     def _update_rows_scroll_region(self, _event=None) -> None:
@@ -2074,15 +2097,13 @@ class B518LogSolutionApp:
             child.destroy()
         self.status_rows = {}
         row_count = self._display_capacity()
-        screen_height = self.root.winfo_screenheight()
-        visible_rows = visible_detail_rows(row_count, screen_height)
-        has_second_kvm_row = row_count > KVM_COLUMN_COUNT
-        self.kvm_results.configure(height=KVM_BAND_HEIGHT if has_second_kvm_row
-                                   else KVM_SINGLE_ROW_HEIGHT)
-        self.rows_canvas.configure(height=visible_rows * (ROW_HEIGHT + ROW_GAP))
+        self.kvm_results.configure(height=KVM_BAND_HEIGHT)
+        self.rows_canvas.configure(
+            height=self._fixed_visible_detail_rows * (ROW_HEIGHT + ROW_GAP))
         self.rows_box.configure(height=row_count * (ROW_HEIGHT + ROW_GAP), width=ROW_WIDTH + 2)
         self.rows_canvas.yview_moveto(0)
         self._update_rows_scroll_region()
+        has_second_kvm_row = row_count > KVM_COLUMN_COUNT
         self._render_station_title()
         snapshot = self.rounds.snapshot()
         if snapshot and snapshot.state.value == "PREPARING":
@@ -2117,32 +2138,56 @@ class B518LogSolutionApp:
                             width=KVM_CELL_WIDTH, height=KVM_CELL_HEIGHT)
             self._set_kvm_result_block(slot, "WAITING")
         self._render_layout_marker(row_count)
-        self._position_window()
 
     def _position_window(self) -> None:
+        if self._fixed_main_window_geometry is not None:
+            return
         self.root.update_idletasks()
-        capacity = self._display_capacity()
-        width = WINDOW_WIDTH
-        height = window_height(capacity, self.root.winfo_screenheight())
-        visible_rows = visible_detail_rows(capacity, self.root.winfo_screenheight())
-        self.kvm_results.configure(height=KVM_BAND_HEIGHT if capacity > KVM_COLUMN_COUNT
-                                   else KVM_SINGLE_ROW_HEIGHT)
-        self.rows_canvas.configure(height=visible_rows * (ROW_HEIGHT + ROW_GAP))
-        x = max(self.root.winfo_screenwidth() - width - 12, 0)
+        self._fit_rows_viewport()
+        self.root.update_idletasks()
+        width, screen_height, workarea_top, workarea_bottom = main_screen_work_area(self.root)
+        fixed_content_height = max(
+            1, self.root.winfo_reqheight() - self.rows_panel.winfo_reqheight() + 2)
+        available_client_height = max(
+            1, screen_height - workarea_top - workarea_bottom - 2 * SCREEN_EDGE_GAP
+            - WINDOW_DECORATION_ALLOWANCE)
+        self._fixed_visible_detail_rows = visible_detail_rows(
+            available_client_height, fixed_content_height)
+        height = window_height(fixed_content_height, self._fixed_visible_detail_rows)
+        self._main_screen_metrics = {
+            "screen_width": width,
+            "screen_height": screen_height,
+            "workarea_top": workarea_top,
+            "workarea_bottom": workarea_bottom,
+            "decoration_allowance": WINDOW_DECORATION_ALLOWANCE,
+            "edge_gap": SCREEN_EDGE_GAP,
+            "available_client_height": available_client_height,
+            "fixed_content_height": fixed_content_height,
+            "minimum_supported_screen_height": minimum_supported_screen_height(
+                fixed_content_height, workarea_top, workarea_bottom),
+            "minimum_supported_screen_width": WINDOW_WIDTH + 12,
+            "visible_detail_rows": self._fixed_visible_detail_rows,
+            "window_width": WINDOW_WIDTH,
+            "window_height": height,
+        }
+        self._fit_rows_viewport()
+        x = max(width - WINDOW_WIDTH - 12, 0)
+        y = workarea_top + SCREEN_EDGE_GAP
         # Aqua Tk can retain the mapped window's old native size while
         # resizable(False, False) is set. Apply the programmatic resize with
         # explicit bounds (the default WM maximum can also clip the HMI), then
         # restore the fixed-size operator window before returning.
         self.root.resizable(True, True)
         try:
-            self.root.minsize(width, height)
-            self.root.maxsize(width, height)
-            self.root.geometry("{}x{}+{}+32".format(width, height, x))
+            self.root.minsize(WINDOW_WIDTH, height)
+            self.root.maxsize(WINDOW_WIDTH, height)
+            self.root.geometry("{}x{}+{}+{}".format(WINDOW_WIDTH, height, x, y))
             self.root.update_idletasks()
             self._fit_rows_viewport()
             self.root.update_idletasks()
         finally:
             self.root.resizable(False, False)
+        self._fixed_main_window_geometry = (WINDOW_WIDTH, height, x, y)
 
     def _selected_profile(self) -> MachineProfile:
         if self.profile_error:
@@ -3220,6 +3265,10 @@ class B518LogSolutionApp:
         if not hasattr(self, "notification_badge"):
             return
         count = self._pending_notification_count()
+        reminder_text = (self._t("main.notification_reminder", count=count)
+                         if count else "")
+        if hasattr(self, "notification_reminder"):
+            self.notification_reminder.configure(text=reminder_text)
         if count == self._notification_badge_count:
             return
         self._notification_badge_count = count

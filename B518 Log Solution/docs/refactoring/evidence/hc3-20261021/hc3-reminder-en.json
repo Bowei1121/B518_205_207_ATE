@@ -1,0 +1,10 @@
+{
+  "count": 1,
+  "language": "en",
+  "text": "Items needing attention: 1. Select the bell.",
+  "frame_height": 40,
+  "label_height": 40,
+  "requested_label_height": 17,
+  "window_geometry": "376x806+1052+33",
+  "screenshot": "hc3-reminder-en-en.png"
+}

@@ -36,9 +36,9 @@ except ImportError:  # macOS desktop-only acceptance helper
 from b518_log_solution import (
     APP_VERSION, B518LogSolutionApp, _LocalizedControlHint, FIELD_BACKGROUND, LIGHT_BACKGROUND,
     format_monitoring_elapsed,
-    KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, STATUS_COLOURS,
+    KVM_BAND_HEIGHT, MAIN_FONT_SIZE, MARKER_SIZE, ROW_HEIGHT, ROW_GAP, STATUS_COLOURS,
     STATUS_TEMPLATE_STATES, UNAVAILABLE_COLOUR, WINDOW_WIDTH, KVM_BLOCK_COUNT, kvm_block_colour,
-    sn_font_size, visible_detail_rows, window_height,
+    minimum_supported_screen_height, sn_font_size, visible_detail_rows, window_height,
 )
 from global_hotkey import COMMAND_SHIFT_M_KEYCODE, COMMAND_SHIFT_MODIFIERS, GlobalHotkeyError, UnavailableHotkey, create_global_hotkey
 from log_monitoring import MonitorEvent
@@ -533,6 +533,35 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._apply_round_snapshot(rounds.snapshot())
                 root.update_idletasks()
                 self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+                timer_font = tkfont.Font(font=app.monitor_elapsed.cget("font"))
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                elapsed[0] = 60500.0
+                app._apply_round_snapshot(rounds.snapshot())
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "1000:00")
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                elapsed[0] = 600500.0
+                app._apply_round_snapshot(rounds.snapshot())
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
                 self.assertGreaterEqual(app.monitor_elapsed.winfo_width(),
                                         app.monitor_elapsed.winfo_reqwidth(),
                                         (app.monitor_elapsed.winfo_width(),
@@ -542,16 +571,124 @@ class LogSolutionUiTests(unittest.TestCase):
                                          app.monitor_state.winfo_width()))
                 self.assertEqual(app.monitor_elapsed.winfo_rootx() +
                                  app.monitor_elapsed.winfo_width(), right_edge)
+                root.update()
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    timer_capture = capture_tk_window_evidence(
+                        root, "hc3-timer-10000", app.current_language, {
+                            "timer": app.monitor_elapsed,
+                            "status": app.monitor_state,
+                        })
+                    evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                    (evidence_dir / "hc3-long-timer.json").write_text(
+                        json.dumps({
+                            "text": app.monitor_elapsed.cget("text"),
+                            "font": str(app.monitor_elapsed.cget("font")),
+                            "measured_text_width": timer_font.measure(
+                                app.monitor_elapsed.cget("text")),
+                            "label_width": app.monitor_elapsed.winfo_width(),
+                            "right_edge": right_edge,
+                            "screenshot": timer_capture["screenshot"],
+                            "window_geometry": root.winfo_geometry(),
+                        }, ensure_ascii=False, indent=2), encoding="utf-8")
 
                 stopped = rounds.stop()
-                self.assertEqual(stopped.monitoring_elapsed_seconds, 36000.0)
+                self.assertEqual(stopped.monitoring_elapsed_seconds, 600000.0)
                 elapsed[0] = 50000.0
                 app._apply_round_snapshot(rounds.snapshot())
-                self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
             finally:
                 rounds.stop()
                 rounds.flush_audit(timeout=3)
                 app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_notification_reminder_reserves_fixed_bilingual_area(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped())
+                baseline = self.main_geometry(app, root)
+                fixed_reminder_geometry = (
+                    app.notification_reminder_frame.winfo_rootx(),
+                    app.notification_reminder_frame.winfo_rooty(),
+                    app.notification_reminder_frame.winfo_width(),
+                    app.notification_reminder_frame.winfo_height(),
+                )
+                self.assertEqual(app.notification_reminder.cget("text"), "")
+                self.assertEqual(
+                    app.notification_reminder_frame.winfo_height(),
+                    app.notification_reminder_frame.winfo_reqheight(),
+                )
+
+                for language, count, expected in (
+                        (ENGLISH, 1, "Items needing attention: 1. Select the bell."),
+                        (ENGLISH, 1234,
+                         "Items needing attention: 1234. Select the bell."),
+                        (TRADITIONAL_CHINESE, 1, "有 1 件事需要處理，請點鈴鐺。"),
+                        (TRADITIONAL_CHINESE, 1234,
+                         "有 1234 件事需要處理，請點鈴鐺。")):
+                    app._select_language(language)
+                    with patch.object(app, "_pending_notification_count", return_value=count):
+                        app._refresh_notification_badge()
+                        root.update()
+                        self.assertEqual(app.notification_reminder.cget("text"), expected)
+                        self.assertEqual(app.notification_badge.itemcget(
+                            app._notification_badge_label, "text"), str(count))
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        self.assertEqual(self.main_geometry(app, root), baseline)
+                        self.assertEqual((
+                            app.notification_reminder_frame.winfo_rootx(),
+                            app.notification_reminder_frame.winfo_rooty(),
+                            app.notification_reminder_frame.winfo_width(),
+                            app.notification_reminder_frame.winfo_height(),
+                        ), fixed_reminder_geometry)
+                        self.assertLessEqual(
+                            app.notification_reminder.winfo_reqheight(),
+                            app.notification_reminder.winfo_height(),
+                        )
+                        if count > 1 and os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            reminder_capture = capture_tk_window_evidence(
+                                root, "hc3-reminder-{}-{}".format(language, count), language, {
+                                    "reminder": app.notification_reminder,
+                                    "start": app.start_button,
+                                    "status": app.monitor_state,
+                                    "timer": app.monitor_elapsed,
+                                })
+                            evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                            (evidence_dir / "hc3-reminder-{}-{}.json".format(
+                                language, count)).write_text(
+                                json.dumps({
+                                    "count": count,
+                                    "language": language,
+                                    "text": expected,
+                                    "frame_height":
+                                        app.notification_reminder_frame.winfo_height(),
+                                    "label_height": app.notification_reminder.winfo_height(),
+                                    "requested_label_height":
+                                        app.notification_reminder.winfo_reqheight(),
+                                    "window_geometry": root.winfo_geometry(),
+                                    "screenshot": reminder_capture["screenshot"],
+                                }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+                with patch.object(app, "_pending_notification_count", return_value=0):
+                    app._refresh_notification_badge()
+                root.update_idletasks()
+                self.assertEqual(app.notification_reminder.cget("text"), "")
+                self.assertEqual(self.main_geometry(app, root), baseline)
+            finally:
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
                 root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
@@ -901,7 +1038,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                          original_fixed["first_cell"])
                         self.assertEqual((parent.winfo_rootx(), parent.winfo_rooty()),
                                          original_band)
-                        expected_parent_height = KVM_BAND_HEIGHT if capacity > 10 else 61
+                        expected_parent_height = KVM_BAND_HEIGHT
                         self.assertEqual(parent.winfo_height(), expected_parent_height)
                         for slot, block in app.kvm_result_blocks.items():
                             if slot > 10 and capacity <= 10:
@@ -1080,7 +1217,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     edit_visible_profile_capacity(1)
                     root.update()
                     self.assertEqual((app._display_capacity(), app.kvm_results.winfo_height()),
-                                     (1, 61))
+                                     (1, KVM_BAND_HEIGHT))
                 finally:
                     app.hotkey.close()
                     app.rounds.request_close()
@@ -7854,25 +7991,214 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.destroy()
 
     def test_fixed_hmi_geometry_survives_mapping_and_capacity_changes(self):
-        root = tk.Tk()
-        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            records = []
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped())
+                baseline = self.main_geometry(app, root)
+                for capacity, language in ((1, TRADITIONAL_CHINESE), (10, ENGLISH),
+                                            (11, TRADITIONAL_CHINESE), (20, ENGLISH)):
+                    with self.subTest(capacity=capacity), patch.object(
+                            app, "_display_capacity", return_value=capacity):
+                        app._select_language(language)
+                        app._render_rows()
+                        root.update()
+                        geometry = self.main_geometry(app, root)
+                        self.assertEqual(geometry, baseline)
+                        self.assertEqual(len(app.status_rows), capacity)
+                        self.assertEqual(app.kvm_results.winfo_height(), KVM_BAND_HEIGHT)
+                        if capacity == 1:
+                            self.assertGreater(
+                                app.rows_canvas.winfo_height(), ROW_HEIGHT + ROW_GAP)
+                            self.assertEqual(app.rows_canvas.cget("background"), LIGHT_BACKGROUND)
+                        table_bottom = app.rows_canvas.winfo_rooty() + app.rows_canvas.winfo_height()
+                        button_gap = app.start_button.winfo_rooty() - table_bottom
+                        self.assertGreaterEqual(button_gap, 0)
+                        self.assertLessEqual(button_gap, 15)
+                        self.assertEqual(tuple(map(int, root.resizable())), (0, 0))
+                        self.assertEqual((app.kvm_state_marker.winfo_x(),
+                                          app.kvm_state_marker.winfo_y()), (250, 0))
+                        records.append({
+                            "capacity": capacity,
+                            "language": language,
+                            "geometry": root.winfo_geometry(),
+                            "controls": geometry[1],
+                            "table_to_start_gap": button_gap,
+                        })
+                        if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            root.title("HC3 fixed geometry acceptance")
+                            root.update_idletasks()
+                            screenshot = capture_tk_window_evidence(
+                                root, "hc3-capacity-{}".format(capacity), language, {
+                                    "kvm": app.kvm_results,
+                                    "table": app.rows_canvas,
+                                    "start": app.start_button,
+                                    "status": app.monitor_state,
+                                    "timer": app.monitor_elapsed,
+                                })
+                            records[-1].update({
+                                "native_bounds": screenshot["native_bounds"],
+                                "image_pixels": screenshot["image_pixels"],
+                                "screenshot": screenshot["screenshot"],
+                            })
+
+                app._set_main_monitor_state("monitor.awaiting_conflicts", count=20)
+                app._render_monitoring_elapsed(SimpleNamespace(monitoring_elapsed_seconds=7200))
+                root.update_idletasks()
+                self.assertEqual(self.main_geometry(app, root), baseline)
+                self.assertEqual(app.monitor_elapsed.cget("text"), "120:00")
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                    evidence_dir.mkdir(parents=True, exist_ok=True)
+                    (evidence_dir / "hc3-layout-matrix.json").write_text(
+                        json.dumps({
+                            "screen": app._main_screen_metrics,
+                            "window_geometry": root.winfo_geometry(),
+                            "fixed_controls": records,
+                            "long_status_timer_geometry": self.main_geometry(app, root)[1],
+                            "minimum_supported_screen_height":
+                                app._main_screen_metrics["minimum_supported_screen_height"],
+                        }, ensure_ascii=False, indent=2), encoding="utf-8")
+            finally:
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                root.destroy()
+
+    @staticmethod
+    def main_geometry(app, root):
+        widgets = (app.kvm_results, app.rows_panel, app.rows_canvas, app._main_controls,
+                   app.start_button, app.monitor_state, app.monitor_elapsed,
+                   app.notification_reminder_frame, app.notification_reminder,
+                   app.app_event_status_label)
+        return (root.winfo_geometry(), tuple(
+            (widget.winfo_rootx(), widget.winfo_rooty(), widget.winfo_width(),
+             widget.winfo_height()) for widget in widgets))
+
+    def test_initial_capacity_does_not_change_fixed_window_geometry(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            preferences = Path(temporary) / "preferences.json"
+            store = MachineProfileStore(preferences)
+            profiles, project, machine, _error = store.load()
+            base_profile = profiles.get(project, machine)
+            geometries = []
+            for capacity in (1, 10, 11, 20):
+                profile = replace(
+                    base_profile, capacity=capacity,
+                    mapping=tuple((slot, slot) for slot in range(1, capacity + 1)),
+                )
+                profiles = profiles.with_profile(profile)
+                store.save(profiles, project, machine)
+                root = tk.Tk()
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey,
+                    session_root=Path(temporary) / "sessions-{}".format(capacity),
+                    app_event_path=Path(temporary) / "events-{}.json".format(capacity),
+                )
+                try:
+                    root.update()
+                    self.assertEqual(app._display_capacity(), capacity)
+                    geometries.append(self.main_geometry(app, root))
+                finally:
+                    app.hotkey.close()
+                    app.rounds.request_close()
+                    self.wait_for_ui(
+                        root, lambda: app.rounds.close_status().status == "complete")
+                    self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                    root.destroy()
+            self.assertTrue(all(geometry == geometries[0] for geometry in geometries[1:]))
+            if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                evidence_dir.mkdir(parents=True, exist_ok=True)
+                (evidence_dir / "hc3-startup-capacity-matrix.json").write_text(
+                    json.dumps([
+                        {"capacity": capacity, "geometry": geometry[0],
+                         "controls": geometry[1]}
+                        for capacity, geometry in zip((1, 10, 11, 20), geometries)
+                    ], ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @unittest.skipUnless(
+        os.environ.get("B518_TK_TESTS") == "1"
+        and os.environ.get("B518_HC3_SMALL_DESKTOP") == "1",
+        "requires the explicit 1152x720 macOS display acceptance run",
+    )
+    def test_fixed_hmi_fits_smaller_supported_display(self):
+        display = Quartz.CGMainDisplayID()
+        original_mode = Quartz.CGDisplayCopyDisplayMode(display)
+        small_mode = next(
+            mode for mode in Quartz.CGDisplayCopyAllDisplayModes(display, None)
+            if Quartz.CGDisplayModeGetWidth(mode) == 1152
+            and Quartz.CGDisplayModeGetHeight(mode) == 720)
         try:
-            self.wait_for_ui(root, lambda: root.winfo_ismapped())
-            for capacity in (2, 10, 20, 2):
-                with self.subTest(capacity=capacity), patch.object(
-                        app, "_display_capacity", return_value=capacity):
-                    app._render_rows()
-                    self.wait_for_ui(root, lambda:
-                        root.winfo_width() == WINDOW_WIDTH and
-                        root.winfo_height() == window_height(capacity, root.winfo_screenheight()))
-                    self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
-                    self.assertEqual(root.winfo_height(),
-                                     window_height(capacity, root.winfo_screenheight()))
-                    self.assertEqual(tuple(map(int, root.resizable())), (0, 0))
-                    self.assertEqual((app.kvm_state_marker.winfo_x(),
-                                      app.kvm_state_marker.winfo_y()), (250, 0))
+            self.assertEqual(Quartz.CGDisplaySetDisplayMode(display, small_mode, None), 0)
+            time.sleep(.5)
+            with TemporaryDirectory() as temporary, \
+                    patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+                root = tk.Tk()
+                app = B518LogSolutionApp(
+                    root, hotkey_factory=FakeHotkey,
+                    session_root=Path(temporary) / "sessions",
+                    app_event_path=Path(temporary) / "app-events.json",
+                )
+                try:
+                    root.update()
+                    self.assertEqual(app._main_screen_metrics["screen_height"], 720)
+                    self.assertLessEqual(
+                        app._main_screen_metrics["minimum_supported_screen_height"], 720)
+                    self.assertGreaterEqual(app._main_screen_metrics["visible_detail_rows"], 1)
+                    self.assertEqual(root.winfo_height(), app._main_screen_metrics["window_height"])
+                    table_bottom = app.rows_canvas.winfo_rooty() + app.rows_canvas.winfo_height()
+                    self.assertLessEqual(
+                        app.start_button.winfo_rooty() - table_bottom, 15)
+                    for widget in (app.start_button, app.monitor_state, app.monitor_elapsed,
+                                   app.stop_button, app.app_diagnostics_button,
+                                   app.app_event_status_label):
+                        self.assertGreaterEqual(widget.winfo_rooty(), root.winfo_rooty())
+                        self.assertLessEqual(
+                            widget.winfo_rooty() + widget.winfo_height(),
+                            root.winfo_rooty() + root.winfo_height())
+                    if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                        evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                        screenshot = capture_tk_window_evidence(
+                            root, "hc3-small-display", app.current_language, {
+                                "table": app.rows_canvas,
+                                "start": app.start_button,
+                                "status": app.monitor_state,
+                                "timer": app.monitor_elapsed,
+                                "stop": app.stop_button,
+                            })
+                        (evidence_dir / "hc3-small-display.json").write_text(
+                            json.dumps({
+                                "screen": app._main_screen_metrics,
+                                "window_geometry": root.winfo_geometry(),
+                                "native_bounds": screenshot["native_bounds"],
+                                "image_pixels": screenshot["image_pixels"],
+                                "screenshot": screenshot["screenshot"],
+                            }, ensure_ascii=False, indent=2), encoding="utf-8")
+                finally:
+                    app.hotkey.close()
+                    app.rounds.request_close()
+                    self.wait_for_ui(
+                        root, lambda: app.rounds.close_status().status == "complete")
+                    self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                    root.destroy()
         finally:
-            root.destroy()
+            self.assertEqual(Quartz.CGDisplaySetDisplayMode(display, original_mode, None), 0)
+            restored = Quartz.CGDisplayCopyDisplayMode(display)
+            self.assertEqual(
+                (Quartz.CGDisplayModeGetWidth(restored), Quartz.CGDisplayModeGetHeight(restored)),
+                (Quartz.CGDisplayModeGetWidth(original_mode),
+                 Quartz.CGDisplayModeGetHeight(original_mode)),
+            )
 
     def test_twenty_position_profile_renders_two_fixed_bands_and_scrollable_details(self):
         with TemporaryDirectory() as temporary, \
@@ -7881,6 +8207,7 @@ class LogSolutionUiTests(unittest.TestCase):
             root.deiconify()
             app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
             try:
+                fixed_geometry = root.winfo_geometry()
                 app.open_settings()
                 app.profile_editor_capacity.set("10")
                 app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
@@ -7893,7 +8220,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual([app.kvm_layout_marker.itemcget(cell, "fill") for cell in
                                   app.kvm_layout_marker.find_withtag("layout-cell")],
                                  ["#000000", "#ffffff"])
-                self.assertEqual(root.winfo_height(), window_height(10, root.winfo_screenheight()))
+                self.assertEqual(root.winfo_geometry(), fixed_geometry)
 
                 app.profile_editor_capacity.set("11")
                 app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
@@ -7906,7 +8233,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                  ["#ffffff", "#000000"])
                 self.assertGreater(app.kvm_result_blocks[11].winfo_y(),
                                    app.kvm_result_blocks[10].winfo_y())
-                self.assertEqual(root.winfo_height(), window_height(11, root.winfo_screenheight()))
+                self.assertEqual(root.winfo_geometry(), fixed_geometry)
 
                 app.profile_editor_capacity.set("20")
                 app.profile_editor_mapping.set(", ".join("{}:{}".format(source, source)
@@ -7917,8 +8244,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 self.assertTrue(root.winfo_ismapped())
                 self.assertEqual(root.winfo_width(), WINDOW_WIDTH)
-                self.assertEqual(root.winfo_height(), window_height(20, root.winfo_screenheight()))
-                self.assertLessEqual(root.winfo_height(), root.winfo_screenheight())
+                self.assertEqual(root.winfo_geometry(), fixed_geometry)
                 self.assertEqual(len(app.status_rows), 20)
                 self.assertEqual(len(app.kvm_result_blocks), 20)
                 self.assertEqual(app.kvm_state_marker.winfo_x(), 250)
@@ -8341,11 +8667,12 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(profiles.get("B518", "FCT").capacity, 6)
         self.assertEqual(profiles.get("B482", "BT").capacity, 4)
         # The two profile rows and save/archive/diagnostic controls stay visible.
-        self.assertEqual(window_height(4), 705)
-        self.assertEqual(window_height(6), 771)
-        self.assertEqual(window_height(7), 804)
-        self.assertEqual(window_height(20), 831)
-        self.assertEqual(visible_detail_rows(20, 500), 1)
+        self.assertEqual(window_height(600, 4), 732)
+        self.assertEqual(window_height(600, 6), 798)
+        self.assertEqual(visible_detail_rows(500, 600), 1)
+        self.assertEqual(visible_detail_rows(1000, 600), 12)
+        self.assertEqual(visible_detail_rows(1000, 600, max_rows=10), 10)
+        self.assertEqual(minimum_supported_screen_height(600, 25, 70), 776)
         self.assertGreaterEqual(WINDOW_WIDTH, 342 + 2 + 12)
 
     def test_all_display_statuses_have_explicit_colours(self):
