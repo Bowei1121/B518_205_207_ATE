@@ -210,6 +210,18 @@ class LanguageCatalogTests(unittest.TestCase):
                           "app.settings.history.search_hint",
                           language_catalog.TRADITIONAL_CHINESE))
 
+        self.assertEqual(
+            language_catalog.translate(
+                "app.settings.history.retry_hint.unavailable", language_catalog.ENGLISH),
+            "No history pages are currently available to retry.",
+        )
+        self.assertEqual(
+            language_catalog.translate(
+                "app.settings.history.retry_hint.unavailable",
+                language_catalog.TRADITIONAL_CHINESE),
+            "目前沒有可重試的歷史頁面。",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

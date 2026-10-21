@@ -4,14 +4,15 @@ Implementation branch: `codex/hc6-review-history-diagnostics`, based on `B518-Lo
 
 ## Executed
 
-- Python syntax compilation passed for `language_catalog.py`, `test_log_solution_ui.py`, and `test_language_catalog.py`.
-- `python3 'B518 Log Solution/scripts/run_tests.py' test_language_catalog test_historical_event_display test_historical_event_query`: 85 tests passed.
+- Python syntax compilation passed for `language_catalog.py`, `test_log_solution_ui.py`, and `test_language_catalog.py` using `/opt/anaconda3/bin/python` 3.11.7.
+- On the review-fix working tree, `test_language_catalog`, `test_historical_event_display`, and `test_historical_event_query` ran 85 tests; 84 passed and `test_page_reads_run_off_ui_and_latest_page_replaces_blocked_request` failed in `_write_audit()` because `audit.flush()` returned false. Re-running that test alone reproduced the same failure. This test does not exercise the changed hint resources or UI assertions.
+- The four targeted desktop acceptance tests were attempted with `B518_TK_TESTS=1` and Python 3.11.7 (Tk 8.6; AppKit and Quartz import successfully). Tk aborted while constructing its first root window with `NSInternalInconsistencyException: Invalid parameter not satisfying: aString != nil` from `NSMenuItem initWithTitle:action:keyEquivalent:`; process exit status was 134. No UI assertions ran and no screenshots were captured in this shell session.
+- The full `scripts/run_tests.py` suite was run once with Python 3.11.7. It passed through the historical query cases, then aborted when the UI test class created Tk with the same AppKit exception (exit status 134). The two H8 capacity UI tests and LI6 foreground acceptance test were reported skipped before the abort; later tests were not reached. There is no full-suite pass result.
 - `git diff --check` passed.
-- The full `scripts/run_tests.py` suite was attempted once but did not complete: `test_li6_foreground` cannot import `AppKit` in this runtime, then `test_log_solution_ui.LogSolutionUiTests.setUpClass` aborted with exit 134 while constructing `tk.Tk()`.
 
 ## Desktop validation still needed
 
-The true Tk acceptance cases for hover/focus, disabled reasons, live language refresh, and close/reopen were not executed on this worktree. The targeted UI test command exited with status 134 before unittest output. The test class creates a Tk root at class setup and its tests require an accessible macOS Tk desktop session; the native-access preflight stopped because `Quartz` is not installed, and `AppKit` is also unavailable in this Python 3.12 runtime. This is an environment limitation, not a passing UI result.
+The true Tk acceptance cases for hover/focus, disabled reasons, live language refresh, and close/reopen were not executed successfully on this worktree. Although the selected runtime imports AppKit and Quartz, Tk cannot initialize a native menu in the current shell session and aborts before unittest output. This is an environment limitation, not a passing UI result. The requested bilingual screenshots and confirmation of the full T16/T17/T19 lifecycle remain outstanding.
 
 Existing acceptance entry points:
 
@@ -20,4 +21,4 @@ Existing acceptance entry points:
 - `test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail`
 - `test_app_diagnostics_scroll_position_survives_language_refresh`
 
-Run these on the supported desktop runtime with `B518_TK_TESTS=1`; record skipped cases and screenshots separately. Prior ST5/ST6 evidence covers the unchanged shared tooltip lifecycle, but it predates this copy update and is not reported as a fresh HC6 desktop pass.
+Run these in a working macOS desktop session with `B518_TK_TESTS=1`; record skipped cases and bilingual screenshots separately. Prior ST5/ST6 evidence covers the unchanged shared tooltip lifecycle, but it predates this copy update and is not reported as a fresh HC6 desktop pass.

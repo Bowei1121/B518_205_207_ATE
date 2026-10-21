@@ -12290,7 +12290,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
                                  alarm_before_hover)
                 alarm_close_hint = hover_hint(app.round_alarm_close_button)
-                self.assertIn("without acknowledging", alarm_close_hint)
+                self.assertIn("without confirming the alarm", alarm_close_hint)
                 self.assertIsNotNone(app.round_alarm_window)
                 capture_hover("st5-round-alarm-close-hint-en.png", app.round_alarm_window)
                 app.round_alarm_close_button.invoke()
@@ -13671,10 +13671,10 @@ class LogSolutionUiTests(unittest.TestCase):
                           app.historical_event_list.curselection())
                 cancel_hint = (wait_for_physical_hover(
                     app.historical_event_cancel_button,
-                    "No history search is running, so there is nothing to cancel.")
+                    "There is no search in progress to cancel.")
                     if os.environ.get("B518_MANUAL_HOVER") == "1" else
                     show_hint(app.historical_event_cancel_button))
-                self.assertIn("No history search is running", cancel_hint)
+                self.assertIn("There is no search in progress to cancel", cancel_hint)
                 capture_native_window_with_hint(
                     app.historical_event_window, "st6-history-cancel-disabled-hint-en.png")
                 self.assertEqual(before, (app.historical_start_var.get(),
@@ -13701,7 +13701,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(query_entered.wait(2))
                     self.wait_for_ui(root, lambda: app._historical_query_generation is not None)
                     active_cancel_hint = show_hint(app.historical_event_cancel_button)
-                    self.assertIn("取消進行中的歷史查詢", active_cancel_hint)
+                    self.assertIn("取消目前的查詢", active_cancel_hint)
                     self.assertIsNotNone(app._historical_query_generation,
                                          "reading a hint must not cancel the search")
                     capture_native_window_with_hint(
@@ -13715,33 +13715,34 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app._select_language(TRADITIONAL_CHINESE)
                 root.update()
-                self.assertIn("沒有進行中的歷史查詢",
+                self.assertIn("目前沒有進行中的查詢可取消",
                               _LocalizedControlHint._visible_hint._label.cget("text"))
                 capture_native_window_with_hint(
                     app.historical_event_window, "st6-history-cancel-disabled-hint-zh-TW.png")
 
                 retry_hint = show_hint(app.historical_event_retry_button)
-                self.assertIn("沒有可重試", retry_hint)
+                self.assertIn("目前沒有可重試的歷史頁面", retry_hint)
                 capture_native_window_with_hint(
                     app.historical_event_window, "st6-history-retry-disabled-hint-zh-TW.png")
                 app._select_language(ENGLISH)
                 root.update()
                 diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
-                self.assertIn("no App troubleshooting records waiting", diagnostics_retry_hint)
+                self.assertIn("no App troubleshooting records waiting to be saved again",
+                              diagnostics_retry_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window,
                     "st6-diagnostics-save-retry-disabled-hint-en.png")
                 app._select_language(TRADITIONAL_CHINESE)
                 root.update()
                 diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
-                self.assertIn("沒有待重試", diagnostics_retry_hint)
+                self.assertIn("目前沒有尚未存好的 App 問題紀錄", diagnostics_retry_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window,
                     "st6-diagnostics-save-retry-disabled-hint-zh-TW.png")
                 language_retry_hint = show_hint(app.app_diagnostics_language_retry_button)
-                self.assertIn("沒有待重試", language_retry_hint)
+                self.assertIn("目前沒有介面文字更新錯誤需要重試", language_retry_hint)
                 close_hint = show_hint(app.app_diagnostics_close_button)
-                self.assertIn("不會修改或移除", close_hint)
+                self.assertIn("不會修改或刪除", close_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window, "st6-diagnostics-close-hint-zh-TW.png")
             finally:
