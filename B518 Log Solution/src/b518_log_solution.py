@@ -3683,9 +3683,10 @@ class B518LogSolutionApp:
         if action in {"reset_start_failure", "cancel_unverified_round"}:
             selected = self._recovery_selected_action
             expected = ("start_failure" if action == "reset_start_failure" else "cancel_round")
-            disabled = ("closing" if self._closing_ui else
-                        "no_selected_action" if selected is None or selected[0] != expected
-                        else None)
+            disabled = "closing" if self._closing_ui else None
+            if disabled is None and (selected is None or selected[0] != expected):
+                disabled = ("select_start_failure" if expected == "start_failure" else
+                            "select_cancel_round")
             base = "recovery.hint." + action
             return "{} {}".format(self._t(base), self._t(
                 "recovery.hint.disabled." + disabled)) if disabled else self._t(base)
