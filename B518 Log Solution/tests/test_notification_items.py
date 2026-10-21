@@ -55,7 +55,7 @@ class NotificationItemCountTests(unittest.TestCase):
             statuses=[self.status("round-1", state="failed", save_state="failed")],
             unsaved=[failed],
         )
-        self.assertEqual(app._pending_notification_count(), 2)
+        self.assertEqual(app._pending_notification_count(), 3)
 
     def test_independent_round_failures_and_alarms_are_not_coalesced(self):
         first = self.snapshot("round-1", alarm=SimpleNamespace(
@@ -68,7 +68,7 @@ class NotificationItemCountTests(unittest.TestCase):
                 self.status("round-2", state="failed", save_state="failed"),
             ],
         )
-        self.assertEqual(app._pending_notification_count(), 2)
+        self.assertEqual(app._pending_notification_count(), 3)
 
 
 if __name__ == "__main__":

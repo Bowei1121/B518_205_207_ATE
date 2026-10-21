@@ -3208,9 +3208,9 @@ class B518LogSolutionApp:
                 previously_failed.add(status.round_id)
             if status.cleanup_eligible or status.status == "protected":
                 previously_failed.discard(status.round_id)
-            if status.status == "failed" or (
-                    status.round_id in previously_failed and
-                    status.status == "saving"):
+            if status.status == "failed":
+                pending_items.add(("round_archive", status.round_id))
+            if status.round_id in previously_failed and status.status == "saving":
                 pending_items.add(("round_save", status.round_id))
         self._notification_failed_round_ids = previously_failed
         for snapshot in self.rounds.unsaved_rounds():
