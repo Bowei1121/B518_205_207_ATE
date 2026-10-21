@@ -130,10 +130,12 @@ class _LocalizedControlHint:
 
     _visible_hint = None
 
-    def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None):
+    def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None,
+                 outside_owner: bool = False):
         self._widget = widget
         self._text_provider = text_provider
         self._menu = menu
+        self._outside_owner = outside_owner
         self._after_id = None
         self._window = None
         self._label = None
@@ -282,14 +284,27 @@ class _LocalizedControlHint:
         except tk.TclError:
             self._hide()
 
-    @staticmethod
-    def _position_window(widget, window) -> None:
+    def _position_window(self, widget, window) -> None:
         x = widget.winfo_rootx()
         y = widget.winfo_rooty() + widget.winfo_height() + 3
         owner = widget.winfo_toplevel()
+        if self._outside_owner:
+            width = window.winfo_reqwidth()
+            right = owner.winfo_rootx() + owner.winfo_width() + 3
+            left = owner.winfo_rootx() - width - 3
+            if right + width <= widget.winfo_screenwidth() - 2 or left >= 2:
+                x = right if right + width <= widget.winfo_screenwidth() - 2 else left
+                y = min(widget.winfo_rooty(), widget.winfo_screenheight() -
+                        window.winfo_reqheight() - 2)
+                window.geometry("+{}+{}".format(x, max(2, y)))
+                return
         owner_bottom = owner.winfo_rooty() + owner.winfo_height()
-        if y + window.winfo_reqheight() > min(widget.winfo_screenheight(), owner_bottom):
+        if self._outside_owner or y + window.winfo_reqheight() > min(
+                widget.winfo_screenheight(), owner_bottom):
             y = widget.winfo_rooty() - window.winfo_reqheight() - 3
+        if owner.winfo_width() >= window.winfo_reqwidth() + 4:
+            x = min(x, owner.winfo_rootx() + owner.winfo_width() -
+                    window.winfo_reqwidth() - 2)
         x = min(max(2, x), max(2, widget.winfo_screenwidth() -
                                window.winfo_reqwidth() - 2))
         window.geometry("+{}+{}".format(x, max(2, y)))
@@ -1049,13 +1064,17 @@ class B518LogSolutionApp:
             "<Return>", self._open_app_diagnostics_from_keyboard, add="+")
         self._main_action_hints = {
             self.start_button: _LocalizedControlHint(
-                self.start_button, lambda: self._main_action_hint_text("start")),
+                self.start_button, lambda: self._main_action_hint_text("start"),
+                outside_owner=True),
             self.stop_button: _LocalizedControlHint(
-                self.stop_button, lambda: self._main_action_hint_text("stop")),
+                self.stop_button, lambda: self._main_action_hint_text("stop"),
+                outside_owner=True),
             self.retry_save_button: _LocalizedControlHint(
-                self.retry_save_button, lambda: self._main_action_hint_text("retry_save")),
+                self.retry_save_button, lambda: self._main_action_hint_text("retry_save"),
+                outside_owner=True),
             self.app_diagnostics_button: _LocalizedControlHint(
-                self.app_diagnostics_button, lambda: self._t("main.hint.diagnostics")),
+                self.app_diagnostics_button, lambda: self._t("main.hint.diagnostics"),
+                outside_owner=True),
         }
         self._render_rows()
         self._apply_main_language()
@@ -1074,6 +1093,13 @@ class B518LogSolutionApp:
         if action == "start":
             if closing:
                 return self._t("main.hint.start.closing")
+            rounds = getattr(self, "rounds", None)
+            if rounds is not None:
+                if rounds.start_failure_snapshot() is not None:
+                    return self._t("main.hint.start.start_failure")
+                snapshot = rounds.snapshot()
+                if snapshot is not None and snapshot.cancellation_available:
+                    return self._t("main.hint.start.cancellation_pending")
             if self._round_is_active():
                 return self._t("main.hint.start.active")
             return self._t("main.hint.start")

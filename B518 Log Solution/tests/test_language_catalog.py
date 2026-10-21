@@ -96,6 +96,16 @@ class LanguageCatalogTests(unittest.TestCase):
         self.assertTrue(language_catalog.translate(
             "alarm.reason.round_deadline", "zh-TW"))
 
+    def test_alarm_window_tooltip_is_distinct_from_recovery_acknowledgment(self):
+        self.assertIn("Manually acknowledge this round alarm", language_catalog.translate(
+            "alarm.hint.acknowledge", "en"))
+        self.assertIn("由人員手動確認此整輪警報", language_catalog.translate(
+            "alarm.hint.acknowledge", "zh-TW"))
+        self.assertIn("Confirm the selected round alarm", language_catalog.translate(
+            "recovery.hint.acknowledge", "en"))
+        self.assertIn("確認所選整輪警報", language_catalog.translate(
+            "recovery.hint.acknowledge", "zh-TW"))
+
     def test_slotless_round_events_never_invent_slot_zero(self):
         for kind, detail in (
                 ("conflict_detected", {}),
