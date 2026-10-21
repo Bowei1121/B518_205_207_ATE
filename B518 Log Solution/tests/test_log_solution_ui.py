@@ -383,10 +383,12 @@ def capture_native_window_with_hint(window, filename, expected_widget=None):
                           and item.get(Quartz.kCGWindowNumber) == native_number), None)
     if native_window is None:
         raise AssertionError("missing native window: {}".format(window.title()))
+    bounds = native_window[Quartz.kCGWindowBounds]
     window_numbers = [native_number]
     if hint_window is not None:
         hint_native_window = native_window_for_capture(hint_window)
-        window_numbers.append(hint_native_window.windowNumber())
+        # WindowServer composites this array front to back.
+        window_numbers.insert(0, hint_native_window.windowNumber())
     image = Quartz.CGWindowListCreateImageFromArray(
         Quartz.CGRectNull, window_numbers, Quartz.kCGWindowImageBoundsIgnoreFraming)
     if image is None:
@@ -12283,7 +12285,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     app.conflict_close_button, "st5-conflict-close-pressed-en.png")
                 self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
                 self.assertTrue(app.conflict_window.winfo_viewable())
-                capture_hover("st5-conflict-close-hint-en.png", app.conflict_window)
+                self.assertEqual(hover_hint(app.conflict_close_button), conflict_close_hint)
+                capture_hover("st5-conflict-close-hint-en.png", app.conflict_window,
+                              app.conflict_close_button)
                 app.conflict_close_button.invoke()
                 root.update()
                 self.assertFalse(app.conflict_window.winfo_viewable())
@@ -12962,7 +12966,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.wait_for_ui(
                         root, lambda: retry_hint._window is not None and
                         retry_hint._window.winfo_exists())
-                    self.assertIn("Retry preparation of the remaining pages",
+                    self.assertIn("Try loading the remaining pages for this search again",
                                   retry_hint._label.cget("text"))
                     retry_hint._hide()
                     self.assertNotIn(app._t("app.settings.history.preparing"),
@@ -13457,7 +13461,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 audit.append_event(AuditEvent(
                     sequence, "round_ready", "saved keyboard event", None),
                     event_time, float(sequence))
-            self.assertTrue(audit.flush())
+            self.assertTrue(audit.flush(timeout=60), audit.error)
             source_bytes = audit.audit_path.read_bytes()
 
             root = tk.Tk()
@@ -13524,7 +13528,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 focus_next_with_tab(app.historical_next_button)
                 self.wait_for_ui(root, lambda: visible_hint_text() is not None)
-                self.assertEqual(visible_hint_text(), "Show the next results page")
+                self.assertEqual(visible_hint_text(), "Show the next page of results.")
                 app.historical_next_button.event_generate("<KeyPress-space>")
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -13538,10 +13542,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app._historical_query_page_number, 3)
                 self.assertEqual(visible_hint_text(),
-                                 "There is no later results page to show.")
+                                 "There is no later page of results to show.")
                 focus_next_with_tab(app.historical_previous_button)
                 self.wait_for_ui(root, lambda: visible_hint_text() is not None)
-                self.assertEqual(visible_hint_text(), "Show the previous results page")
+                self.assertEqual(visible_hint_text(), "Show the previous page of results.")
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -13558,6 +13562,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_historical_event_window()
                 app.hotkey.close()
                 root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hint_refresh_tolerates_close_during_layout(self):
+        root = tk.Tk()
+        button = ttk.Button(root)
+        button.pack()
+        hint = _LocalizedControlHint(button, lambda: "Updated hint")
+        try:
+            hint._show()
+            window = hint._window
+            self.assertIsNotNone(window)
+            with patch.object(window, "update_idletasks", side_effect=hint._hide):
+                hint.refresh()
+            self.assertIsNone(hint._window)
+            self.assertFalse(window.winfo_exists())
+            self.assertIsNone(_LocalizedControlHint._visible_hint)
+        finally:
+            hint.close()
+            root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -13599,7 +13623,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: len(hints()) == 1)
                 hint = hints()[0]
                 self.assertTrue(any(
-                    text.startswith("Search the selected date range")
+                    text.startswith("Search for events in the selected date range")
                     for text in hint_text(hint)))
 
                 self.set_language_for_test_setup(app, root, TRADITIONAL_CHINESE)
@@ -13640,6 +13664,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
 
                 def show_hint(widget):
+                    NSRunningApplication.currentApplication().activateWithOptions_(
+                        NSApplicationActivateIgnoringOtherApps)
+                    owner = widget.winfo_toplevel()
+                    owner.deiconify()
+                    owner.lift()
+                    owner.focus_force()
+                    root.update()
                     visible = _LocalizedControlHint._visible_hint
                     if visible is not None and visible._widget is not widget:
                         visible._widget.event_generate("<Leave>")
@@ -13791,7 +13822,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     "saved language event — " + "LONG-READING-POSITION-" * 12, None,
                     detail={"raw_diagnostic": raw_detail if sequence == 103 else ""}),
                     event_time, float(sequence))
-            self.assertTrue(audit.flush())
+            self.assertTrue(audit.flush(timeout=60), audit.error)
             source_bytes = audit.audit_path.read_bytes()
             legacy_path = session_root / "legacy-language" / "events.log"
             legacy_path.parent.mkdir(parents=True)
