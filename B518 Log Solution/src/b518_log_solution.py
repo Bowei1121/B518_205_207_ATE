@@ -585,6 +585,12 @@ class B518LogSolutionApp:
         self._recovery_save_ids: list[str] = []
         self._recovery_selected_alarm: Optional[tuple[str, str]] = None
         self._recovery_selected_save: Optional[str] = None
+        self.recovery_action_list = None
+        self.recovery_action_detail = None
+        self.recovery_action_reset_button = None
+        self.recovery_action_cancel_button = None
+        self._recovery_action_ids = []
+        self._recovery_selected_action = None
         self._unregister_recovery_language_receiver = None
         self._configure_appearance()
         self._record_startup_diagnostics()
@@ -1008,14 +1014,8 @@ class B518LogSolutionApp:
         self.start_button = ttk.Button(controls, text="開始監控  (Command+Shift+M)", command=self.start_monitor,
                                        style="Main.TButton")
         self.start_button.pack(fill="x", pady=(0, 2))
-        self.reset_start_failure_button = ttk.Button(
-            controls, text="確認並復位啟動故障", command=self.reset_start_failure,
-            style="Main.TButton", state="disabled")
-        self.reset_start_failure_button.pack(fill="x", pady=(0, 2))
-        self.cancel_unverified_round_button = ttk.Button(
-            controls, text="取消未確認輪次並保留紀錄", command=self.cancel_unverified_round,
-            style="Main.TButton", state="disabled")
-        self.cancel_unverified_round_button.pack(fill="x", pady=(0, 2))
+        self.reset_start_failure_button = None
+        self.cancel_unverified_round_button = None
         monitor_status_row = ttk.Frame(controls)
         self._monitor_status_row = monitor_status_row
         monitor_status_row.pack(fill="x", pady=(0, 2))
@@ -1124,8 +1124,6 @@ class B518LogSolutionApp:
         for slot, row in self.status_rows.items():
             row["slot"].configure(text=self._t("main.slot", number=slot))
         self.start_button.configure(text=self._t("main.start_monitor"))
-        self.reset_start_failure_button.configure(text=self._t("main.reset_start_failure"))
-        self.cancel_unverified_round_button.configure(text=self._t("main.cancel_unverified_round"))
         self.stop_button.configure(text=self._t("main.stop"))
         self.retry_save_button.configure(text=self._t("main.retry_save"))
         self.app_diagnostics_button.configure(text=self._t("app.diagnostic.heading"))
@@ -1978,10 +1976,10 @@ class B518LogSolutionApp:
             self._set_row(result.slot, result.sn, result.status)
         self._render_layout_marker(self._display_capacity())
         self._render_state_marker(snapshot)
-        if hasattr(self, "reset_start_failure_button"):
+        if self.reset_start_failure_button is not None:
             self.reset_start_failure_button.configure(
                 state="normal" if failure is not None and not self._closing_ui else "disabled")
-        if hasattr(self, "cancel_unverified_round_button"):
+        if self.cancel_unverified_round_button is not None:
             self.cancel_unverified_round_button.configure(
                 state=("normal" if snapshot.cancellation_available and not self._closing_ui
                        else "disabled"))
@@ -2213,7 +2211,7 @@ class B518LogSolutionApp:
                 "monitor.start_failed" if failed_start else
                 ("monitor.awaiting_manual_cancel" if cancellation_pending else
                  ("monitor.active" if monitoring else "monitor.idle"))))
-        if hasattr(self, "reset_start_failure_button"):
+        if self.reset_start_failure_button is not None:
             self.reset_start_failure_button.configure(
                 state="normal" if failed_start and not self._closing_ui else "disabled")
         for name in ("project_choice", "machine_choice"):
@@ -2338,12 +2336,15 @@ class B518LogSolutionApp:
         self.active_profile_snapshot = None
         self._set_monitor_controls(False)
         self._apply_round_snapshot(self.rounds.snapshot())
+        self._refresh_recovery_center()
+        self._refresh_notification_badge()
 
-    def cancel_unverified_round(self) -> None:
+    def cancel_unverified_round(self, round_id: Optional[str] = None) -> None:
         """Require a separate local confirmation before withdrawing delivery."""
         if self._closing_ui:
             return
-        snapshot = self.rounds.snapshot()
+        snapshot = (self.rounds.round_snapshot(round_id) if round_id else
+                    self.rounds.snapshot())
         if snapshot is None or not snapshot.cancellation_available:
             return
         confirmed = messagebox.askyesno(
@@ -2355,9 +2356,12 @@ class B518LogSolutionApp:
         if not self.rounds.cancel_unverified_round(snapshot.round_id,
                                                   "operator confirmed local cancellation"):
             return
-        self.active_profile_snapshot = None
-        self._set_monitor_controls(False)
-        self._apply_round_snapshot(self.rounds.snapshot())
+        if snapshot.round_id == self.active_round_id:
+            self.active_profile_snapshot = None
+            self._set_monitor_controls(False)
+            self._apply_round_snapshot(self.rounds.snapshot())
+        self._refresh_recovery_center()
+        self._refresh_notification_badge()
 
     def stop_monitor(self) -> None:
         snapshot = self.rounds.snapshot()
@@ -3177,11 +3181,13 @@ class B518LogSolutionApp:
             self._toolbar_hints[2].refresh()
 
     def _pending_notification_count(self) -> int:
-        """Project unresolved alarms and save/archive failures into the bell count."""
+        """Count each unresolved operator action once for the bell."""
         if not hasattr(self, "rounds"):
             return 0
-        alarm_ids = set()
-        failed_round_ids = set()
+        pending_items = set()
+        failure = self.rounds.start_failure_snapshot()
+        if failure is not None:
+            pending_items.add(("start_failure", failure.request_id))
         previously_failed = getattr(self, "_notification_failed_round_ids", set())
         statuses = self.rounds.archive_statuses()
         for status in statuses:
@@ -3189,10 +3195,12 @@ class B518LogSolutionApp:
             if snapshot is not None:
                 alarm = snapshot.round_alarm
                 if alarm is not None and not alarm.acknowledged_at:
-                    alarm_ids.add((alarm.round_id, alarm.alarm_id))
+                    pending_items.add(("round_alarm", alarm.round_id, alarm.alarm_id))
+                if snapshot.cancellation_available:
+                    pending_items.add(("cancel_round", snapshot.round_id))
                 if (snapshot.save_state == "failed" or
                         (snapshot.retry_in_progress and snapshot.save_errors)):
-                    failed_round_ids.add(snapshot.round_id)
+                    pending_items.add(("round_save", snapshot.round_id))
             if ((snapshot is not None and (
                     snapshot.save_state == "failed" or
                     (snapshot.retry_in_progress and snapshot.save_errors))) or
@@ -3203,13 +3211,13 @@ class B518LogSolutionApp:
             if status.status == "failed" or (
                     status.round_id in previously_failed and
                     status.status == "saving"):
-                failed_round_ids.add(status.round_id)
+                pending_items.add(("round_save", status.round_id))
         self._notification_failed_round_ids = previously_failed
         for snapshot in self.rounds.unsaved_rounds():
             if (snapshot.save_state == "failed" or
                     (snapshot.retry_in_progress and snapshot.save_errors)):
-                failed_round_ids.add(snapshot.round_id)
-        return len(alarm_ids) + len(failed_round_ids)
+                pending_items.add(("round_save", snapshot.round_id))
+        return len(pending_items)
 
     def _refresh_notification_badge(self) -> None:
         if not hasattr(self, "notification_badge"):
@@ -3463,6 +3471,53 @@ class B518LogSolutionApp:
                     self.recovery_archive_retry_button,
                     lambda: self._recovery_hint_text("retry_archive")),
             })
+
+            actions = ttk.Frame(self.recovery_tabs, padding=10)
+            actions.columnconfigure(1, weight=1)
+            actions.rowconfigure(0, weight=1)
+            self.recovery_tabs.add(actions, text=self._t("recovery.start_and_cancel"))
+            action_list_frame = ttk.Frame(actions)
+            action_list_frame.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+            action_list_frame.rowconfigure(0, weight=1)
+            self.recovery_action_list = tk.Listbox(
+                action_list_frame, width=34, exportselection=False,
+                background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
+                selectbackground="#1d4ed8", selectforeground="#ffffff",
+            )
+            self.recovery_action_list.grid(row=0, column=0, sticky="nsew")
+            action_scrollbar = ttk.Scrollbar(
+                action_list_frame, orient="vertical", command=self.recovery_action_list.yview)
+            action_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.recovery_action_list.configure(yscrollcommand=action_scrollbar.set)
+            self.recovery_action_list.bind("<<ListboxSelect>>", self._select_recovery_action)
+            action_detail = ttk.Frame(actions)
+            action_detail.columnconfigure(0, weight=1)
+            action_detail.rowconfigure(0, weight=1)
+            action_detail.grid(row=0, column=1, sticky="nsew")
+            action_text_frame, self.recovery_action_detail = self._recovery_detail_widget(action_detail)
+            action_text_frame.grid(row=0, column=0, sticky="nsew")
+            action_buttons = ttk.Frame(action_detail)
+            action_buttons.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+            action_buttons.columnconfigure(0, weight=1)
+            action_buttons.columnconfigure(1, weight=1)
+            self.recovery_action_reset_button = ttk.Button(
+                action_buttons, text=self._t("recovery.action.reset_start_failure"),
+                command=self._reset_selected_start_failure,
+            )
+            self.recovery_action_reset_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+            self.recovery_action_cancel_button = ttk.Button(
+                action_buttons, text=self._t("recovery.action.cancel_round"),
+                command=self._cancel_selected_unverified_round,
+            )
+            self.recovery_action_cancel_button.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+            self._recovery_control_hints.update({
+                self.recovery_action_reset_button: _LocalizedControlHint(
+                    self.recovery_action_reset_button,
+                    lambda: self._recovery_hint_text("reset_start_failure")),
+                self.recovery_action_cancel_button: _LocalizedControlHint(
+                    self.recovery_action_cancel_button,
+                    lambda: self._recovery_hint_text("cancel_unverified_round")),
+            })
             window.bind("<Destroy>", self._on_recovery_center_destroy, add="+")
             self._unregister_recovery_language_receiver = self.register_language_receiver(
                 lambda: self._t("recovery.title"),
@@ -3482,6 +3537,12 @@ class B518LogSolutionApp:
             unregister()
         self.recovery_window = None
         self.recovery_tabs = None
+        self.recovery_action_list = None
+        self.recovery_action_detail = None
+        self.recovery_action_reset_button = None
+        self.recovery_action_cancel_button = None
+        self._recovery_action_ids = []
+        self._recovery_selected_action = None
         self.recovery_alarm_list = None
         self.recovery_alarm_detail = None
         self.recovery_alarm_ack_button = None
@@ -3506,6 +3567,7 @@ class B518LogSolutionApp:
         self.recovery_window.title(self._t("recovery.title"))
         self.recovery_tabs.tab(0, text=self._t("recovery.alarms"))
         self.recovery_tabs.tab(1, text=self._t("recovery.saves_archives"))
+        self.recovery_tabs.tab(2, text=self._t("recovery.start_and_cancel"))
         self.recovery_save_heading.configure(text=self._t("recovery.unsaved_heading"))
         self.recovery_archive_heading.configure(text=self._t("recovery.archive_heading"))
         self.recovery_save_retry_button.configure(text=self._t("main.retry_selected"))
@@ -3519,10 +3581,108 @@ class B518LogSolutionApp:
             return
         self._refresh_recovery_alarms()
         self._refresh_recovery_saves_and_archives()
+        self._refresh_recovery_actions()
         for hint in self._recovery_control_hints.values():
             hint.refresh()
 
+    def _refresh_recovery_actions(self) -> None:
+        failure = self.rounds.start_failure_snapshot()
+        actions = []
+        if failure is not None:
+            actions.append(("start_failure", failure.request_id))
+        cancellations = []
+        for status in self.rounds.archive_statuses():
+            snapshot = self.rounds.round_snapshot(status.round_id)
+            if snapshot is not None and snapshot.cancellation_available:
+                cancellations.append(snapshot)
+        actions.extend(("cancel_round", snapshot.round_id)
+                       for snapshot in cancellations)
+        previous = self._recovery_selected_action
+        self._recovery_action_ids = actions
+        rows = []
+        for kind, identity in actions:
+            if kind == "start_failure":
+                failure = self.rounds.start_failure_snapshot()
+                if failure is None or failure.request_id != identity:
+                    continue
+                rows.append(self._t("recovery.start_failure_row",
+                                    station=failure.station,
+                                    round_id=failure.round_id[:10] if failure.round_id else "—"))
+            else:
+                snapshot = self.rounds.round_snapshot(identity)
+                if snapshot is not None:
+                    rows.append(self._t("recovery.cancel_round_row",
+                                        station=snapshot.station, round_id=identity[:10]))
+        self._set_recovery_list(
+            self.recovery_action_list, rows or [self._t("recovery.no_start_or_cancel")])
+        if not actions:
+            self._recovery_selected_action = None
+            self._set_recovery_detail(
+                self.recovery_action_detail, self._t("recovery.no_start_or_cancel_detail"))
+            self.recovery_action_reset_button.configure(state="disabled")
+            self.recovery_action_cancel_button.configure(state="disabled")
+            return
+        selected_index = next((index for index, action in enumerate(actions)
+                               if action == previous), 0)
+        if self.recovery_action_list.curselection() != (selected_index,):
+            self.recovery_action_list.selection_clear(0, "end")
+            self.recovery_action_list.selection_set(selected_index)
+        self.recovery_action_list.activate(selected_index)
+        self._recovery_selected_action = actions[selected_index]
+        self._render_recovery_action(self._recovery_selected_action)
+
+    def _select_recovery_action(self, _event=None) -> None:
+        selected = self.recovery_action_list.curselection()
+        if not selected or selected[0] >= len(self._recovery_action_ids):
+            return
+        self._recovery_selected_action = self._recovery_action_ids[selected[0]]
+        self._render_recovery_action(self._recovery_selected_action)
+        for hint in self._recovery_control_hints.values():
+            hint.refresh()
+
+    def _render_recovery_action(self, action) -> None:
+        kind, identity = action
+        if kind == "start_failure":
+            failure = self.rounds.start_failure_snapshot()
+            if failure is None or failure.request_id != identity:
+                return
+            detail = self._t(
+                "recovery.start_failure_detail", station=failure.station,
+                round_id=failure.round_id or self._t("recovery.no_round"),
+                occurred_at=failure.occurred_at or "—", reason=failure.diagnostic or "—")
+            self._set_recovery_detail(self.recovery_action_detail, detail)
+        else:
+            snapshot = self.rounds.round_snapshot(identity)
+            if snapshot is None:
+                return
+            latest_event = next((item.event for item in reversed(snapshot.events)
+                                 if item.event.kind in {"round_alarm_created", "timeout",
+                                                        "stopped"}), None)
+            if latest_event is None and snapshot.events:
+                latest_event = snapshot.events[-1].event
+            reason = (self._render_event_record(
+                (latest_event.message, latest_event.localized_message, snapshot.round_id))
+                if latest_event is not None else snapshot.completion_reason)
+            self._set_recovery_detail(self.recovery_action_detail, self._t(
+                "recovery.cancel_round_detail", station=snapshot.station,
+                round_id=snapshot.round_id, reason=reason))
+        selected_failure = kind == "start_failure"
+        selected_cancel = kind == "cancel_round"
+        self.recovery_action_reset_button.configure(
+            state="normal" if selected_failure and not self._closing_ui else "disabled")
+        self.recovery_action_cancel_button.configure(
+            state="normal" if selected_cancel and not self._closing_ui else "disabled")
+
     def _recovery_hint_text(self, action: str) -> str:
+        if action in {"reset_start_failure", "cancel_unverified_round"}:
+            selected = self._recovery_selected_action
+            expected = ("start_failure" if action == "reset_start_failure" else "cancel_round")
+            disabled = ("closing" if self._closing_ui else
+                        "no_selected_action" if selected is None or selected[0] != expected
+                        else None)
+            base = "recovery.hint." + action
+            return "{} {}".format(self._t(base), self._t(
+                "recovery.hint.disabled." + disabled)) if disabled else self._t(base)
         if action == "acknowledge":
             base = "recovery.hint.acknowledge"
             identity = self._recovery_selected_alarm
@@ -3559,6 +3719,14 @@ class B518LogSolutionApp:
         if reason is not None:
             return "{} {}".format(self._t(base), self._t("recovery.hint.disabled." + reason))
         return self._t(base)
+
+    def _reset_selected_start_failure(self) -> None:
+        if self._recovery_selected_action and self._recovery_selected_action[0] == "start_failure":
+            self.reset_start_failure()
+
+    def _cancel_selected_unverified_round(self) -> None:
+        if self._recovery_selected_action and self._recovery_selected_action[0] == "cancel_round":
+            self.cancel_unverified_round(self._recovery_selected_action[1])
 
     def _refresh_recovery_alarms(self) -> None:
         snapshots = []

@@ -4789,8 +4789,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(badge_text(), "2")
                     app.recovery_alarm_ack_button.invoke()
                     self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
-                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
-                    self.wait_for_ui(root, lambda: badge_text() == "1")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    self.wait_for_ui(root, lambda: badge_text() == "2")
 
                     app.recovery_tabs.select(1)
                     root.update()
@@ -4813,8 +4813,17 @@ class LogSolutionUiTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "人工核對"):
                         rounds.start("FCT", AlarmMonitor, run_async=False,
                                      round_timeout_seconds=1, capacity=1)
-                    self.assertTrue(rounds.cancel_unverified_round(
-                        started.round_id, "operator verified and cancelled timed-out round"))
+                    app.recovery_tabs.select(2)
+                    root.update()
+                    self.assertEqual(app._recovery_selected_action,
+                                     ("cancel_round", started.round_id))
+                    self.assertIn("No test start", app.recovery_action_detail.get("1.0", "end"))
+                    with patch("b518_log_solution.messagebox.askyesno", return_value=False):
+                        app.recovery_action_cancel_button.invoke()
+                    self.assertTrue(rounds.snapshot().cancellation_available)
+                    self.assertEqual(app._pending_notification_count(), 2)
+                    with patch("b518_log_solution.messagebox.askyesno", return_value=True):
+                        app.recovery_action_cancel_button.invoke()
                     self.assertEqual(rounds.snapshot().completion_reason,
                                      "unverified_round_cancelled")
                     self.assertEqual(app._pending_notification_count(), 1)
@@ -8415,11 +8424,18 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(failed.start_failure.diagnostic, diagnostic)
         self.assertFalse(failed.result_available)
         self.assertEqual(str(app.start_button.cget("state")), "disabled")
-        self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
+        self.assertIsNone(app.reset_start_failure_button)
+        self.assertIsNone(app.cancel_unverified_round_button)
+        app._open_recovery_center()
+        app.recovery_tabs.select(2)
+        root.update()
+        self.assertEqual(str(app.recovery_action_reset_button.cget("state")), "normal")
+        self.assertEqual(str(app.recovery_action_cancel_button.cget("state")), "disabled")
+        self.assertIn(diagnostic, app.recovery_action_detail.get("1.0", "end"))
         request_id = failed.start_failure.request_id
         app.start_monitor()
         self.assertEqual(app.rounds.snapshot().start_failure.request_id, request_id)
-        app.reset_start_failure_button.invoke()
+        app.recovery_action_reset_button.invoke()
         root.update()
         self.assertIsNone(app.rounds.start_failure_snapshot())
         self.assertFalse(app._round_is_active())
