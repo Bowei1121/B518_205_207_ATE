@@ -1,0 +1,29 @@
+{
+  "screen": {
+    "screen_width": 1152,
+    "screen_height": 720,
+    "workarea_top": 25,
+    "workarea_bottom": 0,
+    "decoration_allowance": 32,
+    "edge_gap": 8,
+    "available_client_height": 647,
+    "fixed_content_height": 500,
+    "minimum_supported_screen_height": 606,
+    "minimum_supported_screen_width": 388,
+    "visible_detail_rows": 4,
+    "window_width": 376,
+    "window_height": 632
+  },
+  "window_geometry": "376x632+764+33",
+  "native_bounds": {
+    "X": 764.0,
+    "Y": 33.0,
+    "Width": 376.0,
+    "Height": 660.0
+  },
+  "image_pixels": {
+    "width": 376,
+    "height": 660
+  },
+  "screenshot": "hc3-small-display-en.png"
+}

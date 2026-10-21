@@ -1,0 +1,339 @@
+{
+  "screen": {
+    "screen_width": 1440,
+    "screen_height": 900,
+    "workarea_top": 25,
+    "workarea_bottom": 0,
+    "decoration_allowance": 32,
+    "edge_gap": 8,
+    "available_client_height": 827,
+    "fixed_content_height": 500,
+    "minimum_supported_screen_height": 606,
+    "minimum_supported_screen_width": 388,
+    "visible_detail_rows": 9,
+    "window_width": 376,
+    "window_height": 797
+  },
+  "window_geometry": "376x797+1052+33",
+  "fixed_controls": [
+    {
+      "capacity": 1,
+      "language": "zh-TW",
+      "geometry": "376x797+1052+33",
+      "controls": [
+        [
+          1060,
+          156,
+          360,
+          88
+        ],
+        [
+          1060,
+          336,
+          360,
+          299
+        ],
+        [
+          1060,
+          336,
+          346,
+          299
+        ],
+        [
+          1060,
+          635,
+          360,
+          215
+        ],
+        [
+          1060,
+          639,
+          360,
+          38
+        ],
+        [
+          1060,
+          759,
+          308,
+          20
+        ],
+        [
+          1368,
+          759,
+          52,
+          20
+        ],
+        [
+          1060,
+          825,
+          245,
+          20
+        ]
+      ],
+      "table_to_start_gap": 4,
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 33.0,
+        "Width": 376.0,
+        "Height": 825.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1650
+      },
+      "screenshot": "hc3-capacity-1-zh-TW.png"
+    },
+    {
+      "capacity": 10,
+      "language": "en",
+      "geometry": "376x797+1052+33",
+      "controls": [
+        [
+          1060,
+          156,
+          360,
+          88
+        ],
+        [
+          1060,
+          336,
+          360,
+          299
+        ],
+        [
+          1060,
+          336,
+          346,
+          299
+        ],
+        [
+          1060,
+          635,
+          360,
+          215
+        ],
+        [
+          1060,
+          639,
+          360,
+          38
+        ],
+        [
+          1060,
+          759,
+          308,
+          20
+        ],
+        [
+          1368,
+          759,
+          52,
+          20
+        ],
+        [
+          1060,
+          825,
+          245,
+          20
+        ]
+      ],
+      "table_to_start_gap": 4,
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 33.0,
+        "Width": 376.0,
+        "Height": 825.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1650
+      },
+      "screenshot": "hc3-capacity-10-en.png"
+    },
+    {
+      "capacity": 11,
+      "language": "zh-TW",
+      "geometry": "376x797+1052+33",
+      "controls": [
+        [
+          1060,
+          156,
+          360,
+          88
+        ],
+        [
+          1060,
+          336,
+          360,
+          299
+        ],
+        [
+          1060,
+          336,
+          346,
+          299
+        ],
+        [
+          1060,
+          635,
+          360,
+          215
+        ],
+        [
+          1060,
+          639,
+          360,
+          38
+        ],
+        [
+          1060,
+          759,
+          308,
+          20
+        ],
+        [
+          1368,
+          759,
+          52,
+          20
+        ],
+        [
+          1060,
+          825,
+          245,
+          20
+        ]
+      ],
+      "table_to_start_gap": 4,
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 33.0,
+        "Width": 376.0,
+        "Height": 825.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1650
+      },
+      "screenshot": "hc3-capacity-11-zh-TW.png"
+    },
+    {
+      "capacity": 20,
+      "language": "en",
+      "geometry": "376x797+1052+33",
+      "controls": [
+        [
+          1060,
+          156,
+          360,
+          88
+        ],
+        [
+          1060,
+          336,
+          360,
+          299
+        ],
+        [
+          1060,
+          336,
+          346,
+          299
+        ],
+        [
+          1060,
+          635,
+          360,
+          215
+        ],
+        [
+          1060,
+          639,
+          360,
+          38
+        ],
+        [
+          1060,
+          759,
+          308,
+          20
+        ],
+        [
+          1368,
+          759,
+          52,
+          20
+        ],
+        [
+          1060,
+          825,
+          245,
+          20
+        ]
+      ],
+      "table_to_start_gap": 4,
+      "native_bounds": {
+        "X": 1052.0,
+        "Y": 33.0,
+        "Width": 376.0,
+        "Height": 825.0
+      },
+      "image_pixels": {
+        "width": 752,
+        "height": 1650
+      },
+      "screenshot": "hc3-capacity-20-en.png"
+    }
+  ],
+  "long_status_timer_geometry": [
+    [
+      1060,
+      156,
+      360,
+      88
+    ],
+    [
+      1060,
+      336,
+      360,
+      299
+    ],
+    [
+      1060,
+      336,
+      346,
+      299
+    ],
+    [
+      1060,
+      635,
+      360,
+      215
+    ],
+    [
+      1060,
+      639,
+      360,
+      38
+    ],
+    [
+      1060,
+      759,
+      308,
+      20
+    ],
+    [
+      1368,
+      759,
+      52,
+      20
+    ],
+    [
+      1060,
+      825,
+      245,
+      20
+    ]
+  ],
+  "minimum_supported_screen_height": 606
+}
