@@ -1,6 +1,6 @@
 # HC6 Local Validation
 
-Implementation branch: `codex/hc6-review-history-diagnostics`, based on `B518-Log-Solution` integration commit `b24ab21`.
+Implementation branch: `codex/hc6-review-history-diagnostics`, based on `B518-Log-Solution` integration commit `1af60cf`.
 
 ## Executed
 
