@@ -109,7 +109,8 @@ ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 WINDOW_DECORATION_ALLOWANCE = 32
 SCREEN_EDGE_GAP = 8
-MONITOR_ELAPSED_WIDTH = 6
+MONITOR_ELAPSED_WIDTH = 8
+NOTIFICATION_REMINDER_HEIGHT = 40
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
     "PASS": "#00ef00", "FAIL": "#ff0000", "TESTING": "#ffff00", "NOTEST": "#f04bf1",
@@ -766,6 +767,10 @@ class B518LogSolutionApp:
         self.style.configure("Main.TButton", background=FIELD_BACKGROUND, foreground=TEXT_COLOUR,
                              font=("Helvetica", MAIN_FONT_SIZE, "bold"), padding=(8, 7), borderwidth=1,
                              focuscolor="#2563eb", focusthickness=2)
+        self.style.configure(
+            "Main.NotificationReminder.TLabel", foreground="#b91c1c",
+            background=LIGHT_BACKGROUND, font=("Helvetica", 11, "bold"),
+        )
         self.style.configure("Toolbar.TButton", background=LIGHT_BACKGROUND,
                              foreground=TEXT_COLOUR, padding=(3, 3), borderwidth=0,
                              focuscolor="#2563eb", focusthickness=2,
@@ -1057,6 +1062,15 @@ class B518LogSolutionApp:
         self.monitor_elapsed.grid(row=0, column=1, sticky="e")
         monitor_status_row.columnconfigure(0, weight=1)
         monitor_status_row.columnconfigure(1, minsize=self.monitor_elapsed.winfo_reqwidth())
+        self.notification_reminder_frame = tk.Frame(
+            controls, background=LIGHT_BACKGROUND, height=NOTIFICATION_REMINDER_HEIGHT)
+        self.notification_reminder_frame.pack(fill="x", pady=(0, 2))
+        self.notification_reminder_frame.pack_propagate(False)
+        self.notification_reminder = ttk.Label(
+            self.notification_reminder_frame, text="", anchor="center", justify="center",
+            wraplength=WINDOW_WIDTH - 20, style="Main.NotificationReminder.TLabel",
+        )
+        self.notification_reminder.pack(fill="both", expand=True)
         save_controls = ttk.Frame(controls)
         save_controls.pack(fill="x")
         self.stop_button = ttk.Button(save_controls, text="停止", command=self.stop_monitor,
@@ -3251,6 +3265,10 @@ class B518LogSolutionApp:
         if not hasattr(self, "notification_badge"):
             return
         count = self._pending_notification_count()
+        reminder_text = (self._t("main.notification_reminder", count=count)
+                         if count else "")
+        if hasattr(self, "notification_reminder"):
+            self.notification_reminder.configure(text=reminder_text)
         if count == self._notification_badge_count:
             return
         self._notification_badge_count = count

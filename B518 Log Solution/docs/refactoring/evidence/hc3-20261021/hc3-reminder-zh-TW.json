@@ -1,0 +1,10 @@
+{
+  "count": 123456789,
+  "language": "zh-TW",
+  "text": "有 123456789 件事需要處理，請點鈴鐺。",
+  "frame_height": 40,
+  "label_height": 40,
+  "requested_label_height": 17,
+  "window_geometry": "376x806+1052+33",
+  "screenshot": "hc3-reminder-zh-TW-zh-TW.png"
+}

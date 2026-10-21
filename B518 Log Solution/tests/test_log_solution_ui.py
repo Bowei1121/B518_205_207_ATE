@@ -533,6 +533,35 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._apply_round_snapshot(rounds.snapshot())
                 root.update_idletasks()
                 self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+                timer_font = tkfont.Font(font=app.monitor_elapsed.cget("font"))
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                elapsed[0] = 60500.0
+                app._apply_round_snapshot(rounds.snapshot())
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "1000:00")
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
+
+                elapsed[0] = 600500.0
+                app._apply_round_snapshot(rounds.snapshot())
+                root.update_idletasks()
+                self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
+                self.assertGreaterEqual(
+                    app.monitor_elapsed.winfo_width(),
+                    timer_font.measure(app.monitor_elapsed.cget("text")),
+                )
+                self.assertEqual(app.monitor_elapsed.winfo_rootx() +
+                                 app.monitor_elapsed.winfo_width(), right_edge)
                 self.assertGreaterEqual(app.monitor_elapsed.winfo_width(),
                                         app.monitor_elapsed.winfo_reqwidth(),
                                         (app.monitor_elapsed.winfo_width(),
@@ -542,16 +571,124 @@ class LogSolutionUiTests(unittest.TestCase):
                                          app.monitor_state.winfo_width()))
                 self.assertEqual(app.monitor_elapsed.winfo_rootx() +
                                  app.monitor_elapsed.winfo_width(), right_edge)
+                root.update()
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    timer_capture = capture_tk_window_evidence(
+                        root, "hc3-timer-10000", app.current_language, {
+                            "timer": app.monitor_elapsed,
+                            "status": app.monitor_state,
+                        })
+                    evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                    (evidence_dir / "hc3-long-timer.json").write_text(
+                        json.dumps({
+                            "text": app.monitor_elapsed.cget("text"),
+                            "font": str(app.monitor_elapsed.cget("font")),
+                            "measured_text_width": timer_font.measure(
+                                app.monitor_elapsed.cget("text")),
+                            "label_width": app.monitor_elapsed.winfo_width(),
+                            "right_edge": right_edge,
+                            "screenshot": timer_capture["screenshot"],
+                            "window_geometry": root.winfo_geometry(),
+                        }, ensure_ascii=False, indent=2), encoding="utf-8")
 
                 stopped = rounds.stop()
-                self.assertEqual(stopped.monitoring_elapsed_seconds, 36000.0)
+                self.assertEqual(stopped.monitoring_elapsed_seconds, 600000.0)
                 elapsed[0] = 50000.0
                 app._apply_round_snapshot(rounds.snapshot())
-                self.assertEqual(app.monitor_elapsed.cget("text"), "600:00")
+                self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
             finally:
                 rounds.stop()
                 rounds.flush_audit(timeout=3)
                 app.hotkey.close()
+                root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_notification_reminder_reserves_fixed_bilingual_area(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped())
+                baseline = self.main_geometry(app, root)
+                fixed_reminder_geometry = (
+                    app.notification_reminder_frame.winfo_rootx(),
+                    app.notification_reminder_frame.winfo_rooty(),
+                    app.notification_reminder_frame.winfo_width(),
+                    app.notification_reminder_frame.winfo_height(),
+                )
+                self.assertEqual(app.notification_reminder.cget("text"), "")
+                self.assertEqual(
+                    app.notification_reminder_frame.winfo_height(),
+                    app.notification_reminder_frame.winfo_reqheight(),
+                )
+
+                for language, count, expected in (
+                        (ENGLISH, 1, "Items needing attention: 1. Select the bell."),
+                        (ENGLISH, 1234,
+                         "Items needing attention: 1234. Select the bell."),
+                        (TRADITIONAL_CHINESE, 1, "有 1 件事需要處理，請點鈴鐺。"),
+                        (TRADITIONAL_CHINESE, 1234,
+                         "有 1234 件事需要處理，請點鈴鐺。")):
+                    app._select_language(language)
+                    with patch.object(app, "_pending_notification_count", return_value=count):
+                        app._refresh_notification_badge()
+                        root.update()
+                        self.assertEqual(app.notification_reminder.cget("text"), expected)
+                        self.assertEqual(app.notification_badge.itemcget(
+                            app._notification_badge_label, "text"), str(count))
+                        self.assertTrue(app.notification_badge.winfo_ismapped())
+                        self.assertEqual(self.main_geometry(app, root), baseline)
+                        self.assertEqual((
+                            app.notification_reminder_frame.winfo_rootx(),
+                            app.notification_reminder_frame.winfo_rooty(),
+                            app.notification_reminder_frame.winfo_width(),
+                            app.notification_reminder_frame.winfo_height(),
+                        ), fixed_reminder_geometry)
+                        self.assertLessEqual(
+                            app.notification_reminder.winfo_reqheight(),
+                            app.notification_reminder.winfo_height(),
+                        )
+                        if count > 1 and os.environ.get("B518_TK_EVIDENCE_DIR"):
+                            reminder_capture = capture_tk_window_evidence(
+                                root, "hc3-reminder-{}-{}".format(language, count), language, {
+                                    "reminder": app.notification_reminder,
+                                    "start": app.start_button,
+                                    "status": app.monitor_state,
+                                    "timer": app.monitor_elapsed,
+                                })
+                            evidence_dir = Path(os.environ["B518_TK_EVIDENCE_DIR"])
+                            (evidence_dir / "hc3-reminder-{}-{}.json".format(
+                                language, count)).write_text(
+                                json.dumps({
+                                    "count": count,
+                                    "language": language,
+                                    "text": expected,
+                                    "frame_height":
+                                        app.notification_reminder_frame.winfo_height(),
+                                    "label_height": app.notification_reminder.winfo_height(),
+                                    "requested_label_height":
+                                        app.notification_reminder.winfo_reqheight(),
+                                    "window_geometry": root.winfo_geometry(),
+                                    "screenshot": reminder_capture["screenshot"],
+                                }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+                with patch.object(app, "_pending_notification_count", return_value=0):
+                    app._refresh_notification_badge()
+                root.update_idletasks()
+                self.assertEqual(app.notification_reminder.cget("text"), "")
+                self.assertEqual(self.main_geometry(app, root), baseline)
+            finally:
+                app.hotkey.close()
+                app.rounds.request_close()
+                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
+                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
                 root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
@@ -7940,6 +8077,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def main_geometry(app, root):
         widgets = (app.kvm_results, app.rows_panel, app.rows_canvas, app._main_controls,
                    app.start_button, app.monitor_state, app.monitor_elapsed,
+                   app.notification_reminder_frame, app.notification_reminder,
                    app.app_event_status_label)
         return (root.winfo_geometry(), tuple(
             (widget.winfo_rootx(), widget.winfo_rooty(), widget.winfo_width(),

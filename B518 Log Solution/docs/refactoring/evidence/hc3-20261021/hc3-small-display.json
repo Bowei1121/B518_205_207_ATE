@@ -7,23 +7,23 @@
     "decoration_allowance": 32,
     "edge_gap": 8,
     "available_client_height": 647,
-    "fixed_content_height": 500,
-    "minimum_supported_screen_height": 606,
+    "fixed_content_height": 542,
+    "minimum_supported_screen_height": 648,
     "minimum_supported_screen_width": 388,
-    "visible_detail_rows": 4,
+    "visible_detail_rows": 3,
     "window_width": 376,
-    "window_height": 632
+    "window_height": 641
   },
-  "window_geometry": "376x632+764+33",
+  "window_geometry": "376x641+764+33",
   "native_bounds": {
     "X": 764.0,
     "Y": 33.0,
     "Width": 376.0,
-    "Height": 660.0
+    "Height": 669.0
   },
   "image_pixels": {
     "width": 376,
-    "height": 660
+    "height": 669
   },
   "screenshot": "hc3-small-display-en.png"
 }
