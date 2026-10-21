@@ -1,0 +1,5 @@
+Environment check passed: /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/bin/python (Python 3.12.10, arm64, target arm64, virtualenv yes)
+  pyinstaller==6.16.0
+  pyobjc-core==11.1
+  pyobjc-framework-cocoa==11.1
+  pyobjc-framework-quartz==11.1

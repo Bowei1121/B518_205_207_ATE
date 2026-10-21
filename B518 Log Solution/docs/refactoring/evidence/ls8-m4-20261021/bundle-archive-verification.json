@@ -1,0 +1,239 @@
+[
+  {
+    "session": "bt-20261021-092201-679896",
+    "archive_component_checks": [
+      {
+        "name": "audit.jsonl",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "session.json",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "events.log",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "results.csv",
+        "sha256_matches": true,
+        "size_matches": true
+      }
+    ],
+    "collection_stopped": [
+      {
+        "batch_evidence": null,
+        "date_evidence": null,
+        "detail": {
+          "collection_stopped_at": "2026-10-21T09:22:16",
+          "monitoring_elapsed_seconds": 14.67475274996832,
+          "reason": "results_terminal",
+          "round_id": "6ae6e4cfb65145f2a5e489f4469cf772"
+        },
+        "display_position": null,
+        "elapsed_seconds": 14.674894042080268,
+        "kind": "collection_stopped",
+        "localized_message": {
+          "diagnostic": "",
+          "en": "BT stopped collecting new source data",
+          "message_id": "round.collection_stopped",
+          "parameters": {
+            "station": "BT"
+          },
+          "version": 1,
+          "zh-TW": "BT 已停止收集新來源資料"
+        },
+        "message": "BT 已停止讀取本輪來源（results_terminal）",
+        "observed_at": "2026-10-21T09:22:16",
+        "operation_at": null,
+        "record_type": "event",
+        "round_id": "6ae6e4cfb65145f2a5e489f4469cf772",
+        "schema_version": 1,
+        "sequence": 12,
+        "sn": null,
+        "source": null,
+        "source_id": null,
+        "source_position": null,
+        "source_time": null,
+        "status": null
+      }
+    ],
+    "event_kinds": [
+      null,
+      "round_started",
+      "round_ready",
+      "batch",
+      "result",
+      "result",
+      "result",
+      "result",
+      "result",
+      "result",
+      "result",
+      "result",
+      "collection_stopped",
+      "finished"
+    ]
+  },
+  {
+    "session": "bt-20261021-092233-141652",
+    "archive_component_checks": [
+      {
+        "name": "audit.jsonl",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "session.json",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "events.log",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "results.csv",
+        "sha256_matches": true,
+        "size_matches": true
+      }
+    ],
+    "collection_stopped": [
+      {
+        "batch_evidence": null,
+        "date_evidence": null,
+        "detail": {
+          "collection_stopped_at": "2026-10-21T09:22:44",
+          "monitoring_elapsed_seconds": 11.233091916074045,
+          "reason": "manual_stop",
+          "round_id": "4ffbdd1f10954bb7801399ee1a5bf9a0"
+        },
+        "display_position": null,
+        "elapsed_seconds": 11.233494333107956,
+        "kind": "collection_stopped",
+        "localized_message": {
+          "diagnostic": "",
+          "en": "BT stopped collecting new source data",
+          "message_id": "round.collection_stopped",
+          "parameters": {
+            "station": "BT"
+          },
+          "version": 1,
+          "zh-TW": "BT 已停止收集新來源資料"
+        },
+        "message": "BT 已停止讀取本輪來源（manual_stop）",
+        "observed_at": "2026-10-21T09:22:44",
+        "operation_at": null,
+        "record_type": "event",
+        "round_id": "4ffbdd1f10954bb7801399ee1a5bf9a0",
+        "schema_version": 1,
+        "sequence": 3,
+        "sn": null,
+        "source": null,
+        "source_id": null,
+        "source_position": null,
+        "source_time": null,
+        "status": null
+      }
+    ],
+    "event_kinds": [
+      null,
+      "round_started",
+      "round_ready",
+      "collection_stopped",
+      "result",
+      "result",
+      "result",
+      "result",
+      "stopped",
+      "manual_stop_completed"
+    ]
+  },
+  {
+    "session": "bt-20261021-092307-729536",
+    "archive_component_checks": [
+      {
+        "name": "audit.jsonl",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "session.json",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "events.log",
+        "sha256_matches": true,
+        "size_matches": true
+      },
+      {
+        "name": "results.csv",
+        "sha256_matches": true,
+        "size_matches": true
+      }
+    ],
+    "collection_stopped": [
+      {
+        "batch_evidence": null,
+        "date_evidence": null,
+        "detail": {
+          "alarm_id": "ed3c37e8f20a49ceae972e91f1e4228d",
+          "collection_stopped_at": "2026-10-21T09:23:09",
+          "monitoring_elapsed_seconds": 2.0296933749923483,
+          "reason": "start_deadline_no_activity",
+          "round_id": "387ec0b39cba420697d6e00f6c99c2c6"
+        },
+        "display_position": null,
+        "elapsed_seconds": 2.029766375082545,
+        "kind": "collection_stopped",
+        "localized_message": {
+          "diagnostic": "",
+          "en": "BT stopped collecting new source data",
+          "message_id": "round.collection_stopped",
+          "parameters": {
+            "station": "BT"
+          },
+          "version": 1,
+          "zh-TW": "BT 已停止收集新來源資料"
+        },
+        "message": "BT 已停止讀取本輪來源（start_deadline_no_activity）",
+        "observed_at": "2026-10-21T09:23:09",
+        "operation_at": null,
+        "record_type": "event",
+        "round_id": "387ec0b39cba420697d6e00f6c99c2c6",
+        "schema_version": 1,
+        "sequence": 12,
+        "sn": null,
+        "source": null,
+        "source_id": null,
+        "source_position": null,
+        "source_time": null,
+        "status": null
+      }
+    ],
+    "event_kinds": [
+      null,
+      "round_started",
+      "round_ready",
+      "result",
+      "timeout",
+      "result",
+      "timeout",
+      "result",
+      "timeout",
+      "result",
+      "timeout",
+      "round_alarm_created",
+      "collection_stopped",
+      "timeout",
+      "round_alarm_acknowledged",
+      "finished",
+      "round_cancelled"
+    ]
+  }
+]

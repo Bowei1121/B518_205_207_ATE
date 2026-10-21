@@ -1,0 +1,13 @@
+Dict {
+    CFBundleShortVersionString = 0.1.5
+    CFBundleIdentifier = com.b518.logsolution
+    NSHighResolutionCapable = true
+    CFBundleName = B518 Log Solution
+    CFBundleDisplayName = B518 Log Solution
+    CFBundleIconFile = icon-windowed.icns
+    CFBundleInfoDictionaryVersion = 6.0
+    CFBundleExecutable = B518 Log Solution
+    CFBundlePackageType = APPL
+    CFBundleVersion = 0.1.5
+    LSMinimumSystemVersion = 15.0
+}

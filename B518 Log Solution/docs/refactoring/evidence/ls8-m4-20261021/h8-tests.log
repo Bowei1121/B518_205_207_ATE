@@ -1,0 +1,7 @@
+test_capacity_scenario_releases_interpreter_before_worker_collection (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_capacity_scenario_releases_interpreter_before_worker_collection) ... ok
+test_real_app_query_remains_responsive_and_matches_disk_baseline (test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_real_app_query_remains_responsive_and_matches_disk_baseline) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 32.528s
+
+OK

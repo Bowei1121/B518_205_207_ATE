@@ -1,0 +1,181 @@
+[
+  {
+    "directory": "bt-20261021-092233-141652",
+    "session": {
+      "schema_version": 1,
+      "settings": {
+        "format": "B518 RS-WMT",
+        "output_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "progress_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "start_timeout_seconds": "240",
+        "test_timeout_seconds": "480",
+        "round_timeout_seconds": "7200",
+        "profile_snapshot": {
+          "schema_version": 1,
+          "profile": {
+            "project": "B518",
+            "machine": "BT",
+            "platform": "rswmt",
+            "capacity": 4,
+            "paths": {
+              "final": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+              "caseinfo": ""
+            },
+            "mapping": [
+              {
+                "source": 1,
+                "display": 1
+              },
+              {
+                "source": 2,
+                "display": 2
+              },
+              {
+                "source": 3,
+                "display": 3
+              },
+              {
+                "source": 4,
+                "display": 4
+              }
+            ],
+            "timeouts": {
+              "start": 240,
+              "test": 480,
+              "round": 7200
+            }
+          }
+        },
+        "accepted_start_at": "2026-10-21T09:22:33",
+        "accepted_start_monotonic": 766119.5733025,
+        "round_id": "4ffbdd1f10954bb7801399ee1a5bf9a0",
+        "round_audit_schema_version": 1,
+        "round_candidate_mode": true
+      },
+      "started_at": "2026-10-21T09:22:33",
+      "finished_at": "2026-10-21T09:22:44",
+      "sources": []
+    }
+  },
+  {
+    "directory": "bt-20261021-092201-679896",
+    "session": {
+      "schema_version": 1,
+      "settings": {
+        "format": "B518 RS-WMT",
+        "output_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "progress_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "start_timeout_seconds": "240",
+        "test_timeout_seconds": "480",
+        "round_timeout_seconds": "7200",
+        "profile_snapshot": {
+          "schema_version": 1,
+          "profile": {
+            "project": "B518",
+            "machine": "BT",
+            "platform": "rswmt",
+            "capacity": 4,
+            "paths": {
+              "final": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+              "caseinfo": ""
+            },
+            "mapping": [
+              {
+                "source": 1,
+                "display": 1
+              },
+              {
+                "source": 2,
+                "display": 2
+              },
+              {
+                "source": 3,
+                "display": 3
+              },
+              {
+                "source": 4,
+                "display": 4
+              }
+            ],
+            "timeouts": {
+              "start": 240,
+              "test": 480,
+              "round": 7200
+            }
+          }
+        },
+        "accepted_start_at": "2026-10-21T09:22:01",
+        "accepted_start_monotonic": 766088.110265833,
+        "round_id": "6ae6e4cfb65145f2a5e489f4469cf772",
+        "round_audit_schema_version": 1,
+        "round_candidate_mode": true
+      },
+      "started_at": "2026-10-21T09:22:01",
+      "finished_at": "2026-10-21T09:22:16",
+      "sources": [
+        "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal/2026-10-21_09-22-16/LS8TEST000001_2026-10-21_09-22-16.csv",
+        "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal/2026-10-21_09-22-16/LS8TEST000002_2026-10-21_09-22-16.csv",
+        "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal/2026-10-21_09-22-16/LS8TEST000003_2026-10-21_09-22-16.csv",
+        "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal/2026-10-21_09-22-16/LS8TEST000004_2026-10-21_09-22-16.csv"
+      ]
+    }
+  },
+  {
+    "directory": "bt-20261021-092307-729536",
+    "session": {
+      "schema_version": 1,
+      "settings": {
+        "format": "B518 RS-WMT",
+        "output_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "progress_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+        "start_timeout_seconds": "2",
+        "test_timeout_seconds": "480",
+        "round_timeout_seconds": "10",
+        "profile_snapshot": {
+          "schema_version": 1,
+          "profile": {
+            "project": "B518",
+            "machine": "BT",
+            "platform": "rswmt",
+            "capacity": 4,
+            "paths": {
+              "final": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+              "caseinfo": ""
+            },
+            "mapping": [
+              {
+                "source": 1,
+                "display": 1
+              },
+              {
+                "source": 2,
+                "display": 2
+              },
+              {
+                "source": 3,
+                "display": 3
+              },
+              {
+                "source": 4,
+                "display": 4
+              }
+            ],
+            "timeouts": {
+              "start": 2,
+              "test": 480,
+              "round": 10
+            }
+          }
+        },
+        "accepted_start_at": "2026-10-21T09:23:07",
+        "accepted_start_monotonic": 766154.161397,
+        "round_id": "387ec0b39cba420697d6e00f6c99c2c6",
+        "round_audit_schema_version": 1,
+        "round_candidate_mode": true
+      },
+      "started_at": "2026-10-21T09:23:07",
+      "finished_at": "2026-10-21T09:24:23",
+      "sources": []
+    }
+  }
+]

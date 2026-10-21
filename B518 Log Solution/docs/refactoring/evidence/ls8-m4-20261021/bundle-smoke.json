@@ -1,0 +1,26 @@
+{
+  "version_title": "B518 BT ATE Log Solution-V0.1.5",
+  "artifact": "dist-ls8-fixed-20261021/B518 Log Solution.app",
+  "observed": [
+    "launch without external Python",
+    "English and Traditional Chinese switching; original zh-TW restored",
+    "standby timer 00:00",
+    "heartbeat changes across standby and start failure",
+    "native Command+Shift+M triggers missing RS-WMT path validation",
+    "start failure disables start and enables reset; timer remains 00:00",
+    "reset returns standby and enables start",
+    "Command+Q exits; ps confirms no B518 app process",
+    "accepted synthetic RS-WMT four-slot PASS round; timer freezes at 00:14 and complete save",
+    "new round resets timer; manual stop at 00:11, four STOPPED, complete save",
+    "2 second no-activity deadline; NOTEST; pending alarm and timer 00:02",
+    "closing alarm dialog does not acknowledge; new-start shortcut does not create another round",
+    "recovery center acknowledgement clears notification; explicit cancellation preserves original records and returns standby",
+    "three round archives exported and all component sizes / SHA256 verified",
+    "original preferences restored byte-for-byte; original zh-TW language and macOS Dark appearance restored"
+  ],
+  "limits": [
+    "Fault-injected persistence retry / resource race / full query matrix are exercised by the source App/Tk suite, not injected into frozen bundle.",
+    "Only isolated synthetic source data consumed; three synthetic sessions retained in App history.",
+    "No macOS15 machine or live bridge pairing."
+  ]
+}

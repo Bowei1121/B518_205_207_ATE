@@ -1,0 +1,34 @@
+{
+  "archived_at": "2026-10-21T09:24:50+08:00",
+  "components": [
+    {
+      "name": "audit.jsonl",
+      "path": "/Users/aoi/Library/Application Support/B518LogSolution/sessions/bt-20261021-092307-729536/audit.jsonl",
+      "sha256": "5d34ece10635e22b94229164cc6f745e330ce085370d55a26d045d520bc2087e",
+      "size": 16896
+    },
+    {
+      "name": "session.json",
+      "path": "/Users/aoi/Library/Application Support/B518LogSolution/sessions/bt-20261021-092307-729536/session.json",
+      "sha256": "2adb0e3eb90d0c2f62f813d0fd8f17be0d6c5cfab0c0c3ca3c0a64d90b5c1b35",
+      "size": 1410
+    },
+    {
+      "name": "events.log",
+      "path": "/Users/aoi/Library/Application Support/B518LogSolution/sessions/bt-20261021-092307-729536/events.log",
+      "sha256": "11af86dc7dfc3083372a93042aadcd71a5b54922ca1a150f8c4cd81cb99104c1",
+      "size": 10486
+    },
+    {
+      "name": "results.csv",
+      "path": "/Users/aoi/Library/Application Support/B518LogSolution/sessions/bt-20261021-092307-729536/results.csv",
+      "sha256": "617a7218aff3fc3021e9d32608fb570e80868414c2877e2f6b12f5d4daa1e1a8",
+      "size": 162
+    }
+  ],
+  "integrity": "sha256-and-size",
+  "record_type": "round_archive",
+  "round_id": "387ec0b39cba420697d6e00f6c99c2c6",
+  "schema_version": 1,
+  "seal_sha256": "51846824a4aea9e4015f79baef0248cc9465808c50e28a117a597b214b098a54"
+}
