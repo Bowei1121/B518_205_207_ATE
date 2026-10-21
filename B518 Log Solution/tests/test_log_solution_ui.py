@@ -4817,9 +4817,17 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     self.assertEqual(app._recovery_selected_action,
                                      ("cancel_round", started.round_id))
-                    self.assertIn("No test start", app.recovery_action_detail.get("1.0", "end"))
-                    with patch("b518_log_solution.messagebox.askyesno", return_value=False):
+                    self.assertEqual(rounds.snapshot().completion_reason, "round_deadline")
+                    for language, reason in (
+                            (ENGLISH, "FCT round monitoring timed out after 2 seconds (limit 1 seconds)"),
+                            (TRADITIONAL_CHINESE, "FCT 整輪監控逾時：經過 2 秒，期限 1 秒")):
+                        self.set_language_for_test_setup(app, root, language)
+                        self.assertIn(reason, app.recovery_action_detail.get("1.0", "end"))
+                    before_decline = rounds.snapshot()
+                    with patch("b518_log_solution.messagebox.askyesno", return_value=False) as confirm:
                         app.recovery_action_cancel_button.invoke()
+                    confirm.assert_called_once()
+                    self.assertEqual(rounds.snapshot(), before_decline)
                     self.assertTrue(rounds.snapshot().cancellation_available)
                     self.assertEqual(app._pending_notification_count(), 2)
                     with patch("b518_log_solution.messagebox.askyesno", return_value=True):
@@ -4970,6 +4978,12 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.recovery_window.deiconify()
                         app.recovery_window.lift()
                     self.assertEqual(app._pending_notification_count(), 0)
+                    saved = read_round_audit(monitor.session.path / "audit.jsonl")
+                    self.assertTrue(saved["audit_complete"])
+                    self.assertEqual(saved["completion_reason"], "unverified_round_cancelled")
+                    self.assertFalse(saved["result_available"])
+                    self.assertEqual(sum(event["kind"] == "round_cancelled"
+                                         for event in saved["events"]), 1)
             finally:
                 rounds.stop()
                 rounds.request_close()
