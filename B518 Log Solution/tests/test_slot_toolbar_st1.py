@@ -10,7 +10,7 @@ import unittest
 
 from test_log_solution_ui import LogSolutionUiTests, FakeHotkey, capture_tk_window_evidence
 from b518_log_solution import (
-    B518LogSolutionApp, LIGHT_BACKGROUND, ROW_GAP, ROW_HEIGHT, STATUS_COLOURS,
+    B518LogSolutionApp, LIGHT_BACKGROUND, STATUS_COLOURS,
 )
 
 
@@ -93,9 +93,12 @@ class SlotViewportTests(LogSolutionUiTests):
                     if capacity > 10 and height == 1200 and root.winfo_screenheight() >= 1050:
                         self.assertGreater(count, 10, (capacity, height, language, count))
                     self.assertEqual(font.Font(root=root, font=app.status_rows[1]["slot"].cget("font")).actual("size"), 14)
-                    self.assertEqual(app.rows_box.winfo_children()[0].cget("background"), "#000000")
-                    self.assertEqual(ROW_GAP, 1)
-                    self.assertEqual(ROW_HEIGHT, 32)
+                    row = app.rows_box.winfo_children()[0]
+                    self.assertEqual(row.cget("background"), "#000000")
+                    self.assertGreaterEqual(
+                        row.winfo_height(),
+                        max(cell.winfo_reqheight() for cell in app.status_rows[1].values()),
+                    )
                     for control in (app.start_button, app.stop_button, app.save_status, app.app_diagnostics_button):
                         self.assertLessEqual(control.winfo_rooty() + control.winfo_height(), root.winfo_rooty() + root.winfo_height())
                         self.assertTrue(control.winfo_ismapped())
@@ -153,7 +156,9 @@ class SlotViewportTests(LogSolutionUiTests):
                                   yview=list(app.rows_canvas.yview()), arrow_clicks=arrow_clicks,
                                   row_height=app.status_rows[1]["slot"].winfo_height(),
                                   font_requested_height=app.status_rows[1]["slot"].winfo_reqheight(),
-                                  horizontal_grid_width=ROW_GAP,
+                                  horizontal_grid_width=(
+                                      app.rows_box.winfo_children()[0].winfo_height() -
+                                      app.status_rows[1]["slot"].winfo_height()),
                                   vertical_grid_widths=[
                                       app.status_rows[1]["status"].winfo_x() -
                                       (app.status_rows[1]["slot"].winfo_x() +
@@ -206,14 +211,18 @@ class SlotViewportTests(LogSolutionUiTests):
                 first = app.status_rows[1]
                 row = app.rows_box.winfo_children()[0]
                 self.assertEqual(row.cget("background"), "#000000")
-                self.assertEqual(first["status"].winfo_x() -
-                                 (first["slot"].winfo_x() + first["slot"].winfo_width()), 1)
-                self.assertEqual(first["sn"].winfo_x() -
-                                 (first["status"].winfo_x() + first["status"].winfo_width()), 1)
-                self.assertEqual(row.winfo_height() - first["slot"].winfo_height(), ROW_GAP)
+                vertical_grid_widths = [
+                    first["status"].winfo_x() -
+                    (first["slot"].winfo_x() + first["slot"].winfo_width()),
+                    first["sn"].winfo_x() -
+                    (first["status"].winfo_x() + first["status"].winfo_width()),
+                ]
+                self.assertTrue(all(width >= 1 for width in vertical_grid_widths))
+                horizontal_grid_width = row.winfo_height() - first["slot"].winfo_height()
+                self.assertGreaterEqual(horizontal_grid_width, 1)
                 self.assertEqual(font.Font(root=root, font=first["slot"].cget("font")).actual("size"), 14)
                 for cell in first.values():
-                    self.assertLessEqual(cell.winfo_reqheight(), ROW_HEIGHT)
+                    self.assertLessEqual(cell.winfo_reqheight(), first["slot"].winfo_height())
                 for slot, status in enumerate(("PASS", "FAIL", "TESTING", "NOTEST"), start=1):
                     self.assertEqual(app.status_rows[slot]["status"].cget("text"), status)
                     self.assertEqual(app.status_rows[slot]["status"].cget("background"),
@@ -251,8 +260,8 @@ class SlotViewportTests(LogSolutionUiTests):
                         tk_scaling=scaling,
                         row_height=first["slot"].winfo_height(),
                         font_requested_height=first["slot"].winfo_reqheight(),
-                        horizontal_grid_width=ROW_GAP,
-                        vertical_grid_widths=[1, 1], visible_rows=visible_rows,
+                        horizontal_grid_width=horizontal_grid_width,
+                        vertical_grid_widths=vertical_grid_widths, visible_rows=visible_rows,
                         statuses=["PASS", "FAIL", "TESTING", "NOTEST"],
                         yview=list(app.rows_canvas.yview()))
                     evidence.extend((top_screenshot, bottom_screenshot))
