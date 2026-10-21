@@ -3208,7 +3208,9 @@ class B518LogSolutionApp:
                 previously_failed.add(status.round_id)
             if status.cleanup_eligible or status.status == "protected":
                 previously_failed.discard(status.round_id)
-            if status.status == "failed":
+            # A save failure is projected as an archive failure until the
+            # round is fully saved. Count that underlying action only once.
+            if status.status == "failed" and status.save_state == "complete":
                 pending_items.add(("round_archive", status.round_id))
             if status.round_id in previously_failed and status.status == "saving":
                 pending_items.add(("round_save", status.round_id))
@@ -3572,6 +3574,10 @@ class B518LogSolutionApp:
         self.recovery_archive_heading.configure(text=self._t("recovery.archive_heading"))
         self.recovery_save_retry_button.configure(text=self._t("main.retry_selected"))
         self.recovery_archive_retry_button.configure(text=self._t("main.retry_archive"))
+        self.recovery_action_reset_button.configure(
+            text=self._t("recovery.action.reset_start_failure"))
+        self.recovery_action_cancel_button.configure(
+            text=self._t("recovery.action.cancel_round"))
         for hint in self._recovery_control_hints.values():
             hint.refresh()
         self._refresh_recovery_center()

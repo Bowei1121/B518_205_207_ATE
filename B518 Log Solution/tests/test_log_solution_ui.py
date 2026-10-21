@@ -4789,8 +4789,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(badge_text(), "2")
                     app.recovery_alarm_ack_button.invoke()
                     self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
-                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
-                    self.wait_for_ui(root, lambda: badge_text() == "2")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
+                    self.wait_for_ui(root, lambda: badge_text() == "1")
 
                     app.recovery_tabs.select(1)
                     root.update()
@@ -4990,10 +4990,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.set_language_for_test_setup(app, root, TRADITIONAL_CHINESE)
                 app.round_alarm_button.invoke()
                 root.update()
-                for language, expected in ((ENGLISH, "Acknowledge Round Alarm"),
-                                            (TRADITIONAL_CHINESE, "確認整輪警報")):
+                for language, expected, reset_text, cancel_text, hidden_reset, hidden_cancel in (
+                        (ENGLISH, "Acknowledge Round Alarm", "Acknowledge and Reset",
+                         "Cancel Round and Keep Record", "確認並解除開始鎖定",
+                         "取消本輪並保留紀錄"),
+                        (TRADITIONAL_CHINESE, "確認整輪警報", "確認並解除開始鎖定",
+                         "取消本輪並保留紀錄", "Acknowledge and Reset",
+                         "Cancel Round and Keep Record")):
                     self.set_language_for_test_setup(app, root, language)
                     self.assertEqual(app.recovery_alarm_ack_button.cget("text"), expected)
+                    self.assertEqual(
+                        app.recovery_action_reset_button.cget("text"), reset_text)
+                    self.assertEqual(
+                        app.recovery_action_cancel_button.cget("text"), cancel_text)
                     self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
                     capture_recovery_evidence(app, "hf2-zero-alarm", language,
                         {"acknowledge": app.recovery_alarm_ack_button})
@@ -5003,9 +5012,15 @@ class LogSolutionUiTests(unittest.TestCase):
                         {"save_retry": app.recovery_save_retry_button,
                          "archive_retry": app.recovery_archive_retry_button})
                     app.recovery_window.withdraw()
+                    self.set_language_for_test_setup(
+                        app, root, TRADITIONAL_CHINESE if language == ENGLISH else ENGLISH)
                     app.round_alarm_button.invoke()
                     root.update()
                     self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(
+                        app.recovery_action_reset_button.cget("text"), hidden_reset)
+                    self.assertEqual(
+                        app.recovery_action_cancel_button.cget("text"), hidden_cancel)
                     app.recovery_tabs.select(0)
             finally:
                 app.hotkey.close()
