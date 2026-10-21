@@ -371,12 +371,23 @@ def capture_native_window_with_hint(window, filename):
                           and item.get(Quartz.kCGWindowNumber) == native_number), None)
     if native_window is None:
         raise AssertionError("missing native window: {}".format(window.title()))
-    bounds = native_window[Quartz.kCGWindowBounds]
-    rect = Quartz.CGRectMake(bounds["X"], bounds["Y"],
-                             bounds["Width"], bounds["Height"])
-    image = Quartz.CGWindowListCreateImage(
-        rect, Quartz.kCGWindowListOptionOnScreenOnly,
-        Quartz.kCGNullWindowID, Quartz.kCGWindowImageDefault)
+    selected = [native_window]
+    for child in window.winfo_children():
+        if isinstance(child, tk.Toplevel) and child.overrideredirect() and child.winfo_viewable():
+            number = native_window_for_capture(child).windowNumber()
+            selected.extend(item for item in native_windows
+                            if item.get(Quartz.kCGWindowNumber) == number)
+    bounds = dict(native_window[Quartz.kCGWindowBounds])
+    left = min(item[Quartz.kCGWindowBounds]["X"] for item in selected)
+    top = min(item[Quartz.kCGWindowBounds]["Y"] for item in selected)
+    right = max(item[Quartz.kCGWindowBounds]["X"] +
+                item[Quartz.kCGWindowBounds]["Width"] for item in selected)
+    bottom = max(item[Quartz.kCGWindowBounds]["Y"] +
+                 item[Quartz.kCGWindowBounds]["Height"] for item in selected)
+    rect = Quartz.CGRectMake(left, top, right - left, bottom - top)
+    image = Quartz.CGWindowListCreateImageFromArray(
+        rect, [item[Quartz.kCGWindowNumber] for item in native_windows if item in selected],
+        Quartz.kCGWindowImageDefault)
     if image is None:
         raise AssertionError("could not capture native window with hint")
     output_dir = Path(evidence_value)
@@ -555,34 +566,9 @@ class LogSolutionUiTests(unittest.TestCase):
             errors = []
             root.report_callback_exception = lambda *error: errors.append(error)
 
-            class Monitor:
-                def __init__(self, callback):
-                    self.callback = callback
-                    self.results = (SlotResult(1), SlotResult(2))
-
-                def round_results(self):
-                    return self.results
-
+            class Monitor(ControlledConflictMonitor):
                 def timeout_seconds(self, kind):
                     return {"start": 30, "test": 60, "round": 1}[kind]
-
-                def update_round_settings(self, _settings):
-                    pass
-
-                def start(self):
-                    pass
-
-                def stop_collection(self):
-                    pass
-
-                def finish(self):
-                    pass
-
-                def stop(self):
-                    pass
-
-                def poll_once(self):
-                    pass
 
             def wait(predicate, message):
                 deadline = time.monotonic() + 5
@@ -593,53 +579,100 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(.01)
                 self.fail(message)
 
+            def post_mouse(widget):
+                point = (widget.winfo_rootx() + widget.winfo_width() // 2,
+                         widget.winfo_rooty() + widget.winfo_height() // 2)
+                Quartz.CGEventPost(
+                    Quartz.kCGHIDEventTap,
+                    Quartz.CGEventCreateMouseEvent(
+                        None, Quartz.kCGEventMouseMoved, point,
+                        Quartz.kCGMouseButtonLeft))
+                root.update()
+                time.sleep(.1)
+                root.update()
+
+            def press_tab():
+                for down in (True, False):
+                    Quartz.CGEventPostToPid(
+                        os.getpid(), Quartz.CGEventCreateKeyboardEvent(None, 48, down))
+                root.update()
+                time.sleep(.1)
+                root.update()
+
+            evidence_bounds = {}
+
+            def assert_clear(hint, widgets, key):
+                root.update_idletasks()
+
+                def bounds(widget):
+                    return [widget.winfo_rootx(), widget.winfo_rooty(),
+                            widget.winfo_width(), widget.winfo_height()]
+
+                popup = bounds(hint._window)
+                controls = {name: bounds(widget) for name, widget in widgets.items()}
+                for name, (x, y, width, height) in controls.items():
+                    overlap = (popup[0] < x + width and x < popup[0] + popup[2] and
+                               popup[1] < y + height and y < popup[1] + popup[3])
+                    self.assertFalse(overlap, "hint obscures {}: {}".format(name, key))
+                self.assertGreaterEqual(popup[0], 0)
+                self.assertGreaterEqual(popup[1], 0)
+                self.assertLessEqual(popup[0] + popup[2], root.winfo_screenwidth())
+                self.assertLessEqual(popup[1] + popup[3], root.winfo_screenheight())
+                evidence_bounds[key] = {"hint": popup, "protected_controls": controls}
+
             def check_start_hint(expected_en, expected_zh, evidence_prefix):
+                app._select_language(ENGLISH)
+                root.lift()
                 hint = app._main_action_hints[app.start_button]
-                app.start_button.event_generate("<Enter>")
+                post_mouse(app.start_button)
                 wait(lambda: hint._window is not None,
-                     "start-button hover hint did not appear")
+                     "native start-button hover hint did not appear")
                 self.assertIn(expected_en, hint._label.cget("text"))
+                protected = {"timer": app.monitor_elapsed, "results": app.rows_canvas,
+                             "kvm": app.kvm_results, "start": app.start_button,
+                             "stop": app.stop_button, "retry": app.retry_save_button,
+                             "diagnostics": app.app_diagnostics_button}
+                assert_clear(hint, protected, evidence_prefix + "-en")
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     capture_native_window_with_hint(
                         root, evidence_prefix + "-en.png")
                 app._select_language(TRADITIONAL_CHINESE)
                 self.assertIn(expected_zh, hint._label.cget("text"))
+                assert_clear(hint, protected, evidence_prefix + "-zh-TW")
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     capture_native_window_with_hint(
                         root, evidence_prefix + "-zh-TW.png")
-                app.start_button.event_generate("<Leave>")
+                post_mouse(app.kvm_results)
                 wait(lambda: hint._window is None,
                      "start-button hover hint did not clear on pointer leave")
-                app.start_button.focus_force()
-                wait(lambda: hint._window is not None,
-                     "start-button focus hint did not appear")
-                self.assertIn(expected_zh, hint._label.cget("text"))
-                app._select_language(ENGLISH)
-                self.assertIn(expected_en, hint._label.cget("text"))
-                if os.environ.get("B518_TK_EVIDENCE_DIR"):
-                    capture_native_window_with_hint(
-                        root, evidence_prefix + "-focus-en.png")
                 app.app_diagnostics_button.focus_force()
-                wait(lambda: hint._window is None,
-                     "start-button focus hint did not clear on focus loss")
+                press_tab()
+                self.assertIsNot(root.focus_get(), app.start_button,
+                                 "native Tab must skip the disabled Start button")
+                app._select_language(ENGLISH)
 
             try:
                 wait(lambda: app.start_button.winfo_viewable(),
                      "main window did not become visible")
-                start_calls = []
-                app.start_monitor = lambda: start_calls.append(True)
+                self.assertIsNotNone(Quartz, "native Quartz input is required")
+                NSRunningApplication.currentApplication().activateWithOptions_(
+                    NSApplicationActivateIgnoringOtherApps)
+                root.lift()
+                root.focus_force()
                 rounds.record_start_failure("FCT", "source folder is unavailable")
+                failure_before = rounds.start_failure_snapshot()
+                snapshot_before = rounds.snapshot()
                 app._set_monitor_controls(False)
                 self.assertTrue(app.start_button.instate(("disabled",)))
                 check_start_hint(
                     "startup failure must be cleared in Notifications and Recovery",
                     "請先到「通知與恢復中心」解除啟動異常",
                     "hc5-start-disabled-failure")
-                self.assertIsNotNone(rounds.start_failure_snapshot(),
-                                     "showing the hint must not reset the startup failure")
-                self.assertIsNone(rounds.snapshot(),
-                                  "showing the hint must not start a monitoring round")
-                self.assertEqual(start_calls, [])
+                self.assertEqual(rounds.start_failure_snapshot(), failure_before,
+                                 "showing the hint must preserve the failure request")
+                self.assertEqual(rounds.snapshot(), snapshot_before,
+                                 "showing the hint must not accept a new round")
+                self.assertEqual(rounds.snapshot().round_id, "")
 
                 app.reset_start_failure()
                 self.assertIsNone(rounds.start_failure_snapshot())
@@ -660,6 +693,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(snapshot.cancellation_available)
                 app._apply_round_snapshot(snapshot)
                 app._set_monitor_controls(False)
+                self.wait_for_ui(root, app.events.empty)
+                if app.round_alarm_window is not None:
+                    app.round_alarm_window.withdraw()
                 self.assertTrue(app.start_button.instate(("disabled",)))
                 check_start_hint(
                     "confirm its cancellation in Notifications and Recovery",
@@ -681,27 +717,49 @@ class LogSolutionUiTests(unittest.TestCase):
                 hint = app._recovery_control_hints[button]
                 cancel_calls = []
                 app.cancel_unverified_round = lambda *arguments: cancel_calls.append(arguments)
-                button.focus_force()
+                app.recovery_window.lift()
+                post_mouse(button)
                 wait(lambda: hint._window is not None,
-                     "enabled cancel-action focus hint did not appear")
+                     "native cancel-action hover hint did not appear")
                 self.assertIn("withdraws delivery", hint._label.cget("text"))
+                protected = {"cancel": button, "reset": app.recovery_action_reset_button}
+                assert_clear(hint, protected, "cancel-enabled-en")
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     capture_native_window_with_hint(
                         app.recovery_window, "hc5-cancel-enabled-en.png")
                 app._select_language(TRADITIONAL_CHINESE)
                 self.assertIn("撤回本輪結果交付", hint._label.cget("text"))
+                assert_clear(hint, protected, "cancel-enabled-zh-TW")
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     capture_native_window_with_hint(
                         app.recovery_window, "hc5-cancel-enabled-zh-TW.png")
+                post_mouse(app.recovery_action_list)
+                wait(lambda: hint._window is None,
+                     "cancel-action hint did not clear after pointer leave")
+                app.recovery_action_list.focus_force()
+                for _ in range(8):
+                    press_tab()
+                    if root.focus_get() is button:
+                        break
+                self.assertIs(root.focus_get(), button,
+                              "native Tab must reach the enabled cancellation action")
+                wait(lambda: hint._window is not None,
+                     "native Tab focus hint did not appear")
+                self.assertIn("撤回本輪結果交付", hint._label.cget("text"))
+                app._select_language(ENGLISH)
+                self.assertIn("withdraws delivery", hint._label.cget("text"))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    capture_native_window_with_hint(
+                        app.recovery_window, "hc5-cancel-tab-focus-en.png")
                 app.recovery_action_list.focus_force()
                 wait(lambda: hint._window is None,
-                     "enabled cancel-action hint did not clear after focus loss")
+                     "cancel-action hint did not clear after focus loss")
                 self.assertTrue(rounds.snapshot().cancellation_available,
                                 "viewing the enabled hint must not cancel the round")
                 self.assertEqual(cancel_calls, [])
-                app.recovery_action_cancel_button.focus_force()
+                post_mouse(button)
                 wait(lambda: hint._window is not None,
-                     "enabled cancel-action focus hint did not reappear")
+                     "enabled cancel-action hover hint did not reappear")
                 app.recovery_window.destroy()
                 root.update()
                 self.assertIsNone(hint._window,
@@ -709,6 +767,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertTrue(rounds.snapshot().cancellation_available,
                                 "closing recovery center must not cancel the round")
                 self.assertEqual(cancel_calls, [])
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    Path(os.environ["B518_TK_EVIDENCE_DIR"], "protected-bounds.json").write_text(
+                        json.dumps(evidence_bounds, ensure_ascii=False, indent=2), encoding="utf-8")
                 self.assertEqual(errors, [])
             finally:
                 app.hotkey.close()
@@ -1336,9 +1397,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 post_mouse(target, Quartz.kCGEventMouseMoved)
                 self.wait_for_ui(root, lambda: hint._window is not None)
                 self.assertIn("Choose the source folder", hint._label.cget("text"))
+                if evidence_root:
+                    capture_native_window_with_hint(
+                        app.settings_window, "hc5-settings-browse-enabled-en.png")
                 self.assertEqual(app.profile_editor_paths["active"].get(), "")
                 app._select_language(TRADITIONAL_CHINESE)
                 self.assertIn("來源資料夾", hint._label.cget("text"))
+                if evidence_root:
+                    capture_native_window_with_hint(
+                        app.settings_window, "hc5-settings-browse-enabled-zh-TW.png")
                 self.assertEqual(app.profile_editor_paths["active"].get(), "")
                 root.update()
                 capture_settings("st4-settings-configuration", "zh-TW")
@@ -1380,30 +1447,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         write_tk_bounds_evidence(key + "-" + language, record)
 
                 def capture_recovery_hover(key):
-                    if not evidence_root:
-                        return
-                    from Foundation import NSURL
-
-                    native_windows = Quartz.CGWindowListCopyWindowInfo(
-                        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-                    native_window = next((item for item in native_windows
-                                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                                          and item.get(Quartz.kCGWindowName) ==
-                                          app.recovery_window.title()), None)
-                    self.assertIsNotNone(native_window)
-                    bounds = native_window[Quartz.kCGWindowBounds]
-                    rect = Quartz.CGRectMake(bounds["X"], bounds["Y"],
-                                             bounds["Width"], bounds["Height"])
-                    image = Quartz.CGWindowListCreateImage(
-                        rect, Quartz.kCGWindowListOptionOnScreenOnly,
-                        Quartz.kCGNullWindowID, Quartz.kCGWindowImageDefault)
-                    self.assertIsNotNone(image)
-                    output = Path(evidence_root) / (key + ".png")
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    destination = Quartz.CGImageDestinationCreateWithURL(
-                        NSURL.fileURLWithPath_(str(output)), "public.png", 1, None)
-                    Quartz.CGImageDestinationAddImage(destination, image, None)
-                    self.assertTrue(Quartz.CGImageDestinationFinalize(destination))
+                    if evidence_root:
+                        capture_native_window_with_hint(app.recovery_window, key + ".png")
 
                 retry_hint = app._recovery_control_hints[app.recovery_save_retry_button]
                 self.assertEqual(str(app.recovery_save_retry_button.cget("state")), "disabled")
@@ -1451,6 +1496,9 @@ class LogSolutionUiTests(unittest.TestCase):
                     post_mouse(button, Quartz.kCGEventMouseMoved)
                     self.wait_for_ui(root, lambda: action_hint._window is not None)
                     self.assertIn(disabled_en, action_hint._label.cget("text"))
+                    capture_recovery_hover("hc5-{}-disabled-en".format(
+                        "startup-reset" if button is app.recovery_action_reset_button
+                        else "round-cancel"))
                     self.assertIsNone(app._recovery_selected_action)
                     app._select_language(TRADITIONAL_CHINESE)
                     self.assertIn(disabled_zh, action_hint._label.cget("text"))
@@ -1471,6 +1519,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: reset_hint._window is not None)
                 self.assertIn("allow a new manual start", reset_hint._label.cget("text"))
                 self.assertIn("does not retry monitoring", reset_hint._label.cget("text"))
+                capture_recovery_hover("hc5-startup-reset-enabled-en")
                 self.assertIsNotNone(app.rounds.start_failure_snapshot(),
                                      "viewing the hint must not clear the startup failure")
                 app._select_language(TRADITIONAL_CHINESE)
@@ -1623,6 +1672,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 hint_window = start_hint._window
                 self.assertIs(root.focus_get(), app.start_button)
                 self.assertIsNone(app.rounds.snapshot())
+                if evidence_dir:
+                    capture_native_window_with_hint(root, "hc5-main-start-focus-en.png")
 
                 if evidence_dir:
                     evidence_records["start-focus-en"] = capture_tk_window_evidence(
@@ -1631,6 +1682,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: "開始監控" in start_hint._label.cget("text"))
                 self.assertIs(start_hint._window, hint_window)
                 self.assertIsNone(app.rounds.snapshot())
+                if evidence_dir:
+                    capture_native_window_with_hint(root, "hc5-main-start-focus-zh-TW.png")
                 if evidence_dir:
                     evidence_records["start-focus-zh-TW"] = capture_tk_window_evidence(
                         root, "st3-main-focus", "zh-TW", controls)
@@ -1678,6 +1731,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 post_mouse(app.stop_button, Quartz.kCGEventMouseMoved)
                 self.wait_for_ui(root, lambda: disabled_stop_hint._window is not None)
                 self.assertIn("停止收集本輪結果", disabled_stop_hint._label.cget("text"))
+                if evidence_dir:
+                    capture_native_window_with_hint(root, "hc5-main-stop-disabled-zh-TW.png")
                 self.assertTrue(app.stop_button.instate(("disabled",)))
                 if evidence_dir:
                     capture_tk_window_evidence(root, "st3-main-disabled-hover", "zh-TW", controls)

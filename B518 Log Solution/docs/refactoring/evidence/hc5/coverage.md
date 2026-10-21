@@ -1,6 +1,6 @@
 # HC5：按鈕提示與停用原因覆蓋
 
-範圍是主畫面、設定、通知與恢復中心，以及這些畫面已存在的子視窗按鈕。畫面標籤維持原樣，只調整提示文案與提示驗收。繁中與 English 文字由 `src/language_catalog.py` 提供；下表列出目前每個操作入口使用的資源 key，方便逐項比對。
+範圍是主畫面、設定、通知與恢復中心，以及這些畫面已存在的子視窗按鈕。畫面標籤維持原樣，調整提示文案、浮動提示位置與提示驗收。繁中與 English 文字由 `src/language_catalog.py` 提供；下表列出目前每個操作入口使用的資源 key，方便逐項比對。
 
 ## 覆蓋清單
 
@@ -42,6 +42,6 @@
 - **English:** “Review the round, then confirm cancellation. This withdraws delivery but keeps its results and handling record; it does not delete records or mark products as failed. Select a round awaiting cancellation to enable this action.”
 - **繁中：**「核對本輪後再確認取消。取消會撤回本輪結果交付，但保留結果與處置紀錄；不會刪除紀錄或把產品判為失敗。請選取待取消輪次，才能使用此操作。」
 
-真 App 驗收 `test_real_tk_start_and_cancel_hints_cover_recovery_states` 會建立啟動異常及待取消輪次，檢查開始按鈕停用提示與恢復中心可用取消提示的雙語 hover／focus、切換語言即時更新、離開／關窗清除，以及提示不觸發開始或取消。設定 `B518_TK_EVIDENCE_DIR` 後，此案例輸出兩種開始停用狀態與取消可用狀態的中英文真實視窗截圖，供人工檢查提示是否遮住必要資訊。
+真 App 驗收 `test_real_tk_start_and_cancel_hints_cover_recovery_states` 建立啟動異常及待取消輪次，以原生 CGEvent 滑鼠驗證停用開始與可用取消提示，並以原生 Tab 驗證停用控制項略過、可用取消控制項焦點提示。案例也檢查雙語即時刷新、離開／關窗清除、提示不觸發操作，以及提示與計時、結果、必要按鈕邊界不重疊。
 
-本次執行環境的原生 Tk 驗收以 exit 134 結束，且 Python 缺少 Quartz，因此沒有產生真實 App 截圖；該驗收仍須在可啟動 Aqua Tk 並可匯入 Quartz 的桌面環境執行後，才能完成視覺遮擋複查。
+先前受限執行的 exit 134 與缺 Quartz 為歷史結果；本輪使用桌面執行權限與臨時 PyObjC 環境，已完成四個原生 UI 案例並產生影像。[本輪驗證與影像索引](validation.md)記錄執行方式、結果與覆蓋範圍。
