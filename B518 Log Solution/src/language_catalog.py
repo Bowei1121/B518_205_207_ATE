@@ -431,7 +431,7 @@ LANGUAGE_RESOURCES: Dict[str, Dict[str, str]] = {
         "recovery.no_start_or_cancel_detail": "There are no startup failures or unverified rounds waiting for cancellation. Opening or closing this page does not resolve an item.",
         "recovery.no_round": "No round was accepted",
         "recovery.start_failure_detail": "Startup failure\nStation Type: {station}\nRound: {round_id}\nTime: {occurred_at}\nReason: {reason}\n\nAcknowledge and reset only after the cause has been addressed. This does not retry monitoring or start the ATE.",
-        "recovery.cancel_round_detail": "Round awaiting cancellation\nStation: {station}\nRound: {round_id}\nReason: {reason}\n\nCancel only after checking the round. Confirmation withdraws delivery while retaining results and handling records. Declining confirmation leaves the round unchanged.",
+        "recovery.cancel_round_detail": "Round awaiting cancellation\nStation Type: {station}\nRound: {round_id}\nReason: {reason}\n\nCancel only after checking the round. Confirmation withdraws delivery while retaining results and handling records. Declining confirmation leaves the round unchanged.",
         "recovery.action.reset_start_failure": "Acknowledge and Reset",
         "recovery.action.cancel_round": "Cancel Round and Keep Record",
         "recovery.hint.reset_start_failure": "Acknowledge the selected startup failure and clear the start lock after its cause has been addressed. This does not retry monitoring or start the ATE.",

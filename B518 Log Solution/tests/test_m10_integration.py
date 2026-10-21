@@ -63,6 +63,17 @@ class M10SourceIntegrationTests(unittest.TestCase):
             time.sleep(.01)
         self.fail("Timed out waiting for public App state")
 
+    def open_recovery_action(self, app, root, action):
+        app.round_alarm_button.invoke()
+        self.pump(root, lambda: app.recovery_window is not None and
+                  app.recovery_window.winfo_viewable())
+        app.recovery_tabs.select(2)
+        self.pump(root, lambda: app._recovery_selected_action == action)
+        button = (app.recovery_action_reset_button if action[0] == "start_failure" else
+                  app.recovery_action_cancel_button)
+        self.assertEqual(str(button.cget("state")), "normal")
+        return button
+
     def test_real_source_all_windows_switch_cancel_and_single_decisions(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.APP_ROOT", Path(temporary)), \
@@ -471,7 +482,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     self.assertIn("source access denied", body.get("1.0", "end"))
                     self.assertEqual(app.rounds.snapshot().round_id, round_id)
                     self.assertEqual(str(app.start_button.cget("state")), "disabled")
-                    self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
+                    self.assertIsNone(app.reset_start_failure_button)
                     shown.append(notice)
                     next(child for child in widgets(notice) if isinstance(child, ttk.Button)).invoke()
                 except Exception as error:
@@ -494,7 +505,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 app.start_monitor()
                 self.assertEqual(app.rounds.snapshot().round_id, round_id)
                 self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
-                app.reset_start_failure_button.invoke()
+                failure = app.rounds.start_failure_snapshot()
+                reset_button = self.open_recovery_action(
+                    app, root, ("start_failure", failure.request_id))
+                reset_button.invoke()
                 self.assertEqual(app.rounds.round_snapshot(round_id).completion_reason,
                                  "start_failed_cancelled")
                 app.close()
@@ -544,7 +558,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                     self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
                     self.assertIsNotNone(app.rounds.snapshot().start_failure)
                     self.assertEqual(str(app.start_button.cget("state")), "disabled")
-                    self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
+                    self.assertIsNone(app.reset_start_failure_button)
                     button = next(child for child in widgets(notice) if isinstance(child, ttk.Button))
                     self.assertEqual(button.cget("text"), "確定")
                     observations.append(notice)
@@ -568,7 +582,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
                 app.start_monitor()
                 self.assertEqual(app.rounds.snapshot().state.value, "AWAITING_REVIEW")
-                app.reset_start_failure_button.invoke()
+                failure = app.rounds.start_failure_snapshot()
+                reset_button = self.open_recovery_action(
+                    app, root, ("start_failure", failure.request_id))
+                reset_button.invoke()
                 self.assertIsNone(app.rounds.snapshot())
                 app.close()
                 self.pump(root, lambda: app.rounds.close_status().status == "complete")
@@ -686,7 +703,10 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 # Dismissing the visible notice and explicit reset both preserve
                 # the archived round; reset itself must not start another round.
                 self.assertFalse(failures[0].winfo_exists())
-                app.reset_start_failure_button.invoke()
+                failure = app.rounds.start_failure_snapshot()
+                reset_button = self.open_recovery_action(
+                    app, root, ("start_failure", failure.request_id))
+                reset_button.invoke()
                 reset = app.rounds.snapshot()
                 self.assertEqual(reset.round_id, completed_round_id)
                 self.assertEqual(reset.state.value, "COMPLETED")

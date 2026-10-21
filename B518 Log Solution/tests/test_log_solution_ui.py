@@ -4789,19 +4789,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(badge_text(), "2")
                     app.recovery_alarm_ack_button.invoke()
                     self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
-                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
-                    self.wait_for_ui(root, lambda: badge_text() == "1")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    self.wait_for_ui(root, lambda: badge_text() == "2")
 
                     app.recovery_tabs.select(1)
                     root.update()
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
-                        self.assertEqual(badge_text(), "1")
+                        self.assertEqual(badge_text(), "2")
                         self.assertTrue(app.notification_badge.winfo_ismapped())
                         app.recovery_window.withdraw()
                         if app.round_alarm_window and app.round_alarm_window.winfo_exists():
                             app.round_alarm_window.withdraw()
-                        capture_main_badge_evidence(app, "hf3-one-save-failure", language,
+                        capture_main_badge_evidence(app, "hf3-save-and-cancellation", language,
                                                     {"bell": app.round_alarm_button,
                                                      "badge": app.notification_badge})
                         app.recovery_window.deiconify()
