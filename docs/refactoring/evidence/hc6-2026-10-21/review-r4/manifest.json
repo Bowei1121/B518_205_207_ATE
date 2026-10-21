@@ -1,0 +1,212 @@
+{
+  "source_commit": "04dffe9c8e0e633db7abe489cbd79cff689ccafb",
+  "base_commit": "1af60cfa4991cf5af146df9c1cbbefed8965278c",
+  "environment": {
+    "architecture": "Intel x86_64",
+    "macOS": "15.8.1 (24H32)",
+    "desktop_python": "/opt/anaconda3/bin/python 3.11.7",
+    "Tk": "8.6",
+    "screen_points": [
+      1440,
+      900
+    ],
+    "execution": "macOS WindowServer access outside process sandbox"
+  },
+  "desktop_tests": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 71.117,
+    "log": "ui-8-tests.log"
+  },
+  "capture_method": "WindowServer native app and tooltip windows, front-to-back [tooltip, app]; original PNG files, no postprocessing",
+  "source_file_sha256": {
+    "B518 Log Solution/src/b518_log_solution.py": "4cb551d65d5f85a24ea8ff291916fd62bbe1fda7670df3065fa05d507af28643",
+    "B518 Log Solution/tests/test_log_solution_ui.py": "94e7c02559c9a2fb5127648fd28b561a523c236c0d90253c63f1786491e42b26"
+  },
+  "images": {
+    "st5-close-cancel-hint-en.png": {
+      "sha256": "640866c6ca4c80adfcd83d7f4539475a0c1008d9304f4eca7af6d8397d9c2d01",
+      "width": 1474,
+      "height": 836,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-close-retry-disabled-hint-en.png": {
+      "sha256": "5bdac7b395715ac8569c0d09034b6af01a6c405ce9aeab5ebd289a9bf595a652",
+      "width": 1240,
+      "height": 836,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-candidate-disabled-hint-en.png": {
+      "sha256": "868711b77271c88c11f5362a4011aad5e3014a255752064c854a86f9945a3b30",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-candidate-disabled-hint-zh-TW.png": {
+      "sha256": "213dc60e9f743bfb8ec1853007bafb03b219e715a668191a4f4a6f81028c5c7f",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-candidate-hint-en.png": {
+      "sha256": "f0f8d900f329ddad1e4e89ebc3a07f030e5e65f546acd71eefdb0df3005d4b22",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-candidate-hint-zh-TW.png": {
+      "sha256": "904bef4b4990a83010e10de5dd356d9f9401c6db10e61c325b5eaa919fcb007b",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-close-hint-en.png": {
+      "sha256": "43890640fdb6bf567437900ac173a0b72ac1187aa93383654af752a5f5f5dac3",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-close-hint-zh-TW.png": {
+      "sha256": "2f28ad2a8e91617b171b59664c04bfcd44c798fa62c659dc47e6c47ed302bdd8",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-close-pressed-en.png": {
+      "sha256": "bbc3b99792871e4f02ab5bde346df29543679c348d536f342261f08c524c6a54",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-original-hint-en.png": {
+      "sha256": "1cf97380b116175153072fe6a2535ddd5c99aace6bde2f3d2d2cb52da8c61662",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-conflict-original-hint-zh-TW.png": {
+      "sha256": "bddb2633e181ec6858247e9653b313a1f408835de49ac5a3d1b141ca4009030f",
+      "width": 1920,
+      "height": 1136,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-round-alarm-acknowledge-hint-en.png": {
+      "sha256": "8869ae2f991e3c73e13bf99fb37a299536573a6d8c2f187dc329441b24e82dd4",
+      "width": 1400,
+      "height": 656,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-round-alarm-acknowledge-hint-zh-TW.png": {
+      "sha256": "75692a95fb9fc0b8fa7aff7160b88cdc130208e22e5697075aeb6dd4f5fd898e",
+      "width": 1400,
+      "height": 656,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-round-alarm-close-hint-en.png": {
+      "sha256": "ad1233402c62d500b706753509cb8483e9f8d0b1eb6ac8929d16376fb824530d",
+      "width": 1400,
+      "height": 656,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st5-round-alarm-close-hint-zh-TW.png": {
+      "sha256": "ea573a7b86035a543251c16d91bc8499494b786a15fe42bc240020bd4d816a7f",
+      "width": 1400,
+      "height": 656,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-diagnostics-close-hint-zh-TW.png": {
+      "sha256": "60e17398db6163ecec53d28bbe476b96dd2896e19e2db8d1bbc3f481749d0a95",
+      "width": 1800,
+      "height": 1176,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-diagnostics-save-retry-disabled-hint-en.png": {
+      "sha256": "cfd550d6aa70a8e4aae47c6546255dcfb55147299454860f3863933f29c281d0",
+      "width": 1800,
+      "height": 1176,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-diagnostics-save-retry-disabled-hint-zh-TW.png": {
+      "sha256": "37ded4531d260396bb9d13e8d0f3d44a62a393d21293c48ed5c4f42ed2f03f84",
+      "width": 1800,
+      "height": 1176,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-history-cancel-active-hint-zh-TW.png": {
+      "sha256": "64e47957dec3fdc45710781d5dc6bf1c5d157b8b9fa657356b4b365f66b38429",
+      "width": 1920,
+      "height": 1416,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-history-cancel-disabled-hint-en.png": {
+      "sha256": "0bff7eef423df2b6d4ea8555f54a454a5529401d55739219424cc06d7fb8dcf2",
+      "width": 1920,
+      "height": 1416,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-history-cancel-disabled-hint-zh-TW.png": {
+      "sha256": "7203fcdf1e5260249002cdebd5e6a96d60381ecaa39b69ab6a43b059ebe60d07",
+      "width": 1920,
+      "height": 1416,
+      "visual_check": "tooltip text and target inspected"
+    },
+    "st6-history-retry-disabled-hint-zh-TW.png": {
+      "sha256": "7b9a08cf346b36126caa92288690f2896ea5af804dad5c46c559af9106e167ef",
+      "width": 1920,
+      "height": 1416,
+      "visual_check": "tooltip text and target inspected"
+    }
+  },
+  "limits": [
+    "No M4/arm64 or JetKVM acceptance",
+    "Native window composition excludes unrelated applications; it is not a full-desktop screenshot"
+  ],
+  "artifact_root": "/Users/tsengbowei/Documents/B518 ATE 205-207/tmp/reviews/pr115-04dffe9",
+  "raw_screenshot_versioning": "Raw desktop PNGs remain local under the repository .gitignore policy; filenames and SHA-256 are versioned here.",
+  "post_capture_change": "Only the Traditional Chinese assertion in the optional physical-manual-hover branch was synced after the desktop run; verified against catalog, physical manual mode not executed.",
+  "standard_suite": {
+    "source_commit": "04dffe9c8e0e633db7abe489cbd79cff689ccafb",
+    "tests": 582,
+    "failures": 5,
+    "errors": 1,
+    "skipped": 78,
+    "seconds": 501.052,
+    "log": "full-suite.log",
+    "related_non_ui_tests": 85,
+    "related_non_ui_passed": 85
+  },
+  "isolated_comparison": {
+    "before_commit": "6e605b5f917900ffe4e3073e47b6ae5fa90697ed",
+    "before": {
+      "tests": 6,
+      "passed": 6,
+      "seconds": 60.074,
+      "log": "baseline-6-tests.log"
+    },
+    "current": {
+      "tests": 6,
+      "passed": 5,
+      "errors": 1,
+      "seconds": 43.819,
+      "log": "current-6-tests.log"
+    },
+    "remaining_capacity_with_private_tmpdir": {
+      "tests": 1,
+      "passed": 1,
+      "seconds": 6.325,
+      "log": "capacity-isolated-temp.log"
+    }
+  },
+  "log_sha256": {
+    "attempts/reading-position-rerun.log": "48a12a8d2c9c99bdedbe78ec339a263c55b0911f45ed65b9429305208047af4e",
+    "attempts/ui-6-tests.log": "ef6e20bc978a91aab82d11c876a1ebf15e55666e6c15180a38020d639ae88719",
+    "attempts/ui-8-final.log": "6bd3828ef55ae806c614b18062ff04550a2a6a9a0660ff72c22c798a8fc2a197",
+    "attempts/ui-8-tests.log": "ce653af5765761ced1c299eea0b6e2d9269b58f4d2ad4e760ae43143ff9c4fce",
+    "baseline-6-tests.log": "837a6ef90e6697117395a404b3152823c3a46589f07f4c2d6c4d5083490612e9",
+    "capacity-isolated-temp.log": "4a096c84a669ea7eeee3e58219235f10b86693f7d0487853197ccb8aa4a44df0",
+    "current-6-tests.log": "b47e84105af323e1803ae2193288d88bce3e53f7757c2c0ff224fac33e1e8e2b",
+    "full-suite.log": "a6a6d57e9eee526e672cb29f498a19e0da331fd2add190d5d8acf03ae5cb3ad6",
+    "ui-8-tests.log": "a665dbff1cc22e24eca2bd38c308142a936e2cf5be95be60ba07885f17c4a22a"
+  }
+}

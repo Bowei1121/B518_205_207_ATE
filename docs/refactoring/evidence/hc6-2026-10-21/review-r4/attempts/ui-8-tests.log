@@ -1,0 +1,55 @@
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... FAIL
+test_real_tk_history_and_diagnostics_controls_explain_current_actions (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions) ... FAIL
+test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail) ... FAIL
+test_app_diagnostics_scroll_position_survives_language_refresh (test_log_solution_ui.LogSolutionUiTests.test_app_diagnostics_scroll_position_survives_language_refresh) ... ok
+test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped) ... FAIL
+test_real_tk_history_hover_hint_updates_language_and_closes_with_window (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_hover_hint_updates_language_and_closes_with_window) ... ok
+test_hint_refresh_tolerates_close_during_layout (test_log_solution_ui.LogSolutionUiTests.test_hint_refresh_tolerates_close_during_layout) ... ok
+test_real_tk_keeps_later_preparation_failure_visible (test_log_solution_ui.LogSolutionUiTests.test_real_tk_keeps_later_preparation_failure_visible) ... ok
+
+======================================================================
+FAIL: test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 12240, in test_real_tk_close_keeps_conflict_and_alarm_actions_available
+    disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 12132, in hover_hint
+    pump_until(lambda: _LocalizedControlHint._visible_hint is not None and
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 12070, in pump_until
+    self.fail("Timed out while pumping the Tk operator/close flow")
+AssertionError: Timed out while pumping the Tk operator/close flow
+
+======================================================================
+FAIL: test_real_tk_history_and_diagnostics_controls_explain_current_actions (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13710, in test_real_tk_history_and_diagnostics_controls_explain_current_actions
+    show_hint(app.historical_event_cancel_button))
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13672, in show_hint
+    self.wait_for_ui(root, lambda:
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 3226, in wait_for_ui
+    self.fail("Timed out waiting for the Tk presentation")
+AssertionError: Timed out waiting for the Tk presentation
+
+======================================================================
+FAIL: test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13815, in test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail
+    self.assertTrue(audit.flush())
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13461, in test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped
+    self.assertTrue(audit.flush())
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 8 tests in 41.568s
+
+FAILED (failures=4)

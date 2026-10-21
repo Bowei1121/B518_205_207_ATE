@@ -350,8 +350,8 @@ def capture_tk_content_view_evidence(window, key, widgets, output_dir=None):
     }
 
 
-def capture_native_window_with_hint(window, filename):
-    """Capture the real App window and its on-screen tooltip in one native frame."""
+def capture_native_window_with_hint(window, filename, expected_widget=None):
+    """Capture the app window and its tooltip without unrelated native windows."""
     evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
     if not evidence_value:
         return None
@@ -363,6 +363,18 @@ def capture_native_window_with_hint(window, filename):
         if isinstance(child, tk.Toplevel) and child.overrideredirect():
             child.lift()
     window.update()
+    visible_hint = _LocalizedControlHint._visible_hint
+    if expected_widget is not None and (
+            visible_hint is None or visible_hint._widget is not expected_widget or
+            visible_hint._window is None or not visible_hint._window.winfo_viewable() or
+            visible_hint._widget.winfo_toplevel() is not window):
+        raise AssertionError("visible hint does not belong to the expected control")
+    hint_window = None
+    if (visible_hint is not None and visible_hint._window is not None and
+            visible_hint._window.winfo_exists() and
+            visible_hint._window.winfo_viewable() and
+            visible_hint._widget.winfo_toplevel() is window):
+        hint_window = visible_hint._window
     native_windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
     native_number = native_window_for_capture(window).windowNumber()
@@ -372,11 +384,13 @@ def capture_native_window_with_hint(window, filename):
     if native_window is None:
         raise AssertionError("missing native window: {}".format(window.title()))
     bounds = native_window[Quartz.kCGWindowBounds]
-    rect = Quartz.CGRectMake(bounds["X"], bounds["Y"],
-                             bounds["Width"], bounds["Height"])
-    image = Quartz.CGWindowListCreateImage(
-        rect, Quartz.kCGWindowListOptionOnScreenOnly,
-        Quartz.kCGNullWindowID, Quartz.kCGWindowImageDefault)
+    window_numbers = [native_number]
+    if hint_window is not None:
+        hint_native_window = native_window_for_capture(hint_window)
+        # WindowServer composites this array front to back.
+        window_numbers.insert(0, hint_native_window.windowNumber())
+    image = Quartz.CGWindowListCreateImageFromArray(
+        Quartz.CGRectNull, window_numbers, Quartz.kCGWindowImageBoundsIgnoreFraming)
     if image is None:
         raise AssertionError("could not capture native window with hint")
     output_dir = Path(evidence_value)
@@ -12369,8 +12383,8 @@ class LogSolutionUiTests(unittest.TestCase):
                     Quartz.CGEventPostToPid(os.getpid(), event)
                 root.update()
 
-            def capture_hover(key, window):
-                return capture_native_window_with_hint(window, key)
+            def capture_hover(key, window, expected_widget=None):
+                return capture_native_window_with_hint(window, key, expected_widget)
 
             def root_is_alive():
                 try:
@@ -12414,7 +12428,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_candidate_button["state"]),
                                  "disabled")
                 disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("Select a pending conflict", disabled_hint)
+                self.assertIn("Select an item awaiting review", disabled_hint)
                 capture_hover("st5-conflict-candidate-disabled-hint-en.png",
                               app.conflict_window)
                 if os.environ.get("B518_MANUAL_HOVER") == "1":
@@ -12425,7 +12439,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         for child in app.conflict_window.winfo_children()
                         if isinstance(child, tk.Toplevel) and child.overrideredirect()
                         and child.winfo_viewable())
-                    self.assertIn("請先選取一筆", translated_disabled_hint)
+                    self.assertIn("請先選取待確認項目", translated_disabled_hint)
                     capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
                                   app.conflict_window)
                     click_native(app.resolve_conflict_candidate_button)
@@ -12447,19 +12461,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 enabled_hint = hover_hint(app.resolve_conflict_candidate_button)
                 self.assertIs(app.conflict_window.focus_get(),
                               app.resolve_conflict_candidate_button)
-                self.assertIn("accept the captured new candidate", enabled_hint)
-                self.assertNotIn("Select a pending conflict", enabled_hint)
+                self.assertIn("choosing the new candidate", enabled_hint)
+                self.assertIn("Other items awaiting review still need a decision", enabled_hint)
+                self.assertNotIn("Select an item awaiting review", enabled_hint)
                 capture_hover("st5-conflict-candidate-hint-en.png", app.conflict_window)
                 original_hint = hover_hint(app.resolve_conflict_original_button)
-                self.assertIn("keep the captured original result", original_hint)
+                self.assertIn("keeping the original result", original_hint)
                 capture_hover("st5-conflict-original-hint-en.png", app.conflict_window)
                 conflict_close_hint = hover_hint(app.conflict_close_button)
-                self.assertIn("without resolving or removing", conflict_close_hint)
+                self.assertIn("without deciding any result or removing", conflict_close_hint)
                 press_and_release_outside(
                     app.conflict_close_button, "st5-conflict-close-pressed-en.png")
                 self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
                 self.assertTrue(app.conflict_window.winfo_viewable())
-                capture_hover("st5-conflict-close-hint-en.png", app.conflict_window)
+                self.assertEqual(hover_hint(app.conflict_close_button), conflict_close_hint)
+                capture_hover("st5-conflict-close-hint-en.png", app.conflict_window,
+                              app.conflict_close_button)
                 app.conflict_close_button.invoke()
                 root.update()
                 self.assertFalse(app.conflict_window.winfo_viewable())
@@ -12472,15 +12489,16 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 alarm_before_hover = rounds.snapshot().round_alarm.acknowledged_at
                 alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("Manually acknowledge", alarm_hint)
+                self.assertIn("Confirm that you have reviewed this round alarm", alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-en.png",
                               app.round_alarm_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
                                  alarm_before_hover)
                 alarm_close_hint = hover_hint(app.round_alarm_close_button)
-                self.assertIn("without acknowledging", alarm_close_hint)
+                self.assertIn("without confirming the alarm", alarm_close_hint)
                 self.assertIsNotNone(app.round_alarm_window)
-                capture_hover("st5-round-alarm-close-hint-en.png", app.round_alarm_window)
+                capture_hover("st5-round-alarm-close-hint-en.png", app.round_alarm_window,
+                              app.round_alarm_close_button)
                 app.round_alarm_close_button.invoke()
                 root.update()
                 self.assertFalse(app.round_alarm_window.winfo_viewable())
@@ -12492,18 +12510,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.round_alarm_window.winfo_viewable())
                 app._select_language(TRADITIONAL_CHINESE)
                 translated_alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("手動確認", translated_alarm_hint)
+                self.assertIn("確認你已查看此輪警報", translated_alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-zh-TW.png",
                               app.round_alarm_window)
                 translated_alarm_close_hint = hover_hint(app.round_alarm_close_button)
                 self.assertIn("不會確認警報", translated_alarm_close_hint)
                 capture_hover("st5-round-alarm-close-hint-zh-TW.png",
-                              app.round_alarm_window)
+                              app.round_alarm_window, app.round_alarm_close_button)
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 translated_disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("請先選取一筆", translated_disabled_hint)
+                self.assertIn("請先選取待確認項目", translated_disabled_hint)
                 capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
                               app.conflict_window)
                 click_native(app.resolve_conflict_candidate_button)
@@ -12513,14 +12531,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 translated_conflict_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("人工裁決", translated_conflict_hint)
+                self.assertIn("逐項決定", translated_conflict_hint)
                 capture_hover("st5-conflict-candidate-hint-zh-TW.png",
                               app.conflict_window)
                 translated_original_hint = hover_hint(app.resolve_conflict_original_button)
-                self.assertIn("保留已捕捉原結果", translated_original_hint)
+                self.assertIn("保留這筆原結果", translated_original_hint)
                 capture_hover("st5-conflict-original-hint-zh-TW.png", app.conflict_window)
                 translated_conflict_close_hint = hover_hint(app.conflict_close_button)
-                self.assertIn("不會裁決或移除", translated_conflict_close_hint)
+                self.assertIn("不會替你決定結果或移除", translated_conflict_close_hint)
                 self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
                 capture_hover("st5-conflict-close-hint-zh-TW.png", app.conflict_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
@@ -13137,7 +13155,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.wait_for_ui(
                         root, lambda: retry_hint._window is not None and
                         retry_hint._window.winfo_exists())
-                    self.assertIn("Retry preparation of the remaining pages",
+                    self.assertIn("Try loading the remaining pages for this search again",
                                   retry_hint._label.cget("text"))
                     retry_hint._hide()
                     self.assertNotIn(app._t("app.settings.history.preparing"),
@@ -13632,7 +13650,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 audit.append_event(AuditEvent(
                     sequence, "round_ready", "saved keyboard event", None),
                     event_time, float(sequence))
-            self.assertTrue(audit.flush())
+            self.assertTrue(audit.flush(timeout=60), audit.error)
             source_bytes = audit.audit_path.read_bytes()
 
             root = tk.Tk()
@@ -13699,7 +13717,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 focus_next_with_tab(app.historical_next_button)
                 self.wait_for_ui(root, lambda: visible_hint_text() is not None)
-                self.assertEqual(visible_hint_text(), "Show the next results page")
+                self.assertEqual(visible_hint_text(), "Show the next page of results.")
                 app.historical_next_button.event_generate("<KeyPress-space>")
                 app.historical_next_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -13713,10 +13731,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 self.assertEqual(app._historical_query_page_number, 3)
                 self.assertEqual(visible_hint_text(),
-                                 "There is no later results page to show.")
+                                 "There is no later page of results to show.")
                 focus_next_with_tab(app.historical_previous_button)
                 self.wait_for_ui(root, lambda: visible_hint_text() is not None)
-                self.assertEqual(visible_hint_text(), "Show the previous results page")
+                self.assertEqual(visible_hint_text(), "Show the previous page of results.")
                 app.historical_previous_button.event_generate("<KeyPress-space>")
                 app.historical_previous_button.event_generate("<KeyRelease-space>")
                 self.wait_for_ui(root, lambda: app._historical_query_page_number == 2)
@@ -13733,6 +13751,26 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_historical_event_window()
                 app.hotkey.close()
                 root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hint_refresh_tolerates_close_during_layout(self):
+        root = tk.Tk()
+        button = ttk.Button(root)
+        button.pack()
+        hint = _LocalizedControlHint(button, lambda: "Updated hint")
+        try:
+            hint._show()
+            window = hint._window
+            self.assertIsNotNone(window)
+            with patch.object(window, "update_idletasks", side_effect=hint._hide):
+                hint.refresh()
+            self.assertIsNone(hint._window)
+            self.assertFalse(window.winfo_exists())
+            self.assertIsNone(_LocalizedControlHint._visible_hint)
+        finally:
+            hint.close()
+            root.destroy()
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -13774,7 +13812,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: len(hints()) == 1)
                 hint = hints()[0]
                 self.assertTrue(any(
-                    text.startswith("Search the selected date range")
+                    text.startswith("Search for events in the selected date range")
                     for text in hint_text(hint)))
 
                 self.set_language_for_test_setup(app, root, TRADITIONAL_CHINESE)
@@ -13815,6 +13853,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
 
                 def show_hint(widget):
+                    NSRunningApplication.currentApplication().activateWithOptions_(
+                        NSApplicationActivateIgnoringOtherApps)
+                    owner = widget.winfo_toplevel()
+                    owner.deiconify()
+                    owner.lift()
+                    owner.focus_force()
+                    root.update()
                     visible = _LocalizedControlHint._visible_hint
                     if visible is not None and visible._widget is not widget:
                         visible._widget.event_generate("<Leave>")
@@ -13859,12 +13904,13 @@ class LogSolutionUiTests(unittest.TestCase):
                           app.historical_event_list.curselection())
                 cancel_hint = (wait_for_physical_hover(
                     app.historical_event_cancel_button,
-                    "No history search is running, so there is nothing to cancel.")
+                    "There is no search in progress to cancel.")
                     if os.environ.get("B518_MANUAL_HOVER") == "1" else
                     show_hint(app.historical_event_cancel_button))
-                self.assertIn("No history search is running", cancel_hint)
+                self.assertIn("There is no search in progress to cancel", cancel_hint)
                 capture_native_window_with_hint(
-                    app.historical_event_window, "st6-history-cancel-disabled-hint-en.png")
+                    app.historical_event_window, "st6-history-cancel-disabled-hint-en.png",
+                    app.historical_event_cancel_button)
                 self.assertEqual(before, (app.historical_start_var.get(),
                                           app.historical_end_var.get(),
                                           app._historical_query_generation,
@@ -13889,12 +13935,13 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(query_entered.wait(2))
                     self.wait_for_ui(root, lambda: app._historical_query_generation is not None)
                     active_cancel_hint = show_hint(app.historical_event_cancel_button)
-                    self.assertIn("取消進行中的歷史查詢", active_cancel_hint)
+                    self.assertIn("取消目前的查詢", active_cancel_hint)
                     self.assertIsNotNone(app._historical_query_generation,
                                          "reading a hint must not cancel the search")
                     capture_native_window_with_hint(
                         app.historical_event_window,
-                        "st6-history-cancel-active-hint-zh-TW.png")
+                        "st6-history-cancel-active-hint-zh-TW.png",
+                        app.historical_event_cancel_button)
                     app._cancel_historical_event_query()
                     release_query.set()
                     self.wait_for_ui(
@@ -13903,35 +13950,41 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 app._select_language(TRADITIONAL_CHINESE)
                 root.update()
-                self.assertIn("沒有進行中的歷史查詢",
-                              _LocalizedControlHint._visible_hint._label.cget("text"))
+                idle_cancel_hint = show_hint(app.historical_event_cancel_button)
+                self.assertIn("目前沒有進行中的查詢可取消", idle_cancel_hint)
                 capture_native_window_with_hint(
-                    app.historical_event_window, "st6-history-cancel-disabled-hint-zh-TW.png")
+                    app.historical_event_window, "st6-history-cancel-disabled-hint-zh-TW.png",
+                    app.historical_event_cancel_button)
 
                 retry_hint = show_hint(app.historical_event_retry_button)
-                self.assertIn("沒有可重試", retry_hint)
+                self.assertIn("目前沒有可重試的歷史頁面", retry_hint)
                 capture_native_window_with_hint(
-                    app.historical_event_window, "st6-history-retry-disabled-hint-zh-TW.png")
+                    app.historical_event_window, "st6-history-retry-disabled-hint-zh-TW.png",
+                    app.historical_event_retry_button)
                 app._select_language(ENGLISH)
                 root.update()
                 diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
-                self.assertIn("There are no App diagnostic save failures", diagnostics_retry_hint)
+                self.assertIn("no App troubleshooting records waiting to be saved again",
+                              diagnostics_retry_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window,
-                    "st6-diagnostics-save-retry-disabled-hint-en.png")
+                    "st6-diagnostics-save-retry-disabled-hint-en.png",
+                    app.app_diagnostics_retry_button)
                 app._select_language(TRADITIONAL_CHINESE)
                 root.update()
                 diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
-                self.assertIn("沒有待重試", diagnostics_retry_hint)
+                self.assertIn("目前沒有尚未存好的 App 問題紀錄", diagnostics_retry_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window,
-                    "st6-diagnostics-save-retry-disabled-hint-zh-TW.png")
+                    "st6-diagnostics-save-retry-disabled-hint-zh-TW.png",
+                    app.app_diagnostics_retry_button)
                 language_retry_hint = show_hint(app.app_diagnostics_language_retry_button)
-                self.assertIn("沒有待重試", language_retry_hint)
+                self.assertIn("目前沒有介面文字更新錯誤需要重試", language_retry_hint)
                 close_hint = show_hint(app.app_diagnostics_close_button)
-                self.assertIn("不會修改或移除", close_hint)
+                self.assertIn("不會修改或刪除", close_hint)
                 capture_native_window_with_hint(
-                    app.app_diagnostics_window, "st6-diagnostics-close-hint-zh-TW.png")
+                    app.app_diagnostics_window, "st6-diagnostics-close-hint-zh-TW.png",
+                    app.app_diagnostics_close_button)
             finally:
                 app._close_historical_event_window()
                 app._close_app_diagnostics_window()
@@ -13958,7 +14011,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     "saved language event — " + "LONG-READING-POSITION-" * 12, None,
                     detail={"raw_diagnostic": raw_detail if sequence == 103 else ""}),
                     event_time, float(sequence))
-            self.assertTrue(audit.flush())
+            self.assertTrue(audit.flush(timeout=60), audit.error)
             source_bytes = audit.audit_path.read_bytes()
             legacy_path = session_root / "legacy-language" / "events.log"
             legacy_path.parent.mkdir(parents=True)

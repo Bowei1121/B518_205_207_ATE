@@ -1,0 +1,14 @@
+test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail) ... FAIL
+
+======================================================================
+FAIL: test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13823, in test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail
+    self.assertTrue(audit.flush())
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 1 test in 11.414s
+
+FAILED (failures=1)

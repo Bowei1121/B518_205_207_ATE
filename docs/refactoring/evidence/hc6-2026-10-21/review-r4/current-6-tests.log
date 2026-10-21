@@ -1,0 +1,31 @@
+test_isolated_public_service_sample_measures_reuse_and_degradation (test_historical_event_capacity.HistoricalEventCapacityFixtureTests.test_isolated_public_service_sample_measures_reuse_and_degradation) ... ERROR
+test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence (test_log_solution_ui.LogSolutionUiTests.test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence) ... ok
+test_real_tk_start_button_prepares_every_registered_platform_profile (test_log_solution_ui.LogSolutionUiTests.test_real_tk_start_button_prepares_every_registered_platform_profile) ... ok
+test_blocked_preparation_deadline_can_be_acknowledged_cancelled_and_restarted (test_monitoring_round.MonitoringRoundTests.test_blocked_preparation_deadline_can_be_acknowledged_cancelled_and_restarted) ... ok
+test_close_stays_open_when_a_detached_round_fails_disk_verification (test_round_archival.RoundArchivalTests.test_close_stays_open_when_a_detached_round_fails_disk_verification) ... ok
+test_corrupt_round_does_not_stop_another_safe_candidate (test_round_retention.RoundRetentionTests.test_corrupt_round_does_not_stop_another_safe_candidate) ... ok
+
+======================================================================
+ERROR: test_isolated_public_service_sample_measures_reuse_and_degradation (test_historical_event_capacity.HistoricalEventCapacityFixtureTests.test_isolated_public_service_sample_measures_reuse_and_degradation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_historical_event_capacity.py", line 70, in test_isolated_public_service_sample_measures_reuse_and_degradation
+    reused = _run_sample_process(
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/B518-HC6/B518 Log Solution/scripts/historical_event_capacity.py", line 539, in _run_sample_process
+    raise RuntimeError("capacity sample failed: {}\n{}".format(
+RuntimeError: capacity sample failed: /opt/anaconda3/bin/python /private/tmp/B518-HC6/B518 Log Solution/scripts/historical_event_capacity.py sample --root /var/folders/gk/zpblb4q57bl24pt55p1m933h0000gn/T/b518-capacity-sample-aphle6wb/fixture --index /var/folders/gk/zpblb4q57bl24pt55p1m933h0000gn/T/b518-capacity-sample-aphle6wb/query-index.sqlite3 --scenario reuse --run-number 1 --digest full --timeout 60
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/scripts/historical_event_capacity.py", line 748, in <module>
+    main()
+  File "/private/tmp/B518-HC6/B518 Log Solution/scripts/historical_event_capacity.py", line 744, in main
+    arguments.run(arguments)
+  File "/private/tmp/B518-HC6/B518 Log Solution/scripts/historical_event_capacity.py", line 494, in _sample_command
+    raise AssertionError("query worker or temporary snapshot was not reclaimed")
+AssertionError: query worker or temporary snapshot was not reclaimed
+
+
+----------------------------------------------------------------------
+Ran 6 tests in 43.819s
+
+FAILED (errors=1)

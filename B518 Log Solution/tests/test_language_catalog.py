@@ -172,6 +172,56 @@ class LanguageCatalogTests(unittest.TestCase):
             language_catalog.translate("term.new_candidate", language_catalog.TRADITIONAL_CHINESE),
         )
 
+    def test_hc6_hints_explain_actions_and_preserve_review_history_semantics(self):
+        expected_copy = {
+            "conflict.hint.keep_original": (
+                "keeping the original result", "保留這筆原結果"),
+            "conflict.hint.accept_candidate": (
+                "choosing the new candidate", "選擇這筆新候選作為結果"),
+            "conflict.hint.close": (
+                "without deciding any result or removing", "不會替你決定結果或移除"),
+            "app.settings.history.search_hint": (
+                "This result stays fixed", "這次查詢的結果會固定保留"),
+            "app.settings.history.retry_hint.ready": (
+                "remaining pages", "尚未完成的頁面"),
+            "app.diagnostic.retry_hint.enabled": (
+                "records that did not save", "尚未存好的 App 問題紀錄"),
+        }
+        for message_id, (english_phrase, chinese_phrase) in expected_copy.items():
+            with self.subTest(message_id=message_id):
+                english = language_catalog.translate(message_id, language_catalog.ENGLISH)
+                chinese = language_catalog.translate(
+                    message_id, language_catalog.TRADITIONAL_CHINESE)
+                self.assertIn(english_phrase, english)
+                self.assertIn(chinese_phrase, chinese)
+
+        self.assertIn("Other items awaiting review still need a decision",
+                      language_catalog.translate(
+                          "conflict.hint.accept_candidate", language_catalog.ENGLISH))
+        self.assertIn("其他待確認項目仍需逐項決定",
+                      language_catalog.translate(
+                          "conflict.hint.accept_candidate",
+                          language_catalog.TRADITIONAL_CHINESE))
+        self.assertIn("saved records are not changed",
+                      language_catalog.translate(
+                          "app.settings.history.search_hint", language_catalog.ENGLISH))
+        self.assertIn("不會修改已保存的紀錄",
+                      language_catalog.translate(
+                          "app.settings.history.search_hint",
+                          language_catalog.TRADITIONAL_CHINESE))
+
+        self.assertEqual(
+            language_catalog.translate(
+                "app.settings.history.retry_hint.unavailable", language_catalog.ENGLISH),
+            "No history pages are currently available to retry.",
+        )
+        self.assertEqual(
+            language_catalog.translate(
+                "app.settings.history.retry_hint.unavailable",
+                language_catalog.TRADITIONAL_CHINESE),
+            "目前沒有可重試的歷史頁面。",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
