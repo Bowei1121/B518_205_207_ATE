@@ -1,0 +1,86 @@
+54 INFO: PyInstaller: 6.16.0, contrib hooks: 2026.7
+54 INFO: Python: 3.12.10
+61 INFO: Platform: macOS-26.5.2-arm64-arm-64bit
+61 INFO: Python environment: /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution
+61 INFO: wrote build-ls8-fixed-20261021/B518 Log Solution.spec
+63 INFO: Removing temporary files and cleaning cache in /private/tmp/b518-ls8-pyinstaller-20261021/pyinstaller
+72 INFO: Module search paths (PYTHONPATH):
+['/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python312.zip',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload',
+ '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log '
+ 'Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages',
+ '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src',
+ '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src']
+139 INFO: Appending 'datas' from .spec
+140 INFO: checking Analysis
+140 INFO: Building Analysis because Analysis-00.toc is non existent
+140 INFO: Looking for Python shared library...
+142 INFO: Using Python shared library: /Library/Frameworks/Python.framework/Versions/3.12/Python
+142 INFO: Running Analysis Analysis-00.toc
+142 INFO: Target bytecode optimization level: 0
+142 INFO: Initializing module dependency graph...
+143 INFO: Initializing module graph hook caches...
+151 INFO: Analyzing modules for base_library.zip ...
+476 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+998 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+1529 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+1669 INFO: Caching module dependency graph...
+1682 INFO: Analyzing /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/b518_log_solution.py
+1795 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks/pre_find_module_path'
+1796 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+1886 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+1945 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2034 INFO: Processing standard module hook 'hook-xml.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2042 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2445 INFO: Processing standard module hook 'hook-platform.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2525 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2610 INFO: Processing standard module hook 'hook-zoneinfo.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+2621 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2627 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2768 INFO: Processing module hooks (post-graph stage)...
+2775 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks'
+2902 INFO: Performing binary vs. data reclassification (325 entries)
+2933 INFO: Looking for ctypes DLLs
+2941 WARNING: Ignoring /System/Library/Frameworks/Carbon.framework/Carbon imported from /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/src/global_hotkey.py - only basenames are supported with ctypes imports!
+2948 INFO: Analyzing run-time hooks ...
+2948 INFO: Including run-time hook 'pyi_rth__tkinter.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+2949 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+2954 INFO: Creating base_library.zip...
+2962 INFO: Looking for dynamic libraries
+3092 INFO: Warnings written to /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/build-ls8-fixed-20261021/B518 Log Solution/warn-B518 Log Solution.txt
+3097 INFO: Graph cross-reference written to /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/build-ls8-fixed-20261021/B518 Log Solution/xref-B518 Log Solution.html
+3144 INFO: checking PYZ
+3144 INFO: Building PYZ because PYZ-00.toc is non existent
+3144 INFO: Building PYZ (ZlibArchive) /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/build-ls8-fixed-20261021/B518 Log Solution/PYZ-00.pyz
+3291 INFO: Building PYZ (ZlibArchive) /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/build-ls8-fixed-20261021/B518 Log Solution/PYZ-00.pyz completed successfully.
+3293 INFO: EXE target arch: arm64
+3293 INFO: Code signing identity: None
+3294 INFO: checking PKG
+3294 INFO: Building PKG because PKG-00.toc is non existent
+3294 INFO: Building PKG (CArchive) B518 Log Solution.pkg
+3374 INFO: Building PKG (CArchive) B518 Log Solution.pkg completed successfully.
+3374 INFO: Bootloader /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/.venv-macos15_0-arm64-log-solution/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/runw
+3374 INFO: checking EXE
+3374 INFO: Building EXE because EXE-00.toc is non existent
+3374 INFO: Building EXE from EXE-00.toc
+3374 INFO: Copying bootloader EXE to /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/build-ls8-fixed-20261021/B518 Log Solution/B518 Log Solution
+3375 INFO: Converting EXE to target arch (arm64)
+3389 INFO: Removing signature(s) from EXE
+3400 INFO: Modifying Mach-O image UUID(s) in EXE
+3402 INFO: Appending PKG archive to EXE
+3403 INFO: Fixing EXE headers for code signing
+3406 INFO: Rewriting the executable's macOS SDK version (15.5.0) to match the SDK version of the Python library (12.1.0) in order to avoid inconsistent behavior and potential UI issues in the frozen application.
+3406 INFO: Re-signing the EXE
+3419 INFO: Building EXE from EXE-00.toc completed successfully.
+3421 INFO: checking COLLECT
+3421 INFO: Building COLLECT because COLLECT-00.toc is non existent
+3421 INFO: Building COLLECT COLLECT-00.toc
+5302 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+5305 INFO: checking BUNDLE
+5306 INFO: Building BUNDLE because BUNDLE-00.toc is non existent
+5306 INFO: Building BUNDLE BUNDLE-00.toc
+6874 INFO: Signing the BUNDLE...
+6929 INFO: Building BUNDLE BUNDLE-00.toc completed successfully.
+6932 INFO: Build complete! The results are available in: /Users/aoi/Desktop/B518 205-207ATE/B518_205_207_ATE/B518 Log Solution/dist-ls8-fixed-20261021

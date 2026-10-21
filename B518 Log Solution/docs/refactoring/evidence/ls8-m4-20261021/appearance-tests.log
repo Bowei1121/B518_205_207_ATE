@@ -1,0 +1,8 @@
+Command: B518_TK_TESTS=1 B518_ST7_MANUAL_APPEARANCE=1 B518_ST7_ORIGINAL_APPEARANCE=dark B518_TK_EVIDENCE_DIR=<evidence>/appearance .venv-macos15_0-arm64-log-solution/bin/python scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_recovery_window_stays_light_during_real_system_appearance_changes
+PTY output transcript:
+ST7: Switch macOS appearance to Light, then signal this test with Enter.
+ST7: Restore the original macOS Dark appearance, then signal this test with Enter.
+ok
+Ran 1 test in 233.291s
+OK
+User manually switched dark -> light -> dark. defaults read confirms restored Dark.

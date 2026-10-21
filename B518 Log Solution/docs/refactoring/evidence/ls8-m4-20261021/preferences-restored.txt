@@ -1,0 +1,2 @@
+Original preferences restored byte-for-byte. SHA256: caa9029bd5ae444ea776600b5095381d2b76e5fbe59f332cc621c81226157af5
+Synthetic test sessions were exported to bundle-rounds/ and retained in App history; no original sessions deleted.

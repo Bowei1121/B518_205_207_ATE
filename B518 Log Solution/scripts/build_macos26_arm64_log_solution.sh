@@ -36,7 +36,7 @@ rm -rf "$DIST" "$BUILD"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --target-architecture arm64 \
   --name 'B518 Log Solution' --osx-bundle-identifier com.b518.logsolution \
   --distpath "$DIST" --workpath "$BUILD" --paths src --add-data "assets:assets" \
-  --add-data "VERSION:VERSION" src/b518_log_solution.py
+  --add-data "VERSION:." src/b518_log_solution.py
 
 APP="$DIST/B518 Log Solution.app"
 PLIST="$APP/Contents/Info.plist"

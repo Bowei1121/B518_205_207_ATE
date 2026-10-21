@@ -1,0 +1,1 @@
+Resources/VERSION and Frameworks/VERSION readable; both plist versions match 0.1.5

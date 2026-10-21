@@ -1,0 +1,13 @@
+{
+  "source_commit": "50a6303d584fc2bcab1f0848b06534cd1de1ee35",
+  "source_changes": "Existing VERSION 0.1.0 -> 0.1.5; existing untracked B518 Log Solution.spec preserved. src/tests unchanged.",
+  "architecture": "arm64",
+  "os": "26.5.2",
+  "chip": "Apple M4",
+  "version": "0.1.5",
+  "bundle": "dist-ls8-fixed-20261021/B518 Log Solution.app",
+  "deployment_target": "15.0",
+  "signature": "ad-hoc; no Developer ID or notarization",
+  "build_note": "PyInstaller CLI reproduces macOS15 build command with corrected VERSION:. mapping, isolated build/dist/cache, existing VERSION 0.1.5 retained. Full desktop suite ran separately before packaging-only fix; src/tests unchanged.",
+  "packaging_fix_commit": "c43d56ad8a3ce9658302e139fdc95976967b1b6c"
+}

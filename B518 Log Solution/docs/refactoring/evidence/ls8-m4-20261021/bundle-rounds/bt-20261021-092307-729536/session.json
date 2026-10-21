@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "settings": {
+    "format": "B518 RS-WMT",
+    "output_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+    "progress_root": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+    "start_timeout_seconds": "2",
+    "test_timeout_seconds": "480",
+    "round_timeout_seconds": "10",
+    "profile_snapshot": {
+      "schema_version": 1,
+      "profile": {
+        "project": "B518",
+        "machine": "BT",
+        "platform": "rswmt",
+        "capacity": 4,
+        "paths": {
+          "final": "/private/tmp/b518-ls8-bundle-round-20261021/output/SmtCal",
+          "caseinfo": ""
+        },
+        "mapping": [
+          {
+            "source": 1,
+            "display": 1
+          },
+          {
+            "source": 2,
+            "display": 2
+          },
+          {
+            "source": 3,
+            "display": 3
+          },
+          {
+            "source": 4,
+            "display": 4
+          }
+        ],
+        "timeouts": {
+          "start": 2,
+          "test": 480,
+          "round": 10
+        }
+      }
+    },
+    "accepted_start_at": "2026-10-21T09:23:07",
+    "accepted_start_monotonic": 766154.161397,
+    "round_id": "387ec0b39cba420697d6e00f6c99c2c6",
+    "round_audit_schema_version": 1,
+    "round_candidate_mode": true
+  },
+  "started_at": "2026-10-21T09:23:07",
+  "finished_at": "2026-10-21T09:24:23",
+  "sources": []
+}
