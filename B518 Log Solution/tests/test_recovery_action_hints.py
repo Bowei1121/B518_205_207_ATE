@@ -33,6 +33,30 @@ class RecoveryActionHintTests(unittest.TestCase):
         self.assertIn("Select a round awaiting cancellation",
                       app._recovery_hint_text("cancel_unverified_round"))
 
+    def test_action_hints_explain_results_without_collapsing_distinct_operations(self):
+        expectations = (
+            (ENGLISH,
+             "allow a new manual start", "does not retry monitoring or start the ATE",
+             "withdraws delivery", "keeps its results and handling record",
+             "does not delete records or mark products as failed"),
+            (TRADITIONAL_CHINESE,
+             "由人員手動重新開始", "不會重試監控或啟動 ATE",
+             "撤回本輪結果交付", "保留結果與處置紀錄",
+             "不會刪除紀錄或把產品判為失敗"),
+        )
+        for language, reset_effect, no_retry, cancel_effect, retained, not_fail in expectations:
+            with self.subTest(language=language):
+                app = self.make_app(language, ("start_failure", "request-1"))
+                reset_hint = app._recovery_hint_text("reset_start_failure")
+                self.assertIn(reset_effect, reset_hint)
+                self.assertIn(no_retry, reset_hint)
+
+                app._recovery_selected_action = ("cancel_round", "round-1")
+                cancel_hint = app._recovery_hint_text("cancel_unverified_round")
+                self.assertIn(cancel_effect, cancel_hint)
+                self.assertIn(retained, cancel_hint)
+                self.assertIn(not_fail, cancel_hint)
+
 
 if __name__ == "__main__":
     unittest.main()

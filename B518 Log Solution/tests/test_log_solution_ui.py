@@ -1262,6 +1262,51 @@ class LogSolutionUiTests(unittest.TestCase):
                 capture_recovery("st4-recovery-saves-archives", "en")
                 self.assertEqual(app._recovery_selected_save, None)
 
+                app.recovery_tabs.select(2)
+                root.update()
+                recovery_actions = (
+                    (app.recovery_action_reset_button,
+                     app._recovery_control_hints[app.recovery_action_reset_button],
+                     "Select a startup failure", "請選取啟動異常"),
+                    (app.recovery_action_cancel_button,
+                     app._recovery_control_hints[app.recovery_action_cancel_button],
+                     "Select a round awaiting cancellation", "請選取待取消輪次"),
+                )
+                for button, action_hint, disabled_en, disabled_zh in recovery_actions:
+                    self.assertTrue(button.instate(("disabled",)))
+                    post_mouse(button, Quartz.kCGEventMouseMoved)
+                    self.wait_for_ui(root, lambda: action_hint._window is not None)
+                    self.assertIn(disabled_en, action_hint._label.cget("text"))
+                    self.assertIsNone(app._recovery_selected_action)
+                    app._select_language(TRADITIONAL_CHINESE)
+                    self.assertIn(disabled_zh, action_hint._label.cget("text"))
+                    self.assertIsNone(app._recovery_selected_action)
+                    capture_recovery_hover(
+                        "hc5-{}-disabled-zh-TW".format(
+                            "startup-reset" if button is app.recovery_action_reset_button
+                            else "round-cancel"))
+                    post_mouse(app.recovery_window, Quartz.kCGEventMouseMoved)
+                    self.wait_for_ui(root, lambda: action_hint._window is None)
+                    app._select_language(ENGLISH)
+
+                app.rounds.record_start_failure("FCT", "source folder is unavailable")
+                app._refresh_recovery_center()
+                self.assertTrue(app.recovery_action_reset_button.instate(("!disabled",)))
+                reset_hint = app._recovery_control_hints[app.recovery_action_reset_button]
+                app.recovery_action_reset_button.focus_force()
+                self.wait_for_ui(root, lambda: reset_hint._window is not None)
+                self.assertIn("allow a new manual start", reset_hint._label.cget("text"))
+                self.assertIn("does not retry monitoring", reset_hint._label.cget("text"))
+                self.assertIsNotNone(app.rounds.start_failure_snapshot(),
+                                     "viewing the hint must not clear the startup failure")
+                app._select_language(TRADITIONAL_CHINESE)
+                self.assertIn("由人員手動重新開始", reset_hint._label.cget("text"))
+                self.assertIsNotNone(app.rounds.start_failure_snapshot())
+                capture_recovery_hover("hc5-startup-reset-enabled-zh-TW")
+                app.recovery_action_reset_button.invoke()
+                self.assertIsNone(app.rounds.start_failure_snapshot())
+                app._select_language(ENGLISH)
+
                 app.settings_window.withdraw()
                 app.recovery_window.withdraw()
                 app.root.deiconify()
@@ -1302,7 +1347,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: app.start_button.winfo_viewable())
                 self.assertIsNone(app.rounds.snapshot())
                 hint_controls = (
-                    (app.start_button, "Start monitoring", "依所選專案"),
+                    (app.start_button, "Start Log monitoring", "依所選專案"),
                     (app.stop_button, "Stop collecting", "停止目前監控輪次"),
                     (app.retry_save_button, "Retry saving", "重試保存先前"),
                     (app.app_diagnostics_button, "App diagnostics", "開啟 App 診斷"),
@@ -12328,7 +12373,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 alarm_before_hover = rounds.snapshot().round_alarm.acknowledged_at
                 alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("Manually acknowledge", alarm_hint)
+                self.assertIn("Confirm the selected round alarm", alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-en.png",
                               app.round_alarm_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
@@ -12348,7 +12393,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.round_alarm_window.winfo_viewable())
                 app._select_language(TRADITIONAL_CHINESE)
                 translated_alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("手動確認", translated_alarm_hint)
+                self.assertIn("確認所選整輪警報", translated_alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-zh-TW.png",
                               app.round_alarm_window)
                 translated_alarm_close_hint = hover_hint(app.round_alarm_close_button)
