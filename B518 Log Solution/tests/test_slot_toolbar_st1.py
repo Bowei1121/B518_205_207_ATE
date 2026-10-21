@@ -9,7 +9,9 @@ from tkinter import font
 import unittest
 
 from test_log_solution_ui import LogSolutionUiTests, FakeHotkey, capture_tk_window_evidence
-from b518_log_solution import B518LogSolutionApp, LIGHT_BACKGROUND
+from b518_log_solution import (
+    B518LogSolutionApp, LIGHT_BACKGROUND, ROW_GAP, ROW_HEIGHT, STATUS_COLOURS,
+)
 
 
 class SlotViewportTests(LogSolutionUiTests):
@@ -54,7 +56,7 @@ class SlotViewportTests(LogSolutionUiTests):
         finally:
             cls._restore_display()
 
-    def test_st1_ten_rows_and_small_window_keep_all_slots_reachable(self):
+    def test_st1_compact_rows_and_small_window_keep_all_slots_reachable(self):
         root = tk.Tk()
         app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
         root.deiconify()
@@ -71,7 +73,7 @@ class SlotViewportTests(LogSolutionUiTests):
             root.resizable(True, True)
             root.minsize(376, 450)
             root.maxsize(376, 1400)
-            for height, expected in ((1200, min(10, capacity) if root.winfo_screenheight() >= 1050 else None), (650, None)):
+            for height in (1200, 650):
                 root.geometry("376x{}+50+40".format(height))
                 for _ in range(15):
                     root.update()
@@ -86,11 +88,14 @@ class SlotViewportTests(LogSolutionUiTests):
                     def visible(cell):
                         return cell.winfo_rooty() >= top and cell.winfo_rooty() + cell.winfo_height() <= bottom
                     count = sum(visible(row["slot"]) for row in app.status_rows.values())
-                    if expected is not None:
-                        self.assertEqual(count, expected, (capacity, height, language))
                     self.assertGreaterEqual(count, 1)
-                    self.assertLessEqual(count, 10)
+                    self.assertLessEqual(count, capacity)
+                    if capacity > 10 and height == 1200 and root.winfo_screenheight() >= 1050:
+                        self.assertGreater(count, 10, (capacity, height, language, count))
                     self.assertEqual(font.Font(root=root, font=app.status_rows[1]["slot"].cget("font")).actual("size"), 14)
+                    self.assertEqual(app.rows_box.winfo_children()[0].cget("background"), "#000000")
+                    self.assertEqual(ROW_GAP, 1)
+                    self.assertEqual(ROW_HEIGHT, 32)
                     for control in (app.start_button, app.stop_button, app.save_status, app.app_diagnostics_button):
                         self.assertLessEqual(control.winfo_rooty() + control.winfo_height(), root.winfo_rooty() + root.winfo_height())
                         self.assertTrue(control.winfo_ismapped())
@@ -145,7 +150,18 @@ class SlotViewportTests(LogSolutionUiTests):
                         "marker": app.kvm_state_marker,
                     })
                     record.update(capacity=capacity, requested_height=height, screen_height=root.winfo_screenheight(), language=language, visible_rows=count,
-                                  yview=list(app.rows_canvas.yview()), arrow_clicks=arrow_clicks)
+                                  yview=list(app.rows_canvas.yview()), arrow_clicks=arrow_clicks,
+                                  row_height=app.status_rows[1]["slot"].winfo_height(),
+                                  font_requested_height=app.status_rows[1]["slot"].winfo_reqheight(),
+                                  horizontal_grid_width=ROW_GAP,
+                                  vertical_grid_widths=[
+                                      app.status_rows[1]["status"].winfo_x() -
+                                      (app.status_rows[1]["slot"].winfo_x() +
+                                       app.status_rows[1]["slot"].winfo_width()),
+                                      app.status_rows[1]["sn"].winfo_x() -
+                                      (app.status_rows[1]["status"].winfo_x() +
+                                       app.status_rows[1]["status"].winfo_width()),
+                                  ])
                     records.append(record)
         # Capacity reduction must repair a scrolled-to-end position and leave
         # the reserved scrollbar column at the same horizontal location.
@@ -160,6 +176,92 @@ class SlotViewportTests(LogSolutionUiTests):
         if os.environ.get("B518_TK_EVIDENCE_DIR"):
             (Path(os.environ["B518_TK_EVIDENCE_DIR"]) / "st1-matrix.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
 
+    def test_hc2_real_app_rows_fit_font_and_black_grid_at_two_scales(self):
+        root = tk.Tk()
+        root.deiconify()
+        app = B518LogSolutionApp(root, hotkey_factory=FakeHotkey)
+        self.addCleanup(root.destroy)
+        profile = replace(app.profiles.get("B518", "FCT"), project="HC2", capacity=20,
+                          mapping=tuple((slot, slot) for slot in range(1, 21)))
+        app.profiles = app.profiles.with_profile(profile)
+        app.project_choice.configure(values=app.profiles.projects)
+        app.project_choice.set("HC2")
+        app.project_choice.event_generate("<<ComboboxSelected>>")
+        for slot, status in enumerate(("PASS", "FAIL", "TESTING", "NOTEST"), start=1):
+            app._set_row(slot, "HC2SN{:02d}".format(slot), status)
+        root.resizable(True, True)
+        root.minsize(376, 450)
+        root.maxsize(376, 1400)
+        requested_height = min(1200, root.winfo_screenheight() - 64)
+        root.geometry("376x{}+50+40".format(requested_height))
+        original_scaling = float(root.tk.call("tk", "scaling"))
+        evidence = []
+        try:
+            for scaling in (1.0, 1.5):
+                root.tk.call("tk", "scaling", scaling)
+                for _ in range(10):
+                    root.update()
+                    time.sleep(.02)
+                first = app.status_rows[1]
+                row = app.rows_box.winfo_children()[0]
+                self.assertEqual(row.cget("background"), "#000000")
+                self.assertEqual(first["status"].winfo_x() -
+                                 (first["slot"].winfo_x() + first["slot"].winfo_width()), 1)
+                self.assertEqual(first["sn"].winfo_x() -
+                                 (first["status"].winfo_x() + first["status"].winfo_width()), 1)
+                self.assertEqual(row.winfo_height() - first["slot"].winfo_height(), ROW_GAP)
+                self.assertEqual(font.Font(root=root, font=first["slot"].cget("font")).actual("size"), 14)
+                for cell in first.values():
+                    self.assertLessEqual(cell.winfo_reqheight(), ROW_HEIGHT)
+                for slot, status in enumerate(("PASS", "FAIL", "TESTING", "NOTEST"), start=1):
+                    self.assertEqual(app.status_rows[slot]["status"].cget("text"), status)
+                    self.assertEqual(app.status_rows[slot]["status"].cget("background"),
+                                     STATUS_COLOURS[status])
+                    self.assertEqual(app.status_rows[slot]["sn"].cget("text"),
+                                     "HC2SN{:02d}".format(slot))
+
+                top = app.rows_canvas.winfo_rooty() + 1
+                bottom = top + app.rows_canvas.winfo_height() - 2
+                visible = lambda cell: (cell.winfo_rooty() >= top and
+                                        cell.winfo_rooty() + cell.winfo_height() <= bottom)
+                visible_rows = sum(visible(item["slot"]) for item in app.status_rows.values())
+                if root.winfo_screenheight() >= 1050:
+                    self.assertGreater(visible_rows, 10, (scaling, visible_rows))
+
+                app.rows_canvas.yview_moveto(1.0)
+                root.update()
+                self.assertTrue(visible(app.status_rows[20]["slot"]))
+                if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                    controls = {
+                        "canvas": app.rows_canvas, "scrollbar": app.rows_scrollbar,
+                        "first_slot": app.status_rows[1]["slot"],
+                        "last_slot": app.status_rows[20]["slot"], "kvm": app.kvm_results,
+                    }
+                    bottom_screenshot = capture_tk_window_evidence(
+                        root, "hc2-cap20-scale-{}-bottom".format(scaling), "zh-TW", controls)
+                    bottom_screenshot.update(
+                        tk_scaling=scaling, last_row_fully_visible=True,
+                        yview=list(app.rows_canvas.yview()))
+                    app.rows_canvas.yview_moveto(0.0)
+                    root.update()
+                    top_screenshot = capture_tk_window_evidence(
+                        root, "hc2-cap20-scale-{}-top".format(scaling), "zh-TW", controls)
+                    top_screenshot.update(
+                        tk_scaling=scaling,
+                        row_height=first["slot"].winfo_height(),
+                        font_requested_height=first["slot"].winfo_reqheight(),
+                        horizontal_grid_width=ROW_GAP,
+                        vertical_grid_widths=[1, 1], visible_rows=visible_rows,
+                        statuses=["PASS", "FAIL", "TESTING", "NOTEST"],
+                        yview=list(app.rows_canvas.yview()))
+                    evidence.extend((top_screenshot, bottom_screenshot))
+            if os.environ.get("B518_TK_EVIDENCE_DIR"):
+                output = Path(os.environ["B518_TK_EVIDENCE_DIR"]) / "hc2-scaling-measurements.json"
+                output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+        finally:
+            root.tk.call("tk", "scaling", original_scaling)
+
 def load_tests(loader, tests, pattern):
     return unittest.TestSuite([SlotViewportTests(
-        "test_st1_ten_rows_and_small_window_keep_all_slots_reachable")])
+        "test_st1_compact_rows_and_small_window_keep_all_slots_reachable"),
+        SlotViewportTests("test_hc2_real_app_rows_fit_font_and_black_grid_at_two_scales")])

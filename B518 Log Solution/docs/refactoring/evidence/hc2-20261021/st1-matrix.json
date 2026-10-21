@@ -1,0 +1,1298 @@
+[
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        35
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        35
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        249,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap1-h1200-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 1,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 1,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        35
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        35
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        249,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap1-h1200-en.png",
+    "capture_method": "window-server",
+    "capacity": 1,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 1,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        35
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        35
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        249,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap1-h650-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 1,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 1,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        35
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        35
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        249,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap1-h650-en.png",
+    "capture_method": "window-server",
+    "capacity": 1,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 1,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        332
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        332
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        546,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap10-h1200-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 10,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 10,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        332
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        332
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        546,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap10-h1200-en.png",
+    "capture_method": "window-server",
+    "capacity": 10,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 10,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        167
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        167
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        381,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap10-h650-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 10,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 5,
+    "yview": [
+      0.5,
+      1.0
+    ],
+    "arrow_clicks": 11,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        248,
+        346,
+        167
+      ],
+      "scrollbar": [
+        354,
+        248,
+        14,
+        167
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        381,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        61
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap10-h650-en.png",
+    "capture_method": "window-server",
+    "capacity": 10,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 5,
+    "yview": [
+      0.5,
+      1.0
+    ],
+    "arrow_clicks": 11,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        365
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        365
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        606,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap11-h1200-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 11,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 11,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        365
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        365
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        606,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap11-h1200-en.png",
+    "capture_method": "window-server",
+    "capacity": 11,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 11,
+    "yview": [
+      0.0,
+      1.0
+    ],
+    "arrow_clicks": 1,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        134
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        134
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        375,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap11-h650-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 11,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 4,
+    "yview": [
+      0.6363636363636364,
+      1.0
+    ],
+    "arrow_clicks": 18,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        134
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        134
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        375,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap11-h650-en.png",
+    "capture_method": "window-server",
+    "capacity": 11,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 4,
+    "yview": [
+      0.6363636363636364,
+      1.0
+    ],
+    "arrow_clicks": 18,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        705,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap20-h1200-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 20,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 14,
+    "yview": [
+      0.3,
+      1.0
+    ],
+    "arrow_clicks": 5,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x997+50+25",
+    "size": [
+      376,
+      997
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        464
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        464
+      ],
+      "start": [
+        8,
+        773,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        915,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        705,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 25.0,
+      "Width": 376.0,
+      "Height": 1025.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 1025
+    },
+    "screenshot": "st1-cap20-h1200-en.png",
+    "capture_method": "window-server",
+    "capacity": 20,
+    "requested_height": 1200,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 14,
+    "yview": [
+      0.3,
+      1.0
+    ],
+    "arrow_clicks": 5,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        134
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        134
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        375,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap20-h650-zh-TW.png",
+    "capture_method": "window-server",
+    "capacity": 20,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "zh-TW",
+    "visible_rows": 4,
+    "yview": [
+      0.8,
+      1.0
+    ],
+    "arrow_clicks": 41,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "title": "ST1 FCT ATE Log Solution-V0.1.0",
+    "geometry": "376x650+50+40",
+    "size": [
+      376,
+      650
+    ],
+    "controls": {
+      "canvas": [
+        8,
+        275,
+        346,
+        134
+      ],
+      "scrollbar": [
+        354,
+        275,
+        14,
+        134
+      ],
+      "start": [
+        8,
+        426,
+        360,
+        38
+      ],
+      "stop": [
+        8,
+        568,
+        112,
+        38
+      ],
+      "last_slot": [
+        9,
+        375,
+        59,
+        32
+      ],
+      "kvm": [
+        8,
+        95,
+        360,
+        88
+      ],
+      "marker": [
+        258,
+        95,
+        26,
+        26
+      ]
+    },
+    "native_bounds": {
+      "X": 50.0,
+      "Y": 40.0,
+      "Width": 376.0,
+      "Height": 678.0
+    },
+    "image_pixels": {
+      "width": 376,
+      "height": 678
+    },
+    "screenshot": "st1-cap20-h650-en.png",
+    "capture_method": "window-server",
+    "capacity": 20,
+    "requested_height": 650,
+    "screen_height": 1050,
+    "language": "en",
+    "visible_rows": 4,
+    "yview": [
+      0.8,
+      1.0
+    ],
+    "arrow_clicks": 41,
+    "row_height": 32,
+    "font_requested_height": 22,
+    "horizontal_grid_width": 1,
+    "vertical_grid_widths": [
+      1,
+      1
+    ]
+  }
+]

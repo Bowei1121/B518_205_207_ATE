@@ -101,12 +101,12 @@ TEXT_COLOUR = "#111827"
 MUTED_TEXT_COLOUR = "#555555"
 WINDOW_WIDTH = 376
 MAIN_FONT_SIZE = 14
-ROW_HEIGHT = 46
+ROW_HEIGHT = 32
 ROW_GAP = 1
+ROW_GRID_COLOUR = "#000000"
 ROW_WIDTH = 342
 KVM_BAND_HEIGHT = 88
 KVM_SINGLE_ROW_HEIGHT = 61
-DETAIL_ROWS_VISIBLE = 10
 WINDOW_FIXED_HEIGHT = 600
 STATUS_TEMPLATE_STATES = ("PASS", "FAIL", "TESTING", "NOTEST")
 STATUS_COLOURS = {
@@ -390,7 +390,7 @@ class _LocalizedControlHint:
 def visible_detail_rows(capacity: int, screen_height: int) -> int:
     fixed_height = WINDOW_FIXED_HEIGHT if capacity > KVM_COLUMN_COUNT else WINDOW_FIXED_HEIGHT - 27
     screen_limit = max(1, (screen_height - 64 - fixed_height) // (ROW_HEIGHT + ROW_GAP))
-    return min(max(1, capacity), DETAIL_ROWS_VISIBLE, screen_limit)
+    return min(max(1, capacity), screen_limit)
 
 
 def window_height(capacity: int, screen_height: int = 900) -> int:
@@ -985,7 +985,7 @@ class B518LogSolutionApp:
         self.rows_panel.pack_propagate(False)
         self.rows_canvas = tk.Canvas(
             self.rows_panel, background=LIGHT_BACKGROUND, highlightthickness=1,
-            highlightbackground="#111111", borderwidth=0, width=ROW_WIDTH + 2, height=1,
+            highlightbackground=ROW_GRID_COLOUR, borderwidth=0, width=ROW_WIDTH + 2, height=1,
         )
         self.rows_scrollbar = ttk.Scrollbar(
             self.rows_panel, orient="vertical", command=self._scroll_rows, style="Slot.Vertical.TScrollbar")
@@ -997,7 +997,8 @@ class B518LogSolutionApp:
         self.rows_canvas.configure(yscrollcommand=self._set_rows_scrollbar)
         self.rows_canvas.pack(side="left", fill="both", expand=True)
         self.rows_scrollbar.pack(side="right", fill="y")
-        self.rows_box = tk.Frame(self.rows_canvas, background=LIGHT_BACKGROUND, width=ROW_WIDTH + 2, height=1)
+        self.rows_box = tk.Frame(self.rows_canvas, background=LIGHT_BACKGROUND,
+                                 width=ROW_WIDTH + 2, height=1)
         self.rows_canvas_window = self.rows_canvas.create_window((0, 0), anchor="nw", window=self.rows_box)
         self.rows_box.bind("<Configure>", self._update_rows_scroll_region)
         self.rows_canvas.bind("<Configure>", self._resize_rows_content)
@@ -2055,7 +2056,7 @@ class B518LogSolutionApp:
                 vertical_padding = 2 * int(padding)
             occupied += widget.winfo_reqheight() + vertical_padding
         available = self.root.winfo_height() - occupied - 2 * int(body.cget("pady"))
-        rows = min(self._display_capacity(), DETAIL_ROWS_VISIBLE,
+        rows = min(self._display_capacity(),
                    max(1, (available - 2) // (ROW_HEIGHT + ROW_GAP)))
         self.rows_panel.configure(height=rows * (ROW_HEIGHT + ROW_GAP) + 2)
 
@@ -2087,8 +2088,10 @@ class B518LogSolutionApp:
         else:
             self._set_main_monitor_state("monitor.active" if self._round_is_active() else "monitor.idle")
         for slot in range(1, row_count + 1):
-            row = tk.Frame(self.rows_box, background="#111111", width=ROW_WIDTH, height=ROW_HEIGHT)
-            row.place(x=0, y=(slot - 1) * (ROW_HEIGHT + ROW_GAP), width=ROW_WIDTH, height=ROW_HEIGHT)
+            row = tk.Frame(self.rows_box, background=ROW_GRID_COLOUR, width=ROW_WIDTH,
+                           height=ROW_HEIGHT + ROW_GAP)
+            row.place(x=0, y=(slot - 1) * (ROW_HEIGHT + ROW_GAP),
+                      width=ROW_WIDTH, height=ROW_HEIGHT + ROW_GAP)
             row.pack_propagate(False)
             slot_label = tk.Label(row, text=self._t("main.slot", number=slot),
                                   background="#ffffff", foreground="#000000",
