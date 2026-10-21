@@ -202,12 +202,14 @@ class _LocalizedControlHint:
         widget = self._widget
         if widget is None:
             return
+        window = self._window
+        label = self._label
         try:
-            if self._label is not None and self._label.winfo_exists():
-                self._label.configure(text=self._text_provider())
-                self._window.update_idletasks()
-                self._position_window(widget, self._window)
-                self._window.lift()
+            if window is not None and label is not None and label.winfo_exists():
+                label.configure(text=self._text_provider())
+                window.update_idletasks()
+                self._position_window(widget, window)
+                window.lift()
         except tk.TclError:
             self._hide()
 
