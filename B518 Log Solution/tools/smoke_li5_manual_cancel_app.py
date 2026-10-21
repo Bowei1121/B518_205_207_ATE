@@ -94,6 +94,19 @@ def wait_for(root, condition, label, timeout=10):
     raise RuntimeError("Timed out waiting for {}".format(label))
 
 
+def cancellation_control(app, root, round_id):
+    app.round_alarm_button.invoke()
+    wait_for(root, lambda: app.recovery_window is not None and
+             app.recovery_window.winfo_viewable(), "recovery center")
+    app.recovery_tabs.select(2)
+    wait_for(root, lambda: app._recovery_selected_action == ("cancel_round", round_id),
+             "selected cancellation action")
+    button = app.recovery_action_cancel_button
+    if str(button.cget("state")) != "normal":
+        raise RuntimeError("鈴鐺取消操作未啟用")
+    return button
+
+
 def capture(root, path, expected_prefix="B518"):
     import Quartz
     from Foundation import NSURL
@@ -194,19 +207,20 @@ def main():
                 app._apply_round_snapshot(stopped_snapshot)
                 if str(app.start_button.cget("state")) != "disabled":
                     raise RuntimeError("Start stayed enabled before local cancellation after manual stop")
-                if str(app.cancel_unverified_round_button.cget("state")) != "normal":
+                cancel_button = cancellation_control(app, root, stopped_id)
+                if str(cancel_button.cget("state")) != "normal":
                     raise RuntimeError("Cancel control stayed disabled after snapshot render: {}".format(
                         {"active_round_id": app.active_round_id,
                          "snapshot_id": stopped_snapshot.round_id,
                          "available": stopped_snapshot.cancellation_available,
-                         "state": app.cancel_unverified_round_button.cget("state")}))
+                         "state": cancel_button.cget("state")}))
                 try:
-                    wait_for(root, lambda: str(app.cancel_unverified_round_button.cget("state")) == "normal",
+                    wait_for(root, lambda: str(cancel_button.cget("state")) == "normal",
                              "local cancellation control after manual stop")
                 except RuntimeError as error:
                     current = app.rounds.snapshot()
                     raise RuntimeError("{}; snapshot={!r}, button={!r}".format(
-                        error, current, app.cancel_unverified_round_button.cget("state")))
+                        error, current, cancel_button.cget("state")))
                 stopped = app.rounds.snapshot()
                 if stopped.completion_reason != "manual_stop" or not stopped.result_available:
                     raise RuntimeError("Manual stop did not show its local review result")
@@ -216,7 +230,7 @@ def main():
                                 "start_button_state": str(app.start_button.cget("state")),
                                 **capture(root, evidence / "manual-stop-review.png")})
                 with patch.object(app_module.messagebox, "askyesno", return_value=True) as confirm:
-                    app.cancel_unverified_round_button.invoke()
+                    cancel_button.invoke()
                     if not confirm.called:
                         raise RuntimeError("Cancel control skipped explicit confirmation")
                 cancelled = app.rounds.snapshot()
@@ -305,17 +319,18 @@ def main():
                     raise RuntimeError("Acknowledged deadline did not release the settled local result")
                 if str(app.start_button.cget("state")) != "disabled":
                     raise RuntimeError("Start stayed enabled after timeout acknowledgement but before local cancellation")
-                wait_for(root, lambda: str(app.cancel_unverified_round_button.cget("state")) == "normal",
+                cancel_button = cancellation_control(app, root, timed_out_id)
+                wait_for(root, lambda: str(cancel_button.cget("state")) == "normal",
                          "local cancellation after alarm acknowledgement")
                 screens.append({"phase": "preparation_timeout_acknowledged", "round_id": timed_out_id,
                                 "alarm_acknowledged": bool(acknowledged.round_alarm.acknowledged_at),
                                 "result_available": acknowledged.result_available,
                                 "cancellation_available": acknowledged.cancellation_available,
-                                "cancellation_button_state": str(app.cancel_unverified_round_button.cget("state")),
+                                "cancellation_button_state": str(cancel_button.cget("state")),
                                 "start_button_state": str(app.start_button.cget("state")),
                                 **capture(root, evidence / "preparation-timeout-acknowledged.png")})
                 with patch.object(app_module.messagebox, "askyesno", return_value=True) as confirm:
-                    app.cancel_unverified_round_button.invoke()
+                    cancel_button.invoke()
                     if not confirm.called:
                         raise RuntimeError("Timeout cancel skipped explicit confirmation")
                 timed_out_cancelled = app.rounds.snapshot()

@@ -4789,19 +4789,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(badge_text(), "2")
                     app.recovery_alarm_ack_button.invoke()
                     self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
-                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
-                    self.wait_for_ui(root, lambda: badge_text() == "1")
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    self.wait_for_ui(root, lambda: badge_text() == "2")
 
                     app.recovery_tabs.select(1)
                     root.update()
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
-                        self.assertEqual(badge_text(), "1")
+                        self.assertEqual(badge_text(), "2")
                         self.assertTrue(app.notification_badge.winfo_ismapped())
                         app.recovery_window.withdraw()
                         if app.round_alarm_window and app.round_alarm_window.winfo_exists():
                             app.round_alarm_window.withdraw()
-                        capture_main_badge_evidence(app, "hf3-one-save-failure", language,
+                        capture_main_badge_evidence(app, "hf3-save-and-cancellation", language,
                                                     {"bell": app.round_alarm_button,
                                                      "badge": app.notification_badge})
                         app.recovery_window.deiconify()
@@ -4813,8 +4813,25 @@ class LogSolutionUiTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "人工核對"):
                         rounds.start("FCT", AlarmMonitor, run_async=False,
                                      round_timeout_seconds=1, capacity=1)
-                    self.assertTrue(rounds.cancel_unverified_round(
-                        started.round_id, "operator verified and cancelled timed-out round"))
+                    app.recovery_tabs.select(2)
+                    root.update()
+                    self.assertEqual(app._recovery_selected_action,
+                                     ("cancel_round", started.round_id))
+                    self.assertEqual(rounds.snapshot().completion_reason, "round_deadline")
+                    for language, reason in (
+                            (ENGLISH, "FCT round monitoring timed out after 2 seconds (limit 1 seconds)"),
+                            (TRADITIONAL_CHINESE, "FCT 整輪監控逾時：經過 2 秒，期限 1 秒")):
+                        self.set_language_for_test_setup(app, root, language)
+                        self.assertIn(reason, app.recovery_action_detail.get("1.0", "end"))
+                    before_decline = rounds.snapshot()
+                    with patch("b518_log_solution.messagebox.askyesno", return_value=False) as confirm:
+                        app.recovery_action_cancel_button.invoke()
+                    confirm.assert_called_once()
+                    self.assertEqual(rounds.snapshot(), before_decline)
+                    self.assertTrue(rounds.snapshot().cancellation_available)
+                    self.assertEqual(app._pending_notification_count(), 2)
+                    with patch("b518_log_solution.messagebox.askyesno", return_value=True):
+                        app.recovery_action_cancel_button.invoke()
                     self.assertEqual(rounds.snapshot().completion_reason,
                                      "unverified_round_cancelled")
                     self.assertEqual(app._pending_notification_count(), 1)
@@ -4961,6 +4978,12 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.recovery_window.deiconify()
                         app.recovery_window.lift()
                     self.assertEqual(app._pending_notification_count(), 0)
+                    saved = read_round_audit(monitor.session.path / "audit.jsonl")
+                    self.assertTrue(saved["audit_complete"])
+                    self.assertEqual(saved["completion_reason"], "unverified_round_cancelled")
+                    self.assertFalse(saved["result_available"])
+                    self.assertEqual(sum(event["kind"] == "round_cancelled"
+                                         for event in saved["events"]), 1)
             finally:
                 rounds.stop()
                 rounds.request_close()
@@ -4981,10 +5004,19 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.set_language_for_test_setup(app, root, TRADITIONAL_CHINESE)
                 app.round_alarm_button.invoke()
                 root.update()
-                for language, expected in ((ENGLISH, "Acknowledge Round Alarm"),
-                                            (TRADITIONAL_CHINESE, "確認整輪警報")):
+                for language, expected, reset_text, cancel_text, hidden_reset, hidden_cancel in (
+                        (ENGLISH, "Acknowledge Round Alarm", "Acknowledge and Reset",
+                         "Cancel Round and Keep Record", "確認並解除開始鎖定",
+                         "取消本輪並保留紀錄"),
+                        (TRADITIONAL_CHINESE, "確認整輪警報", "確認並解除開始鎖定",
+                         "取消本輪並保留紀錄", "Acknowledge and Reset",
+                         "Cancel Round and Keep Record")):
                     self.set_language_for_test_setup(app, root, language)
                     self.assertEqual(app.recovery_alarm_ack_button.cget("text"), expected)
+                    self.assertEqual(
+                        app.recovery_action_reset_button.cget("text"), reset_text)
+                    self.assertEqual(
+                        app.recovery_action_cancel_button.cget("text"), cancel_text)
                     self.assertEqual(str(app.recovery_alarm_ack_button["state"]), "disabled")
                     capture_recovery_evidence(app, "hf2-zero-alarm", language,
                         {"acknowledge": app.recovery_alarm_ack_button})
@@ -4994,9 +5026,15 @@ class LogSolutionUiTests(unittest.TestCase):
                         {"save_retry": app.recovery_save_retry_button,
                          "archive_retry": app.recovery_archive_retry_button})
                     app.recovery_window.withdraw()
+                    self.set_language_for_test_setup(
+                        app, root, TRADITIONAL_CHINESE if language == ENGLISH else ENGLISH)
                     app.round_alarm_button.invoke()
                     root.update()
                     self.assertEqual(app.recovery_tabs.index("current"), 1)
+                    self.assertEqual(
+                        app.recovery_action_reset_button.cget("text"), hidden_reset)
+                    self.assertEqual(
+                        app.recovery_action_cancel_button.cget("text"), hidden_cancel)
                     app.recovery_tabs.select(0)
             finally:
                 app.hotkey.close()
@@ -8415,11 +8453,18 @@ class LogSolutionUiTests(unittest.TestCase):
         self.assertEqual(failed.start_failure.diagnostic, diagnostic)
         self.assertFalse(failed.result_available)
         self.assertEqual(str(app.start_button.cget("state")), "disabled")
-        self.assertEqual(str(app.reset_start_failure_button.cget("state")), "normal")
+        self.assertIsNone(app.reset_start_failure_button)
+        self.assertIsNone(app.cancel_unverified_round_button)
+        app._open_recovery_center()
+        app.recovery_tabs.select(2)
+        root.update()
+        self.assertEqual(str(app.recovery_action_reset_button.cget("state")), "normal")
+        self.assertEqual(str(app.recovery_action_cancel_button.cget("state")), "disabled")
+        self.assertIn(diagnostic, app.recovery_action_detail.get("1.0", "end"))
         request_id = failed.start_failure.request_id
         app.start_monitor()
         self.assertEqual(app.rounds.snapshot().start_failure.request_id, request_id)
-        app.reset_start_failure_button.invoke()
+        app.recovery_action_reset_button.invoke()
         root.update()
         self.assertIsNone(app.rounds.start_failure_snapshot())
         self.assertFalse(app._round_is_active())

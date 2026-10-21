@@ -38,6 +38,19 @@ def wait_for(root, condition, label, timeout=12):
     raise RuntimeError("Timed out waiting for {}".format(label))
 
 
+def cancellation_control(app, root, round_id):
+    app.round_alarm_button.invoke()
+    wait_for(root, lambda: app.recovery_window is not None and
+             app.recovery_window.winfo_viewable(), "recovery center")
+    app.recovery_tabs.select(2)
+    wait_for(root, lambda: app._recovery_selected_action == ("cancel_round", round_id),
+             "selected cancellation action")
+    button = app.recovery_action_cancel_button
+    if str(button.cget("state")) != "normal":
+        raise RuntimeError("鈴鐺取消操作未啟用")
+    return button
+
+
 def capture(root, path):
     from AppKit import NSApplication, NSBitmapImageFileTypePNG
 
@@ -174,7 +187,7 @@ def main():
                     "state": state_for_round_snapshot(prep_stop).value,
                     **capture(root, evidence / "preparing-stop.png")})
                 with patch.object(app_module.messagebox, "askyesno", return_value=True) as confirm:
-                    app.cancel_unverified_round_button.invoke()
+                    cancellation_control(app, root, prep_id).invoke()
                     if not confirm.called:
                         raise RuntimeError("Unverified preparation stop skipped cancel confirmation")
                 cancelled = app.rounds.snapshot()
