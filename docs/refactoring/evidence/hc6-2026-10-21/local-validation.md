@@ -14,6 +14,8 @@ Implementation branch: `codex/hc6-review-history-diagnostics`, based on `B518-Lo
 
 The true Tk acceptance cases for hover/focus, disabled reasons, live language refresh, and close/reopen were not executed successfully on this worktree. Although the selected runtime imports AppKit and Quartz, Tk cannot initialize a native menu in the current shell session and aborts before unittest output. This is an environment limitation, not a passing UI result. The requested bilingual screenshots and confirmation of the full T16/T17/T19 lifecycle remain outstanding.
 
+The independent review of HEAD `646e40da497c49fec6f884efd0826067c69ecdce` reports four targeted Tk tests and 85 history/language tests passing, plus a two-test screenshot run that produced 22 captures. It identified two invalid captures: the Chinese disabled-cancel filename showed the search hint, and the Chinese alarm-close hint was obscured by an unrelated native window. The review artifacts are in `tmp/reviews/pr115-646e40d/`; they are prior-HEAD evidence and the two noted images are not accepted as visual proof. This revision makes screenshot capture verify the expected hint control and composes only the target app window and its tooltip, excluding unrelated windows. The revised screenshot flow still needs a fresh desktop run and visual check.
+
 Existing acceptance entry points:
 
 - `test_real_tk_close_keeps_conflict_and_alarm_actions_available`

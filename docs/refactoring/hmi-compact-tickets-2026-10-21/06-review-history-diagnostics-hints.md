@@ -44,7 +44,7 @@ None (can start immediately)
 | 歷史查詢：取消 | 查詢中 | Cancel the search in progress; results already shown remain available. | 取消目前的查詢；已顯示的結果仍可查看。 |
 | 歷史查詢：取消 | 閒置 | There is no search in progress to cancel. | 目前沒有進行中的查詢可取消。 |
 | 歷史查詢：重試未完成頁面 | 可重試 | Try loading the remaining pages for this search again; saved records are not changed. | 重新載入這次查詢尚未完成的頁面；不會修改已保存的紀錄。 |
-| 歷史查詢：重試未完成頁面 | 無可重試頁面 | All available pages are ready, so there is nothing to retry. | 目前可用的頁面都已完成，沒有項目需要重試。 |
+| 歷史查詢：重試未完成頁面 | 無可重試頁面 | No history pages are currently available to retry. | 目前沒有可重試的歷史頁面。 |
 | 歷史查詢：重試未完成頁面 | 載入中 | Pages are still loading; wait for this search to finish. | 頁面仍在載入，請等這次查詢完成。 |
 | 歷史查詢：事件／異常清單 | 可用 | Select an event to see its original details and diagnostic information. / Select a source or date warning to see the original event and what went wrong. | 選取事件，查看原始內容及診斷資訊。／選取來源或日期異常項目，查看原始事件及發生問題的說明。 |
 | App 診斷：重試保存 | 有未保存紀錄 | Try saving App troubleshooting records that did not save. | 重新嘗試保存尚未存好的 App 問題紀錄。 |
