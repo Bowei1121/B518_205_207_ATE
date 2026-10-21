@@ -12225,7 +12225,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(str(app.resolve_conflict_candidate_button["state"]),
                                  "disabled")
                 disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("Select a pending conflict", disabled_hint)
+                self.assertIn("Select an item awaiting review", disabled_hint)
                 capture_hover("st5-conflict-candidate-disabled-hint-en.png",
                               app.conflict_window)
                 if os.environ.get("B518_MANUAL_HOVER") == "1":
@@ -12258,14 +12258,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 enabled_hint = hover_hint(app.resolve_conflict_candidate_button)
                 self.assertIs(app.conflict_window.focus_get(),
                               app.resolve_conflict_candidate_button)
-                self.assertIn("accept the captured new candidate", enabled_hint)
-                self.assertNotIn("Select a pending conflict", enabled_hint)
+                self.assertIn("choosing the new candidate", enabled_hint)
+                self.assertIn("Other items awaiting review still need a decision", enabled_hint)
+                self.assertNotIn("Select an item awaiting review", enabled_hint)
                 capture_hover("st5-conflict-candidate-hint-en.png", app.conflict_window)
                 original_hint = hover_hint(app.resolve_conflict_original_button)
-                self.assertIn("keep the captured original result", original_hint)
+                self.assertIn("keeping the original result", original_hint)
                 capture_hover("st5-conflict-original-hint-en.png", app.conflict_window)
                 conflict_close_hint = hover_hint(app.conflict_close_button)
-                self.assertIn("without resolving or removing", conflict_close_hint)
+                self.assertIn("without deciding any result or removing", conflict_close_hint)
                 press_and_release_outside(
                     app.conflict_close_button, "st5-conflict-close-pressed-en.png")
                 self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
@@ -12283,7 +12284,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 alarm_before_hover = rounds.snapshot().round_alarm.acknowledged_at
                 alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("Manually acknowledge", alarm_hint)
+                self.assertIn("Confirm that you have reviewed this round alarm", alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-en.png",
                               app.round_alarm_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
@@ -12303,7 +12304,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 pump_until(lambda: app.round_alarm_window.winfo_viewable())
                 app._select_language(TRADITIONAL_CHINESE)
                 translated_alarm_hint = hover_hint(app.round_alarm_ack_button)
-                self.assertIn("手動確認", translated_alarm_hint)
+                self.assertIn("確認你已查看此輪警報", translated_alarm_hint)
                 capture_hover("st5-round-alarm-acknowledge-hint-zh-TW.png",
                               app.round_alarm_window)
                 translated_alarm_close_hint = hover_hint(app.round_alarm_close_button)
@@ -12314,7 +12315,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 translated_disabled_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("請先選取一筆", translated_disabled_hint)
+                self.assertIn("請先選取待確認項目", translated_disabled_hint)
                 capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
                               app.conflict_window)
                 click_native(app.resolve_conflict_candidate_button)
@@ -12324,14 +12325,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 root.update()
                 translated_conflict_hint = hover_hint(app.resolve_conflict_candidate_button)
-                self.assertIn("人工裁決", translated_conflict_hint)
+                self.assertIn("逐項決定", translated_conflict_hint)
                 capture_hover("st5-conflict-candidate-hint-zh-TW.png",
                               app.conflict_window)
                 translated_original_hint = hover_hint(app.resolve_conflict_original_button)
-                self.assertIn("保留已捕捉原結果", translated_original_hint)
+                self.assertIn("保留這筆原結果", translated_original_hint)
                 capture_hover("st5-conflict-original-hint-zh-TW.png", app.conflict_window)
                 translated_conflict_close_hint = hover_hint(app.conflict_close_button)
-                self.assertIn("不會裁決或移除", translated_conflict_close_hint)
+                self.assertIn("不會替你決定結果或移除", translated_conflict_close_hint)
                 self.assertEqual(len(rounds.snapshot().pending_conflicts), 1)
                 capture_hover("st5-conflict-close-hint-zh-TW.png", app.conflict_window)
                 self.assertEqual(rounds.snapshot().round_alarm.acknowledged_at,
@@ -13726,7 +13727,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._select_language(ENGLISH)
                 root.update()
                 diagnostics_retry_hint = show_hint(app.app_diagnostics_retry_button)
-                self.assertIn("There are no App diagnostic save failures", diagnostics_retry_hint)
+                self.assertIn("no App troubleshooting records waiting", diagnostics_retry_hint)
                 capture_native_window_with_hint(
                     app.app_diagnostics_window,
                     "st6-diagnostics-save-retry-disabled-hint-en.png")
