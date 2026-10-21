@@ -52,3 +52,9 @@
 - 已整理 [正式規格](HMI_COMPACT_FIXED_HEIGHT_SPEC_2026-10-21.md)，包含七章、45 個使用情境及 22 組驗收情境；沿用既有 App／Tk 操作入口、恢復流程與 KVM 影像工具。
 - 發布為 [GitHub Issue #105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)，標記 `ready-for-agent`；本機規格保留同一正文。
 - 本次僅轉換及發布規格，未實作產品、拆分子票或執行產品測試；發布不等於功能已驗收。
+
+## 開發子票發布
+
+- 使用者啟用 to-tickets 並核准八票粒度與依賴後，建立 HC1～HC8（GitHub #106～#113），設為父 #105 的原生子議題並套用 `ready-for-agent`。
+- 原生依賴為 HC3←HC1／HC2、HC4←HC3、HC5←HC1、HC7←HC4、HC8←HC5／HC6／HC7，共 8 條；初始可開始 HC1 #106、HC2 #107、HC6 #111。
+- 逐票驗收、45 個使用情境／22 組驗收覆蓋與遠端編號保存在 [開發票總覽](hmi-compact-tickets-2026-10-21/README.md)。本輪不認領或啟動產品實作，父規格正文與開關狀態維持原樣。

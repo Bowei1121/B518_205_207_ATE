@@ -1,0 +1,93 @@
+{
+  "parent": 105,
+  "parent_content_unchanged": true,
+  "subissue_count": 8,
+  "blocking_edge_count": 8,
+  "issues": [
+    {
+      "ticket": "HC1",
+      "issue": 106,
+      "parent": 105,
+      "blocked_by": [],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC2",
+      "issue": 107,
+      "parent": 105,
+      "blocked_by": [],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC3",
+      "issue": 108,
+      "parent": 105,
+      "blocked_by": [
+        106,
+        107
+      ],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC4",
+      "issue": 109,
+      "parent": 105,
+      "blocked_by": [
+        108
+      ],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC5",
+      "issue": 110,
+      "parent": 105,
+      "blocked_by": [
+        106
+      ],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC6",
+      "issue": 111,
+      "parent": 105,
+      "blocked_by": [],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC7",
+      "issue": 112,
+      "parent": 105,
+      "blocked_by": [
+        109
+      ],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    },
+    {
+      "ticket": "HC8",
+      "issue": 113,
+      "parent": 105,
+      "blocked_by": [
+        110,
+        111,
+        112
+      ],
+      "body_match": true,
+      "state": "OPEN",
+      "label": "ready-for-agent"
+    }
+  ]
+}

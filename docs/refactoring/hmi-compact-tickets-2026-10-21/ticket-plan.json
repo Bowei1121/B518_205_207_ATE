@@ -1,5 +1,5 @@
 {
-  "status": "draft-awaiting-user-approval",
+  "status": "published-verified",
   "parent": 105,
   "parent_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/105",
   "label_after_approval": "ready-for-agent",
@@ -39,7 +39,10 @@
         "零事項仍可開啟；查看、關閉、切分頁或語言不算解決。結果衝突維持原警告入口及獨立計數。",
         "真 App 展示失敗→鈴鐺處理→明確新輪，以及保存後重新讀取紀錄；證明搬移未丟失或重複寫入證據。新入口有中英文操作說明，供 HC5 完成整體白話檢視。"
       ],
-      "file": "01-bell-actions-and-count.md"
+      "file": "01-bell-actions-and-count.md",
+      "issue_number": 106,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/106",
+      "github_database_id": 5959214804
     },
     {
       "id": "HC2",
@@ -69,7 +72,10 @@
         "內部橫線與直線為清楚黑色，狀態背景色與文字可讀性維持；不同縮放均交付實際截圖與列高／線寬量測。",
         "沿用真 App 表格驗收，更新舊十列上限斷言，涵蓋 1、10、11、20 通道及中英文；本票驗收表格行為，不凍結尚待 HC3 決定的整體視窗幾何。"
       ],
-      "file": "02-compact-rows-black-grid.md"
+      "file": "02-compact-rows-black-grid.md",
+      "issue_number": 107,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/107",
+      "github_database_id": 5959215497
     },
     {
       "id": "HC3",
@@ -111,7 +117,10 @@
         "紅字提示區預留固定占位並驗證可容納中英文與件數；實際閃爍由 HC4 交付。本票已有實際 App 可驗證的固定布局成果。",
         "計時超過 99 分鐘仍完整顯示且不被長狀態遮住；原固定定位點、KVM 排列及容量顏色規則不變。"
       ],
-      "file": "03-fixed-startup-layout.md"
+      "file": "03-fixed-startup-layout.md",
+      "issue_number": 108,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/108",
+      "github_database_id": 5959216089
     },
     {
       "id": "HC4",
@@ -149,7 +158,10 @@
         "真 App 覆蓋多種並存事項、長件數、中英文、長計時及長狀態；關閉／重開中心不造成重複閃爍，App 關閉後無失效回呼。",
         "原保存失敗、重試及取消關閉流程保持可操作；閃爍不能被當成 App 心跳或 ATE 開測證據。"
       ],
-      "file": "04-flashing-action-reminder.md"
+      "file": "04-flashing-action-reminder.md",
+      "issue_number": 109,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/109",
+      "github_database_id": 5959216594
     },
     {
       "id": "HC5",
@@ -181,7 +193,10 @@
         "已開視窗與提示依目前語言更新，離開控制項或關窗不留殘影與失效回呼；提示不遮住必要操作與辨識區。",
         "沿用既有提示驗收入口，逐類展示可用／停用及中英文操作，不只檢查資源字串存在。"
       ],
-      "file": "05-main-settings-recovery-hints.md"
+      "file": "05-main-settings-recovery-hints.md",
+      "issue_number": 110,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/110",
+      "github_database_id": 5959217058
     },
     {
       "id": "HC6",
@@ -211,7 +226,10 @@
         "提示不遮住必要操作或辨識區；離開、關閉及重開視窗無殘留提示或失效回呼。",
         "沿用各視窗既有真 App 驗收，涵蓋可用／停用、中英文及關窗；本票與 HC5 分工按使用情境，不另建第二套提示機制。"
       ],
-      "file": "06-review-history-diagnostics-hints.md"
+      "file": "06-review-history-diagnostics-hints.md",
+      "issue_number": 111,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/111",
+      "github_database_id": 5959217544
     },
     {
       "id": "HC7",
@@ -240,7 +258,10 @@
         "產出可供橋接所屬專案配對的樣本與交接說明，不修改橋接程式、遠端命令或 ATE 控制。",
         "本機截圖與 Tk 單位只標記為本機驗收；真實接收影像的像素、縮放與壓縮驗收留給 HC8，不宣稱尚未量測的遠端結果。"
       ],
-      "file": "07-kvm-geometry-handoff.md"
+      "file": "07-kvm-geometry-handoff.md",
+      "issue_number": 112,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/112",
+      "github_database_id": 5959218079
     },
     {
       "id": "HC8",
@@ -332,7 +353,10 @@
         "記錄版本、平台、Python、顯示條件、原始結果與 skip；適用平台的既有必要回歸通過，未驗證的平台不宣稱通過。",
         "依既有同 PR 修正及獨立審查流程交付驗收結果；本票不自動關閉或改寫父議題 #105。"
       ],
-      "file": "08-integrated-and-remote-acceptance.md"
+      "file": "08-integrated-and-remote-acceptance.md",
+      "issue_number": 113,
+      "issue_url": "https://github.com/Bowei1121/B518_205_207_ATE/issues/113",
+      "github_database_id": 5959218632
     }
   ]
 }
