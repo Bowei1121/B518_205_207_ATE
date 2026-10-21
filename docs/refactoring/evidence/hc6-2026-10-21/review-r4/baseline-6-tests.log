@@ -1,0 +1,11 @@
+test_isolated_public_service_sample_measures_reuse_and_degradation (test_historical_event_capacity.HistoricalEventCapacityFixtureTests.test_isolated_public_service_sample_measures_reuse_and_degradation) ... ok
+test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence (test_log_solution_ui.LogSolutionUiTests.test_real_tk_shortcuts_start_rounds_with_session_and_audit_profile_evidence) ... ok
+test_real_tk_start_button_prepares_every_registered_platform_profile (test_log_solution_ui.LogSolutionUiTests.test_real_tk_start_button_prepares_every_registered_platform_profile) ... ok
+test_blocked_preparation_deadline_can_be_acknowledged_cancelled_and_restarted (test_monitoring_round.MonitoringRoundTests.test_blocked_preparation_deadline_can_be_acknowledged_cancelled_and_restarted) ... ok
+test_close_stays_open_when_a_detached_round_fails_disk_verification (test_round_archival.RoundArchivalTests.test_close_stays_open_when_a_detached_round_fails_disk_verification) ... ok
+test_corrupt_round_does_not_stop_another_safe_candidate (test_round_retention.RoundRetentionTests.test_corrupt_round_does_not_stop_another_safe_candidate) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 60.074s
+
+OK

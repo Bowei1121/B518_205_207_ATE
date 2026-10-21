@@ -1,0 +1,6 @@
+test_isolated_public_service_sample_measures_reuse_and_degradation (test_historical_event_capacity.HistoricalEventCapacityFixtureTests.test_isolated_public_service_sample_measures_reuse_and_degradation) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 6.325s
+
+OK

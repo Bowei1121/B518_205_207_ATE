@@ -12250,7 +12250,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         for child in app.conflict_window.winfo_children()
                         if isinstance(child, tk.Toplevel) and child.overrideredirect()
                         and child.winfo_viewable())
-                    self.assertIn("請先選取一筆", translated_disabled_hint)
+                    self.assertIn("請先選取待確認項目", translated_disabled_hint)
                     capture_hover("st5-conflict-candidate-disabled-hint-zh-TW.png",
                                   app.conflict_window)
                     click_native(app.resolve_conflict_candidate_button)

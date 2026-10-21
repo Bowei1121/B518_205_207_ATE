@@ -1,0 +1,13 @@
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... ok
+test_real_tk_history_and_diagnostics_controls_explain_current_actions (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions) ... ok
+test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail) ... ok
+test_app_diagnostics_scroll_position_survives_language_refresh (test_log_solution_ui.LogSolutionUiTests.test_app_diagnostics_scroll_position_survives_language_refresh) ... ok
+test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped) ... ok
+test_real_tk_history_hover_hint_updates_language_and_closes_with_window (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_hover_hint_updates_language_and_closes_with_window) ... ok
+test_hint_refresh_tolerates_close_during_layout (test_log_solution_ui.LogSolutionUiTests.test_hint_refresh_tolerates_close_during_layout) ... ok
+test_real_tk_keeps_later_preparation_failure_visible (test_log_solution_ui.LogSolutionUiTests.test_real_tk_keeps_later_preparation_failure_visible) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 71.117s
+
+OK

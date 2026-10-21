@@ -1,0 +1,26 @@
+test_real_tk_close_keeps_conflict_and_alarm_actions_available (test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_conflict_and_alarm_actions_available) ... ok
+test_real_tk_history_and_diagnostics_controls_explain_current_actions (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions) ... ERROR
+test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_language_refresh_preserves_draft_snapshot_page_and_detail) ... ok
+test_app_diagnostics_scroll_position_survives_language_refresh (test_log_solution_ui.LogSolutionUiTests.test_app_diagnostics_scroll_position_survives_language_refresh) ... ok
+test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_controls_have_names_and_keyboard_activation_is_scoped) ... ok
+test_real_tk_history_hover_hint_updates_language_and_closes_with_window (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_hover_hint_updates_language_and_closes_with_window) ... ok
+
+======================================================================
+ERROR: test_real_tk_history_and_diagnostics_controls_explain_current_actions (test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC6/B518 Log Solution/tests/test_log_solution_ui.py", line 13726, in test_real_tk_history_and_diagnostics_controls_explain_current_actions
+    app._cancel_historical_event_query()
+  File "/private/tmp/B518-HC6/B518 Log Solution/src/b518_log_solution.py", line 4891, in _cancel_historical_event_query
+    hint.refresh()
+  File "/private/tmp/B518-HC6/B518 Log Solution/src/b518_log_solution.py", line 209, in refresh
+    self._position_window(widget, self._window)
+  File "/private/tmp/B518-HC6/B518 Log Solution/src/b518_log_solution.py", line 291, in _position_window
+    if y + window.winfo_reqheight() > min(widget.winfo_screenheight(), owner_bottom):
+           ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'winfo_reqheight'
+
+----------------------------------------------------------------------
+Ran 6 tests in 61.292s
+
+FAILED (errors=1)
