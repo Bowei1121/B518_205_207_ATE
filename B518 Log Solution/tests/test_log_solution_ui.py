@@ -350,7 +350,7 @@ def capture_tk_content_view_evidence(window, key, widgets, output_dir=None):
     }
 
 
-def capture_native_window_with_hint(window, filename):
+def capture_native_window_with_hint(window, filename, expected_hint=None):
     """Capture the real App window and its on-screen tooltip in one native frame."""
     evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
     if not evidence_value:
@@ -359,24 +359,42 @@ def capture_native_window_with_hint(window, filename):
     from Foundation import NSURL
 
     window.lift()
-    for child in window.winfo_children():
-        if isinstance(child, tk.Toplevel) and child.overrideredirect():
-            child.lift()
-    window.update()
+    deadline = time.monotonic() + 3
+    while True:
+        window.update()
+        hint_window = expected_hint._window if expected_hint is not None else None
+        if expected_hint is None or (hint_window is not None and hint_window.winfo_viewable()):
+            break
+        if time.monotonic() >= deadline:
+            raise AssertionError("expected hint is not mapped: {}".format(filename))
+        time.sleep(.01)
+    hint_windows = [child for child in window.winfo_children()
+                    if isinstance(child, tk.Toplevel) and child.overrideredirect()
+                    and child.winfo_viewable()]
+    if expected_hint is not None and hint_window not in hint_windows:
+        raise AssertionError("expected hint is missing: {}".format(filename))
+    for child in hint_windows:
+        child.lift()
+    # Let Aqua paint the resized/translated native tooltip before capturing it.
+    paint_deadline = time.monotonic() + .2
+    while time.monotonic() < paint_deadline:
+        window.update()
+        time.sleep(.01)
+    native_number = native_window_for_capture(window).windowNumber()
+    numbers = [native_number] + [native_window_for_capture(child).windowNumber()
+                                 for child in hint_windows]
+    # Resolve all native IDs before enumerating WindowServer; resolving a newly
+    # mapped hint can itself pump Aqua and invalidate an earlier enumeration.
     native_windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-    native_number = native_window_for_capture(window).windowNumber()
-    native_window = next((item for item in native_windows
-                          if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
-                          and item.get(Quartz.kCGWindowNumber) == native_number), None)
-    if native_window is None:
-        raise AssertionError("missing native window: {}".format(window.title()))
-    selected = [native_window]
-    for child in window.winfo_children():
-        if isinstance(child, tk.Toplevel) and child.overrideredirect() and child.winfo_viewable():
-            number = native_window_for_capture(child).windowNumber()
-            selected.extend(item for item in native_windows
-                            if item.get(Quartz.kCGWindowNumber) == number)
+    selected = [item for item in native_windows
+                if item.get(Quartz.kCGWindowOwnerPID) == os.getpid()
+                and item.get(Quartz.kCGWindowNumber) in numbers]
+    captured_numbers = {item[Quartz.kCGWindowNumber] for item in selected}
+    if set(numbers) != captured_numbers:
+        raise AssertionError("native capture is missing owner/hint windows: {}".format(filename))
+    native_window = next(item for item in selected
+                         if item[Quartz.kCGWindowNumber] == native_number)
     bounds = dict(native_window[Quartz.kCGWindowBounds])
     left = min(item[Quartz.kCGWindowBounds]["X"] for item in selected)
     top = min(item[Quartz.kCGWindowBounds]["Y"] for item in selected)
@@ -1448,7 +1466,10 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 def capture_recovery_hover(key):
                     if evidence_root:
-                        capture_native_window_with_hint(app.recovery_window, key + ".png")
+                        visible_hint = _LocalizedControlHint._visible_hint
+                        self.assertIsNotNone(visible_hint)
+                        capture_native_window_with_hint(
+                            app.recovery_window, key + ".png", expected_hint=visible_hint)
 
                 retry_hint = app._recovery_control_hints[app.recovery_save_retry_button]
                 self.assertEqual(str(app.recovery_save_retry_button.cget("state")), "disabled")
