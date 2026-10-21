@@ -31,3 +31,9 @@
 - 啟動異常解除與未確認輪次取消入口移至鈴鐺；鈴鐺內待處理事項以一致件數及主畫面每秒亮暗的紅字提醒，全部處理完才停閃。結果衝突仍走警告入口。
 - 主頁及子視窗提示與停用原因白話化，同步 English／繁體中文。尚未修改產品程式、量測最終尺寸或重跑產品測試；變更幾何後需更新橋接裁切交接。
 - 詳見 [訪談紀錄](HMI_COMPACT_FIXED_HEIGHT_DISCUSSION_2026-10-21.md) 與 [ADR 0013](../adr/0013-fixed-hmi-geometry-per-display.md)。使用者已明確授權向既有 GitHub 與 Gitea 工作分支推送本輪文件；不自動啟動產品實作或合併。
+
+### HMI to-spec 規格發布
+
+- 使用者指定 to-spec，並確認真 App 畫面操作、異常處理與保存、KVM 影像交接三組驗收入口。
+- [正式規格](HMI_COMPACT_FIXED_HEIGHT_SPEC_2026-10-21.md) 包含七章、45 個使用情境及 22 組驗收情境，發布至 [GitHub Issue #105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)，套用 `ready-for-agent`。
+- 保留未量測的最終尺寸／計時裁切區為實作交付項目；本機布局證據不取代真實 JetKVM 接收影像驗收。本次未修改產品程式、未拆開發票、未重跑產品測試。
