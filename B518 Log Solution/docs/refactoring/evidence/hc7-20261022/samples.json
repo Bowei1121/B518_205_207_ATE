@@ -1,15 +1,21 @@
 {
   "evidence_kind": "local native Tk samples for App contract 1.3; not received JetKVM frames",
   "contract_version": "1.3",
-  "source_compatibility": "partial: bridge geometry matches but bridge main does not classify STALLED (#ff9900)",
-  "capture_origin": "App Tk content-view top-left",
+  "source_compatibility": "geometry and color sampling compatible; App STALLED (#ff9900) is read as TIMEOUT, so its semantics are not preserved",
+  "capture_origin": "Per-image stored raster top-left; timer ROIs are recorded separately for each source image and titlebar condition",
   "KVM_parent_child_coordinates": "Tk units relative to the KVM parent; locate the parent from the two locators",
   "samples": [
     {
       "image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
       "sha256": "92c0e52b9ceffcf422453c012bccbc8a0096a3f22d6e5660b814fbe872faf371",
-      "dimensions_pixels": [752, 1612],
-      "system_resolution": [1440, 900],
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
       "capacity": 1,
       "language": "zh-TW",
       "state": "standby",
@@ -19,8 +25,14 @@
     {
       "image": "../hc3-20261021/hc3-capacity-10-en.png",
       "sha256": "ed3937e5002edeb0bbe5a9f415f9fd603d4fe8e1c908c1abf44b2f401713a685",
-      "dimensions_pixels": [752, 1612],
-      "system_resolution": [1440, 900],
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
       "capacity": 10,
       "language": "en",
       "state": "standby",
@@ -29,8 +41,14 @@
     {
       "image": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
       "sha256": "14727190d6e75b95a081e1cc379a99e236c75a50e5890c70f5e81ac3a11907ea",
-      "dimensions_pixels": [752, 1612],
-      "system_resolution": [1440, 900],
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
       "capacity": 11,
       "language": "zh-TW",
       "state": "standby",
@@ -39,8 +57,14 @@
     {
       "image": "../hc3-20261021/hc3-capacity-20-en.png",
       "sha256": "8e3d540ef2099de35c0c34955c5814dade8a44ee89df6ccd1277fbdc62c86061",
-      "dimensions_pixels": [752, 1612],
-      "system_resolution": [1440, 900],
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
       "capacity": 20,
       "language": "en",
       "state": "standby",
@@ -49,7 +73,10 @@
     {
       "image": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png",
       "sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd",
-      "dimensions_pixels": [752, 1672],
+      "dimensions_pixels": [
+        752,
+        1672
+      ],
       "sample_type": "historical local Tk heartbeat fixture",
       "heartbeat": "0000",
       "remote_measurement": false
@@ -59,8 +86,14 @@
     "cell_size_tk_units": 10,
     "cell_gap_tk_units": 2,
     "quiet_zone_tk_units": 2,
-    "state_origin_tk_units": [250, 0],
-    "heartbeat_origin_tk_units": [278, 0],
+    "state_origin_tk_units": [
+      250,
+      0
+    ],
+    "heartbeat_origin_tk_units": [
+      278,
+      0
+    ],
     "heartbeat_step_ms": 500,
     "heartbeat_state_count": 16,
     "observation_rule": "Three consecutive distinct, fresh, readable heartbeat-region observations unchanged is abnormal; timer, state, result, or reminder changes do not reset the heartbeat comparison.",
@@ -72,5 +105,53 @@
     "remote_compression_threshold": null,
     "remote_occlusion_results": null,
     "remote_measurement": false
+  },
+  "timer_samples": {
+    "normal": {
+      "screenshots": [
+        "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+        "../hc3-20261021/hc3-capacity-10-en.png",
+        "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+        "../hc3-20261021/hc3-capacity-20-en.png"
+      ],
+      "raster_pixels": [
+        752,
+        1612
+      ],
+      "titlebar_included": false,
+      "roi_pixels": [
+        600,
+        1330,
+        136,
+        40
+      ],
+      "verified_glyph_bbox_capacity_10": [
+        654,
+        1339,
+        730,
+        1359
+      ]
+    },
+    "long_minutes": {
+      "image": "../hc3-20261021/hc3-timer-10000-zh-TW.png",
+      "raster_pixels": [
+        752,
+        1668
+      ],
+      "titlebar_included": true,
+      "titlebar_height_pixels": 56,
+      "roi_pixels_in_stored_raster": [
+        600,
+        1386,
+        136,
+        40
+      ],
+      "normalized_content_roi_pixels": [
+        600,
+        1330,
+        136,
+        40
+      ]
+    }
   }
 }
