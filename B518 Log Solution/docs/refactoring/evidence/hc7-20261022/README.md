@@ -12,7 +12,7 @@ Issue：[ #112 — HC7：新版本機幾何量測與 KVM 模板交接](https://g
 
 ## 座標與模板
 
-座標分開記錄 KVM child 相對父框的 Tk 單位，以及每張 timer PNG 自身的 raster 像素座標。四張標準 752×1612、無 titlebar 的樣本使用 `00:00 ROI [600,1330,136,40]`；capacity-10 圖的字形 bbox 為 `[654,1339,730,1359]`。長計時 PNG 是 752×1668 並含 56 px titlebar，原圖 ROI 為 `[600,1386,136,40]`；正規化移除 titlebar 後才是 `[600,1330,136,40]`。之前的標準 ROI `[648,1386,88,40]` 落在空白。這些是本機樣本的 pixel crops，不是 JetKVM stream ROI。
+座標分開記錄 KVM child 相對父框的 Tk 單位，以及每張 timer PNG 自身的 raster 像素座標。HC3 native frame screen y=33，titlebar 高 28 Tk units，因此 Tk content origin 是 screen y=61；絕對 screen y 必須減 61 才是 content y。標準圖不含 titlebar 且為 2 px/Tk，所以 timer content y=665 對應 raster y=1330。四張標準 752×1612、無 titlebar 的樣本使用 `00:00 ROI [600,1330,136,40]`；capacity-10 圖的字形 bbox 為 `[654,1339,730,1359]`。長計時 PNG 是 752×1668 並含 56 px titlebar，原圖 ROI 為 `[600,1386,136,40]`；正規化移除 titlebar 後才是 `[600,1330,136,40]`。之前的標準 ROI `[648,1386,88,40]` 落在空白。這些是本機樣本的 pixel crops，不是 JetKVM stream ROI。
 
 本機樣本沿用 HC3 真 App 截圖（容量 1/10/11/20，英／繁中交錯）及 LS6 真 Tk 心跳截圖。它們供橋接專案確認模板欄位與定位流程，**不代表遠端擷取結果**。樣本路徑與 SHA-256 列在矩陣中；既有 1.3 機器可讀模板為 [`../ls7-kvm/contract.json`](../ls7-kvm/contract.json) 與 [`../ls7-kvm/samples.json`](../ls7-kvm/samples.json)。
 
