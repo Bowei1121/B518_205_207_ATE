@@ -7,6 +7,7 @@ Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規�
 | 項目 | 值 |
 | --- | --- |
 | 整合基準 | `07ab0fbbae8eb50032ca2152f86a881f6d376449`（HC7 PR #120 合併提交） |
+| HC8 回歸／證據提交 | `5e2b85b`；此提交新增跨功能真 Tk 斷言，App runtime source tree 未變 |
 | App source tree | `e32ba1068f361e4540670b0d92739faa50965ffc` |
 | App 版本／顯示契約 | `0.1.0`／`1.3` |
 | 執行日期 | 2026-10-22（Asia/Taipei） |
@@ -80,8 +81,8 @@ Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規�
 
 ## 本次實際執行
 
-1. `B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'`：完整套件在本 commit 啟動一次，但未完成。到第 275 項時卡在 `test_notice_escape_hidden_reopen_and_current_language_lifecycle` 的 modal 關窗；使用者中止前已記錄 **264 passed、3 failed、4 errors、3 skipped，另 1 項執行中**。原始輸出見 `full-suite.log`。因此完整套件結果是**未完成／未通過**，不是全套綠燈。
-2. 31 項整合批次：`test_m10_integration.M10SourceIntegrationTests`、`test_language_catalog.LanguageCatalogTests`、`test_kvm_display_contract.KvmDisplayContractTests`，**31 passed、0 failed、0 skipped**。
+1. `B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'`：在基準 commit `07ab0fb` 啟動完整套件，當時已包含相同 App source tree，尚未加入 HC8 的額外整合斷言。套件未完成：到第 275 項時卡在 `test_notice_escape_hidden_reopen_and_current_language_lifecycle` 的 modal 關窗；中止前已記錄 **264 passed、3 failed、4 errors、3 skipped，另 1 項執行中**。原始輸出見 `full-suite.log`。因此完整套件結果是**未完成／未通過**，不是全套綠燈。
+2. 31 項整合批次在 HC8 回歸提交 `5e2b85b` 上執行：`test_m10_integration.M10SourceIntegrationTests`、`test_language_catalog.LanguageCatalogTests`、`test_kvm_display_contract.KvmDisplayContractTests`，**31 passed、0 failed、0 skipped（15.172s）**。
 3. 15 項真 Tk／布局聚焦批次：**13 passed、1 failed、1 skipped**。失敗 `test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking` 因 `Quartz is None`（原生 macOS 指標輸入不可用）；跳過 `test_fixed_hmi_fits_smaller_supported_display`，測試要求另行啟動 1152×720 實體顯示驗收。其餘 13 項通過。沒有將環境缺少原生輸入或顯示切換能力描述為產品通過。
 4. `python3 'B518 Log Solution/scripts/verify_hc7_evidence.py' 'B518 Log Solution/docs/refactoring/evidence/hc7-20261022/native-matrix'`：`PASS: 32/32 Cartesian cases, 128/128 PNG hashes/dimensions and ROI records`。
 

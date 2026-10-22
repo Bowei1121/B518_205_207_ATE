@@ -2,6 +2,7 @@
   "issue": "Bowei1121/B518_205_207_ATE#113",
   "parent_spec": "Bowei1121/B518_205_207_ATE#105",
   "integration_commit": "07ab0fbbae8eb50032ca2152f86a881f6d376449",
+  "hc8_regression_commit": "5e2b85b",
   "app_source_tree": "e32ba1068f361e4540670b0d92739faa50965ffc",
   "app_version": "0.1.0",
   "display_contract": "1.3",
@@ -20,6 +21,7 @@
     {
       "name": "complete_suite",
       "command": "B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'",
+      "tested_commit": "07ab0fbbae8eb50032ca2152f86a881f6d376449",
       "state": "incomplete_interrupted",
       "terminal_outcomes_before_interrupt": {
         "passed": 264,
@@ -56,7 +58,8 @@
       "failed": 0,
       "errors": 0,
       "skipped": 0,
-      "elapsed_seconds": 18.496,
+      "tested_commit": "5e2b85b",
+      "elapsed_seconds": 15.172,
       "note": "Includes the added reminder-during-multi-window-language-refresh assertions in test_real_source_all_windows_switch_cancel_and_single_decisions."
     },
     {
