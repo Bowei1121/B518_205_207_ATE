@@ -8,5 +8,15 @@
   "latest_published_desktop_evidence": {
     "fixed_geometry": "HC3 real Tk/Quartz evidence at commit 59fc669d43022bcf9088e11085f9a6111c92b1bc",
     "reminder_heartbeat": "HC4 PR #119 independent review at exact source tree 3bee309eea300c2f222b4d6cf5e8c0788dfd83d0; three targeted real Tk cases passed, zero skipped"
+  },
+  "review_followup": {
+    "reviewed_head": "31ffe54b9fbb24fed2f4b99c6d24771fc1971230",
+    "fixed_findings": [
+      "STALLED is classified as TIMEOUT, not UNKNOWN",
+      "timer crops are image/raster-specific",
+      "HC3 source tree differs from HC7 base"
+    ],
+    "outstanding_acceptance": "The post-HC3 bilingual dual-scaling capacity 1/10/11/20 native layout matrix is still incomplete; keep HC7 local acceptance at 3/6 and do not merge.",
+    "crop_check": "sips crops confirmed the normal and long timer glyphs are inside their respective image-specific ROIs; no new Tk matrix was produced."
   }
 }
