@@ -106,7 +106,8 @@
         2
       ],
       "evidence": "../hc3-20261021/hc3-layout-matrix.json",
-      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; source tree differs from HC7 base d03c7b6"
+      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; source tree differs from HC7 base d03c7b6",
+      "tk_content_origin_screen_y": 61
     },
     "smaller_supported": {
       "system_resolution": [
@@ -130,7 +131,8 @@
       "minimum_supported_screen_width": 388,
       "evidence": "../hc3-20261021/hc3-small-display.json",
       "capture_note": "Quartz window capture reports 1x pixels for this evidence; do not infer Retina scale from it.",
-      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; 1152x720 display capture, three visible detail rows"
+      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; 1152x720 display capture, three visible detail rows",
+      "tk_content_origin_screen_y": 61
     }
   },
   "capacity_language_matrix": [
@@ -141,26 +143,26 @@
         376,
         806
       ],
-      "kvm_parent_in_window": [
+      "evidence_image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left",
+      "kvm_parent_in_content": [
         8,
-        123,
+        95,
         360,
         88
       ],
-      "timer_row_in_window": [
+      "timer_row_from_content_origin": [
         8,
-        693,
+        665,
         360,
         20
       ],
-      "timer_widget_in_window": [
+      "timer_widget_from_content_origin": [
         300,
-        693,
+        665,
         68,
         20
-      ],
-      "evidence_image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
-      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+      ]
     },
     {
       "capacity": 10,
@@ -169,26 +171,26 @@
         376,
         806
       ],
-      "kvm_parent_in_window": [
+      "evidence_image": "../hc3-20261021/hc3-capacity-10-en.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left",
+      "kvm_parent_in_content": [
         8,
-        123,
+        95,
         360,
         88
       ],
-      "timer_row_in_window": [
+      "timer_row_from_content_origin": [
         8,
-        693,
+        665,
         360,
         20
       ],
-      "timer_widget_in_window": [
+      "timer_widget_from_content_origin": [
         300,
-        693,
+        665,
         68,
         20
-      ],
-      "evidence_image": "../hc3-20261021/hc3-capacity-10-en.png",
-      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+      ]
     },
     {
       "capacity": 11,
@@ -197,26 +199,26 @@
         376,
         806
       ],
-      "kvm_parent_in_window": [
+      "evidence_image": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left",
+      "kvm_parent_in_content": [
         8,
-        123,
+        95,
         360,
         88
       ],
-      "timer_row_in_window": [
+      "timer_row_from_content_origin": [
         8,
-        693,
+        665,
         360,
         20
       ],
-      "timer_widget_in_window": [
+      "timer_widget_from_content_origin": [
         300,
-        693,
+        665,
         68,
         20
-      ],
-      "evidence_image": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
-      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+      ]
     },
     {
       "capacity": 20,
@@ -225,68 +227,62 @@
         376,
         806
       ],
-      "kvm_parent_in_window": [
+      "evidence_image": "../hc3-20261021/hc3-capacity-20-en.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left",
+      "kvm_parent_in_content": [
         8,
-        123,
+        95,
         360,
         88
       ],
-      "timer_row_in_window": [
+      "timer_row_from_content_origin": [
         8,
-        693,
+        665,
         360,
         20
       ],
-      "timer_widget_in_window": [
+      "timer_widget_from_content_origin": [
         300,
-        693,
+        665,
         68,
         20
-      ],
-      "evidence_image": "../hc3-20261021/hc3-capacity-20-en.png",
-      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+      ]
     }
   ],
   "main_hmi_geometry_tk_units_from_window_content_origin": {
     "kvm_parent": [
       8,
-      123,
+      95,
       360,
       88
     ],
     "table_viewport": [
       8,
-      303,
+      275,
       346,
       266
     ],
     "start_button": [
       8,
-      573,
+      545,
       360,
       38
     ],
     "monitor_state": [
       8,
-      693,
+      665,
       292,
       20
     ],
-    "timer_normal_00_00": [
+    "timer": [
       300,
-      693,
-      68,
-      20
-    ],
-    "timer_long_10000_00": [
-      300,
-      693,
+      665,
       68,
       20
     ],
     "notification_reminder": [
       8,
-      715,
+      687,
       360,
       40
     ]
@@ -295,7 +291,7 @@
     "measurement_status": "rechecked against named source rasters; do not infer image coordinates from Tk widget coordinates",
     "widget_bounds_tk": [
       300,
-      693,
+      665,
       68,
       20
     ],
@@ -350,7 +346,7 @@
       "measured_label_width_tk": 68,
       "roi_verification": "Cropped the original raster at y=1386; the full label is visible. Treating that raster coordinate as content-origin was incorrect."
     },
-    "coordinate_rule": "Each ROI is pixel coordinates in the exact named PNG. For a content-normalized comparison subtract the captured titlebar height from the long-timer raster y; do not reuse one image's raw y coordinate for another capture."
+    "coordinate_rule": "Convert measured screen coordinates using the Tk content origin at screen y=61 (native frame y=33 plus 28 Tk units of titlebar). Standard images omit the 56-pixel titlebar, so their 2x raster y is 2*content_y. The long-timer native raster includes the 56-pixel titlebar and is recorded separately."
   },
   "kvm_parent_relative_contract_1_3_tk_units": {
     "left_locator": [
@@ -480,5 +476,27 @@
     "compression_tolerance": null,
     "occlusion_matrix": null,
     "claim": "Local capture pixels and reminder flashing are not evidence that a remote frame is fresh or readable. HC7 local dual-scaling acceptance is also incomplete."
+  },
+  "coordinate_origin_transform": {
+    "source": "../hc3-20261021/hc3-layout-matrix.json",
+    "native_window_frame_origin_screen_xy": [
+      1052,
+      33
+    ],
+    "native_titlebar_height_tk_units": 28,
+    "tk_content_origin_screen_xy": [
+      1052,
+      61
+    ],
+    "conversion": {
+      "x_content_tk": "screen_x - 1052",
+      "y_content_tk": "screen_y - 61",
+      "standard_capture_raster": "2 pixels per Tk unit; standard PNGs omit the 56-pixel titlebar"
+    },
+    "corrected_examples": {
+      "kvm_parent": "screen y=156 -> content y=95 Tk -> standard raster y=190 px",
+      "timer_row": "screen y=726 -> content y=665 Tk -> standard raster y=1330 px"
+    },
+    "note": "The previous y values subtracted the native frame top (33) instead of the Tk content origin (61), leaving a 28-Tk-unit titlebar offset."
   }
 }
