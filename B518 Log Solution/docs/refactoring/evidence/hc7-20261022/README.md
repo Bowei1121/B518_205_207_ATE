@@ -1,23 +1,37 @@
 # HC7 本機幾何與橋接交接
 
-Issue：[ #112 — HC7：新版本機幾何量測與 KVM 模板交接](https://github.com/Bowei1121/B518_205_207_ATE/issues/112)；父規格：[ #105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)。
+Issue [#112](https://github.com/Bowei1121/B518_205_207_ATE/issues/112)，父規格 [#105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)。
 
-## 結論
+R3 所缺的新版矩陣已實測產出：**32 組、128 張原生 Tk contentView 圖片**。本輪量測 App source `13fad247a8048bfe0f0a26ec6ac910afc41fd33c`；完整程式樹與擷取腳本 SHA 記在 [native-matrix/matrix.json](native-matrix/matrix.json)。這是修正者產出的證據，仍待獨立 session 複查。
 
-- App source `d03c7b6bf56e25cae4ceea58814d78a467bb112c` 的顯示契約維持 **1.3**。HC3 固定高度調整了 App 內 KVM 色帶與計時器的垂直位置；KVM 父框內的定位點、狀態格、排數格、結果色帶與心跳幾何沒有改版。
-- 橋接 `main` HEAD `736bb8b4df5ce87beaf140416f3aea027d3aa1d7` 宣告 contract 1.3。App 的 `STALLED` 與 `TIMEOUT` 都是 `#ff9900`；原 reader 函式把兩者都讀成 `TIMEOUT`，不會回傳 UNKNOWN。結論是幾何與色樣本可讀，但狀態語意會把 STALLED 靜默合併為 TIMEOUT，不能宣稱完整語意相容。
-- HC3 原始資料提供 1440×900 與 1152×720 的固定高度量測；HC4 真 Tk review 提供提醒/計時/心跳行為證據。**HC7 新版雙語、雙 scaling、容量 1/10/11/20 的完整布局矩陣仍未完成**：舊 LS7 只量到歷史 KVM child 座標，不能替代 HC7 幾何驗收。HC7 目前 3/6 項可勾選；詳見 [`geometry-matrix.json`](geometry-matrix.json)。
-- App 的 1.3 顯示欄位沒有改變，不升 App contract version。橋接需由其維護者決定如何區分同色的 STALLED/TIMEOUT，或明確承認兩者為同一語意；不能只新增同色 mapping。此票不修改橋接程式。
-- 本次無真實 JetKVM 接收影像；遠端影像縮放、壓縮、像素大小、遮擋與凍結串流驗收均**未完成**，留給 HC8。所有截圖像素值只屬本機 macOS/Tk 證據。
+## 量測範圍
 
-## 座標與模板
+完整交叉：容量 1/10/11/20 × 英文/繁中 × Tk scaling 1.0/1.5 × 真實顯示模式 1440×900/1152×720。每組保存一般 `00:00`、長計時 `10000:00`＋12件提醒亮色、暗色、清除後，共四張原生影像。
 
-座標分開記錄 KVM child 相對父框的 Tk 單位，以及每張 timer PNG 自身的 raster 像素座標。HC3 native frame screen y=33，titlebar 高 28 Tk units，因此 Tk content origin 是 screen y=61；絕對 screen y 必須減 61 才是 content y。標準圖不含 titlebar 且為 2 px/Tk，所以 timer content y=665 對應 raster y=1330。四張標準 752×1612、無 titlebar 的樣本使用 `00:00 ROI [600,1330,136,40]`；capacity-10 圖的字形 bbox 為 `[654,1339,730,1359]`。長計時 PNG 是 752×1668 並含 56 px titlebar，原圖 ROI 為 `[600,1386,136,40]`；正規化移除 titlebar 後才是 `[600,1330,136,40]`。之前的標準 ROI `[648,1386,88,40]` 落在空白。這些是本機樣本的 pixel crops，不是 JetKVM stream ROI。
+| 真實顯示模式 | Tk scaling | Tk content size | PNG raster | timer content bounds | timer raster ROI |
+| --- | --- | --- | --- | --- | --- |
+| 1440×900 | 1.0 / 1.5 | 376×806 | 752×1612 | [300,665,68,20] | [600,1330,136,40] |
+| 1152×720 | 1.0 / 1.5 | 376×641 | 376×641 | [300,500,68,20] | [300,500,68,20] |
 
-本機樣本沿用 HC3 真 App 截圖（容量 1/10/11/20，英／繁中交錯）及 LS6 真 Tk 心跳截圖。它們供橋接專案確認模板欄位與定位流程，**不代表遠端擷取結果**。樣本路徑與 SHA-256 列在矩陣中；既有 1.3 機器可讀模板為 [`../ls7-kvm/contract.json`](../ls7-kvm/contract.json) 與 [`../ls7-kvm/samples.json`](../ls7-kvm/samples.json)。
+每張圖的控制項座標由 widget-parent 階層量到 Tk content origin；PNG 從真實、已顯示的 NSView contentView 擷取，不含 titlebar。比例依每張圖尺寸實測，不固定套 2×。`controls`、raster 尺寸、timer ROI、實際字形 bbox/count、SHA-256、提醒顏色/文字與心跳值均存於完整矩陣。[geometry-matrix.json](geometry-matrix.json) 提供分組摘要；[samples.json](samples.json) 指向目前樣本目錄。
 
-## 證據版本與限制
+擷取腳本逐組檢查：所有控制項在視窗內；狀態文字與 timer 不重疊；一般/長分鐘及提醒亮暗/清除不推動控制項；128個 timer crop 均含完整字形且四邊有留白；提醒作用時心跳持續變化。容量由真正的 MachineProfileStore 保存後啟動 App，計時與待處理件數以受控輸入驅動畫面；這是布局量測，並非 ATE 實際輪次。
 
-- 固定高度量測來源是 HC3 commit `59fc669d43022bcf9088e11085f9a6111c92b1bc`；其 source tree **不同於** HC7 base `d03c7b6bf56e25cae4ceea58814d78a467bb112c`，因 HC4 有提醒邏輯改動。幾何僅作重用證據；PR #119 HEAD `3bee309eea300c2f222b4d6cf5e8c0788dfd83d0`（與 HC7 base 同 tree）的真 Tk 3/3 通過，驗證固定 bounds、長計時、提醒與心跳獨立。
-- 本次 review 發現上一版一般 timer ROI 裁到空白；目前已按原始 raster 重算並以 `sips` 裁圖確認標準與長計時 crop。timer widget 寬度採 HC3 量測的 68 Tk units，不再使用錯誤的 44。
-- 完整新版雙 scaling 原生截圖仍未取得；此次 Tk/Aqua 矩陣重跑以 exit 134 結束，沒有 unittest 輸出。舊 LS7 矩陣不算 HC7 新布局通過證據。依 review 保留本機驗收未完成：3/6 可勾、1/2/4 未勾。詳細執行記錄見 [`local-run.json`](local-run.json)。
+## 重現與檢查
+
+使用有 macOS Tk/Aqua 與 PyObjC 的 Python，在一般使用者桌面執行：
+
+```sh
+python scripts/capture_hc7_geometry.py --output docs/refactoring/evidence/hc7-20261022/native-matrix
+python scripts/verify_hc7_evidence.py docs/refactoring/evidence/hc7-20261022/native-matrix
+```
+
+命令的 cwd 是 `B518 Log Solution`。擷取時會切換兩個真實顯示模式；正常結束或例外都在 finally 恢復原模式。`--smoke` 只跑一組。離線檢查不需 Tk 桌面，驗證32組完整交叉、128張圖的 hash/尺寸、來源程式樹、腳本hash與ROI座標一致性；字形 bbox/count 是擷取當下的 AppKit 像素量測。
+
+本輪在 Intel macOS15.8.1、Python3.12.10 執行。原 exit134 已用同一 Python 的最小 Tk 程式確認：sandbox內失敗、sandbox外成功；之前「缺 Aqua/Accessibility session」的歸因撤回。本輪沒有變更系統權限。三個既有真Tk回歸亦 3 PASS / 0 skipped（17.858s），詳見 [local-run.json](local-run.json)。
+
+## 契約與限制
+
+App 維持 contract1.3。橋接 `B518_KVM_Log` source `736bb8b4df5ce87beaf140416f3aea027d3aa1d7` 宣告1.3，幾何與色樣本可讀；STALLED與TIMEOUT同為`#ff9900`，原reader都回傳TIMEOUT，屬於語意合併，不能宣稱完整語意相容。本票不修改橋接、遠端命令或ATE控制。
+
+HC3與LS7舊樣本保留歷史追溯；HC7布局驗收改用本次完整native-matrix。648px為程式計算的最低支援高度，不是本輪可用的實際顯示模式；本輪實測720與900px。沒有重跑完整套件，也沒有JetKVM received frame、部署配對、遠端縮放/壓縮/遮擋驗收；後者仍屬HC8。PR需對最新commit獨立複查後，才能合併與關票。

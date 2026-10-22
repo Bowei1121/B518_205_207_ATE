@@ -1,35 +1,53 @@
 {
-  "attempted_at": "2026-10-22",
-  "command": "B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=/private/tmp/hc7-geometry-run B518_TK_CAPTURE_METHOD=window-server PYTHONPATH=src .venv-python31210/bin/python scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities",
-  "working_directory": "B518 Log Solution",
-  "exit_code": 134,
-  "stdout": "",
-  "interpretation": "Tk/Aqua initialization aborted before unittest output in this Codex-launched shell, which has no authorized macOS native GUI/Accessibility session. This is an unavailable remeasurement, not a product assertion failure and not a passing run.",
-  "latest_published_desktop_evidence": {
-    "fixed_geometry": "HC3 real Tk/Quartz evidence at commit 59fc669d43022bcf9088e11085f9a6111c92b1bc",
-    "reminder_heartbeat": "HC4 PR #119 independent review at exact source tree 3bee309eea300c2f222b4d6cf5e8c0788dfd83d0; three targeted real Tk cases passed, zero skipped"
+  "date": "2026-10-22",
+  "runtime": {
+    "macos": "15.8.1",
+    "architecture": "x86_64",
+    "python": "3.12.10",
+    "capture": "real mapped macOS Tk NSView content cache",
+    "execution": "outside Codex filesystem/process sandbox; minimum Tk repro passes",
+    "original_display_resolution_restored": [
+      1440,
+      900
+    ]
   },
-  "review_followup": {
-    "reviewed_head": "31ffe54b9fbb24fed2f4b99c6d24771fc1971230",
-    "fixed_findings": [
-      "STALLED is classified as TIMEOUT, not UNKNOWN",
-      "timer crops are image/raster-specific",
-      "HC3 source tree differs from HC7 base"
-    ],
-    "outstanding_acceptance": "The post-HC3 bilingual dual-scaling capacity 1/10/11/20 native layout matrix is still incomplete; keep HC7 local acceptance at 3/6 and do not merge.",
-    "crop_check": "sips crops confirmed the normal and long timer glyphs are inside their respective image-specific ROIs; no new Tk matrix was produced."
-  },
-  "coordinate_origin_followup": {
-    "corrected_content_origin_screen_y": 61,
-    "native_frame_origin_screen_y": 33,
-    "titlebar_height_tk_units": 28,
-    "corrected_content_y_tk": {
-      "kvm_parent": 95,
-      "table_viewport": 275,
-      "start_button": 545,
-      "monitor_state_and_timer": 665,
-      "notification_reminder": 687
+  "root_cause": {
+    "minimal_repro": "same Python executable: import tkinter; r=tkinter.Tk(); r.destroy()",
+    "inside_Codex_sandbox": {
+      "exit_code": 134,
+      "result": "aborted in Tk initialization"
     },
-    "conversion_applied_to": "geometry-matrix capacity entries, main HMI geometry, timer widget bounds, handoff, README, samples, and project summary"
-  }
+    "outside_Codex_sandbox": {
+      "exit_code": 0,
+      "result": "Tk 8.6.16, 1440x900"
+    },
+    "conclusion": "Sandbox execution prevented Tk initialization. The earlier claim of an unavailable Aqua/Accessibility session was not established; no TCC settings were changed."
+  },
+  "native_matrix_run": {
+    "command": "python scripts/capture_hc7_geometry.py --output docs/refactoring/evidence/hc7-20261022/native-matrix",
+    "working_directory": "B518 Log Solution",
+    "execution": "ordinary macOS desktop outside Codex process sandbox",
+    "exit_code": 0,
+    "result": "PASS 32 cases 128 images; display restored",
+    "manifest": "native-matrix/matrix.json",
+    "stimuli": "Real persisted MachineProfileStore capacity at App startup; both language renderers; injected elapsed snapshot at 0 and 600000 seconds; injected shared pending count 12 then 0. This measures layout, not a live ATE round."
+  },
+  "offline_verification": {
+    "command": "python scripts/verify_hc7_evidence.py docs/refactoring/evidence/hc7-20261022/native-matrix",
+    "exit_code": 0,
+    "result": "32/32 Cartesian cases; 128/128 PNG hashes/dimensions and ROI consistency"
+  },
+  "existing_real_Tk_regressions": {
+    "command": "B518_TK_TESTS=1 python scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_hc4_reminder_flashes_until_pending_count_clears test_log_solution_ui.LogSolutionUiTests.test_real_tk_round_timer_stays_fixed_through_language_and_long_minutes test_log_solution_ui.LogSolutionUiTests.test_real_tk_notification_badge_stays_until_alarm_is_acknowledged",
+    "passed": 3,
+    "skipped": 0,
+    "seconds": 17.858,
+    "exit_code": 0
+  },
+  "limits": [
+    "No full test suite rerun",
+    "No JetKVM received-frame or deployed bridge test",
+    "648px minimum is calculated; native display modes measured are 720px and 900px",
+    "Independent re-review is pending"
+  ]
 }

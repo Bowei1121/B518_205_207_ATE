@@ -1,10 +1,24 @@
 {
-  "evidence_kind": "local native Tk samples for App contract 1.3; not received JetKVM frames",
+  "evidence_kind": "real mapped macOS Tk native content images; local only",
   "contract_version": "1.3",
+  "source_commit": "13fad247a8048bfe0f0a26ec6ac910afc41fd33c",
+  "src_tree": "e32ba1068f361e4540670b0d92739faa50965ffc",
+  "current_sample_manifest": "native-matrix/matrix.json",
+  "case_count": 32,
+  "image_count": 128,
+  "capture_origin": "each live NSView contentView top-left; titlebar excluded; per-image raster scale is measured",
   "source_compatibility": "geometry and color sampling compatible; App STALLED (#ff9900) is read as TIMEOUT, so its semantics are not preserved",
-  "capture_origin": "Per-image stored raster top-left; timer ROIs are recorded separately for each source image and titlebar condition",
-  "KVM_parent_child_coordinates": "Tk units relative to the KVM parent; locate the parent from the two locators",
-  "samples": [
+  "per_image_fields": [
+    "screenshot",
+    "sha256",
+    "image_pixels",
+    "size",
+    "pixels_per_tk_unit",
+    "controls",
+    "timer_roi_pixels",
+    "timer_pixels"
+  ],
+  "legacy_samples": [
     {
       "image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
       "sha256": "92c0e52b9ceffcf422453c012bccbc8a0096a3f22d6e5660b814fbe872faf371",
@@ -82,6 +96,7 @@
       "remote_measurement": false
     }
   ],
+  "legacy_sample_note": "Historical HC3/LS6 reference only. Use current_sample_manifest for the complete HC7 post-HC3 layout matrix.",
   "marker_patterns": {
     "cell_size_tk_units": 10,
     "cell_gap_tk_units": 2,
@@ -105,60 +120,5 @@
     "remote_compression_threshold": null,
     "remote_occlusion_results": null,
     "remote_measurement": false
-  },
-  "timer_samples": {
-    "normal": {
-      "screenshots": [
-        "../hc3-20261021/hc3-capacity-1-zh-TW.png",
-        "../hc3-20261021/hc3-capacity-10-en.png",
-        "../hc3-20261021/hc3-capacity-11-zh-TW.png",
-        "../hc3-20261021/hc3-capacity-20-en.png"
-      ],
-      "raster_pixels": [
-        752,
-        1612
-      ],
-      "titlebar_included": false,
-      "roi_pixels": [
-        600,
-        1330,
-        136,
-        40
-      ],
-      "verified_glyph_bbox_capacity_10": [
-        654,
-        1339,
-        730,
-        1359
-      ]
-    },
-    "long_minutes": {
-      "image": "../hc3-20261021/hc3-timer-10000-zh-TW.png",
-      "raster_pixels": [
-        752,
-        1668
-      ],
-      "titlebar_included": true,
-      "titlebar_height_pixels": 56,
-      "roi_pixels_in_stored_raster": [
-        600,
-        1386,
-        136,
-        40
-      ],
-      "normalized_content_roi_pixels": [
-        600,
-        1330,
-        136,
-        40
-      ]
-    },
-    "widget_bounds_content_tk": [
-      300,
-      665,
-      68,
-      20
-    ]
-  },
-  "tk_content_origin_transform": "HC3 frame origin screen y=33; titlebar is 28 Tk units; Tk content origin screen y=61. Standard no-titlebar raster is 2x Tk content coordinates."
+  }
 }

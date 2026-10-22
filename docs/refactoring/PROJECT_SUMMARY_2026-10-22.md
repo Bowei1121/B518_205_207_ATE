@@ -1,19 +1,10 @@
 # 專案摘要 — 2026-10-22
 
-## 今日接續
-
-- 延續 HMI 子票，處理 GitHub Issue [#112：HC7 新版本機幾何量測與 KVM 模板交接](https://github.com/Bowei1121/B518_205_207_ATE/issues/112)，父規格 [#105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)。
-- HC1–HC6 已關閉；HC3/HC4 整合基底為 `d03c7b6bf56e25cae4ceea58814d78a467bb112c`。HC3 幾何來源 commit `59fc669d43022bcf9088e11085f9a6111c92b1bc` 的 source tree 與此基底不同，因 HC4 更新提醒邏輯；只重用固定幾何，PR #119 同 tree 真 Tk bounds 測試補充驗證。
-- 橋接 repo `Bowei1121/B518_KVM_Log` 的 `main` HEAD `736bb8b4df5ce87beaf140416f3aea027d3aa1d7` 宣告 contract 1.3。App 的 STALLED 和 TIMEOUT 同為 `#ff9900`；橋接 reader 對該顏色回傳 TIMEOUT，會把 STALLED 靜默分類為 TIMEOUT，不是 UNKNOWN/fail-closed。
-
-## PR #120 第二輪審查修正
-
-- 修正 timer raster ROI：四張標準 752×1612、無 titlebar 的樣本用 `[600,1330,136,40]`，capacity-10 字形 bbox 為 `[654,1339,730,1359]`；長 timer 原圖 752×1668 含 56px titlebar，原圖 ROI 是 `[600,1386,136,40]`。timer widget 寬68 Tk units。
-- 修正座標原點：HC3 native frame screen y=33，titlebar 28 Tk units，Tk content origin 為 screen y=61。content y = screen y - 61；內容座標換算為 KVM y95、table y275、start y545、monitor/timer y665、reminder y687。標準 raster 2px/Tk，timer crop y1330 對應 content y665。
-- 相容性、HC3/HC7 source tree 不同的記錄已更正。R2 的原點偏移修正已同步至矩陣、capacity rows、widget bounds、handoff、README、樣本與本摘要。
-- R3 仍未解：新版容量1/10/11/20 × 中英 × 雙 scaling × 支援高度的完整原生布局矩陣尚未取得。Tk/Aqua 重跑 exit 134，無 unittest 輸出。PR #120 維持 draft、不合併；Issue #112 維持 open。
-
-## HC7 交付與限制
-
-- 證據目錄：`B518 Log Solution/docs/refactoring/evidence/hc7-20261022/`（README、幾何矩陣、樣本索引、重跑紀錄）。未修改 App runtime、橋接程式或 ATE 控制。
-- 沒有真實 JetKVM received frame；遠端像素、縮放、壓縮、遮擋與凍結串流未驗收。
+- 指定 Issue #112（HC7），父Spec #105，沿用PR #120分支`codex/hc7-geometry-handoff`。HC1–HC6已完成；App runtime源自已審HC4，contract維持1.3。
+- 前兩輪補正：STALLED/TIMEOUT同色，bridge source`736bb8b`實際回傳TIMEOUT而非UNKNOWN；HC3 source tree與HC7 base不同；內容座標須扣除原生titlebar。舊資料仍保留歷史來源，不作新矩陣通過證據。
+- R3真正阻擋為Tk啟動exit134。以同一Python最小Tk程式確認：Codex sandbox內exit134、sandbox外exit0，Tk8.6.16且可讀1440×900。先前「無Aqua/Accessibility session」的原因判定撤回，未修改系統權限。
+- 已新增`capture_hc7_geometry.py`與`verify_hc7_evidence.py`，在真實macOS桌面取得容量1/10/11/20 × 英/繁中 × scaling1.0/1.5 × 1440×900/1152×720的32組完整矩陣；每組一般計時、長計時與提醒亮/暗/清除共4張，總計128張。
+- 新證據在`B518 Log Solution/docs/refactoring/evidence/hc7-20261022/native-matrix/`，manifest記錄來源commit`13fad247a8048bfe0f0a26ec6ac910afc41fd33c`及src tree、擷取腳本hash、PNG hash/尺寸、內容座標、timer ROI與實際字形bbox/count、提醒色與心跳值。原生顯示模式已恢復。
+- 32/32組控制項不因一般/長計時與提醒亮暗/清除移位，心跳獨立前進；128/128 timer crop含完整字形且有留白；離線128圖hash/尺寸/ROI核對通過。900高ROI`[600,1330,136,40]`為2×，720高ROI`[300,500,68,20]`為1×。
+- 三個既有真Tk回歸3 PASS、0 skipped（17.858s）；未重跑完整套件。648px是計算下限，本輪實測模式720及900px。沒有JetKVM接收影像、部署配對或遠端壓縮/遮擋驗收，仍屬HC8。
+- R3所需實作與本機證據已補齊；同步更新geometry/sample/run/handoff文件。最新commit仍須由獨立session複查；未自行宣稱審查通過，尚未merge或關閉Issue。
