@@ -1,0 +1,15 @@
+test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions) ... FAIL
+
+======================================================================
+FAIL: test_real_source_all_windows_switch_cancel_and_single_decisions (test_m10_integration.M10SourceIntegrationTests.test_real_source_all_windows_switch_cancel_and_single_decisions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/B518-HC8-acceptance/B518 Log Solution/tests/test_m10_integration.py", line 328, in test_real_source_all_windows_switch_cancel_and_single_decisions
+    self.assertEqual(Counter(event["kind"] for event in operations),
+AssertionError: Counter({'round_alarm_acknowledged': 2, 'conflict_r[30 chars]: 2}) != Counter({'conflict_resolved': 1, 'round_alarm_ackno[30 chars]: 1})
+
+----------------------------------------------------------------------
+Ran 1 test in 12.898s
+
+FAILED (failures=1)
+DUPLICATE_OPERATION_MUTATION_DETECTED=True

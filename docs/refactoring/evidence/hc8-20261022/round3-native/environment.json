@@ -1,0 +1,19 @@
+{
+  "executable": "/Users/tsengbowei/Desktop/\u516c\u53f8\u8cc7\u6599/\u5c08\u6848/FQ III/2026/B518/\u5c08\u6848\u540d\u7a31/3. \u7a0b\u5f0f/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python",
+  "python": "3.12.10",
+  "macos": "15.8.1",
+  "architecture": "x86_64",
+  "tk": 8.6,
+  "pyobjc": {
+    "pyobjc-core": "11.1",
+    "pyobjc-framework-Cocoa": "11.1",
+    "pyobjc-framework-Quartz": "11.1"
+  },
+  "screen_capture_access": true,
+  "post_event_access": true,
+  "listen_event_access": true,
+  "display_pixels": [
+    1440,
+    900
+  ]
+}

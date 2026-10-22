@@ -1,0 +1,73 @@
+{
+  "tested_commit": "c79fbc823dc978ee982b4758ed054ff874cde820",
+  "previous_reviewed_commit": "5f575dc018f4bfd9a1c04908538bd364a0da051a",
+  "app_source_tree": "e32ba1068f361e4540670b0d92739faa50965ffc",
+  "environment": {
+    "executable": "/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python",
+    "python": "3.12.10",
+    "macos": "15.8.1",
+    "architecture": "x86_64",
+    "tk": 8.6,
+    "pyobjc": {
+      "pyobjc-core": "11.1",
+      "pyobjc-framework-Cocoa": "11.1",
+      "pyobjc-framework-Quartz": "11.1"
+    },
+    "screen_capture_access": true,
+    "post_event_access": true,
+    "listen_event_access": true,
+    "display_pixels": [
+      1440,
+      900
+    ]
+  },
+  "native_full_suite": {
+    "total": 587,
+    "passed": 583,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 4,
+    "elapsed_seconds": 369.371,
+    "exit_code": 0,
+    "command": "B518_TK_TESTS=1 B518_TK_EVIDENCE_DIR=/private/tmp/hc8-round3/native-captures '/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python' -X faulthandler 'B518 Log Solution/scripts/run_tests.py'",
+    "raw_output": "native-full-suite.log",
+    "skip_reasons": {
+      "prepared_H8_capacity_fixture_unavailable": 2,
+      "explicit_1152x720_physical_display_run": 1,
+      "user_driven_light_dark_appearance_change": 1
+    }
+  },
+  "focused_batch": {
+    "total": 31,
+    "passed": 31,
+    "skipped": 0,
+    "elapsed_seconds": 17.039,
+    "raw_output": "focused.log",
+    "command": "B518_TK_TESTS=1 '/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python' 'B518 Log Solution/scripts/run_tests.py' test_m10_integration.M10SourceIntegrationTests test_language_catalog.LanguageCatalogTests test_kvm_display_contract.KvmDisplayContractTests"
+  },
+  "duplicate_operation_mutation": {
+    "expected_failures": 1,
+    "errors": 0,
+    "elapsed_seconds": 12.898,
+    "detected": true,
+    "raw_output": "duplicate-operation-mutation.log",
+    "script": "check_duplicate_operations.py",
+    "changes_disk_audit": false,
+    "command": "B518_TK_TESTS=1 '/Users/tsengbowei/Desktop/公司資料/專案/FQ III/2026/B518/專案名稱/3. 程式/0. PC/B518 Log Solution/B518 Log Solution/.venv-python31210/bin/python' /private/tmp/hc8-round3/check_duplicate_operations.py"
+  },
+  "capture_files": 235,
+  "png_files": 202,
+  "committed_capture_files": 12,
+  "raw_outputs_sha256": {
+    "native-full-suite.log": "5156ec0bcad3a2d392fd69cbd30646c03a5a99680c80c9e2afc443c34cda5516",
+    "focused.log": "32fddfc9fc104b4bbda519e28d256521beeb4b2c08dc83f77910300977d95b96",
+    "duplicate-operation-mutation.log": "5860b03bf01352c79cf1d9b72d52b5b89899e777bdb51cd7e03de79915fe133f"
+  },
+  "hardware_acceptance": {
+    "T22": "pending",
+    "jetkvm_received_frames": false,
+    "deployed_pairing": false
+  },
+  "independent_review": "new_HEAD_requires_re_review",
+  "issue_may_close": false
+}
