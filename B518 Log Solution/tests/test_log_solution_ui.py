@@ -5020,7 +5020,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 monitor = monitors[0]
                 original_open = Path.open
                 write_attempts = {monitor.session.path: 0}
-                failure_limits = {monitor.session.path: 3}
+                failure_limits = {monitor.session.path: 4}
 
                 def fail_round_event_append(path, mode="r", *args, **kwargs):
                     if path.name == "events.log" and path.parent in failure_limits and mode == "a":
@@ -5050,11 +5050,15 @@ class LogSolutionUiTests(unittest.TestCase):
                                      "#7f1d1d")
 
                     app.close()
-                    self.wait_for_ui(
-                        root, lambda: app.rounds.close_status().status == "failed",
-                        timeout=10)
+                    close_failure_ready = lambda: (
+                        app.rounds.close_status().status == "failed" and
+                        str(app._close_retry_button.cget("state")) == "normal" and
+                        str(app._close_cancel_button.cget("state")) == "normal")
+                    self.wait_for_ui(root, close_failure_ready, timeout=10)
                     self.assertEqual(str(app._close_retry_button.cget("state")), "normal")
                     self.assertEqual(str(app._close_cancel_button.cget("state")), "normal")
+                    app._close_retry_button.invoke()
+                    self.wait_for_ui(root, close_failure_ready, timeout=10)
                     app.cancel_close()
                     self.assertFalse(app._closing_ui)
                     self.assertTrue(root.winfo_exists())
