@@ -494,6 +494,7 @@ class LogSolutionUiTests(unittest.TestCase):
             elapsed = [500.0]
             rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
                                       audit_root=session_root)
+            long_timeout_seconds = 1_000_000
 
             try:
                 app.rounds = rounds
@@ -508,7 +509,14 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_paths["final"].set(str(final))
                 app._apply_profile_editor()
                 app._close_settings()
-                app.start_button.invoke()
+                profile = app._selected_profile()
+                long_timeouts = dict(profile.timeouts)
+                long_timeouts.update(start=long_timeout_seconds,
+                                     round=long_timeout_seconds)
+                with patch.object(
+                        app, "_selected_profile",
+                        return_value=replace(profile, timeouts=long_timeouts)):
+                    app.start_button.invoke()
                 started = rounds.snapshot()
                 self.assertIsNotNone(started)
                 self.assertEqual(app.active_round_id, started.round_id)
@@ -571,6 +579,49 @@ class LogSolutionUiTests(unittest.TestCase):
                                          app.monitor_state.winfo_width()))
                 self.assertEqual(app.monitor_elapsed.winfo_rootx() +
                                  app.monitor_elapsed.winfo_width(), right_edge)
+                app._select_language(ENGLISH)
+                app._set_main_monitor_state("monitor.awaiting_conflicts", count=12345)
+                root.update_idletasks()
+                reminder_geometry = (
+                    app.notification_reminder_frame.winfo_rootx(),
+                    app.notification_reminder_frame.winfo_rooty(),
+                    app.notification_reminder_frame.winfo_width(),
+                    app.notification_reminder_frame.winfo_height(),
+                )
+                state_geometry = (app.monitor_state.winfo_rootx(),
+                                  app.monitor_state.winfo_rooty(),
+                                  app.monitor_state.winfo_width(),
+                                  app.monitor_state.winfo_height())
+                with patch.object(app, "_pending_notification_count", return_value=12):
+                    app._refresh_notification_badge()
+                    self.assertEqual(app.notification_reminder.cget("text"),
+                                     "Items needing attention: 12. Select the bell.")
+                    self.assertIsNotNone(app._notification_reminder_after_id)
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
+                    self.assertEqual(app.monitor_state.cget("text"),
+                                     "Awaiting Review: 12345 conflicts")
+                    self.assertEqual((app.monitor_state.winfo_rootx(),
+                                      app.monitor_state.winfo_rooty(),
+                                      app.monitor_state.winfo_width(),
+                                      app.monitor_state.winfo_height()), state_geometry)
+                    self.assertEqual((app.notification_reminder_frame.winfo_rootx(),
+                                      app.notification_reminder_frame.winfo_rooty(),
+                                      app.notification_reminder_frame.winfo_width(),
+                                      app.notification_reminder_frame.winfo_height()),
+                                     reminder_geometry)
+                    with patch.object(app, "_pending_notification_count", return_value=0):
+                        app._refresh_notification_badge()
+                    self.assertIsNone(app._notification_reminder_after_id)
+                    self.assertEqual(app.notification_reminder.cget("text"), "")
+                    self.assertEqual((app.notification_reminder_frame.winfo_rootx(),
+                                      app.notification_reminder_frame.winfo_rooty(),
+                                      app.notification_reminder_frame.winfo_width(),
+                                      app.notification_reminder_frame.winfo_height()),
+                                     reminder_geometry)
                 root.update()
                 if os.environ.get("B518_TK_EVIDENCE_DIR"):
                     timer_capture = capture_tk_window_evidence(
@@ -690,6 +741,82 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
                 self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
                 root.destroy()
+
+    @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
+                         "requires an accessible macOS Tk desktop session")
+    def test_hc4_reminder_flashes_until_pending_count_clears(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            root.deiconify()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                self.wait_for_ui(root, lambda: root.winfo_ismapped())
+                geometry = self.main_geometry(app, root)
+                with patch.object(app, "_pending_notification_count", return_value=2):
+                    app._refresh_notification_badge()
+                    reminder_timer = app._notification_reminder_after_id
+                    self.assertIsNotNone(reminder_timer)
+                    self.assertNotEqual(reminder_timer, app._heartbeat_after_id)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
+
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#7f1d1d")
+                    heartbeat_state = app._heartbeat_state
+                    self.wait_for_ui(root, lambda: app._heartbeat_state != heartbeat_state,
+                                     timeout=0.8)
+                    reminder_timer = app._notification_reminder_after_id
+                    app._open_recovery_center()
+                    app.recovery_window.withdraw()
+                    switched_language = (TRADITIONAL_CHINESE
+                                         if app.current_language != TRADITIONAL_CHINESE
+                                         else ENGLISH)
+                    app._select_language(switched_language)
+                    self.assertIsNotNone(app._notification_reminder_after_id)
+                    self.assertEqual(app._notification_badge_count, 2)
+                    self.assertEqual(self.main_geometry(app, root), geometry)
+
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#dc2626",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
+
+                    with patch.object(app, "_pending_notification_count", return_value=0):
+                        app._refresh_notification_badge()
+                    self.assertIsNone(app._notification_reminder_after_id)
+                    self.assertEqual(app.notification_reminder.cget("text"), "")
+                    self.assertEqual(self.main_geometry(app, root), geometry)
+
+                    with patch.object(app, "_pending_notification_count", return_value=1):
+                        app._refresh_notification_badge()
+                    self.assertIsNotNone(app._notification_reminder_after_id)
+                    self.assertTrue(app._notification_reminder_bright)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
+                    self.assertEqual(self.main_geometry(app, root), geometry)
+            finally:
+                app.hotkey.close()
+                try:
+                    if root.winfo_exists():
+                        app.rounds.request_close()
+                        self.wait_for_ui(
+                            root, lambda: app.rounds.close_status().status == "complete")
+                        self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                        root.destroy()
+                except tk.TclError:
+                    pass
+                self.assertIsNone(app._notification_reminder_after_id)
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -4893,7 +5020,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 monitor = monitors[0]
                 original_open = Path.open
                 write_attempts = {monitor.session.path: 0}
-                failure_limits = {monitor.session.path: 3}
+                failure_limits = {monitor.session.path: 4}
 
                 def fail_round_event_append(path, mode="r", *args, **kwargs):
                     if path.name == "events.log" and path.parent in failure_limits and mode == "a":
@@ -4906,10 +5033,55 @@ class LogSolutionUiTests(unittest.TestCase):
                     monitor.session.enqueue_event("HF3 notification lifecycle probe")
                     self.wait_for_ui(root, lambda: rounds.snapshot().save_state == "failed")
                     self.wait_for_ui(root, lambda: app._pending_notification_count() == 2)
+                    self.wait_for_ui(root, lambda: "2" in
+                                     app.notification_reminder.cget("text"))
+                    self.assertIsNotNone(app._notification_reminder_after_id)
+                    reminder_geometry = (
+                        app.notification_reminder_frame.winfo_rootx(),
+                        app.notification_reminder_frame.winfo_rooty(),
+                        app.notification_reminder_frame.winfo_width(),
+                        app.notification_reminder_frame.winfo_height(),
+                    )
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#7f1d1d")
+
+                    app.close()
+                    close_failure_ready = lambda: (
+                        app.rounds.close_status().status == "failed" and
+                        str(app._close_retry_button.cget("state")) == "normal" and
+                        str(app._close_cancel_button.cget("state")) == "normal")
+                    self.wait_for_ui(root, close_failure_ready, timeout=10)
+                    self.assertEqual(str(app._close_retry_button.cget("state")), "normal")
+                    self.assertEqual(str(app._close_cancel_button.cget("state")), "normal")
+                    app._close_retry_button.invoke()
+                    self.wait_for_ui(root, close_failure_ready, timeout=10)
+                    app.cancel_close()
+                    self.assertFalse(app._closing_ui)
+                    self.assertTrue(root.winfo_exists())
+                    self.assertEqual(
+                        app.notification_reminder.cget("text"),
+                        app._t("main.notification_reminder", count=2))
+                    self.assertIsNotNone(app._notification_reminder_after_id)
 
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
                         self.wait_for_ui(root, lambda: badge_text() == "2")
+                        expected_reminder = (
+                            "Items needing attention: 2. Select the bell."
+                            if language == ENGLISH else "有 2 件事需要處理，請點鈴鐺。")
+                        self.assertEqual(app.notification_reminder.cget("text"),
+                                         expected_reminder)
+                        self.assertIsNotNone(app._notification_reminder_after_id)
+                        self.assertEqual((
+                            app.notification_reminder_frame.winfo_rootx(),
+                            app.notification_reminder_frame.winfo_rooty(),
+                            app.notification_reminder_frame.winfo_width(),
+                            app.notification_reminder_frame.winfo_height(),
+                        ), reminder_geometry)
                         self.assertTrue(app.notification_badge.winfo_ismapped())
                         if app.round_alarm_window and app.round_alarm_window.winfo_exists():
                             app.round_alarm_window.withdraw()
@@ -4938,6 +5110,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertTrue(app.recovery_window.winfo_viewable())
                     app.recovery_window.withdraw()
                     self.assertEqual(badge_text(), "2")
+                    self.assertIsNotNone(app._notification_reminder_after_id)
                     app.recovery_alarm_ack_button.invoke()
                     self.wait_for_ui(root, lambda: bool(rounds.snapshot().round_alarm.acknowledged_at))
                     self.wait_for_ui(root, lambda: app._pending_notification_count() == 1)
@@ -5001,6 +5174,11 @@ class LogSolutionUiTests(unittest.TestCase):
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
                         self.wait_for_ui(root, lambda: badge_text() == "12")
+                        self.assertEqual(
+                            app.notification_reminder.cget("text"),
+                            ("Items needing attention: 12. Select the bell."
+                             if language == ENGLISH else "有 12 件事需要處理，請點鈴鐺。"),
+                        )
                         capture_main_badge_evidence(app, "hf3-twelve-save-rounds", language,
                                                     {"bell": app.round_alarm_button,
                                                      "badge": app.notification_badge})
@@ -5102,6 +5280,14 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.wait_for_ui(root, lambda: app.notification_badge.winfo_manager() == "")
                     self.assertFalse(app.notification_badge.winfo_ismapped())
                     self.assertEqual(badge_text(), "")
+                    self.assertEqual(app.notification_reminder.cget("text"), "")
+                    self.assertIsNone(app._notification_reminder_after_id)
+                    reminder_geometry = (
+                        app.notification_reminder_frame.winfo_rootx(),
+                        app.notification_reminder_frame.winfo_rooty(),
+                        app.notification_reminder_frame.winfo_width(),
+                        app.notification_reminder_frame.winfo_height(),
+                    )
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
                         app.recovery_window.withdraw()
@@ -5112,13 +5298,90 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.recovery_window.deiconify()
                         app.recovery_window.lift()
                     self.assertEqual(app._pending_notification_count(), 0)
+                    self.set_language_for_test_setup(app, root, ENGLISH)
+                    new_round = rounds.start(
+                        "FCT", AlarmMonitor, run_async=False,
+                        round_timeout_seconds=1, capacity=1)
+                    self.wait_for_ui(
+                        root,
+                        lambda: not rounds.round_snapshot(new_round.round_id)
+                        .source_preparation_pending)
+                    elapsed[0] += 2.0
+                    rounds.poll_once()
+                    self.wait_for_ui(root,
+                                     lambda: rounds.round_snapshot(new_round.round_id)
+                                     .round_alarm_ready)
+                    self.wait_for_ui(
+                        root,
+                        lambda: (app._pending_notification_count() == 1 and
+                                 app.notification_reminder.cget("text") ==
+                                 app._t("main.notification_reminder", count=1) and
+                                 badge_text() == "1"))
+                    self.assertIsNotNone(app._notification_reminder_after_id)
+                    self.assertTrue(app._notification_reminder_bright)
+                    self.assertEqual(
+                        str(app.notification_reminder.cget("foreground")), "#dc2626")
+                    self.assertEqual((app.notification_reminder_frame.winfo_rootx(),
+                                      app.notification_reminder_frame.winfo_rooty(),
+                                      app.notification_reminder_frame.winfo_width(),
+                                      app.notification_reminder_frame.winfo_height()),
+                                     reminder_geometry)
+                    capture_main_badge_evidence(
+                        app, "hf3-restarted-pending", ENGLISH,
+                        {"bell": app.round_alarm_button,
+                         "badge": app.notification_badge})
+
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    app._open_recovery_center()
+                    app.recovery_window.withdraw()
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#dc2626",
+                        timeout=1.5)
+
+                    app.close()
+                    self.wait_for_ui(
+                        root, lambda: app.rounds.close_status().status == "waiting",
+                        timeout=10)
+                    app.cancel_close()
+                    self.assertFalse(app._closing_ui)
+                    self.assertEqual(
+                        app.notification_reminder.cget("text"),
+                        app._t("main.notification_reminder", count=1))
+
+                    app.recovery_tabs.select(0)
+                    root.update()
+                    app.recovery_alarm_ack_button.invoke()
+                    self.wait_for_ui(root, lambda: app._pending_notification_count() == 0)
+                    self.wait_for_ui(root, lambda: app.notification_reminder.cget("text") == "")
+                    app.close()
+                    deadline = time.monotonic() + 10
+
+                    def root_is_alive():
+                        try:
+                            return bool(root.winfo_exists())
+                        except tk.TclError:
+                            return False
+
+                    while time.monotonic() < deadline and root_is_alive():
+                        try:
+                            root.update()
+                        except tk.TclError:
+                            break
+                        time.sleep(.01)
+                    self.assertFalse(root_is_alive())
+                    self.assertIsNone(app._notification_reminder_after_id)
             finally:
-                rounds.stop()
-                rounds.request_close()
-                self.wait_for(lambda: rounds.close_status().status == "complete")
                 app.hotkey.close()
                 try:
-                    root.destroy()
+                    if root.winfo_exists():
+                        rounds.stop()
+                        rounds.request_close()
+                        self.wait_for(lambda: rounds.close_status().status == "complete")
+                        root.destroy()
                 except tk.TclError:
                     pass
 
