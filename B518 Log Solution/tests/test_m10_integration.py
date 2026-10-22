@@ -7,6 +7,7 @@ import subprocess
 import time
 import tkinter as tk
 import unittest
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -321,14 +322,13 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 self.pump(root, destroyed)
                 self.assertTrue(destroyed())
                 audit = read_round_audit(audit_path)
-                kinds = [event["kind"] for event in audit["events"]]
                 operations = [e for e in audit["events"] if e["kind"] in
                               ("conflict_resolved", "round_alarm_acknowledged",
                                "round_cancelled")]
-                self.assertEqual(set(("conflict_resolved", "round_alarm_acknowledged",
-                                      "round_cancelled")) & set(kinds),
-                                 {"conflict_resolved", "round_alarm_acknowledged",
-                                  "round_cancelled"})
+                self.assertEqual(Counter(event["kind"] for event in operations),
+                                 Counter({"conflict_resolved": 1,
+                                          "round_alarm_acknowledged": 1,
+                                          "round_cancelled": 1}))
                 self.assertTrue(any(event["kind"] == "result" and
                                     event["sn"] == "SN-ORIGINAL" and
                                     event["status"] == "PASS" for event in audit["events"]))
