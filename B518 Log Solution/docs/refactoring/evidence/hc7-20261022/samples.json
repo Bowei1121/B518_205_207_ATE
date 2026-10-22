@@ -152,6 +152,13 @@
         136,
         40
       ]
-    }
-  }
+    },
+    "widget_bounds_content_tk": [
+      300,
+      665,
+      68,
+      20
+    ]
+  },
+  "tk_content_origin_transform": "HC3 frame origin screen y=33; titlebar is 28 Tk units; Tk content origin screen y=61. Standard no-titlebar raster is 2x Tk content coordinates."
 }
