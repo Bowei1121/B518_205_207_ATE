@@ -95,3 +95,14 @@ Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規�
 HC7 已記錄橋接 source `Bowei1121/B518_KVM_Log@736bb8b4df5ce87beaf140416f3aea027d3aa1d7` 的 1.3 parser 把橘色 `STALLED` 與 `TIMEOUT` 同樣解讀成 TIMEOUT。此語意缺口由橋接所屬專案處理；配對前須確認橋接版本及相應狀態定義。此記錄不代表橋接已修正或部署。
 
 **本驗收不關閉 #113、不勾 T22、不改寫父規格 #105。** 完成 T22、在可操作的原生 macOS 桌面重跑必要完整回歸，並處理完整套件的 FAIL／ERROR 後，需在同 PR 更新證據並交獨立審查者複查最新 HEAD。
+
+## PR #121 審查修正驗證（2026-10-22）
+
+依 S1／R1／R2 修正後，在原生 macOS 桌面以同一 Python 3.12.10／Tk 8.6 工作環境重新執行。新的整合測試不再 patch 通知件數或讀心跳私有欄位：它以真實來源產生衝突與逾時警報，再對 alarm audit 寫入注入一次性故障；從 Canvas 已繪色格及 badge 文字讀取可見心跳與件數。語言切換期間確認提醒紅字亮／暗持續切換、計時和提醒區座標固定；透過鈴鐺確認警報後，未保存事項仍留在 badge（2→1），操作保存重試後清除（1→0）。接著以 App 的輪次取消操作保留舊結果，從 Start 開啟不同 round ID 的新輪；App 關閉保存後，分別以新 reader 從磁碟重讀舊輪與新輪 audit，核對原結果、衝突決策、警報確認、輪次取消及新輪停止事件。
+
+- 新整合案例：`test_real_source_all_windows_switch_cancel_and_single_decisions` **1/1 PASS**（10.713s）。
+- 完整套件：**587 tests，4 FAIL、6 ERROR、4 skipped**（338.783s），完整逐項輸出見 [`review-fix-full-suite.log`](review-fix-full-suite.log)。原本不完整的 `test_notice_escape_hidden_reopen_and_current_language_lifecycle` 本輪通過；整個 `test_log_solution_ui` 模組亦完整結束（124 tests）。先前疑似間歇的 Atlas profile 啟動測試本次全套通過，獨立重跑也通過。
+- 本輪完整套件的 4 FAIL、6 ERROR 均由此 Python 執行環境缺少 PyObjC 原生模組造成：4 個案例明確因 `Quartz is None`；6 個錯誤分別在 import/capture/input 時遇到 `No module named 'Quartz'`、`No module named 'AppKit'` 或 `NSApplication`／`NSRunningApplication` 為 `None`。這些原生影像、指標、鍵盤與視窗項目尚未驗證，沒有推定為程式通過。原生桌面測試可執行 Tk；目前 3.12.10 與系統 Python 均無 Quartz/AppKit。`test_fixed_hmi_fits_smaller_supported_display` 仍需獨立切換 1152×720 實體螢幕，另 3 項 skip 為既有條件式測試。
+- modal lifecycle 單項 **1/1 PASS**（2.069s），整個 UI 模組 **124 tests** 可結束；完整套件本輪完成，不再停留在 modal 測試。無 PyObjC 的原生桌面環境仍無法滿足 #113 第 6 項的必要原生回歸條件。
+
+因此 S1／R1 的新增整合證據已補上；R2 仍是阻擋：需在含 Quartz／AppKit 的原生桌面 Python 環境重跑並通過必要 UI 回歸。T22 仍沒有 JetKVM received frame／部署配對。#113 繼續保持 OPEN、不勾 T22；PR #121 尚待獨立審查目前 HEAD，不能沿用舊版審查結論。

@@ -41,6 +41,16 @@ def widgets(parent):
         yield from widgets(child)
 
 
+def canvas_text(canvas):
+    return tuple(canvas.itemcget(item, "text") for item in canvas.find_all()
+                 if canvas.type(item) == "text" and canvas.itemcget(item, "text"))
+
+
+def canvas_rectangle_colours(canvas):
+    return tuple(canvas.itemcget(item, "fill") for item in canvas.find_all()
+                 if canvas.type(item) == "rectangle")
+
+
 @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1", "requires desktop Tk")
 class M10SourceIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -96,6 +106,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                                            monotonic=lambda: elapsed[0], **kwargs)
 
             app.round_start_preparation = ClockPreparation()
+            write_fault = [False]
 
             def append(kind, position, sn, status, second):
                 with source_file.open("a", encoding="utf-8") as handle:
@@ -126,42 +137,83 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 app.conflict_list.selection_set(0)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 before = app.rounds.snapshot()
-                with patch.object(app, "_pending_notification_count", return_value=2):
-                    app._refresh_notification_badge()
-                    reminder_bounds = (app.notification_reminder_frame.winfo_x(),
-                                       app.notification_reminder_frame.winfo_y(),
-                                       app.notification_reminder_frame.winfo_width(),
-                                       app.notification_reminder_frame.winfo_height())
-                    timer_bounds = (app.monitor_elapsed.winfo_x(), app.monitor_elapsed.winfo_y(),
-                                    app.monitor_elapsed.winfo_width(),
-                                    app.monitor_elapsed.winfo_height())
-                    initial_heartbeat = app._heartbeat_state
-                    self.pump(root, lambda:
-                              str(app.notification_reminder.cget("foreground")) == "#7f1d1d")
-                    self.pump(root, lambda: app._heartbeat_state != initial_heartbeat)
-                    for index in (1, 0, 1, 0):
-                        app.language_menu.invoke(index)
-                        root.update()
-                        self.assertEqual(app.rounds.snapshot().pending_conflicts,
-                                         before.pending_conflicts)
-                        self.assertEqual(app.profile_editor_capacity.get(), "invalid draft")
-                        self.assertEqual(app._notification_badge_count, 2)
-                        self.assertEqual(app.notification_reminder.cget("text"),
-                                         app._t("main.notification_reminder", count=2))
-                        self.assertEqual((app.notification_reminder_frame.winfo_x(),
-                                          app.notification_reminder_frame.winfo_y(),
-                                          app.notification_reminder_frame.winfo_width(),
-                                          app.notification_reminder_frame.winfo_height()),
-                                         reminder_bounds)
-                        self.assertEqual((app.monitor_elapsed.winfo_x(),
-                                          app.monitor_elapsed.winfo_y(),
-                                          app.monitor_elapsed.winfo_width(),
-                                          app.monitor_elapsed.winfo_height()), timer_bounds)
                 append("final", 2, "SN-OTHER", "PASS", 3)
                 self.pump(root, lambda: app.rounds.snapshot().results[1].status == "PASS")
                 elapsed[0] = 121.0
-                app.rounds.poll_once()
-                self.pump(root, lambda: app.round_alarm_window is not None)
+                # A real timeout alarm and a transient audit-write failure both feed the
+                # bell. Keep the fault scoped to the alarm append, then recover through
+                # the operator's retry control below.
+                import audit_records
+                original_write = audit_records.os.write
+                write_fault[0] = True
+
+                def fail_alarm_audit(descriptor, content):
+                    if write_fault[0] and b"round_alarm_created" in content:
+                        raise OSError("integrated alarm audit fault")
+                    return original_write(descriptor, content)
+
+                with patch.object(audit_records.os, "write", side_effect=fail_alarm_audit):
+                    app.rounds.poll_once()
+                    self.pump(root, lambda: app.round_alarm_window is not None and
+                              app.rounds.snapshot().save_state == "failed")
+                app._refresh_notification_badge()
+                self.assertEqual(canvas_text(app.notification_badge), ("2",))
+                self.assertEqual(app.notification_reminder.cget("text"),
+                                 app._t("main.notification_reminder", count=2))
+                reminder_bounds = (app.notification_reminder_frame.winfo_x(),
+                                   app.notification_reminder_frame.winfo_y(),
+                                   app.notification_reminder_frame.winfo_width(),
+                                   app.notification_reminder_frame.winfo_height())
+                timer_bounds = (app.monitor_elapsed.winfo_x(), app.monitor_elapsed.winfo_y(),
+                                app.monitor_elapsed.winfo_width(),
+                                app.monitor_elapsed.winfo_height())
+                heartbeat_frame = canvas_rectangle_colours(app.kvm_heartbeat_marker)
+                heartbeat_frames = {heartbeat_frame}
+                reminder_colours = {str(app.notification_reminder.cget("foreground"))}
+                for index in (1, 0, 1, 0):
+                    app.language_menu.invoke(index)
+                    previous_frame = heartbeat_frame
+                    self.pump(root, lambda: canvas_rectangle_colours(
+                        app.kvm_heartbeat_marker) != previous_frame)
+                    heartbeat_frame = canvas_rectangle_colours(app.kvm_heartbeat_marker)
+                    heartbeat_frames.add(heartbeat_frame)
+                    target_reminder_colour = (
+                        "#7f1d1d" if str(app.notification_reminder.cget("foreground")) == "#dc2626"
+                        else "#dc2626")
+                    self.pump(root, lambda: str(app.notification_reminder.cget("foreground")) ==
+                              target_reminder_colour)
+                    reminder_colours.add(str(app.notification_reminder.cget("foreground")))
+                    self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                     before.pending_conflicts)
+                    self.assertEqual(app.profile_editor_capacity.get(), "invalid draft")
+                    self.assertEqual(canvas_text(app.notification_badge), ("2",))
+                    self.assertEqual(app.notification_reminder.cget("text"),
+                                     app._t("main.notification_reminder", count=2))
+                    self.assertEqual((app.notification_reminder_frame.winfo_x(),
+                                      app.notification_reminder_frame.winfo_y(),
+                                      app.notification_reminder_frame.winfo_width(),
+                                      app.notification_reminder_frame.winfo_height()),
+                                     reminder_bounds)
+                    self.assertEqual((app.monitor_elapsed.winfo_x(),
+                                      app.monitor_elapsed.winfo_y(),
+                                      app.monitor_elapsed.winfo_width(),
+                                      app.monitor_elapsed.winfo_height()), timer_bounds)
+                self.assertGreater(len(heartbeat_frames), 1)
+                self.assertEqual(reminder_colours, {"#dc2626", "#7f1d1d"})
+                # Acknowledge only the alarm through the bell. The independent failed
+                # save remains visible until its own retry succeeds.
+                app.round_alarm_button.invoke()
+                app.round_alarm_ack_button.invoke()
+                app._refresh_notification_badge()
+                self.assertEqual(canvas_text(app.notification_badge), ("1",))
+                self.assertEqual(app.notification_reminder.cget("text"),
+                                 app._t("main.notification_reminder", count=1))
+                write_fault[0] = False
+                app.retry_save_button.invoke()
+                self.pump(root, lambda: app.rounds.snapshot().save_state == "complete")
+                app._refresh_notification_badge()
+                self.assertEqual(canvas_text(app.notification_badge), ())
+                self.assertEqual(app.notification_reminder.cget("text"), "")
                 windows = (app.settings_window, app.conflict_window, app.round_alarm_window,
                            app.app_diagnostics_window, app.historical_event_window)
                 before = app.rounds.snapshot()
@@ -189,7 +241,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                         ("Setting", "Same-Round Result Conflict",
                          "Round Monitoring Timeout", "App diagnostics", "Historical Events"))
                     self.assertEqual(tuple(w.title() for w in windows), expected_titles)
-                    self.assertIn("確認" if index else "Acknowledge",
+                    self.assertIn("已確認" if index else "acknowledged",
                                   app.round_alarm_message.cget("text"))
                     self.assertIn("原結果" if index else "Original Result",
                                   app.conflict_comparison.get("1.0", "end"))
@@ -239,8 +291,26 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 app.language_menu.invoke(0)
                 self.assertEqual(app.current_language, ENGLISH)
                 app.resolve_conflict_original_button.invoke()
-                app.round_alarm_ack_button.invoke()
                 self.assertFalse(app.rounds.snapshot().pending_conflicts)
+                completed_round_id = before.round_id
+                app._apply_round_snapshot(app.rounds.snapshot())
+                self.assertEqual(str(app.cancel_unverified_round_button.cget("state")),
+                                 "normal")
+                with patch("b518_log_solution.messagebox.askyesno", return_value=True):
+                    app.cancel_unverified_round_button.invoke()
+                self.assertEqual(app.rounds.snapshot().completion_reason,
+                                 "unverified_round_cancelled")
+                self.assertEqual(str(app.start_button.cget("state")), "normal",
+                                 (app.rounds.snapshot().completion_reason,
+                                  app.rounds.start_failure_snapshot(), app._closing_ui))
+                app.start_button.invoke()
+                self.pump(root, lambda: app.rounds.snapshot() is not None and
+                          app.rounds.snapshot().round_id != completed_round_id)
+                new_round_id = app.rounds.snapshot().round_id
+                self.assertNotEqual(new_round_id, completed_round_id)
+                self.pump(root, lambda: app.rounds.session_path is not None and
+                          not app.rounds.snapshot().source_preparation_pending)
+                new_round_audit_path = app.rounds.session_path / "audit.jsonl"
                 app.close()
                 self.pump(root, lambda: app.rounds.close_status().status == "complete")
                 def destroyed():
@@ -251,13 +321,30 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 self.pump(root, destroyed)
                 self.assertTrue(destroyed())
                 audit = read_round_audit(audit_path)
+                kinds = [event["kind"] for event in audit["events"]]
                 operations = [e for e in audit["events"] if e["kind"] in
-                              ("conflict_resolved", "round_alarm_acknowledged")]
-                self.assertEqual(len(operations), 2)
+                              ("conflict_resolved", "round_alarm_acknowledged",
+                               "round_cancelled")]
+                self.assertEqual(set(("conflict_resolved", "round_alarm_acknowledged",
+                                      "round_cancelled")) & set(kinds),
+                                 {"conflict_resolved", "round_alarm_acknowledged",
+                                  "round_cancelled"})
+                self.assertTrue(any(event["kind"] == "result" and
+                                    event["sn"] == "SN-ORIGINAL" and
+                                    event["status"] == "PASS" for event in audit["events"]))
                 self.assertTrue(all(e["localized_message"]["en"] and
                                     e["localized_message"]["zh-TW"] for e in operations))
+                fresh_audit = read_round_audit(new_round_audit_path)
+                self.assertEqual(fresh_audit["events"][0]["kind"], "round_started")
+                self.assertTrue(any(event["kind"] == "collection_stopped"
+                                    for event in fresh_audit["events"]))
                 self.assertTrue(read_app_event_store(journal)["events"])
             finally:
+                write_fault[0] = False
+                snapshot = app.rounds.snapshot()
+                if snapshot is not None and snapshot.save_state == "failed":
+                    app.rounds.retry_saves()
+                    self.pump(root, lambda: app.rounds.snapshot().save_state == "complete")
                 if app.rounds.close_status().status != "complete":
                     app.rounds.stop()
                     snapshot = app.rounds.snapshot()
