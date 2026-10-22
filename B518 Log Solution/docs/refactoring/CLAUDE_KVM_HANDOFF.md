@@ -4,7 +4,9 @@ Date: 2026-10-20 (Asia/Taipei)
 
 This is the App-side handoff for LS7 / GitHub issue #93. It supplies the current local display contract to the bridge maintainer. It does not implement, pair, or deploy a bridge.
 
-## Compatibility gate
+## Compatibility gate — original LS7 snapshot (2026-10-20)
+
+This was the LS7 source snapshot, not the current compatibility decision. The HC7 update below supersedes its bridge version and timer-ROI findings.
 
 | Component snapshot | Version | Compatibility |
 | --- | --- | --- |
@@ -46,7 +48,9 @@ Validate at least these cases: an old timer value still visible in standby befor
 
 Occlusion must be tested independently for the state marker, heartbeat marker, and each required result cell. The top locators do not prove the result strip is visible. Keep the result cells, locators, and markers at their existing positions unless a real remote measurement shows a failure and a coordinated marker resize is measured to avoid overlap.
 
-## Local timer crop
+## Local timer crop — original LS7 geometry
+
+The matrix below is historical. HC3 changed the fixed-height layout and moved the timer; **do not use its timer coordinates for the post-HC3 screen**. The HC7 update below has the current local crop.
 
 The companion `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json` records the current merged App's live Tk widget bounds and reproducible crop ROI for `00:00` and `600:00`, across Tk scaling 1.0/1.5, capacity 1/10/11/20, and English/Traditional Chinese. Each ROI is pixel coordinates relative to its named native content-view screenshot, derived from that capture's measured pixel-to-content-view scale. These are local capture coordinates, not remote KVM pixel coordinates. The JSON points to both normal and long-minute full-window captures and records the timer font, foreground, anchor, widget bounds, and screenshot dimensions.
 
@@ -55,3 +59,23 @@ The companion `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json` records the cu
 The local scale/capacity/language matrix and real Tk screenshots are listed in [`evidence/ls7-kvm/README.md`](evidence/ls7-kvm/README.md). They establish local App rendering only. This machine had no attached external display or discoverable JetKVM capture tool during the LS7 run. No real JetKVM frame was available, so remote per-cell pixel size, remote compression tolerance, and the three separate occlusion checks remain unpassed. Do not infer them from Retina content-view scale or generated/replayed local images.
 
 No files in `B518_JetKVM_Log`, TCP code, or LabVIEW are changed by this ticket. This document is handoff data only; bridge pairing and deployment remain future work.
+
+## HC7 update — 2026-10-22
+
+This section supersedes the original LS7 compatibility and timer-position findings above. It records the App source tree at `d03c7b6bf56e25cae4ceea58814d78a467bb112c` and the bridge source inspected on 2026-10-22.
+
+| Component source | Contract | Decision |
+| --- | --- | --- |
+| App `B518_205_207_ATE`, `B518 Log Solution/src/kvm_display_contract.py`, tree `d03c7b6` | `1.3` | Current App-side source |
+| Bridge `B518_KVM_Log` `main`, HEAD `736bb8b4df5ce87beaf140416f3aea027d3aa1d7`, `host-app/log_solution_reader.py` | `1.3` | Geometry matches; partial status compatibility |
+| Deployed App + bridge + JetKVM capture | Unknown | Not verified |
+
+The App and bridge reader agree on the contract version, locator origins, orientation insets, state and heartbeat origins, row marker, result-cell geometry, and the status colors the reader samples. One gap remains: App contract 1.3 can render `STALLED` as `#ff9900`, but the bridge reader's `STATUS_COLORS` has `TIMEOUT` at that color and no `STALLED` key. A STALLED slot is consequently `UNKNOWN`, and the bridge marks that frame unreliable. Geometry is compatible, but full-state pairing is not. The App contract's published fields have not changed, so do not bump the App version; the bridge implementation needs to recognize STALLED before claiming complete source compatibility. This ticket records that gap without editing the bridge project.
+
+The App HMI moved the whole KVM parent within its fixed-height window; the children stayed at their contract-relative coordinates. The bridge must locate the parent from the two locators and derive its crops from that origin, not reuse a pre-HC3 absolute window position.
+
+The HC3 local 1440×900 capture measured a 376×806 Tk client and a 752×1612 content raster (2× local capture scale). The current root-relative timer row is `y=693`; the KVM parent begins at `y=123`. Timer crop, measured controls, both supported screen samples, and provenance are in [`evidence/hc7-20261022/geometry-matrix.json`](evidence/hc7-20261022/geometry-matrix.json). For the normal `00:00` label the content-view ROI is `[648, 1386, 88, 40]`; for `10000:00` it is `[600, 1386, 136, 40]`. These are local evidence coordinates only, not JetKVM coordinates.
+
+HC4's latest accepted real Tk review confirms that the one-second red reminder can flash and clear while the 500 ms KVM heartbeat advances independently; the timer, state, and fixed reminder bounds remain unchanged, and the reminder callback is cleaned up on close. Red text and timer movement are not substitutes for heartbeat or existing test-start evidence. Use only the heartbeat crop to evaluate heartbeat freshness; continue to use the existing independent readiness/activity/result rules.
+
+`B518_KVM_Log` source currently declares 1.3. The App contract version is unchanged, but complete pairing is blocked by the bridge's missing STALLED color mapping. No bridge source change is made in this ticket. There is no current received JetKVM image, deployed binary pair, remote scale, or compression measurement. HC7 local screenshots and Tk geometry do not pass HC8 remote-frame acceptance.
