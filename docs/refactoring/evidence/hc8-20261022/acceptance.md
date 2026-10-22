@@ -98,6 +98,8 @@ HC7 已記錄橋接 source `Bowei1121/B518_KVM_Log@736bb8b4df5ce87beaf140416f3ae
 
 ## PR #121 審查修正驗證（2026-10-22）
 
+整合測試變更與本次完整回歸輸出所對應的提交：`fe4b31b7a046bf43ab752007b0cadd888fe3c468`。
+
 依 S1／R1／R2 修正後，在原生 macOS 桌面以同一 Python 3.12.10／Tk 8.6 工作環境重新執行。新的整合測試不再 patch 通知件數或讀心跳私有欄位：它以真實來源產生衝突與逾時警報，再對 alarm audit 寫入注入一次性故障；從 Canvas 已繪色格及 badge 文字讀取可見心跳與件數。語言切換期間確認提醒紅字亮／暗持續切換、計時和提醒區座標固定；透過鈴鐺確認警報後，未保存事項仍留在 badge（2→1），操作保存重試後清除（1→0）。接著以 App 的輪次取消操作保留舊結果，從 Start 開啟不同 round ID 的新輪；App 關閉保存後，分別以新 reader 從磁碟重讀舊輪與新輪 audit，核對原結果、衝突決策、警報確認、輪次取消及新輪停止事件。
 
 - 新整合案例：`test_real_source_all_windows_switch_cancel_and_single_decisions` **1/1 PASS**（10.713s）。
