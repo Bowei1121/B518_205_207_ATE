@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-22",
+  "runtime": {
+    "macos": "15.8.1",
+    "architecture": "x86_64",
+    "python": "3.12.10",
+    "capture": "real mapped macOS Tk NSView content cache",
+    "execution": "outside Codex filesystem/process sandbox; minimum Tk repro passes",
+    "original_display_resolution_restored": [
+      1440,
+      900
+    ]
+  },
+  "root_cause": {
+    "minimal_repro": "same Python executable: import tkinter; r=tkinter.Tk(); r.destroy()",
+    "inside_Codex_sandbox": {
+      "exit_code": 134,
+      "result": "aborted in Tk initialization"
+    },
+    "outside_Codex_sandbox": {
+      "exit_code": 0,
+      "result": "Tk 8.6.16, 1440x900"
+    },
+    "conclusion": "Sandbox execution prevented Tk initialization. The earlier claim of an unavailable Aqua/Accessibility session was not established; no TCC settings were changed."
+  },
+  "native_matrix_run": {
+    "command": "python scripts/capture_hc7_geometry.py --output docs/refactoring/evidence/hc7-20261022/native-matrix",
+    "working_directory": "B518 Log Solution",
+    "execution": "ordinary macOS desktop outside Codex process sandbox",
+    "exit_code": 0,
+    "result": "PASS 32 cases 128 images; display restored",
+    "manifest": "native-matrix/matrix.json",
+    "stimuli": "Real persisted MachineProfileStore capacity at App startup; both language renderers; injected elapsed snapshot at 0 and 600000 seconds; injected shared pending count 12 then 0. This measures layout, not a live ATE round."
+  },
+  "offline_verification": {
+    "command": "python scripts/verify_hc7_evidence.py docs/refactoring/evidence/hc7-20261022/native-matrix",
+    "exit_code": 0,
+    "result": "32/32 Cartesian cases; 128/128 PNG hashes/dimensions and ROI consistency"
+  },
+  "existing_real_Tk_regressions": {
+    "command": "B518_TK_TESTS=1 python scripts/run_tests.py test_log_solution_ui.LogSolutionUiTests.test_hc4_reminder_flashes_until_pending_count_clears test_log_solution_ui.LogSolutionUiTests.test_real_tk_round_timer_stays_fixed_through_language_and_long_minutes test_log_solution_ui.LogSolutionUiTests.test_real_tk_notification_badge_stays_until_alarm_is_acknowledged",
+    "passed": 3,
+    "skipped": 0,
+    "seconds": 17.858,
+    "exit_code": 0
+  },
+  "limits": [
+    "No full test suite rerun",
+    "No JetKVM received-frame or deployed bridge test",
+    "648px minimum is calculated; native display modes measured are 720px and 900px",
+    "Independent re-review is pending"
+  ]
+}

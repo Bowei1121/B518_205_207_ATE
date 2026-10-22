@@ -1,0 +1,601 @@
+{
+  "ticket": "Bowei1121/B518_205_207_ATE#112",
+  "parent_spec": "Bowei1121/B518_205_207_ATE#105",
+  "app": {
+    "version": "0.1.0",
+    "display_contract": "1.3",
+    "measured_source_commit": "13fad247a8048bfe0f0a26ec6ac910afc41fd33c",
+    "measured_src_tree": "e32ba1068f361e4540670b0d92739faa50965ffc"
+  },
+  "bridge": {
+    "repository": "Bowei1121/B518_KVM_Log",
+    "branch": "main",
+    "source_commit": "736bb8b4df5ce87beaf140416f3aea027d3aa1d7",
+    "reader_contract": "1.3",
+    "source_compatibility": "geometry and color sampling compatible; STALLED aliases TIMEOUT, so status semantics are incompatible",
+    "deployed_pairing_verified": false,
+    "reason": "The App emits the same #ff9900 color for STALLED and TIMEOUT. At bridge source 736bb8b4df5ce87beaf140416f3aea027d3aa1d7, the original reader samples that color as TIMEOUT; it does not return UNKNOWN and does not distinguish STALLED. No live deployed pair or JetKVM frame was available.",
+    "app_contract_version_bump": "not required; the App's published 1.3 display fields have not changed. The bridge 1.3 implementation gap is recorded for its owning project.",
+    "status_color_aliases": {
+      "app_statuses": [
+        "STALLED",
+        "TIMEOUT"
+      ],
+      "app_color": "#ff9900",
+      "bridge_color_mapping": "TIMEOUT",
+      "reader_result_for_either_color": "TIMEOUT",
+      "semantic_loss": "STALLED is silently classified as TIMEOUT; adding another identical color mapping cannot distinguish the states."
+    }
+  },
+  "current_native_measurement": {
+    "manifest": "native-matrix/matrix.json",
+    "captured_at_utc": "2026-10-22T06:01:13.685900+00:00",
+    "capture_script": "../../../../scripts/capture_hc7_geometry.py",
+    "case_count": 32,
+    "image_count": 128,
+    "matrix_axes": {
+      "display_resolutions": [
+        [
+          1440,
+          900
+        ],
+        [
+          1152,
+          720
+        ]
+      ],
+      "tk_scalings": [
+        1.0,
+        1.5
+      ],
+      "capacities": [
+        1,
+        10,
+        11,
+        20
+      ],
+      "languages": [
+        "en",
+        "zh-TW"
+      ]
+    },
+    "states": [
+      "normal-clear",
+      "long-pending-bright",
+      "long-pending-dim",
+      "long-cleared"
+    ],
+    "capture_method": "live mapped macOS Tk NSView content cache; native titlebar excluded",
+    "coordinate_rule": "Controls are measured by summing widget-parent winfo_x/y to the Tk content root. Each raster ROI is that image control rectangle multiplied by its measured x/y pixel ratio; no window frame offset is inferred.",
+    "recorded_per_image": [
+      "PNG filename and SHA-256",
+      "Tk/content and native frame dimensions",
+      "raster dimensions and pixel ratio",
+      "all control bounds",
+      "timer ROI and actual dark glyph bbox/count",
+      "pending count, reminder color/text and heartbeat state"
+    ],
+    "environment": {
+      "macos": "15.8.1",
+      "architecture": "x86_64",
+      "python": "3.12.10",
+      "capture": "real mapped macOS Tk NSView content cache",
+      "execution": "outside Codex filesystem/process sandbox; minimum Tk repro passes",
+      "original_display_resolution_restored": [
+        1440,
+        900
+      ]
+    }
+  },
+  "layout_groups": [
+    {
+      "display_resolution": [
+        1440,
+        900
+      ],
+      "requested_tk_scaling": 1.0,
+      "actual_tk_scaling_values": [
+        0.9999999999999999
+      ],
+      "case_count": 8,
+      "image_count": 32,
+      "tk_content_size": [
+        376,
+        806
+      ],
+      "image_pixels": {
+        "width": 752,
+        "height": 1612
+      },
+      "pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "visible_detail_rows": 8,
+      "computed_minimum_screen_height": 648,
+      "controls_content_tk": {
+        "kvm_parent": [
+          8,
+          95,
+          360,
+          88
+        ],
+        "left_locator": [
+          8,
+          97,
+          22,
+          22
+        ],
+        "right_locator": [
+          328,
+          97,
+          22,
+          22
+        ],
+        "row_count_marker": [
+          138,
+          97,
+          26,
+          14
+        ],
+        "state_marker": [
+          258,
+          95,
+          26,
+          26
+        ],
+        "heartbeat_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "first_result": [
+          8,
+          129,
+          34,
+          26
+        ],
+        "table": [
+          8,
+          275,
+          346,
+          266
+        ],
+        "start": [
+          8,
+          545,
+          360,
+          38
+        ],
+        "monitor_state": [
+          8,
+          665,
+          292,
+          20
+        ],
+        "timer": [
+          300,
+          665,
+          68,
+          20
+        ],
+        "reminder": [
+          8,
+          687,
+          360,
+          40
+        ],
+        "stop": [
+          8,
+          729,
+          112,
+          38
+        ],
+        "app_event_status": [
+          8,
+          773,
+          245,
+          20
+        ]
+      },
+      "timer_roi_pixels_for_normal_and_long": [
+        600,
+        1330,
+        136,
+        40
+      ],
+      "sample_normal": "native-matrix/hc7-1440x900-s1p0-c1-en-normal-clear-view-cache.png",
+      "sample_long": "native-matrix/hc7-1440x900-s1p0-c1-en-long-pending-bright-view-cache.png"
+    },
+    {
+      "display_resolution": [
+        1440,
+        900
+      ],
+      "requested_tk_scaling": 1.5,
+      "actual_tk_scaling_values": [
+        1.4985250737463125
+      ],
+      "case_count": 8,
+      "image_count": 32,
+      "tk_content_size": [
+        376,
+        806
+      ],
+      "image_pixels": {
+        "width": 752,
+        "height": 1612
+      },
+      "pixels_per_tk_unit": [
+        2.0,
+        2.0
+      ],
+      "visible_detail_rows": 8,
+      "computed_minimum_screen_height": 648,
+      "controls_content_tk": {
+        "kvm_parent": [
+          8,
+          95,
+          360,
+          88
+        ],
+        "left_locator": [
+          8,
+          97,
+          22,
+          22
+        ],
+        "right_locator": [
+          328,
+          97,
+          22,
+          22
+        ],
+        "row_count_marker": [
+          138,
+          97,
+          26,
+          14
+        ],
+        "state_marker": [
+          258,
+          95,
+          26,
+          26
+        ],
+        "heartbeat_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "first_result": [
+          8,
+          129,
+          34,
+          26
+        ],
+        "table": [
+          8,
+          275,
+          346,
+          266
+        ],
+        "start": [
+          8,
+          545,
+          360,
+          38
+        ],
+        "monitor_state": [
+          8,
+          665,
+          292,
+          20
+        ],
+        "timer": [
+          300,
+          665,
+          68,
+          20
+        ],
+        "reminder": [
+          8,
+          687,
+          360,
+          40
+        ],
+        "stop": [
+          8,
+          729,
+          112,
+          38
+        ],
+        "app_event_status": [
+          8,
+          773,
+          245,
+          20
+        ]
+      },
+      "timer_roi_pixels_for_normal_and_long": [
+        600,
+        1330,
+        136,
+        40
+      ],
+      "sample_normal": "native-matrix/hc7-1440x900-s1p5-c1-en-normal-clear-view-cache.png",
+      "sample_long": "native-matrix/hc7-1440x900-s1p5-c1-en-long-pending-bright-view-cache.png"
+    },
+    {
+      "display_resolution": [
+        1152,
+        720
+      ],
+      "requested_tk_scaling": 1.0,
+      "actual_tk_scaling_values": [
+        1.0009852216748767
+      ],
+      "case_count": 8,
+      "image_count": 32,
+      "tk_content_size": [
+        376,
+        641
+      ],
+      "image_pixels": {
+        "width": 376,
+        "height": 641
+      },
+      "pixels_per_tk_unit": [
+        1.0,
+        1.0
+      ],
+      "visible_detail_rows": 3,
+      "computed_minimum_screen_height": 648,
+      "controls_content_tk": {
+        "kvm_parent": [
+          8,
+          95,
+          360,
+          88
+        ],
+        "left_locator": [
+          8,
+          97,
+          22,
+          22
+        ],
+        "right_locator": [
+          328,
+          97,
+          22,
+          22
+        ],
+        "row_count_marker": [
+          138,
+          97,
+          26,
+          14
+        ],
+        "state_marker": [
+          258,
+          95,
+          26,
+          26
+        ],
+        "heartbeat_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "first_result": [
+          8,
+          129,
+          34,
+          26
+        ],
+        "table": [
+          8,
+          275,
+          346,
+          101
+        ],
+        "start": [
+          8,
+          380,
+          360,
+          38
+        ],
+        "monitor_state": [
+          8,
+          500,
+          292,
+          20
+        ],
+        "timer": [
+          300,
+          500,
+          68,
+          20
+        ],
+        "reminder": [
+          8,
+          522,
+          360,
+          40
+        ],
+        "stop": [
+          8,
+          564,
+          112,
+          38
+        ],
+        "app_event_status": [
+          8,
+          608,
+          245,
+          20
+        ]
+      },
+      "timer_roi_pixels_for_normal_and_long": [
+        300,
+        500,
+        68,
+        20
+      ],
+      "sample_normal": "native-matrix/hc7-1152x720-s1p0-c1-en-normal-clear-view-cache.png",
+      "sample_long": "native-matrix/hc7-1152x720-s1p0-c1-en-long-pending-bright-view-cache.png"
+    },
+    {
+      "display_resolution": [
+        1152,
+        720
+      ],
+      "requested_tk_scaling": 1.5,
+      "actual_tk_scaling_values": [
+        1.499630996309963
+      ],
+      "case_count": 8,
+      "image_count": 32,
+      "tk_content_size": [
+        376,
+        641
+      ],
+      "image_pixels": {
+        "width": 376,
+        "height": 641
+      },
+      "pixels_per_tk_unit": [
+        1.0,
+        1.0
+      ],
+      "visible_detail_rows": 3,
+      "computed_minimum_screen_height": 648,
+      "controls_content_tk": {
+        "kvm_parent": [
+          8,
+          95,
+          360,
+          88
+        ],
+        "left_locator": [
+          8,
+          97,
+          22,
+          22
+        ],
+        "right_locator": [
+          328,
+          97,
+          22,
+          22
+        ],
+        "row_count_marker": [
+          138,
+          97,
+          26,
+          14
+        ],
+        "state_marker": [
+          258,
+          95,
+          26,
+          26
+        ],
+        "heartbeat_marker": [
+          286,
+          95,
+          26,
+          26
+        ],
+        "first_result": [
+          8,
+          129,
+          34,
+          26
+        ],
+        "table": [
+          8,
+          275,
+          346,
+          101
+        ],
+        "start": [
+          8,
+          380,
+          360,
+          38
+        ],
+        "monitor_state": [
+          8,
+          500,
+          292,
+          20
+        ],
+        "timer": [
+          300,
+          500,
+          68,
+          20
+        ],
+        "reminder": [
+          8,
+          522,
+          360,
+          40
+        ],
+        "stop": [
+          8,
+          564,
+          112,
+          38
+        ],
+        "app_event_status": [
+          8,
+          608,
+          245,
+          20
+        ]
+      },
+      "timer_roi_pixels_for_normal_and_long": [
+        300,
+        500,
+        68,
+        20
+      ],
+      "sample_normal": "native-matrix/hc7-1152x720-s1p5-c1-en-normal-clear-view-cache.png",
+      "sample_long": "native-matrix/hc7-1152x720-s1p5-c1-en-long-pending-bright-view-cache.png"
+    }
+  ],
+  "checks": {
+    "cartesian_coverage": "32/32",
+    "PNG_hash_and_dimension_checks": "128/128",
+    "timer_crop_has_complete_glyph_with_margin": "128/128",
+    "control_bounds_unchanged_across_normal_long_bright_dim_and_clear": "32/32",
+    "heartbeat_advanced_while_reminder_active": "32/32",
+    "existing_real_Tk_regressions": {
+      "passed": 3,
+      "skipped": 0,
+      "seconds": 17.858
+    }
+  },
+  "historical_evidence": {
+    "hc3_commit": "59fc669d43022bcf9088e11085f9a6111c92b1bc",
+    "hc3_app_tree_matches_current": false,
+    "note": "HC3 screenshots and LS7 matrices are retained as historical records. The new native-matrix supersedes reused geometry for HC7 layout acceptance."
+  },
+  "review_status": {
+    "latest_independently_reviewed_head": "6a77b55626ee4718f3a1de33227c90e2c3b79d99",
+    "accepted_items_at_that_review": 4,
+    "total_items": 6,
+    "R3_implementation_status": "Complete native matrix now captured; independent confirmation pending.",
+    "current_changes_require_independent_review": true
+  },
+  "remote_jetkvm_measurement": {
+    "received_frame_available": false,
+    "status": "not_run; HC8",
+    "note": "All current images and units are local App evidence. No remote pixel/compression/occlusion acceptance is claimed."
+  }
+}

@@ -4,7 +4,9 @@ Date: 2026-10-20 (Asia/Taipei)
 
 This is the App-side handoff for LS7 / GitHub issue #93. It supplies the current local display contract to the bridge maintainer. It does not implement, pair, or deploy a bridge.
 
-## Compatibility gate
+## Compatibility gate — original LS7 snapshot (2026-10-20)
+
+This was the LS7 source snapshot, not the current compatibility decision. The HC7 update below supersedes its bridge version and timer-ROI findings.
 
 | Component snapshot | Version | Compatibility |
 | --- | --- | --- |
@@ -46,7 +48,9 @@ Validate at least these cases: an old timer value still visible in standby befor
 
 Occlusion must be tested independently for the state marker, heartbeat marker, and each required result cell. The top locators do not prove the result strip is visible. Keep the result cells, locators, and markers at their existing positions unless a real remote measurement shows a failure and a coordinated marker resize is measured to avoid overlap.
 
-## Local timer crop
+## Local timer crop — original LS7 geometry
+
+The matrix below is historical. HC3 changed the fixed-height layout and moved the timer; **do not use its timer coordinates for the post-HC3 screen**. The HC7 update below has the current local crop.
 
 The companion `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json` records the current merged App's live Tk widget bounds and reproducible crop ROI for `00:00` and `600:00`, across Tk scaling 1.0/1.5, capacity 1/10/11/20, and English/Traditional Chinese. Each ROI is pixel coordinates relative to its named native content-view screenshot, derived from that capture's measured pixel-to-content-view scale. These are local capture coordinates, not remote KVM pixel coordinates. The JSON points to both normal and long-minute full-window captures and records the timer font, foreground, anchor, widget bounds, and screenshot dimensions.
 
@@ -55,3 +59,17 @@ The companion `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json` records the cu
 The local scale/capacity/language matrix and real Tk screenshots are listed in [`evidence/ls7-kvm/README.md`](evidence/ls7-kvm/README.md). They establish local App rendering only. This machine had no attached external display or discoverable JetKVM capture tool during the LS7 run. No real JetKVM frame was available, so remote per-cell pixel size, remote compression tolerance, and the three separate occlusion checks remain unpassed. Do not infer them from Retina content-view scale or generated/replayed local images.
 
 No files in `B518_JetKVM_Log`, TCP code, or LabVIEW are changed by this ticket. This document is handoff data only; bridge pairing and deployment remain future work.
+
+## HC7 update — 2026-10-22
+
+The current local layout handoff is the full [HC7 native matrix](evidence/hc7-20261022/native-matrix/matrix.json), measured from App source `13fad247a8048bfe0f0a26ec6ac910afc41fd33c`. It supersedes the reused HC3/LS7 layout samples for HC7. The manifest stores the source tree, capture script hash, per-image hashes, native frame bounds, actual content/raster dimensions and coordinate measurements.
+
+The matrix covers 32 combinations: capacity 1/10/11/20 × English/Traditional Chinese × Tk scaling 1.0/1.5 × actual 1440×900/1152×720 display modes. Each combination has four live Tk NSView captures: normal timer, 10000:00 with bright reminder, dim reminder, and reminder cleared. All 128 captures contain their full timer glyphs with margins. Control bounds stay fixed across those states, and heartbeat advances independently. Three existing real-Tk regressions passed (0 skipped, 17.858s); complete commands and limits are in [local-run.json](evidence/hc7-20261022/local-run.json).
+
+All new PNGs exclude the native titlebar. Measure controls relative to the Tk content root, then multiply by each image's measured pixel scale. At 1440×900 the content is 376×806 and the raster is 752×1612: timer bounds `[300,665,68,20]` map to ROI `[600,1330,136,40]`. At 1152×720 content and raster are 376×641: timer bounds and ROI are `[300,500,68,20]`. Both Tk scalings use those measured layouts. KVM parent content bounds remain `[8,95,360,88]`; marker/cell positions remain relative to that parent. The bridge must locate the parent from its locators rather than reuse an absolute window position.
+
+The original sandbox Tk exit134 was isolated with the same Python executable: minimal Tk failed inside the sandbox and succeeded outside. The complete matrix ran outside the sandbox on the actual macOS desktop; no TCC permissions were changed. Screen modes were restored after capture. The computed minimum supported screen height is 648px; actual native modes measured here were 720px and 900px.
+
+App contract fields remain version1.3. Bridge source `Bowei1121/B518_KVM_Log` HEAD `736bb8b4df5ce87beaf140416f3aea027d3aa1d7` also declares1.3 and matches locator, marker and result-cell geometry. Its original color-only reader maps both App STALLED and TIMEOUT (`#ff9900`) to TIMEOUT. That is semantic aliasing; adding another key for the same color cannot distinguish the states. No bridge source change is included. Source geometry compatibility does not establish semantic or deployed pairing compatibility.
+
+These are local native App measurements. Timer/red reminder movement does not establish ATE activity or replace heartbeat-region freshness rules. No JetKVM received-frame scale, compression, occlusion or deployment pairing is verified; those remain HC8. The new HC7 evidence is ready for independent review, not a self-issued merge approval.

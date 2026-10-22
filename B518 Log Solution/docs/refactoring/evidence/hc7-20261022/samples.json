@@ -1,0 +1,124 @@
+{
+  "evidence_kind": "real mapped macOS Tk native content images; local only",
+  "contract_version": "1.3",
+  "source_commit": "13fad247a8048bfe0f0a26ec6ac910afc41fd33c",
+  "src_tree": "e32ba1068f361e4540670b0d92739faa50965ffc",
+  "current_sample_manifest": "native-matrix/matrix.json",
+  "case_count": 32,
+  "image_count": 128,
+  "capture_origin": "each live NSView contentView top-left; titlebar excluded; per-image raster scale is measured",
+  "source_compatibility": "geometry and color sampling compatible; App STALLED (#ff9900) is read as TIMEOUT, so its semantics are not preserved",
+  "per_image_fields": [
+    "screenshot",
+    "sha256",
+    "image_pixels",
+    "size",
+    "pixels_per_tk_unit",
+    "controls",
+    "timer_roi_pixels",
+    "timer_pixels"
+  ],
+  "legacy_samples": [
+    {
+      "image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+      "sha256": "92c0e52b9ceffcf422453c012bccbc8a0096a3f22d6e5660b814fbe872faf371",
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
+      "capacity": 1,
+      "language": "zh-TW",
+      "state": "standby",
+      "displayed_heartbeat": "local sample; cadence is separately verified",
+      "remote_measurement": false
+    },
+    {
+      "image": "../hc3-20261021/hc3-capacity-10-en.png",
+      "sha256": "ed3937e5002edeb0bbe5a9f415f9fd603d4fe8e1c908c1abf44b2f401713a685",
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
+      "capacity": 10,
+      "language": "en",
+      "state": "standby",
+      "remote_measurement": false
+    },
+    {
+      "image": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+      "sha256": "14727190d6e75b95a081e1cc379a99e236c75a50e5890c70f5e81ac3a11907ea",
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
+      "capacity": 11,
+      "language": "zh-TW",
+      "state": "standby",
+      "remote_measurement": false
+    },
+    {
+      "image": "../hc3-20261021/hc3-capacity-20-en.png",
+      "sha256": "8e3d540ef2099de35c0c34955c5814dade8a44ee89df6ccd1277fbdc62c86061",
+      "dimensions_pixels": [
+        752,
+        1612
+      ],
+      "system_resolution": [
+        1440,
+        900
+      ],
+      "capacity": 20,
+      "language": "en",
+      "state": "standby",
+      "remote_measurement": false
+    },
+    {
+      "image": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png",
+      "sha256": "3fff37fc2f5fd84ff17b6eacc25a32f1fed333cbd1456c27f03d9f9a3d602cdd",
+      "dimensions_pixels": [
+        752,
+        1672
+      ],
+      "sample_type": "historical local Tk heartbeat fixture",
+      "heartbeat": "0000",
+      "remote_measurement": false
+    }
+  ],
+  "legacy_sample_note": "Historical HC3/LS6 reference only. Use current_sample_manifest for the complete HC7 post-HC3 layout matrix.",
+  "marker_patterns": {
+    "cell_size_tk_units": 10,
+    "cell_gap_tk_units": 2,
+    "quiet_zone_tk_units": 2,
+    "state_origin_tk_units": [
+      250,
+      0
+    ],
+    "heartbeat_origin_tk_units": [
+      278,
+      0
+    ],
+    "heartbeat_step_ms": 500,
+    "heartbeat_state_count": 16,
+    "observation_rule": "Three consecutive distinct, fresh, readable heartbeat-region observations unchanged is abnormal; timer, state, result, or reminder changes do not reset the heartbeat comparison.",
+    "contract_source": "../ls7-kvm/contract.json"
+  },
+  "freshness_and_remote_validation": {
+    "live_jetkvm_frame": null,
+    "remote_pixels_per_tk_unit": null,
+    "remote_compression_threshold": null,
+    "remote_occlusion_results": null,
+    "remote_measurement": false
+  }
+}
