@@ -18,5 +18,18 @@
     ],
     "outstanding_acceptance": "The post-HC3 bilingual dual-scaling capacity 1/10/11/20 native layout matrix is still incomplete; keep HC7 local acceptance at 3/6 and do not merge.",
     "crop_check": "sips crops confirmed the normal and long timer glyphs are inside their respective image-specific ROIs; no new Tk matrix was produced."
+  },
+  "coordinate_origin_followup": {
+    "corrected_content_origin_screen_y": 61,
+    "native_frame_origin_screen_y": 33,
+    "titlebar_height_tk_units": 28,
+    "corrected_content_y_tk": {
+      "kvm_parent": 95,
+      "table_viewport": 275,
+      "start_button": 545,
+      "monitor_state_and_timer": 665,
+      "notification_reminder": 687
+    },
+    "conversion_applied_to": "geometry-matrix capacity entries, main HMI geometry, timer widget bounds, handoff, README, samples, and project summary"
   }
 }
