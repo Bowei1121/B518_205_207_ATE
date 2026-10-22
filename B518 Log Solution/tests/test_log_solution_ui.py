@@ -494,6 +494,7 @@ class LogSolutionUiTests(unittest.TestCase):
             elapsed = [500.0]
             rounds = RoundCoordinator(app.events.put, monotonic=lambda: elapsed[0],
                                       audit_root=session_root)
+            long_timeout_seconds = 1_000_000
 
             try:
                 app.rounds = rounds
@@ -508,7 +509,13 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_paths["final"].set(str(final))
                 app._apply_profile_editor()
                 app._close_settings()
-                app.start_button.invoke()
+                original_start = rounds.start
+                with patch.object(
+                        rounds, "start",
+                        side_effect=lambda *args, **kwargs: original_start(
+                            *args, **{**kwargs,
+                                      "round_timeout_seconds": long_timeout_seconds})):
+                    app.start_button.invoke()
                 started = rounds.snapshot()
                 self.assertIsNotNone(started)
                 self.assertEqual(app.active_round_id, started.round_id)
@@ -589,9 +596,10 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(app.notification_reminder.cget("text"),
                                      "Items needing attention: 12. Select the bell.")
                     self.assertIsNotNone(app._notification_reminder_after_id)
-                    self.wait_for_ui(root,
-                                     lambda: app._notification_reminder_bright is False,
-                                     timeout=1.5)
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
                     self.assertEqual(app.monitor_elapsed.cget("text"), "10000:00")
                     self.assertEqual(app.monitor_state.cget("text"),
                                      "Awaiting Review: 12345 conflicts")
@@ -753,11 +761,15 @@ class LogSolutionUiTests(unittest.TestCase):
                     reminder_timer = app._notification_reminder_after_id
                     self.assertIsNotNone(reminder_timer)
                     self.assertNotEqual(reminder_timer, app._heartbeat_after_id)
-                    self.assertEqual(app.notification_reminder.cget("foreground"), "#dc2626")
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
 
-                    self.wait_for_ui(root, lambda: app._notification_reminder_bright is False,
-                                     timeout=1.5)
-                    self.assertEqual(app.notification_reminder.cget("foreground"), "#7f1d1d")
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#7f1d1d")
                     heartbeat_state = app._heartbeat_state
                     self.wait_for_ui(root, lambda: app._heartbeat_state != heartbeat_state,
                                      timeout=0.8)
@@ -772,9 +784,12 @@ class LogSolutionUiTests(unittest.TestCase):
                     self.assertEqual(app._notification_badge_count, 2)
                     self.assertEqual(self.main_geometry(app, root), geometry)
 
-                    self.wait_for_ui(root, lambda: app._notification_reminder_bright is True,
-                                     timeout=1.5)
-                    self.assertEqual(app.notification_reminder.cget("foreground"), "#dc2626")
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#dc2626",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
 
                     with patch.object(app, "_pending_notification_count", return_value=0):
                         app._refresh_notification_badge()
@@ -786,14 +801,47 @@ class LogSolutionUiTests(unittest.TestCase):
                         app._refresh_notification_badge()
                     self.assertIsNotNone(app._notification_reminder_after_id)
                     self.assertTrue(app._notification_reminder_bright)
-                    self.assertEqual(app.notification_reminder.cget("foreground"), "#dc2626")
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#dc2626")
                     self.assertEqual(self.main_geometry(app, root), geometry)
+
+                    with patch.object(app, "_pending_notification_count", return_value=1):
+                        app.close()
+                        root.update()
+                        self.assertTrue(app._closing_ui)
+                        self.assertTrue(app._close_window.winfo_viewable())
+                        app.cancel_close()
+                        root.update()
+                        self.assertTrue(root.winfo_exists())
+                        self.assertFalse(app._closing_ui)
+                        self.assertEqual(app.notification_reminder.cget("text"),
+                                         "Items needing attention: 1. Select the bell.")
+                        self.assertEqual(
+                            str(app.notification_reminder.cget("foreground")), "#dc2626")
+                        self.assertIsNotNone(app._notification_reminder_after_id)
+
+                        app.close()
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            try:
+                                if not root.winfo_exists():
+                                    break
+                                root.update()
+                            except tk.TclError:
+                                break
+                            time.sleep(.01)
+                        self.assertFalse(root.winfo_exists())
             finally:
                 app.hotkey.close()
-                app.rounds.request_close()
-                self.wait_for_ui(root, lambda: app.rounds.close_status().status == "complete")
-                self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
-                root.destroy()
+                try:
+                    if root.winfo_exists():
+                        app.rounds.request_close()
+                        self.wait_for_ui(
+                            root, lambda: app.rounds.close_status().status == "complete")
+                        self.wait_for_ui(root, lambda: app.rounds.app_event_status().complete)
+                        root.destroy()
+                except tk.TclError:
+                    pass
                 self.assertIsNone(app._notification_reminder_after_id)
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
@@ -5020,10 +5068,12 @@ class LogSolutionUiTests(unittest.TestCase):
                         app.notification_reminder_frame.winfo_width(),
                         app.notification_reminder_frame.winfo_height(),
                     )
-                    self.wait_for_ui(root,
-                                     lambda: app._notification_reminder_bright is False,
-                                     timeout=1.5)
-                    self.assertEqual(app.notification_reminder.cget("foreground"), "#7f1d1d")
+                    self.wait_for_ui(
+                        root,
+                        lambda: str(app.notification_reminder.cget("foreground")) == "#7f1d1d",
+                        timeout=1.5)
+                    self.assertEqual(str(app.notification_reminder.cget("foreground")),
+                                     "#7f1d1d")
 
                     for language in (ENGLISH, TRADITIONAL_CHINESE):
                         self.set_language_for_test_setup(app, root, language)
