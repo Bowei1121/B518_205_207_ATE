@@ -445,6 +445,8 @@ class B518LogSolutionApp:
         self._ui_destroyed = False
         self._after_ids: set[str] = set()
         self._heartbeat_after_id = None
+        self._notification_reminder_after_id = None
+        self._notification_reminder_bright = True
         self._close_after_id = None
         self._fixed_visible_detail_rows = 1
         self._fixed_main_window_geometry = None
@@ -695,6 +697,9 @@ class B518LogSolutionApp:
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
             self._heartbeat_after_id = None
+        if self._notification_reminder_after_id is not None:
+            self._cancel_ui_timer(self._notification_reminder_after_id)
+            self._notification_reminder_after_id = None
         if hasattr(self, "_historical_query_session"):
             self._historical_query_session.shutdown()
         if self._language_refresh_notifications is not None:
@@ -3269,6 +3274,7 @@ class B518LogSolutionApp:
                          if count else "")
         if hasattr(self, "notification_reminder"):
             self.notification_reminder.configure(text=reminder_text)
+            self._sync_notification_reminder(count)
         if count == self._notification_badge_count:
             return
         self._notification_badge_count = count
@@ -3286,6 +3292,31 @@ class B518LogSolutionApp:
                                        diameter / 2, diameter / 2)
         self.notification_badge.itemconfigure(self._notification_badge_label, text=label)
         self._schedule_notification_badge_place()
+
+    def _sync_notification_reminder(self, count: int) -> None:
+        """Flash the reserved reminder independently of monitoring and KVM timers."""
+        if count <= 0:
+            if self._notification_reminder_after_id is not None:
+                self._cancel_ui_timer(self._notification_reminder_after_id)
+                self._notification_reminder_after_id = None
+            self._notification_reminder_bright = True
+            return
+        if self._ui_destroyed or self._notification_reminder_after_id is not None:
+            return
+        self._notification_reminder_bright = True
+        self.notification_reminder.configure(foreground="#dc2626")
+        self._notification_reminder_after_id = self._schedule_ui(
+            1000, self._advance_notification_reminder)
+
+    def _advance_notification_reminder(self) -> None:
+        self._notification_reminder_after_id = None
+        if self._ui_destroyed or self._notification_badge_count in (None, 0):
+            return
+        self._notification_reminder_bright = not self._notification_reminder_bright
+        colour = "#dc2626" if self._notification_reminder_bright else "#7f1d1d"
+        self.notification_reminder.configure(foreground=colour)
+        self._notification_reminder_after_id = self._schedule_ui(
+            1000, self._advance_notification_reminder)
 
     def _render_review_badge(self, count: int) -> None:
         if count == self._review_badge_count:
