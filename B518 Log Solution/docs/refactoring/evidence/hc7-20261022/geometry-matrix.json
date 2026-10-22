@@ -11,10 +11,19 @@
     "branch": "main",
     "source_commit": "736bb8b4df5ce87beaf140416f3aea027d3aa1d7",
     "reader_contract": "1.3",
-    "source_compatibility": "partial; geometry compatible, STALLED status unreadable",
+    "source_compatibility": "geometry and color sampling compatible; STALLED aliases TIMEOUT, so status semantics are incompatible",
     "deployed_pairing_verified": false,
-    "reason": "The App and bridge geometry constants agree, but the bridge reader's STATUS_COLORS omits App status STALLED. A STALLED cell is therefore UNKNOWN and the reading fails closed. No live deployed bridge/App or JetKVM frame was available.",
-    "missing_app_status": {"status": "STALLED", "app_color": "#ff9900", "bridge_mapping": null, "reader_result": "unreliable result_cell_unknown"},
+    "reason": "The App emits the same #ff9900 color for STALLED and TIMEOUT. At bridge source 736bb8b4df5ce87beaf140416f3aea027d3aa1d7, the original reader samples that color as TIMEOUT; it does not return UNKNOWN and does not distinguish STALLED. No live deployed pair or JetKVM frame was available.",
+    "missing_app_status": {
+      "app_statuses": [
+        "STALLED",
+        "TIMEOUT"
+      ],
+      "app_color": "#ff9900",
+      "bridge_color_mapping": "TIMEOUT",
+      "reader_result_for_either_color": "TIMEOUT",
+      "semantic_loss": "STALLED is silently classified as TIMEOUT; adding another identical color mapping cannot distinguish the states."
+    },
     "app_contract_version_bump": "not required; the App's published 1.3 display fields have not changed. The bridge 1.3 implementation gap is recorded for its owning project."
   },
   "provenance": {
@@ -22,14 +31,27 @@
       "source_commit": "59fc669d43022bcf9088e11085f9a6111c92b1bc",
       "artifact": "../hc3-20261021/hc3-layout-matrix.json",
       "method": "real Tk/Aqua App plus Quartz native-window capture",
-      "app_tree_matches_hc7_base": true
+      "app_tree_matches_hc7_base": false,
+      "geometry_scope": "The source tree differs because HC4 changed reminder behavior. HC3 fixed geometry is reused only; HC4 PR #119 real-Tk bounds checks at 3bee309 (same file tree as base d03c7b6) confirm reminder/timer bounds stayed fixed."
     },
     "dual_scaling_marker_measurement": {
       "artifact": "../ls7-kvm/tk-matrix/li7-geometry-matrix.json",
-      "tk_scalings": [1.0, 1.5],
-      "capacities": [1, 10, 11, 20],
-      "languages": ["en", "zh-TW"],
-      "scope": "KVM-parent-relative child geometry only; pre-HC3 root window and timer coordinates are stale."
+      "tk_scalings": [
+        1,
+        1.5
+      ],
+      "capacities": [
+        1,
+        10,
+        11,
+        20
+      ],
+      "languages": [
+        "en",
+        "zh-TW"
+      ],
+      "scope": "LS7 KVM-parent-relative child geometry only. It does not measure the post-HC3 timer/control layout and must not count toward HC7's required new dual-scaling matrix.",
+      "status": "historical geometry only; does not satisfy HC7 post-HC3 dual-scaling layout acceptance"
     },
     "reminder_heartbeat_behavior": {
       "pr": 119,
@@ -43,81 +65,413 @@
         "independent 500 ms KVM heartbeat advances while reminder flashes",
         "reminder timer is cancelled on App destruction"
       ]
+    },
+    "hc7_acceptance": {
+      "status": "incomplete",
+      "accepted_items": 3,
+      "total_items": 6,
+      "blocked_items": [
+        1,
+        2,
+        4
+      ],
+      "reason": "The full post-HC3 bilingual, dual-scaling, capacity 1/10/11/20 layout matrix and native screenshots have not been captured."
     }
   },
   "local_display_matrix": {
     "normal": {
-      "system_resolution": [1440, 900],
-      "work_area_insets": {"top": 25, "bottom": 0},
-      "tk_window": [376, 806],
-      "native_window_including_titlebar": [376, 834],
+      "system_resolution": [
+        1440,
+        900
+      ],
+      "work_area_insets": {
+        "top": 25,
+        "bottom": 0
+      },
+      "tk_window": [
+        376,
+        806
+      ],
+      "native_window_including_titlebar": [
+        376,
+        834
+      ],
       "visible_detail_rows": 8,
-      "screenshot_pixels": [752, 1612],
-      "physical_pixels_per_tk_unit": [2.0, 2.0],
-      "evidence": "../hc3-20261021/hc3-layout-matrix.json"
+      "screenshot_pixels": [
+        752,
+        1612
+      ],
+      "physical_pixels_per_tk_unit": [
+        2,
+        2
+      ],
+      "evidence": "../hc3-20261021/hc3-layout-matrix.json",
+      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; source tree differs from HC7 base d03c7b6"
     },
     "smaller_supported": {
-      "system_resolution": [1152, 720],
-      "work_area_insets": {"top": 25, "bottom": 0},
-      "tk_window": [376, 641],
-      "native_window_including_titlebar": [376, 669],
+      "system_resolution": [
+        1152,
+        720
+      ],
+      "work_area_insets": {
+        "top": 25,
+        "bottom": 0
+      },
+      "tk_window": [
+        376,
+        641
+      ],
+      "native_window_including_titlebar": [
+        376,
+        669
+      ],
       "visible_detail_rows": 3,
       "minimum_supported_screen_height": 648,
       "minimum_supported_screen_width": 388,
       "evidence": "../hc3-20261021/hc3-small-display.json",
-      "capture_note": "Quartz window capture reports 1x pixels for this evidence; do not infer Retina scale from it."
+      "capture_note": "Quartz window capture reports 1x pixels for this evidence; do not infer Retina scale from it.",
+      "geometry_evidence_tree": "HC3 commit 59fc669d43022bcf9088e11085f9a6111c92b1bc; 1152x720 display capture, three visible detail rows"
     }
   },
   "capacity_language_matrix": [
-    {"capacity": 1, "language": "zh-TW", "tk_window": [376, 806], "kvm_parent_in_window": [8, 123, 360, 88], "timer_row_in_window": [8, 693, 360, 20], "timer_widget_in_window": [324, 693, 44, 20], "evidence_image": "../hc3-20261021/hc3-capacity-1-zh-TW.png"},
-    {"capacity": 10, "language": "en", "tk_window": [376, 806], "kvm_parent_in_window": [8, 123, 360, 88], "timer_row_in_window": [8, 693, 360, 20], "timer_widget_in_window": [324, 693, 44, 20], "evidence_image": "../hc3-20261021/hc3-capacity-10-en.png"},
-    {"capacity": 11, "language": "zh-TW", "tk_window": [376, 806], "kvm_parent_in_window": [8, 123, 360, 88], "timer_row_in_window": [8, 693, 360, 20], "timer_widget_in_window": [324, 693, 44, 20], "evidence_image": "../hc3-20261021/hc3-capacity-11-zh-TW.png"},
-    {"capacity": 20, "language": "en", "tk_window": [376, 806], "kvm_parent_in_window": [8, 123, 360, 88], "timer_row_in_window": [8, 693, 360, 20], "timer_widget_in_window": [324, 693, 44, 20], "evidence_image": "../hc3-20261021/hc3-capacity-20-en.png"}
+    {
+      "capacity": 1,
+      "language": "zh-TW",
+      "tk_window": [
+        376,
+        806
+      ],
+      "kvm_parent_in_window": [
+        8,
+        123,
+        360,
+        88
+      ],
+      "timer_row_in_window": [
+        8,
+        693,
+        360,
+        20
+      ],
+      "timer_widget_in_window": [
+        300,
+        693,
+        68,
+        20
+      ],
+      "evidence_image": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+    },
+    {
+      "capacity": 10,
+      "language": "en",
+      "tk_window": [
+        376,
+        806
+      ],
+      "kvm_parent_in_window": [
+        8,
+        123,
+        360,
+        88
+      ],
+      "timer_row_in_window": [
+        8,
+        693,
+        360,
+        20
+      ],
+      "timer_widget_in_window": [
+        300,
+        693,
+        68,
+        20
+      ],
+      "evidence_image": "../hc3-20261021/hc3-capacity-10-en.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+    },
+    {
+      "capacity": 11,
+      "language": "zh-TW",
+      "tk_window": [
+        376,
+        806
+      ],
+      "kvm_parent_in_window": [
+        8,
+        123,
+        360,
+        88
+      ],
+      "timer_row_in_window": [
+        8,
+        693,
+        360,
+        20
+      ],
+      "timer_widget_in_window": [
+        300,
+        693,
+        68,
+        20
+      ],
+      "evidence_image": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+    },
+    {
+      "capacity": 20,
+      "language": "en",
+      "tk_window": [
+        376,
+        806
+      ],
+      "kvm_parent_in_window": [
+        8,
+        123,
+        360,
+        88
+      ],
+      "timer_row_in_window": [
+        8,
+        693,
+        360,
+        20
+      ],
+      "timer_widget_in_window": [
+        300,
+        693,
+        68,
+        20
+      ],
+      "evidence_image": "../hc3-20261021/hc3-capacity-20-en.png",
+      "capture_frame": "HC3 native raster 752x1612; no titlebar; per-image pixel origin at top-left"
+    }
   ],
   "main_hmi_geometry_tk_units_from_window_content_origin": {
-    "kvm_parent": [8, 123, 360, 88],
-    "table_viewport": [8, 303, 346, 266],
-    "start_button": [8, 573, 360, 38],
-    "monitor_state": [8, 693, 292, 20],
-    "timer_normal_00_00": [324, 693, 44, 20],
-    "timer_long_10000_00": [300, 693, 68, 20],
-    "notification_reminder": [8, 715, 360, 40]
+    "kvm_parent": [
+      8,
+      123,
+      360,
+      88
+    ],
+    "table_viewport": [
+      8,
+      303,
+      346,
+      266
+    ],
+    "start_button": [
+      8,
+      573,
+      360,
+      38
+    ],
+    "monitor_state": [
+      8,
+      693,
+      292,
+      20
+    ],
+    "timer_normal_00_00": [
+      300,
+      693,
+      68,
+      20
+    ],
+    "timer_long_10000_00": [
+      300,
+      693,
+      68,
+      20
+    ],
+    "notification_reminder": [
+      8,
+      715,
+      360,
+      40
+    ]
   },
   "timer_crop": {
-    "coordinate_origin": "Tk content-view top-left; excludes titlebar and screen origin",
-    "capture_basis": "HC3 native capture 752x1612 pixels over 376x806 Tk content; 2x conversion",
-    "normal": {
-      "text": "00:00",
-      "widget_bounds_tk": [324, 693, 44, 20],
-      "roi_pixels": [648, 1386, 88, 40]
+    "measurement_status": "rechecked against named source rasters; do not infer image coordinates from Tk widget coordinates",
+    "widget_bounds_tk": [
+      300,
+      693,
+      68,
+      20
+    ],
+    "standard_capacity_samples": {
+      "screenshots": [
+        "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+        "../hc3-20261021/hc3-capacity-10-en.png",
+        "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+        "../hc3-20261021/hc3-capacity-20-en.png"
+      ],
+      "raster_pixels": [
+        752,
+        1612
+      ],
+      "titlebar_included": false,
+      "roi_pixels_from_stored_raster_top_left": [
+        600,
+        1330,
+        136,
+        40
+      ],
+      "verified_glyph_bbox_in_capacity_10_sample": [
+        654,
+        1339,
+        730,
+        1359
+      ],
+      "roi_verification": "Cropped the named 00:00 sample; full glyph is visible. The previous y=1386 ROI was background-only."
     },
-    "long_minutes": {
+    "long_timer_sample": {
+      "screenshot": "../hc3-20261021/hc3-timer-10000-zh-TW.png",
+      "raster_pixels": [
+        752,
+        1668
+      ],
+      "titlebar_included": true,
+      "titlebar_height_pixels": 56,
+      "roi_pixels_from_stored_raster_top_left": [
+        600,
+        1386,
+        136,
+        40
+      ],
+      "roi_pixels_after_removing_titlebar_offset": [
+        600,
+        1330,
+        136,
+        40
+      ],
       "text": "10000:00",
-      "widget_bounds_tk": [300, 693, 68, 20],
-      "roi_pixels": [600, 1386, 136, 40],
-      "measured_text_width_tk": 64
+      "measured_text_width_tk": 64,
+      "measured_label_width_tk": 68,
+      "roi_verification": "Cropped the original raster at y=1386; the full label is visible. Treating that raster coordinate as content-origin was incorrect."
     },
-    "long_timer_evidence": "../hc3-20261021/hc3-long-timer.json",
-    "do_not_use_pre_hc3_timer_roi": "../ls7-kvm/tk-matrix/timer-crop-matrix.json"
+    "coordinate_rule": "Each ROI is pixel coordinates in the exact named PNG. For a content-normalized comparison subtract the captured titlebar height from the long-timer raster y; do not reuse one image's raw y coordinate for another capture."
   },
   "kvm_parent_relative_contract_1_3_tk_units": {
-    "left_locator": [0, 2, 22, 22],
-    "right_locator": [320, 2, 22, 22],
-    "state_marker": [250, 0, 26, 26],
-    "heartbeat_marker": [278, 0, 26, 26],
-    "row_count_marker": [130, 2, 26, 14],
-    "result_strip": {"first_cell": [0, 34], "cell": [34, 26], "columns": 10, "row_step": 27, "capacity": [1, 20]},
+    "left_locator": [
+      0,
+      2,
+      22,
+      22
+    ],
+    "right_locator": [
+      320,
+      2,
+      22,
+      22
+    ],
+    "state_marker": [
+      250,
+      0,
+      26,
+      26
+    ],
+    "heartbeat_marker": [
+      278,
+      0,
+      26,
+      26
+    ],
+    "row_count_marker": [
+      130,
+      2,
+      26,
+      14
+    ],
+    "result_strip": {
+      "first_cell": [
+        0,
+        34
+      ],
+      "cell": [
+        34,
+        26
+      ],
+      "columns": 10,
+      "row_step": 27,
+      "capacity": [
+        1,
+        20
+      ]
+    },
     "heartbeat_cadence_ms": 500,
     "notification_blink_cadence_ms": 1000,
     "notification_is_not_heartbeat": true,
     "coordinate_basis": "measured child bounds and frozen App contract 1.3; these are Tk units, not remote pixels"
   },
   "sample_screenshots": [
-    {"path": "../hc3-20261021/hc3-capacity-1-zh-TW.png", "display": [1440, 900], "capacity": 1, "language": "zh-TW", "raster": [752, 1612], "description": "post-HC3 native Tk sample, standby display"},
-    {"path": "../hc3-20261021/hc3-capacity-10-en.png", "display": [1440, 900], "capacity": 10, "language": "en", "raster": [752, 1612], "description": "post-HC3 native Tk sample, English display"},
-    {"path": "../hc3-20261021/hc3-capacity-11-zh-TW.png", "display": [1440, 900], "capacity": 11, "language": "zh-TW", "raster": [752, 1612], "description": "post-HC3 native Tk sample, two-row capacity"},
-    {"path": "../hc3-20261021/hc3-capacity-20-en.png", "display": [1440, 900], "capacity": 20, "language": "en", "raster": [752, 1612], "description": "post-HC3 native Tk sample, maximum capacity"},
-    {"path": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png", "display": "historical local Tk capture", "capacity": 1, "language": "en", "raster": [752, 1672], "description": "heartbeat state-00 local sample; not a JetKVM frame"}
+    {
+      "path": "../hc3-20261021/hc3-capacity-1-zh-TW.png",
+      "display": [
+        1440,
+        900
+      ],
+      "capacity": 1,
+      "language": "zh-TW",
+      "raster": [
+        752,
+        1612
+      ],
+      "description": "post-HC3 native Tk sample, standby display"
+    },
+    {
+      "path": "../hc3-20261021/hc3-capacity-10-en.png",
+      "display": [
+        1440,
+        900
+      ],
+      "capacity": 10,
+      "language": "en",
+      "raster": [
+        752,
+        1612
+      ],
+      "description": "post-HC3 native Tk sample, English display"
+    },
+    {
+      "path": "../hc3-20261021/hc3-capacity-11-zh-TW.png",
+      "display": [
+        1440,
+        900
+      ],
+      "capacity": 11,
+      "language": "zh-TW",
+      "raster": [
+        752,
+        1612
+      ],
+      "description": "post-HC3 native Tk sample, two-row capacity"
+    },
+    {
+      "path": "../hc3-20261021/hc3-capacity-20-en.png",
+      "display": [
+        1440,
+        900
+      ],
+      "capacity": 20,
+      "language": "en",
+      "raster": [
+        752,
+        1612
+      ],
+      "description": "post-HC3 native Tk sample, maximum capacity"
+    },
+    {
+      "path": "../ls6-heartbeat/ls6-heartbeat-state-00-en.png",
+      "display": "historical local Tk capture",
+      "capacity": 1,
+      "language": "en",
+      "raster": [
+        752,
+        1672
+      ],
+      "description": "heartbeat state-00 local sample; not a JetKVM frame"
+    }
   ],
   "remote_jetkvm_measurement": {
     "status": "not_run",
@@ -125,6 +479,6 @@
     "remote_pixel_scale": null,
     "compression_tolerance": null,
     "occlusion_matrix": null,
-    "claim": "Local capture pixels and reminder flashing are not evidence that a remote frame is fresh or readable."
+    "claim": "Local capture pixels and reminder flashing are not evidence that a remote frame is fresh or readable. HC7 local dual-scaling acceptance is also incomplete."
   }
 }
