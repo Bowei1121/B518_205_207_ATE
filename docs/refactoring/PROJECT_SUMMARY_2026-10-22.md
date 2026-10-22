@@ -20,3 +20,10 @@
 - PR #121 首輪審查 S1／R1 已在同分支修正：真來源衝突＋逾時 alarm 與注入 audit 保存失敗形成真 badge；Canvas 已繪內容驗心跳／badge，切語言期間驗提醒閃爍；鈴鐺只確認 alarm 後失敗保存仍在，重試後清除；取消逾時輪、啟動新輪並從磁碟重讀兩份 audit。新增真 Tk 案例 1/1 PASS。
 - 審查 R2 診斷：完整套件在本輪完成 **587 tests，4 FAIL／6 ERROR／4 skipped**。所有失敗／錯誤皆可定位至 Python 環境缺 Quartz／AppKit（含 NSApplication／NSRunningApplication None）；modal lifecycle 1/1 通過、UI 模組 124 項完成，Atlas 啟動重跑通過。原生輸入／擷取必要回歸仍待含 PyObjC 的環境，故不宣稱全套通過；完整 log 為 `docs/refactoring/evidence/hc8-20261022/review-fix-full-suite.log`。
 - #113／PR #121 尚未 merge 或關閉：R2 原生回歸未通過，T22 無 JetKVM 配對／接收影格；需同 PR 獨立複查新 HEAD。審查修正證據追加於 HC8 acceptance。
+
+## HC8 第三輪修正（最新狀態）
+
+- 第二輪獨立審查已解除 S1／R1，新增 R3：audit 集合斷言不能檢出重複操作。`c79fbc823dc978ee982b4758ed054ff874cde820` 改用 Counter，要求衝突決策、警報確認、輪次取消各一次；reader 將三種事件各重複一次時案例會在精確次數斷言正確 FAIL（12.898s），保留雙語與原結果檢查。
+- R2 找到原專案既有 `.venv-python31210`，含 PyObjC 11.1 的 Quartz／AppKit；前輪使用全域 Python 漏用此環境。既有原生輸入／截圖權限均 true，未安裝套件或改系統權限。以此 venv 對上述提交跑完 native full suite：587項＝583 PASS／4既有條件skip／0 FAIL／0 ERROR（369.371s）。前輪十個原生失敗／錯誤均通過；聚焦整合／語言／契約31/31通過（17.039s）。
+- 新原始log、變異腳本／log、環境、結果JSON、235份擷取檔hash／尺寸清單及9張代表影像／3份幾何資料在 `docs/refactoring/evidence/hc8-20261022/round3-native/`。四個skip仍明列 H8 fixture兩項、1152×720實體顯示一項、使用者切換系統appearance一項；本輪未重新執行HC7實體矩陣。
+- R2／R3已補修正與執行證據，仍需獨立審查目前新HEAD；本session不宣稱審查通過。T22無JetKVM影格／部署配對，因此#113／#105不關閉，PR尚未合併。前段未通過結果保留為歷史，以本節及新版acceptance為最新狀態。

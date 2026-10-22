@@ -2,17 +2,27 @@
 
 Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規格 [#105](https://github.com/Bowei1121/B518_205_207_ATE/issues/105)。本紀錄只代表表內標示的整合基準與證據；不代表父規格整體完成。
 
+## 最新結果：第三輪審查修正
+
+測試提交為 `c79fbc823dc978ee982b4758ed054ff874cde820`。R3 已改用 `Counter`，核對 `conflict_resolved`、`round_alarm_acknowledged`、`round_cancelled` 在本情境各恰好一次，保留原結果及雙語檢查。僅在 reader 回傳值將三種操作各複製一次時，完整真 Tk 案例在 Counter 斷言處正確失敗（1 expected FAIL、0 ERROR，12.898s）；未改寫磁碟 audit 或產品。
+
+R2 本輪使用原專案既有 `.venv-python31210` 補驗，而非前輪缺 PyObjC 的全域 Python：Python 3.12.10／PyObjC core、Cocoa、Quartz 均 11.1，既有原生 post/listen/capture 權限均為 true。完整桌面套件 **587 項＝583 PASS、4 skipped、0 FAIL、0 ERROR（369.371s，exit 0）**；先前十個原生 FAIL／ERROR 本輪均通過。未新增 skip：兩項需預備 H8 容量 fixture、一項需獨立 1152×720 實體顯示驗收、一項需使用者操作系統 Light/Dark 切換，均保留既有條件。整合／語言／顯示契約聚焦批次 **31 PASS、0 skipped（17.039s）**。
+
+原始 log、環境、變異腳本及結果見 [round3-native/README.md](round3-native/README.md) 和 [run-results.json](round3-native/run-results.json)。原生套件產生的 235 份擷取檔（202 PNG）全列 hash／尺寸清單；PR 僅保留 9 張代表影像及 3 份幾何資料，其餘擷取檔仍在清單記錄的本機路徑。未宣稱逐張人工驗證，也未重新執行 HC7 的實體顯示矩陣。
+
+R3 修正與 R2 原生必要回歸已補證，仍交獨立審查者確認新 HEAD。**T22 仍待 JetKVM 接收影格與部署配對，不能關閉 #113 或父規格 #105。** 下方前兩輪失敗／缺依賴敘述保留作歷史，不取代本節最新結果。
+
 ## 版本與執行環境
 
 | 項目 | 值 |
 | --- | --- |
 | 整合基準 | `07ab0fbbae8eb50032ca2152f86a881f6d376449`（HC7 PR #120 合併提交） |
-| HC8 回歸／證據提交 | `5e2b85b`；此提交新增跨功能真 Tk 斷言，App runtime source tree 未變 |
+| HC8 最新測試提交 | `c79fbc823dc978ee982b4758ed054ff874cde820`；原始整合斷言自 `5e2b85b` 起，App runtime source tree 未變 |
 | App source tree | `e32ba1068f361e4540670b0d92739faa50965ffc` |
 | App 版本／顯示契約 | `0.1.0`／`1.3` |
 | 執行日期 | 2026-10-22（Asia/Taipei） |
 | 本次測試環境 | macOS 15.8.1、Intel x86_64、Python 3.12.10、Tk 8.6 |
-| 本次顯示條件 | 桌面 1440×900；本次程序未安裝 Quartz／AppKit，不能合成原生滑鼠／鍵盤輸入，也未切換實體螢幕模式 |
+| 最新顯示／原生條件 | 桌面 1440×900；專案既有 Python venv 含 Quartz／AppKit 11.1，原生輸入／截圖回歸通過；未切換實體螢幕模式 |
 | 另有的原生矩陣 | HC7 在同 App source tree 實測 1440×900 與 1152×720；Tk 1.0/1.5、容量 1/10/11/20、中英，共 32 case／128 張 NSView 圖 |
 | JetKVM | 本次沒有設備、配對部署或 received frame |
 
@@ -31,17 +41,17 @@ Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規�
 | T07 | 通過 | 本次 HC2 真 App 雙縮放測試檢查黑色格線與字體；狀態色另由 1.3 契約測試覆蓋。 |
 | T08 | 通過（沿用量測） | HC3 `hc3-before-after-geometry.json` 記錄改版前後視窗、列高及表格外間距；本次未重做改版前量測。 |
 | T09 | 通過 | 本次 M10 真 App 的啟動驗證／來源準備失敗通知測試；[HC1 PR #114](https://github.com/Bowei1121/B518_205_207_ATE/pull/114) 真 Tk 已驗證解除後不自動重試。 |
-| T10 | 通過（沿用＋整合） | 本次 M10 多視窗、取消與單次決策及停止準備後關窗流程通過；HC1／[HC4 PR #119](https://github.com/Bowei1121/B518_205_207_ATE/pull/119) 證據確認保留舊輪、拒絕取消不變更輪次及明確新輪。 |
+| T10 | 通過（沿用＋整合） | `c79fbc8` M10 真來源衝突、警報確認、保存重試、取消逾時輪、明確新輪及兩輪 audit 讀回通過；HC1／[HC4 PR #119](https://github.com/Bowei1121/B518_205_207_ATE/pull/119) 既有證據保留。 |
 | T11 | 通過（沿用＋整合） | HC4 PR #119 真 Tk 驗證警報／保存失敗共用件數、解決後減量及排除結果衝突；本次提醒生命週期測試通過。 |
 | T12 | 通過 | 本次提醒真 Tk 測試見證亮／暗切換、長計時及固定幾何；HC7 PR #120 原生影像矩陣驗證提醒亮／暗下的 timer ROI。 |
 | T13 | 通過 | 本次 HC4 提醒與 M10 全視窗語言／取消整合測試；打開通知中心及切語言不會執行處理操作。 |
-| T14 | 通過（沿用＋整合） | HC4 PR #119 實際保存／封存失敗流程為 2→1→12→0、新事項重啟；本次提醒真 Tk 測試通過。 |
+| T14 | 通過（沿用＋整合） | 本輪 M10 真警報及 audit 保存失敗 2→1→0，確認部分處理仍保留失敗、重試成功才清除；HC4 PR #119 新事項重啟及多輪保存／封存流程沿用。 |
 | T15 | 通過 | 本次 1.3 狀態／結果契約測試及 M10 警報／衝突測試；衝突入口與鈴鐺件數分開。 |
-| T16 | 通過（沿用 HC5／HC6） | [HC5 PR #117](https://github.com/Bowei1121/B518_205_207_ATE/pull/117)／[HC6 PR #115](https://github.com/Bowei1121/B518_205_207_ATE/pull/115) 已完成各視窗可用／停用、中英文提示與動作語意獨立驗收；本次 10 項語言目錄測試通過。原生 Quartz 指標輸入本次未重跑。 |
-| T17 | 通過（沿用 HC5／HC6） | HC5／HC6 已驗證原地切語言、焦點提示及關窗清理；本次歷史提示關窗與多視窗語言刷新測試通過。 |
+| T16 | 通過（本輪原生回歸＋沿用） | 本輪完整套件實際執行主頁、設定／恢復、歷史／診斷、關閉中衝突／警報提示及原生指標／鍵盤測試，皆通過；HC5／HC6 既有雙語語意驗收保留。 |
+| T17 | 通過（本輪原生回歸＋沿用） | 本輪原生提示、焦點、切語言、關窗／重開及 modal lifecycle 回歸通過；HC5／HC6 既有影像沿用。 |
 | T18 | 通過 | 本次 timer、reminder、heartbeat 契約測試；HC4 真 Tk 長計時 10000:00 與 HC7 心跳獨立矩陣支持。 |
 | T19 | 通過 | 本次關窗重試及提示關窗測試；HC4 實際提醒存在時中心關閉／重開與 App 正常結束已通過。 |
-| T20 | 通過（沿用＋整合） | HC1 PR #114 真 Tk 取消後重讀 audit 確認原因、原結果及單一取消事件；本次 M10 啟動錯誤與保存流程回歸通過。 |
+| T20 | 通過（本輪整合＋沿用） | 本輪 M10 取消後用新 reader 讀回兩輪 audit，核對原結果、雙語與三種處置各一次；複製三種操作各至兩次的 reader 變異會正確失敗。HC1 既有取消原因／舊結果證據保留。 |
 | T21 | 通過（沿用 HC7 原生證據） | HC7 PR #120 32/32 case、128/128 PNG hash／尺寸／ROI 驗證通過；本次以 `verify_hc7_evidence.py` 離線重驗。 |
 | T22 | **待真機驗收** | 無 JetKVM received frame／部署配對；遠端縮放、壓縮、遮擋、可讀性、計時／狀態／結果與獨立心跳皆未測，保持未勾。 |
 
@@ -79,7 +89,7 @@ Issue [#113](https://github.com/Bowei1121/B518_205_207_ATE/issues/113)；父規�
 | 44 | T17、T19 | 通過（HC5／HC6／HC4 生命週期證據） |
 | 45 | T20、T21、T22 | 本機／橋接文件分流完成；真實遠端證據待 JetKVM |
 
-## 本次實際執行
+## 前兩輪實際執行（歷史紀錄）
 
 1. `B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'`：在基準 commit `07ab0fb` 啟動完整套件，當時已包含相同 App source tree，尚未加入 HC8 的額外整合斷言。套件未完成：到第 275 項時卡在 `test_notice_escape_hidden_reopen_and_current_language_lifecycle` 的 modal 關窗；中止前已記錄 **264 passed、3 failed、4 errors、3 skipped，另 1 項執行中**。原始輸出見 `full-suite.log`。因此完整套件結果是**未完成／未通過**，不是全套綠燈。
 2. 31 項整合批次在 HC8 回歸提交 `5e2b85b` 上執行：`test_m10_integration.M10SourceIntegrationTests`、`test_language_catalog.LanguageCatalogTests`、`test_kvm_display_contract.KvmDisplayContractTests`，**31 passed、0 failed、0 skipped（15.172s）**。
@@ -96,7 +106,7 @@ HC7 已記錄橋接 source `Bowei1121/B518_KVM_Log@736bb8b4df5ce87beaf140416f3ae
 
 **本驗收不關閉 #113、不勾 T22、不改寫父規格 #105。** 完成 T22、在可操作的原生 macOS 桌面重跑必要完整回歸，並處理完整套件的 FAIL／ERROR 後，需在同 PR 更新證據並交獨立審查者複查最新 HEAD。
 
-## PR #121 審查修正驗證（2026-10-22）
+## PR #121 第二輪審查修正驗證（歷史紀錄）
 
 整合測試變更與本次完整回歸輸出所對應的提交：`fe4b31b7a046bf43ab752007b0cadd888fe3c468`。
 

@@ -115,6 +115,26 @@
       "command": "python3 'B518 Log Solution/scripts/verify_hc7_evidence.py' 'B518 Log Solution/docs/refactoring/evidence/hc7-20261022/native-matrix'",
       "passed": true,
       "result": "32/32 Cartesian cases; 128/128 PNG hashes/dimensions and ROI records"
+    },
+    {
+      "name": "round3_native_full_suite",
+      "tested_commit": "c79fbc823dc978ee982b4758ed054ff874cde820",
+      "passed": 583,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 4,
+      "total": 587,
+      "elapsed_seconds": 369.371,
+      "environment": "round3-native/environment.json",
+      "raw_output": "round3-native/native-full-suite.log"
+    },
+    {
+      "name": "round3_duplicate_operation_mutation",
+      "tested_commit": "c79fbc823dc978ee982b4758ed054ff874cde820",
+      "mutation_detected": true,
+      "expected_failures": 1,
+      "errors": 0,
+      "raw_output": "round3-native/duplicate-operation-mutation.log"
     }
   ],
   "hardware_acceptance": {
@@ -125,5 +145,8 @@
     "bridge_known_gap": "At Bowei1121/B518_KVM_Log@736bb8b4df5ce87beaf140416f3aea027d3aa1d7, identical #ff9900 STALLED and TIMEOUT colors both classify as TIMEOUT."
   },
   "issue_state": "open",
-  "pull_request_may_close_issue": false
+  "pull_request_may_close_issue": false,
+  "latest_tested_commit": "c79fbc823dc978ee982b4758ed054ff874cde820",
+  "latest_native_results": "round3-native/run-results.json",
+  "environment_note": "Initial global-Python environment retained as historical. Latest native environment and results: round3-native/run-results.json."
 }
