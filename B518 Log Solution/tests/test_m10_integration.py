@@ -126,11 +126,37 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 app.conflict_list.selection_set(0)
                 app.conflict_list.event_generate("<<ListboxSelect>>")
                 before = app.rounds.snapshot()
-                for index in (1, 0, 1, 0):
-                    app.language_menu.invoke(index)
-                    root.update()
-                    self.assertEqual(app.rounds.snapshot().pending_conflicts, before.pending_conflicts)
-                    self.assertEqual(app.profile_editor_capacity.get(), "invalid draft")
+                with patch.object(app, "_pending_notification_count", return_value=2):
+                    app._refresh_notification_badge()
+                    reminder_bounds = (app.notification_reminder_frame.winfo_x(),
+                                       app.notification_reminder_frame.winfo_y(),
+                                       app.notification_reminder_frame.winfo_width(),
+                                       app.notification_reminder_frame.winfo_height())
+                    timer_bounds = (app.monitor_elapsed.winfo_x(), app.monitor_elapsed.winfo_y(),
+                                    app.monitor_elapsed.winfo_width(),
+                                    app.monitor_elapsed.winfo_height())
+                    initial_heartbeat = app._heartbeat_state
+                    self.pump(root, lambda:
+                              str(app.notification_reminder.cget("foreground")) == "#7f1d1d")
+                    self.pump(root, lambda: app._heartbeat_state != initial_heartbeat)
+                    for index in (1, 0, 1, 0):
+                        app.language_menu.invoke(index)
+                        root.update()
+                        self.assertEqual(app.rounds.snapshot().pending_conflicts,
+                                         before.pending_conflicts)
+                        self.assertEqual(app.profile_editor_capacity.get(), "invalid draft")
+                        self.assertEqual(app._notification_badge_count, 2)
+                        self.assertEqual(app.notification_reminder.cget("text"),
+                                         app._t("main.notification_reminder", count=2))
+                        self.assertEqual((app.notification_reminder_frame.winfo_x(),
+                                          app.notification_reminder_frame.winfo_y(),
+                                          app.notification_reminder_frame.winfo_width(),
+                                          app.notification_reminder_frame.winfo_height()),
+                                         reminder_bounds)
+                        self.assertEqual((app.monitor_elapsed.winfo_x(),
+                                          app.monitor_elapsed.winfo_y(),
+                                          app.monitor_elapsed.winfo_width(),
+                                          app.monitor_elapsed.winfo_height()), timer_bounds)
                 append("final", 2, "SN-OTHER", "PASS", 3)
                 self.pump(root, lambda: app.rounds.snapshot().results[1].status == "PASS")
                 elapsed[0] = 121.0

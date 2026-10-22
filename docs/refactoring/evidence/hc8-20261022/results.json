@@ -1,0 +1,126 @@
+{
+  "issue": "Bowei1121/B518_205_207_ATE#113",
+  "parent_spec": "Bowei1121/B518_205_207_ATE#105",
+  "integration_commit": "07ab0fbbae8eb50032ca2152f86a881f6d376449",
+  "app_source_tree": "e32ba1068f361e4540670b0d92739faa50965ffc",
+  "app_version": "0.1.0",
+  "display_contract": "1.3",
+  "captured_at": "2026-10-22T14:40:53+08:00",
+  "environment": {
+    "os": "macOS 15.8.1",
+    "architecture": "x86_64",
+    "python": "3.12.10",
+    "tk": "8.6",
+    "display_mode_during_this_run": "1440x900",
+    "quartz_available": false,
+    "appkit_available": false,
+    "jetkvm_available": false
+  },
+  "runs": [
+    {
+      "name": "complete_suite",
+      "command": "B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'",
+      "state": "incomplete_interrupted",
+      "terminal_outcomes_before_interrupt": {
+        "passed": 264,
+        "failed": 3,
+        "errors": 4,
+        "skipped": 3,
+        "total": 274
+      },
+      "in_progress_test": "test_log_solution_ui.LogSolutionUiTests.test_notice_escape_hidden_reopen_and_current_language_lifecycle",
+      "reason_for_interrupt": "Tk modal lifecycle produced no output for 3m45s; process was interrupted. The suite did not emit its final traceback or summary.",
+      "failed_tests": [
+        "test_log_solution_ui.LogSolutionUiTests.test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit",
+        "test_log_solution_ui.LogSolutionUiTests.test_hf4_dashboard_uses_compact_status_and_diagnostic_entry",
+        "test_log_solution_ui.LogSolutionUiTests.test_main_page_actions_explain_bilingual_behavior_without_invoking"
+      ],
+      "error_tests": [
+        "test_li6_foreground (unittest.loader._FailedTest)",
+        "test_log_solution_ui.LogSolutionUiTests.test_cleanup_summary_is_visibly_drawn_in_the_real_settings_window",
+        "test_log_solution_ui.LogSolutionUiTests.test_li7_geometry_at_both_scalings_and_all_capacities",
+        "test_log_solution_ui.LogSolutionUiTests.test_native_capture_selects_current_window_with_duplicate_title"
+      ],
+      "skipped_tests": [
+        "test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_capacity_scenario_releases_interpreter_before_worker_collection",
+        "test_historical_event_capacity_tk.HistoricalEventCapacityTkTests.test_real_app_query_remains_responsive_and_matches_disk_baseline",
+        "test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_fits_smaller_supported_display"
+      ],
+      "in_progress_test_has_no_final_status": true,
+      "raw_output": "full-suite.log"
+    },
+    {
+      "name": "integration_language_contract_batch",
+      "command": "B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py' test_m10_integration.M10SourceIntegrationTests test_language_catalog.LanguageCatalogTests test_kvm_display_contract.KvmDisplayContractTests",
+      "passed": 31,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 18.496,
+      "note": "Includes the added reminder-during-multi-window-language-refresh assertions in test_real_source_all_windows_switch_cancel_and_single_decisions."
+    },
+    {
+      "name": "focused_hmi_tk_batch",
+      "command_prefix": "B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py'",
+      "test_names": [
+        "test_log_solution_ui.LogSolutionUiTests.test_hc4_reminder_flashes_until_pending_count_clears",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_round_timer_stays_fixed_through_language_and_long_minutes",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_notification_badge_stays_until_alarm_is_acknowledged",
+        "test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_keeps_app_write_failure_open_and_retries_it",
+        "test_log_solution_ui.LogSolutionUiTests.test_close_waits_responsively_and_cancellation_invalidates_old_completion",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_can_select_and_retry_previous_round_without_changing_current_board",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_close_waits_for_source_preparation_before_destroy",
+        "test_log_solution_ui.LogSolutionUiTests.test_hint_refresh_tolerates_close_during_layout",
+        "test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_hover_hint_updates_language_and_closes_with_window",
+        "test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_geometry_survives_mapping_and_capacity_changes",
+        "test_log_solution_ui.LogSolutionUiTests.test_initial_capacity_does_not_change_fixed_window_geometry",
+        "test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_fits_smaller_supported_display",
+        "test_slot_toolbar_st1.SlotViewportTests.test_hc2_real_app_rows_fit_font_and_black_grid_at_two_scales",
+        "test_slot_toolbar_st1.SlotViewportTests.test_st1_compact_rows_and_small_window_keep_all_slots_reachable"
+      ],
+      "passed": 13,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 1,
+      "elapsed_seconds": 35.041,
+      "failed_tests": [
+        {
+          "name": "test_log_solution_ui.LogSolutionUiTests.test_settings_and_recovery_actions_explain_bilingual_behavior_without_invoking",
+          "reason": "Quartz is None; native macOS pointer input unavailable in this runtime."
+        }
+      ],
+      "skipped_tests": [
+        {
+          "name": "test_log_solution_ui.LogSolutionUiTests.test_fixed_hmi_fits_smaller_supported_display",
+          "reason": "Requires explicit 1152x720 physical-display acceptance run."
+        }
+      ]
+    },
+    {
+      "name": "isolated_rerun_after_full_suite_failure",
+      "command": "B518_TK_TESTS=1 python3 'B518 Log Solution/scripts/run_tests.py' test_log_solution_ui.LogSolutionUiTests.test_close_failure_keeps_window_open_and_real_retry_rebuilds_complete_audit",
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_seconds": 3.769,
+      "note": "This does not replace or erase the full-suite failure."
+    },
+    {
+      "name": "hc7_offline_native_matrix_integrity",
+      "command": "python3 'B518 Log Solution/scripts/verify_hc7_evidence.py' 'B518 Log Solution/docs/refactoring/evidence/hc7-20261022/native-matrix'",
+      "passed": true,
+      "result": "32/32 Cartesian cases; 128/128 PNG hashes/dimensions and ROI records"
+    }
+  ],
+  "hardware_acceptance": {
+    "t22": "pending",
+    "received_jetkvm_frame_available": false,
+    "deployed_pairing_verified": false,
+    "remote_scale_compression_occlusion": "not tested",
+    "bridge_known_gap": "At Bowei1121/B518_KVM_Log@736bb8b4df5ce87beaf140416f3aea027d3aa1d7, identical #ff9900 STALLED and TIMEOUT colors both classify as TIMEOUT."
+  },
+  "issue_state": "open",
+  "pull_request_may_close_issue": false
+}

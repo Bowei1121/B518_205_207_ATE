@@ -8,3 +8,12 @@
 - 32/32組控制項不因一般/長計時與提醒亮暗/清除移位，心跳獨立前進；128/128 timer crop含完整字形且有留白；離線128圖hash/尺寸/ROI核對通過。900高ROI`[600,1330,136,40]`為2×，720高ROI`[300,500,68,20]`為1×。
 - 三個既有真Tk回歸3 PASS、0 skipped（17.858s）；未重跑完整套件。648px是計算下限，本輪實測模式720及900px。沒有JetKVM接收影像、部署配對或遠端壓縮/遮擋驗收，仍屬HC8。
 - R3所需實作與本機證據已補齊；同步更新geometry/sample/run/handoff文件。最新commit仍須由獨立session複查；未自行宣稱審查通過，尚未merge或關閉Issue。
+
+## HC8 整合驗收（Issue #113）
+
+- 以 HC7 合併提交 `07ab0fbbae8eb50032ca2152f86a881f6d376449` 建立獨立工作分支；App source tree 為 `e32ba1068f361e4540670b0d92739faa50965ffc`，HC1–HC7 已合併。
+- 新增真 Tk 整合斷言：實際來源、衝突、警報、多視窗與 audit 流程中保持 2 件提醒，切換所有開啟視窗語言時檢查紅字提示、計時／提示幾何及 KVM 心跳；該案例 1/1 通過。
+- 本次整合／語言／顯示契約測試 31/31 通過；HC7 32 case／128 張影像 hash、尺寸與 ROI 離線檢查 32/32、128/128 通過。
+- 聚焦 15 項桌面案例 13 通過、1 項 Quartz 原生輸入不可用而失敗、1 項需切換實體 1152×720 顯示器而跳過。完整 suite 開始後到 275 項時卡在 Tk modal 關窗；中止前 264 pass、3 fail、4 error、3 skip、另 1 項執行中。audit 重試案例單獨重跑 1/1 通過，但未抹除全套首次失敗；完整套件未全綠。
+- 沒有 JetKVM received frame 或部署配對；T22、遠端縮放／壓縮／遮擋／狀態與心跳仍待設備驗收。橋接 source `736bb8b` 對同色 `STALLED`／`TIMEOUT` 仍有語意別名；不改橋接 repo。
+- HC8 驗收表與結果見 `docs/refactoring/evidence/hc8-20261022/acceptance.md`、`results.json`、`full-suite.log`。Issue／PR 不關閉，等獨立審查與硬體待驗補齊。
