@@ -1,0 +1,116 @@
+name: Log Solution M1 macOS 15
+
+on:
+  push:
+    branches: [B518-Log-Solution]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-m1-macos15.yml'
+  pull_request:
+    branches: [B518-Log-Solution]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-m1-macos15.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b518-m1-macos15-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-and-package:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: B518 Log Solution
+    env:
+      PYTHON_BIN: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12
+      PYTHONUNBUFFERED: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+      - name: Checkout tested revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Initialize evidence directory
+        run: |
+          evidence="$RUNNER_TEMP/b518-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$evidence"
+          echo "B518_TK_EVIDENCE_DIR=$evidence" >> "$GITHUB_ENV"
+
+      - name: Install Python.org 3.12.10 with Tk
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/python-3.12.10-macos11.pkg"
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg \
+            --output "$package"
+          echo "8373e58da4ea146b3eb1c1f9834f19a319440b6b679b06050b1f9ee3237aa8e4  $package" | shasum -a 256 -c -
+          pkgutil --check-signature "$package"
+          sudo installer -pkg "$package" -target /
+
+      - name: Verify M1 macOS 15 desktop
+        run: |
+          set -euo pipefail
+          mkdir -p "$B518_TK_EVIDENCE_DIR"
+          exec > >(tee "$B518_TK_EVIDENCE_DIR/host.log") 2>&1
+          sw_vers
+          chip="$(sysctl -n machdep.cpu.brand_string)"
+          echo "Chip: $chip"
+          [[ "$(uname -m)" == arm64 && "$chip" == 'Apple M1'* ]] || {
+            echo 'Requires a native Apple M1 family runner; Rosetta is unsupported.'; exit 1;
+          }
+          [[ "$(sw_vers -productVersion)" == 15.* ]] || {
+            echo 'This workflow requires macOS 15.x.'; exit 1;
+          }
+          [[ "$(stat -f '%Su' /dev/console)" == "$(id -un)" ]] || {
+            echo 'Runner must belong to the logged-in desktop user.'; exit 1;
+          }
+          "$PYTHON_BIN" scripts/check_macos_build_python.py --exact-version 3.12.10
+
+      - name: Run full desktop suite and build candidate
+        run: |
+          set -euo pipefail
+          ./scripts/build_macos15_arm64_log_solution.sh --preserve-version \
+            2>&1 | tee "$B518_TK_EVIDENCE_DIR/test-and-build.log"
+          git diff --exit-code -- VERSION
+          shasum -a 256 -c dist-macos15_0-arm64/*.sha256
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "ref=$GITHUB_REF"
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "attempt=$GITHUB_RUN_ATTEMPT"
+            echo "version=$(cat VERSION)"
+            sw_vers
+            sysctl -n machdep.cpu.brand_string
+            .venv-macos15_0-arm64-log-solution/bin/python -m pip freeze
+          } > dist-macos15_0-arm64/build-info.txt
+
+      - name: Upload verified candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: B518-Log-Solution-macOS15-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            B518 Log Solution/dist-macos15_0-arm64/*.zip
+            B518 Log Solution/dist-macos15_0-arm64/*.sha256
+            B518 Log Solution/dist-macos15_0-arm64/build-info.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: B518-test-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.B518_TK_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
