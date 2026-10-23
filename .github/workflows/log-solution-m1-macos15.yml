@@ -22,7 +22,6 @@ concurrency:
 
 jobs:
   test-and-package:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     timeout-minutes: 60
     defaults:
@@ -76,6 +75,29 @@ jobs:
             echo 'Runner must belong to the logged-in desktop user.'; exit 1;
           }
           "$PYTHON_BIN" scripts/check_macos_build_python.py --exact-version 3.12.10
+
+      - name: Configure desktop resolution for window acceptance
+        run: |
+          set -euo pipefail
+          swift - <<'SWIFT' 2>&1 | tee "$B518_TK_EVIDENCE_DIR/display.log"
+          import CoreGraphics
+          import Foundation
+
+          let display = CGMainDisplayID()
+          let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
+          let modes = CGDisplayCopyAllDisplayModes(display, options) as? [CGDisplayMode] ?? []
+          for mode in modes {
+              print("available: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
+          }
+          let candidates = modes.filter { $0.width >= 1920 && $0.height >= 1080 }
+              .sorted { $0.width * $0.height < $1.width * $1.height }
+          guard let mode = candidates.first else {
+              fatalError("Desktop acceptance requires at least 1920x1080 logical pixels")
+          }
+          let result = CGDisplaySetDisplayMode(display, mode, nil)
+          guard result == .success else { fatalError("Cannot set display mode: \(result)") }
+          print("selected: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
+          SWIFT
 
       - name: Run full desktop suite and build candidate
         run: |

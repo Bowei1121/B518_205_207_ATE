@@ -19,6 +19,7 @@ workflow 也宣告 `workflow_dispatch`，但 GitHub 要求該 workflow 存在於
 建立 macos-15 VM → checkout 本次待驗證 commit
 → 安裝 Python.org 3.12.10 universal2（固定 SHA-256、驗證套件簽章）
 → 確認 M1／原生 arm64／macOS 15／桌面使用者／Python 與 Tk
+→ 選用至少 1920×1080 邏輯像素的桌面模式，記錄實際解析度
 → 安裝固定版本依賴 → 原生輸入權限檢查
 → B518_TK_TESTS=1 執行既有完整自動測試套件
 → PyInstaller → bundle 架構／最低系統／依賴檢查
@@ -28,6 +29,8 @@ workflow 也宣告 `workflow_dispatch`，但 GitHub 要求該 workflow 存在於
 沿用 `scripts/build_macos15_arm64_log_solution.sh` 的完整測試與建置閘門；測試或權限檢查失敗就不交付安裝包，不藉由停用 Tk 或改用 view-cache 截圖放行。原有明確標示人工驗收的測試仍需人工執行，請以測試 log 的 skipped 項目確認範圍。
 
 雲端映像會更新。原生滑鼠／鍵盤投遞、視窗截圖與像素斷言能否在該次 VM 通過，須由實際 workflow 證明；不能僅憑 `runs-on` 或 bundle 靜態檢查宣稱完整桌面驗收成功。雲端測試不包含真實 ATE、JetKVM 或工廠即時 Log 配對。
+
+GitHub VM 的顯示器不一定是 Retina。NSView 截圖像素尺寸依該原生視窗的 `backingScaleFactor()` 檢查；仍核對真實截圖與 Tk 幾何，不將測試固定為某台開發機的 2 倍倍率。
 
 ## 版本與追溯
 

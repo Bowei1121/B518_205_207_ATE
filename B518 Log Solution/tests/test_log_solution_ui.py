@@ -345,6 +345,7 @@ def capture_tk_content_view_evidence(window, key, widgets, output_dir=None):
         "native_bounds": {name: float(screen_window[Quartz.kCGWindowBounds][name])
                           for name in ("X", "Y", "Width", "Height")},
         "image_pixels": {"width": bitmap.pixelsWide(), "height": bitmap.pixelsHigh()},
+        "backing_scale_factor": float(native_window.backingScaleFactor()),
         "screenshot": filename,
         "capture_method": "NSView bitmap cache of the live Tk contentView",
     }
@@ -1231,8 +1232,10 @@ class LogSolutionUiTests(unittest.TestCase):
                                 evidence["image_pixels"]["width"] / evidence["size"][0],
                                 evidence["image_pixels"]["height"] / evidence["size"][1],
                             )
-                            self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
-                            self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
+                            native_scale = evidence["backing_scale_factor"]
+                            self.assertGreater(native_scale, 0)
+                            self.assertAlmostEqual(physical_per_native_unit[0], native_scale, places=2)
+                            self.assertAlmostEqual(physical_per_native_unit[1], native_scale, places=2)
 
                             def timer_measurement(sample_text, capture):
                                 timer = app.monitor_elapsed
@@ -3254,7 +3257,11 @@ class LogSolutionUiTests(unittest.TestCase):
             evidence = capture_tk_content_view_evidence(
                 second, "duplicate-title", {"target": second}, output_dir=temporary)
             self.assertEqual(evidence["size"], [320, 210])
-            self.assertEqual(evidence["image_pixels"], {"width": 640, "height": 420})
+            native_scale = evidence["backing_scale_factor"]
+            self.assertEqual(evidence["image_pixels"], {
+                "width": round(320 * native_scale),
+                "height": round(210 * native_scale),
+            })
         self.assertEqual(first.title(), "Duplicate capture title")
         self.assertEqual(second.title(), "Duplicate capture title")
 
