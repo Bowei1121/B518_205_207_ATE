@@ -12080,7 +12080,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 for marker in (app.kvm_state_marker, app.kvm_layout_marker,
                                *app.kvm_result_blocks.values()):
                     self.assertFalse(overlaps(conflict_window, marker),
-                                     "Conflict review must not cover KVM markers")
+                                     "Conflict review must not cover KVM markers: "
+                                     "root={}, conflict={}, marker=({}, {}, {}, {}), screen={}".format(
+                                         root.geometry(), conflict_window.geometry(),
+                                         marker.winfo_rootx(), marker.winfo_rooty(),
+                                         marker.winfo_width(), marker.winfo_height(),
+                                         app._main_screen_metrics))
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.selection_set(17)
                 app.conflict_list.activate(17)
@@ -14276,10 +14281,23 @@ class LogSolutionUiTests(unittest.TestCase):
                         "<Motion>", x=max(2, widget.winfo_width() // 2),
                         y=max(2, widget.winfo_height() // 2), warp=True)
                     widget.event_generate("<Enter>")
-                    self.wait_for_ui(root, lambda:
-                                     _LocalizedControlHint._visible_hint is not None and
-                                     _LocalizedControlHint._visible_hint._widget is widget and
-                                     _LocalizedControlHint._visible_hint._window is not None)
+                    try:
+                        self.wait_for_ui(root, lambda:
+                                         _LocalizedControlHint._visible_hint is not None and
+                                         _LocalizedControlHint._visible_hint._widget is widget and
+                                         _LocalizedControlHint._visible_hint._window is not None)
+                    except AssertionError:
+                        pointer = widget.winfo_pointerxy()
+                        print("Hint timeout:", {
+                            "widget": str(widget), "owner": owner.geometry(),
+                            "pointer": pointer,
+                            "containing": str(widget.winfo_containing(*pointer)),
+                            "widget_bounds": (widget.winfo_rootx(), widget.winfo_rooty(),
+                                              widget.winfo_width(), widget.winfo_height()),
+                            "visible_hint_widget": str(getattr(
+                                _LocalizedControlHint._visible_hint, "_widget", None)),
+                        }, flush=True)
+                        raise
                     hint = _LocalizedControlHint._visible_hint
                     root.update()
                     return hint._label.cget("text")

@@ -99,6 +99,17 @@ jobs:
           print("selected: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
           SWIFT
 
+      - name: Reproduce desktop failures
+        run: |
+          set -euo pipefail
+          "$PYTHON_BIN" -m venv .venv-macos15_0-arm64-log-solution
+          python=.venv-macos15_0-arm64-log-solution/bin/python
+          "$python" -m pip install -r requirements/requirements-macos15-arm64.txt
+          B518_TK_TESTS=1 "$python" scripts/run_tests.py \
+            test_log_solution_ui.LogSolutionUiTests.test_hm3_conflict_and_alarm_layout_stays_fixed_across_languages \
+            test_log_solution_ui.LogSolutionUiTests.test_real_tk_history_and_diagnostics_controls_explain_current_actions \
+            2>&1 | tee "$B518_TK_EVIDENCE_DIR/desktop-repro.log"
+
       - name: Run full desktop suite and build candidate
         run: |
           set -euo pipefail
