@@ -11,6 +11,8 @@ cd "B518 Log Solution"
 
 ## 建置安裝包
 
+GitHub 雲端 M1／macOS 15 的自動測試與打包流程，見 [GitHub Actions 使用說明](docs/GITHUB_ACTIONS_MACOS15.md)。流程使用 GitHub-hosted `macos-15` VM；測試通過後提供 App ZIP、SHA-256 與建置紀錄，不需自備 runner。
+
 每次 macOS 候選發行的目標矩陣、離線部署步驟、現場一輪驗收表、ad-hoc 簽章／SHA-256 說明及未驗收範圍，見 [macOS 發布與現場驗收指南](docs/TICKET17_MACOS_RELEASE_AND_FIELD_ACCEPTANCE.md)。
 
 舊測試機使用的 Intel macOS 10.14／10.15 安裝包，請在 Intel Catalina 10.15 執行 `./scripts/build_macos10_14_log_solution.sh`。

@@ -345,6 +345,7 @@ def capture_tk_content_view_evidence(window, key, widgets, output_dir=None):
         "native_bounds": {name: float(screen_window[Quartz.kCGWindowBounds][name])
                           for name in ("X", "Y", "Width", "Height")},
         "image_pixels": {"width": bitmap.pixelsWide(), "height": bitmap.pixelsHigh()},
+        "backing_scale_factor": float(native_window.backingScaleFactor()),
         "screenshot": filename,
         "capture_method": "NSView bitmap cache of the live Tk contentView",
     }
@@ -1231,8 +1232,10 @@ class LogSolutionUiTests(unittest.TestCase):
                                 evidence["image_pixels"]["width"] / evidence["size"][0],
                                 evidence["image_pixels"]["height"] / evidence["size"][1],
                             )
-                            self.assertAlmostEqual(physical_per_native_unit[0], 2.0, places=2)
-                            self.assertAlmostEqual(physical_per_native_unit[1], 2.0, places=2)
+                            native_scale = evidence["backing_scale_factor"]
+                            self.assertGreater(native_scale, 0)
+                            self.assertAlmostEqual(physical_per_native_unit[0], native_scale, places=2)
+                            self.assertAlmostEqual(physical_per_native_unit[1], native_scale, places=2)
 
                             def timer_measurement(sample_text, capture):
                                 timer = app.monitor_elapsed
@@ -3254,7 +3257,11 @@ class LogSolutionUiTests(unittest.TestCase):
             evidence = capture_tk_content_view_evidence(
                 second, "duplicate-title", {"target": second}, output_dir=temporary)
             self.assertEqual(evidence["size"], [320, 210])
-            self.assertEqual(evidence["image_pixels"], {"width": 640, "height": 420})
+            native_scale = evidence["backing_scale_factor"]
+            self.assertEqual(evidence["image_pixels"], {
+                "width": round(320 * native_scale),
+                "height": round(210 * native_scale),
+            })
         self.assertEqual(first.title(), "Duplicate capture title")
         self.assertEqual(second.title(), "Duplicate capture title")
 
@@ -12073,7 +12080,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 for marker in (app.kvm_state_marker, app.kvm_layout_marker,
                                *app.kvm_result_blocks.values()):
                     self.assertFalse(overlaps(conflict_window, marker),
-                                     "Conflict review must not cover KVM markers")
+                                     "Conflict review must not cover KVM markers: "
+                                     "root={}, conflict={}, marker=({}, {}, {}, {}), screen={}".format(
+                                         root.geometry(), conflict_window.geometry(),
+                                         marker.winfo_rootx(), marker.winfo_rooty(),
+                                         marker.winfo_width(), marker.winfo_height(),
+                                         app._main_screen_metrics))
                 app.conflict_list.selection_clear(0, "end")
                 app.conflict_list.selection_set(17)
                 app.conflict_list.activate(17)
@@ -14269,10 +14281,23 @@ class LogSolutionUiTests(unittest.TestCase):
                         "<Motion>", x=max(2, widget.winfo_width() // 2),
                         y=max(2, widget.winfo_height() // 2), warp=True)
                     widget.event_generate("<Enter>")
-                    self.wait_for_ui(root, lambda:
-                                     _LocalizedControlHint._visible_hint is not None and
-                                     _LocalizedControlHint._visible_hint._widget is widget and
-                                     _LocalizedControlHint._visible_hint._window is not None)
+                    try:
+                        self.wait_for_ui(root, lambda:
+                                         _LocalizedControlHint._visible_hint is not None and
+                                         _LocalizedControlHint._visible_hint._widget is widget and
+                                         _LocalizedControlHint._visible_hint._window is not None)
+                    except AssertionError:
+                        pointer = widget.winfo_pointerxy()
+                        print("Hint timeout:", {
+                            "widget": str(widget), "owner": owner.geometry(),
+                            "pointer": pointer,
+                            "containing": str(widget.winfo_containing(*pointer)),
+                            "widget_bounds": (widget.winfo_rootx(), widget.winfo_rooty(),
+                                              widget.winfo_width(), widget.winfo_height()),
+                            "visible_hint_widget": str(getattr(
+                                _LocalizedControlHint._visible_hint, "_widget", None)),
+                        }, flush=True)
+                        raise
                     hint = _LocalizedControlHint._visible_hint
                     root.update()
                     return hint._label.cget("text")
