@@ -94,10 +94,31 @@ jobs:
           guard let mode = candidates.first else {
               fatalError("Desktop acceptance requires at least 1920x1080 logical pixels")
           }
-          let result = CGDisplaySetDisplayMode(display, mode, nil)
-          guard result == .success else { fatalError("Cannot set display mode: \(result)") }
+          var configuration: CGDisplayConfigRef?
+          guard CGBeginDisplayConfiguration(&configuration) == .success,
+                let configuration = configuration else {
+              fatalError("Cannot begin display configuration")
+          }
+          let result = CGConfigureDisplayWithDisplayMode(configuration, display, mode, nil)
+          guard result == .success else {
+              CGCancelDisplayConfiguration(configuration)
+              fatalError("Cannot set display mode: \(result)")
+          }
+          guard CGCompleteDisplayConfiguration(configuration, .forSession) == .success else {
+              fatalError("Cannot retain display mode for the desktop session")
+          }
           print("selected: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
           SWIFT
+          "$PYTHON_BIN" - <<'PY' 2>&1 | tee -a "$B518_TK_EVIDENCE_DIR/display.log"
+          import tkinter as tk
+          root = tk.Tk()
+          try:
+              size = (root.winfo_screenwidth(), root.winfo_screenheight())
+              print("Tk desktop after configuration process exits:", size)
+              assert size[0] >= 1920 and size[1] >= 1080, size
+          finally:
+              root.destroy()
+          PY
 
       - name: Reproduce desktop failures
         run: |
