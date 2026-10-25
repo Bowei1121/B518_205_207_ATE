@@ -21,6 +21,12 @@ The state and heartbeat markers share a row and size, separated by a 2-Tk-unit g
 
 Each row always has ten cells. Capacity 1–10 displays one row; capacity 11–20 displays two. Unused capacity cells stay black. The row rail is rendered from the same frozen snapshot/capacity as the strip. It is independent of result availability. A top marker cannot detect every occlusion: a separate window covering only a result strip while leaving the upper locator visible may evade locator-based occlusion checks. Consumers must still validate each required result cell.
 
+## Blank gutter points
+
+Relative to the `kvm_results` origin derived from the two locator holes, the three points `(6, 29)`, `(17, 29)`, and `(28, 29)`, each within a ±1.2 Tk-unit square patch, must show only app background. Every B, G, and R channel must be >= 232; no widget may be placed there. The app background `LIGHT_BACKGROUND` is `#f3f4f6` (minimum channel 243). This also holds in macOS Dark Mode because the app forces light appearance.
+
+The KVM_Log reader (`host-app/log_solution_reader.py` at `76686df`) samples a median patch of radius `max(1, 1.2 * scale)` at each point before reading markers. If any patch is empty or its minimum B/G/R channel is below 232, it rejects the whole frame with `locator_orientation_or_contrast_invalid`. This documents an existing reader rule; there is no pixel change and the contract stays 1.3.
+
 ## Six state patterns
 
 Rows are top-to-bottom, columns left-to-right. `B` is `#000000`; `W` is `#ffffff`. The pattern table is owned by `src/kvm_display_contract.py` and `classify_kvm_frame_samples` returns unknown for missing, low-contrast, reversed-locator, or unlisted samples.
@@ -75,7 +81,7 @@ Version 1.1 predates the left locator at x=0 and has no PREPARING or MANUAL_STOP
 
 Version 1.3 is the frozen **App-side local contract** for the merged timer and heartbeat behavior. It is not a remotely validated pixel contract. See [`CLAUDE_KVM_HANDOFF.md`](CLAUDE_KVM_HANDOFF.md) and [`evidence/ls7-kvm/README.md`](evidence/ls7-kvm/README.md) for the consumer handoff and evidence status. The 12×12 remote-pixel threshold has not been measured, so the available evidence does not justify enlarging either marker.
 
-The monitoring timer is outside the `KVM` result-band frame. It is the right-aligned `monitor_elapsed` label in `monitor_status_row`, rendered in bold Menlo at `MAIN_FONT_SIZE` (currently 14 Tk points). Its text is `MM:SS`: seconds are `00–59`, minutes have a minimum width of two digits and continue without an upper limit, with no hours field or sub-second digits. The label width follows its rendered text. Measured local widget bounds and crop ROIs for `00:00` and `600:00`, across capacity, language, and Tk scaling, are in `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json`. Each ROI is relative to its linked native content-view capture. These local measurements do not define remote capture coordinates.
+The monitoring timer is outside the `KVM` result-band frame. It is the right-aligned `monitor_elapsed` label in `monitor_status_row`, rendered in bold Menlo at `MAIN_FONT_SIZE` (currently 14 Tk points). Its text is `MM:SS`: seconds are `00–59`, minutes have a minimum width of two digits and continue without an upper limit, with no hours field or sub-second digits. The label has a fixed 8-character width (`MONITOR_ELAPSED_WIDTH = 8`); longer text such as `600:00` still fits. Measured local widget bounds and crop ROIs for `00:00` and `600:00`, across capacity, language, and Tk scaling, are in `evidence/ls7-kvm/tk-matrix/timer-crop-matrix.json`. Each ROI is relative to its linked native content-view capture. These local measurements do not define remote capture coordinates.
 
 App-side marker classification uses grayscale threshold 128 with a 96-level minimum contrast: black samples are at most 80 and white samples at least 176; values between them are unknown. These are local helper defaults, not remote compression tolerances. Result-cell colors are defined in `src/b518_log_solution.py`; the machine-readable values and sample matrix are in the LS7 handoff evidence. Remote color tolerances remain unvalidated.
 
