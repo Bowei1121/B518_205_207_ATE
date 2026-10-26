@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT="${0:A:h:h}"
 cd "$ROOT"
 
+[[ $# -eq 0 || ( $# -eq 1 && "$1" == '--preserve-version' ) ]] || {
+  print -u2 'Usage: build_macos15_arm64_log_solution.sh [--preserve-version]'; exit 2;
+}
+
 [[ "$(uname -m)" == "arm64" ]] || { print -u2 'Requires an Apple Silicon arm64 builder.'; exit 1; }
 OS_VERSION="$(sw_vers -productVersion)"
 OS_MAJOR="${OS_VERSION%%.*}"
@@ -27,15 +31,7 @@ VENV=.venv-macos15_0-arm64-log-solution
 "$VENV/bin/python" scripts/check_macos_native_test_access.py
 B518_TK_TESTS=1 "$VENV/bin/python" scripts/run_tests.py
 
-VERSION="$($VENV/bin/python - <<'PY'
-from pathlib import Path
-parts = [int(v) for v in Path('VERSION').read_text().strip().split('.')]
-parts[-1] += 1
-value = '.'.join(map(str, parts))
-Path('VERSION').write_text(value + '\n')
-print(value)
-PY
-)"
+VERSION="$("$VENV/bin/python" scripts/prepare_macos_build_version.py "$@")"
 
 DIST=dist-macos15_0-arm64
 BUILD=build-macos15_0-arm64
