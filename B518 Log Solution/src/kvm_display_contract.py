@@ -7,6 +7,9 @@ from monitoring_round import RoundSnapshot, RoundState
 
 
 CONTRACT_VERSION = "1.3"
+# Mirror the existing KVM_Log reader blank-gutter checks.
+GUTTER_POINTS = ((6, 29), (17, 29), (28, 29))
+GUTTER_MIN = 232
 MARKER_CELL_SIZE = 10
 MARKER_CELL_GAP = 2
 MARKER_QUIET_ZONE = 2
