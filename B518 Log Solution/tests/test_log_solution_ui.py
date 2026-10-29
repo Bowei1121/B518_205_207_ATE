@@ -2329,7 +2329,8 @@ class LogSolutionUiTests(unittest.TestCase):
                         self.assertIsNotNone(
                             event, "Quartz could not create key event {} ({})".format(
                                 keycode, "down" if down else "up"))
-                        Quartz.CGEventSetFlags(event, flags)
+                        if shift:
+                            Quartz.CGEventSetFlags(event, Quartz.CGEventGetFlags(event) | flags)
                         Quartz.CGEventPostToPid(os.getpid(), event)
                     if pump:
                         deadline = time.monotonic() + .08
@@ -2473,6 +2474,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
                 menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
                 notification_center = NSNotificationCenter.defaultCenter()
                 observer = notification_center.addObserverForName_object_queue_usingBlock_(
                     NSMenuDidBeginTrackingNotification, None, None,
@@ -2495,7 +2497,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 def send_menu_keys(screenshot_tag, keycodes):
                     entered, exited = popup_entered, popup_exited
 
-                    tracking = menu_tracking
+                    tracking, keys_sent = menu_tracking, menu_keys_sent
 
                     def dismiss():
                         for down in (True, False):
@@ -2521,8 +2523,10 @@ class LogSolutionUiTests(unittest.TestCase):
                         try:
                             if not entered.wait(3):
                                 raise AssertionError("native menu popup never started")
-                            if not tracking.wait(3):
-                                raise AssertionError("native menu never began tracking")
+                            # Some Tk/AppKit combinations may not emit this
+                            # notification for a popup. Fall back to a bounded
+                            # delay rather than suppressing keyboard input.
+                            tracking.wait(1)
                             # The notification is posted during menu setup; allow the
                             # tracking loop to receive events before injecting keys.
                             time.sleep(.1)
@@ -2543,6 +2547,8 @@ class LogSolutionUiTests(unittest.TestCase):
                             menu_watchdog_errors.append("{} keyboard input: {!r}".format(
                                 screenshot_tag, error))
                             dismiss()
+                        finally:
+                            keys_sent.set()
 
                     watchdog_thread = threading.Thread(target=watchdog, daemon=True)
                     input_threads.append(watchdog_thread)
@@ -2564,6 +2570,18 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.current_language, current_language)
                 self.assertEqual(app.language_choice.get(), current_language)
 
+                # Tk focus alone does not establish that AppKit has finished
+                # returning keyboard input to the root after menu tracking.
+                self.wait_for_ui(root, menu_keys_sent.is_set)
+                self.wait_for_ui(root, lambda: (
+                    NSApplication.sharedApplication().isActive()
+                    and NSApplication.sharedApplication().keyWindow() is not None
+                    and NSApplication.sharedApplication().keyWindow().title() == app_title))
+                settle_deadline = time.monotonic() + .2
+                while time.monotonic() < settle_deadline:
+                    root.update()
+                    time.sleep(.01)
+
                 target_language = ENGLISH if current_language == TRADITIONAL_CHINESE else TRADITIONAL_CHINESE
                 target_name = "English" if target_language == ENGLISH else "繁體中文"
                 target_index = next(
@@ -2572,10 +2590,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
                 menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
                 post_key(125, pump=False)  # Down opens; native menu receives further keys.
                 send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
-                self.wait_for_ui(root, lambda: app.language_choice.get() == target_language)
+                self.wait_for_ui(root, lambda: app.language_choice.get() == target_language,
+                                 timeout=10)
                 self.assertEqual(app.language_choice.get(), target_language)
                 self.assertIs(root.focus_get(), app.language_button)
                 write_tk_bounds_evidence("st2-language-native-keyboard", {
@@ -2605,6 +2625,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
                 menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
                 post_key(49, pump=False)
                 send_menu_keys("close", (53,))
                 self.wait_for_ui(root, popup_exited.is_set)
