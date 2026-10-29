@@ -2323,14 +2323,19 @@ class LogSolutionUiTests(unittest.TestCase):
                     time.sleep(.01)
 
                 def post_key(keycode, shift=False, pump=True, system_wide=False):
-                    flags = Quartz.kCGEventFlagMaskShift if shift else 0
+                    modifiers = (Quartz.kCGEventFlagMaskAlphaShift | Quartz.kCGEventFlagMaskShift |
+                                 Quartz.kCGEventFlagMaskControl | Quartz.kCGEventFlagMaskAlternate |
+                                 Quartz.kCGEventFlagMaskCommand)
                     for down in (True, False):
                         event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
                         self.assertIsNotNone(
                             event, "Quartz could not create key event {} ({})".format(
                                 keycode, "down" if down else "up"))
+                        # Drop live modifier state but keep key-intrinsic bits (arrow NumericPad/SecondaryFn).
+                        flags = Quartz.CGEventGetFlags(event) & ~modifiers
                         if shift:
-                            Quartz.CGEventSetFlags(event, Quartz.CGEventGetFlags(event) | flags)
+                            flags |= Quartz.kCGEventFlagMaskShift
+                        Quartz.CGEventSetFlags(event, flags)
                         # Exactly one path per event so a key is never delivered twice.
                         if system_wide:
                             Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
@@ -2576,15 +2581,18 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 # Tk focus alone does not establish that AppKit has finished
                 # returning keyboard input to the root after menu tracking.
+                def wait_for_root_key_window():
+                    self.wait_for_ui(root, lambda: (
+                        NSApplication.sharedApplication().isActive()
+                        and NSApplication.sharedApplication().keyWindow() is not None
+                        and NSApplication.sharedApplication().keyWindow().title() == app_title))
+                    settle_deadline = time.monotonic() + .2
+                    while time.monotonic() < settle_deadline:
+                        root.update()
+                        time.sleep(.01)
+
                 self.wait_for_ui(root, menu_keys_sent.is_set)
-                self.wait_for_ui(root, lambda: (
-                    NSApplication.sharedApplication().isActive()
-                    and NSApplication.sharedApplication().keyWindow() is not None
-                    and NSApplication.sharedApplication().keyWindow().title() == app_title))
-                settle_deadline = time.monotonic() + .2
-                while time.monotonic() < settle_deadline:
-                    root.update()
-                    time.sleep(.01)
+                wait_for_root_key_window()
 
                 target_language = ENGLISH if current_language == TRADITIONAL_CHINESE else TRADITIONAL_CHINESE
                 target_name = "English" if target_language == ENGLISH else "繁體中文"
@@ -2632,7 +2640,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 popup_exited = threading.Event()
                 menu_tracking = threading.Event()
                 menu_keys_sent = threading.Event()
-                post_key(49, pump=False)
+                wait_for_root_key_window()
+                self.wait_for_ui(root, lambda: root.focus_get() is app.language_button)
+                # Same system-wide path as the Down reopen: a per-pid Space can sit undispatched.
+                post_key(49, pump=False, system_wide=True)
                 send_menu_keys("close", (53,))
                 self.wait_for_ui(root, popup_exited.is_set)
 
