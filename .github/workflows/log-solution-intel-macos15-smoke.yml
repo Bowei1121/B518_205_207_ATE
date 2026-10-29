@@ -67,6 +67,7 @@ jobs:
           uname -m
           sysctl -n machdep.cpu.brand_string
           "$PYTHON_BIN" -c 'import sys, platform; print(sys.version, platform.machine())'
+          "$PYTHON_BIN" scripts/check_macos_build_python.py --exact-version 3.12.10 --architecture x86_64
 
       - name: Run 10.14 build script (tests, PyInstaller, bundle check, ZIP)
         run: |
@@ -74,14 +75,22 @@ jobs:
           mkdir -p "$RUNNER_TEMP/evidence"
           ./scripts/build_macos10_14_log_solution.sh 2>&1 | tee "$RUNNER_TEMP/evidence/build.log"
           shasum -a 256 -c dist-macos10.14-common/*.sha256
+          cd dist-macos10.14-common
+          for zip in *.zip; do
+            smoke="${zip%.zip}-CI-SMOKE.zip"
+            mv "$zip" "$smoke"
+            rm -f "$zip.sha256"
+            shasum -a 256 "$smoke" > "$smoke.sha256"
+          done
+          ls -l
 
       - name: Upload smoke ZIP and SHA-256
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: CI-smoke-not-for-release-macOS10.14-x86_64-${{ github.run_id }}-try${{ matrix.attempt }}
           path: |
-            B518 Log Solution/dist-macos10.14-common/*.zip
-            B518 Log Solution/dist-macos10.14-common/*.sha256
+            B518 Log Solution/dist-macos10.14-common/*-CI-SMOKE.zip
+            B518 Log Solution/dist-macos10.14-common/*-CI-SMOKE.zip.sha256
           if-no-files-found: error
           retention-days: 14
 
