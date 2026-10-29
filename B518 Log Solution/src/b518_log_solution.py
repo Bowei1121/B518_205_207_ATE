@@ -2589,17 +2589,19 @@ class B518LogSolutionApp:
                             NSApplication is not None and
                             not NSApplication.sharedApplication().isActive())
                 native_window.orderFrontRegardless()
-                if inactive:
+                if inactive and previous_key_window is not None and \
+                        previous_key_window != native_window:
                     token = object()
                     self._activation_raise_token = token
                     self._schedule_ui(50, self._check_activation_raise,
-                                      round_id, native_window, token, 20)
+                                      round_id, native_window, previous_key_window, token, 60)
             else:
                 self.root.lift()
         except Exception as error:
+            self._activation_raise_token = None
             self._record_foreground_failure(error)
 
-    def _check_activation_raise(self, round_id, native_window, token, remaining):
+    def _check_activation_raise(self, round_id, native_window, previous_key_window, token, remaining):
         if (getattr(self, "_activation_raise_token", None) is not token or
                 getattr(self, "_ui_destroyed", False) or round_id != self.active_round_id):
             return
@@ -2607,11 +2609,19 @@ class B518LogSolutionApp:
             if NSApplication.sharedApplication().isActive():
                 self._schedule_ui("idle", self._finish_activation_raise,
                                   round_id, native_window, token)
-            elif remaining > 1:
-                self._schedule_ui(50, self._check_activation_raise,
-                                  round_id, native_window, token, remaining - 1)
             else:
-                self._activation_raise_token = None
+                windows = list(NSApplication.sharedApplication().orderedWindows() or ())
+                try:
+                    previous_index = windows.index(previous_key_window)
+                    native_index = windows.index(native_window)
+                except ValueError:
+                    previous_index = native_index = None
+                if (previous_index is not None and previous_index < native_index) or remaining <= 1:
+                    self._activation_raise_token = None
+                else:
+                    self._schedule_ui(50, self._check_activation_raise,
+                                      round_id, native_window, previous_key_window,
+                                      token, remaining - 1)
         except Exception as error:
             self._activation_raise_token = None
             self._record_foreground_failure(error)
