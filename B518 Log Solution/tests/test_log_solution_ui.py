@@ -2304,6 +2304,7 @@ class LogSolutionUiTests(unittest.TestCase):
             callback_errors = []
             input_threads = []
             capture_errors = []
+            menu_watchdog_errors = []
             evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
             root.report_callback_exception = lambda *error: callback_errors.append(error)
             try:
@@ -2504,6 +2505,14 @@ class LogSolutionUiTests(unittest.TestCase):
                         except Exception as error:
                             capture_errors.append("{} keyboard input: {!r}".format(
                                 screenshot_tag, error))
+                        if popup_entered.wait(10) and not popup_exited.wait(5):
+                            for down in (True, False):
+                                event = Quartz.CGEventCreateKeyboardEvent(None, 53, down)
+                                Quartz.CGEventPostToPid(os.getpid(), event)
+                                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                            menu_watchdog_errors.append(
+                                "{}: native menu still open; sent Escape to avoid hang".format(
+                                    screenshot_tag))
 
                     thread = threading.Thread(target=deliver, daemon=True)
                     input_threads.append(thread)
@@ -2577,6 +2586,8 @@ class LogSolutionUiTests(unittest.TestCase):
             if evidence_value:
                 self.assertEqual(capture_errors, [],
                                  "native language-menu evidence/input failed")
+            self.assertEqual(menu_watchdog_errors, [],
+                             "native language menu had to be force-closed")
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
