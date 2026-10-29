@@ -3,7 +3,13 @@ set -euo pipefail
 ROOT="${0:A:h:h}"
 cd "$ROOT"
 [[ "$(uname -m)" == "x86_64" ]] || { print -u2 'Requires an Intel x86_64 builder.'; exit 1; }
-[[ "$(sw_vers -productVersion)" == 10.15.* ]] || { print -u2 'Requires macOS 10.15.x Catalina VM.'; exit 1; }
+if [[ "$(sw_vers -productVersion)" != 10.15.* ]]; then
+  if [[ "${B518_CI_NON_CATALINA_SMOKE:-}" == 1 ]]; then
+    print -u2 "WARNING: CI smoke build on macOS $(sw_vers -productVersion), not Catalina. Not a release candidate."
+  else
+    print -u2 'Requires macOS 10.15.x Catalina VM.'; exit 1
+  fi
+fi
 PYTHON_BIN="${PYTHON_BIN:-/usr/local/bin/python3.12}"
 [[ -x "$PYTHON_BIN" ]] || { print -u2 "Python 3.12 not found: $PYTHON_BIN"; exit 1; }
 "$PYTHON_BIN" scripts/check_macos_build_python.py --architecture x86_64

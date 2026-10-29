@@ -1,0 +1,95 @@
+name: Log Solution 10.14 build smoke (Intel macOS 15)
+
+# Runs the Catalina 10.14 build script on an Intel macOS 15 runner.
+# Proves the test step and PyInstaller packaging finish; it does NOT prove the
+# app opens on Mojave. The ZIP is a CI smoke artifact, not a release candidate.
+
+on:
+  push:
+    branches: [B518-Log-Solution, demo/1104]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-intel-macos15-smoke.yml'
+  pull_request:
+    branches: [B518-Log-Solution, demo/1104]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-intel-macos15-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b518-intel-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-10-14:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2]
+    defaults:
+      run:
+        shell: bash
+        working-directory: B518 Log Solution
+    env:
+      PYTHON_BIN: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12
+      B518_CI_NON_CATALINA_SMOKE: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+      - name: Checkout tested revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Install Python.org 3.12.10 with Tk
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/python-3.12.10-macos11.pkg"
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg \
+            --output "$package"
+          echo "8373e58da4ea146b3eb1c1f9834f19a319440b6b679b06050b1f9ee3237aa8e4  $package" | shasum -a 256 -c -
+          pkgutil --check-signature "$package"
+          sudo installer -pkg "$package" -target /
+
+      - name: Show builder
+        run: |
+          set -euo pipefail
+          sw_vers
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          "$PYTHON_BIN" -c 'import sys, platform; print(sys.version, platform.machine())'
+
+      - name: Run 10.14 build script (tests, PyInstaller, bundle check, ZIP)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence"
+          ./scripts/build_macos10_14_log_solution.sh 2>&1 | tee "$RUNNER_TEMP/evidence/build.log"
+          shasum -a 256 -c dist-macos10.14-common/*.sha256
+
+      - name: Upload smoke ZIP and SHA-256
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: CI-smoke-not-for-release-macOS10.14-x86_64-${{ github.run_id }}-try${{ matrix.attempt }}
+          path: |
+            B518 Log Solution/dist-macos10.14-common/*.zip
+            B518 Log Solution/dist-macos10.14-common/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: build-log-${{ github.run_id }}-try${{ matrix.attempt }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 14
