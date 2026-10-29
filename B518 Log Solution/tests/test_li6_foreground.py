@@ -7,15 +7,16 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from AppKit import NSApplication
 
 import tkinter as tk
 from tkinter import ttk
 
 try:
     import Quartz
-except ImportError:
+    from AppKit import NSApplication
+except ImportError:  # macOS desktop-only acceptance test
     Quartz = None
+    NSApplication = None
 
 from b518_log_solution import B518LogSolutionApp
 from monitoring_round import RoundResult, RoundSnapshot, RoundState
