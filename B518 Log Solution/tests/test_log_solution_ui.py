@@ -2322,7 +2322,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(.01)
 
-                def post_key(keycode, shift=False, pump=True):
+                def post_key(keycode, shift=False, pump=True, system_wide=False):
                     flags = Quartz.kCGEventFlagMaskShift if shift else 0
                     for down in (True, False):
                         event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
@@ -2331,7 +2331,11 @@ class LogSolutionUiTests(unittest.TestCase):
                                 keycode, "down" if down else "up"))
                         if shift:
                             Quartz.CGEventSetFlags(event, Quartz.CGEventGetFlags(event) | flags)
-                        Quartz.CGEventPostToPid(os.getpid(), event)
+                        # Exactly one path per event so a key is never delivered twice.
+                        if system_wide:
+                            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                        else:
+                            Quartz.CGEventPostToPid(os.getpid(), event)
                     if pump:
                         deadline = time.monotonic() + .08
                         while time.monotonic() < deadline:
@@ -2521,7 +2525,7 @@ class LogSolutionUiTests(unittest.TestCase):
 
                     def deliver():
                         try:
-                            if not entered.wait(3):
+                            if not entered.wait(15):
                                 raise AssertionError("native menu popup never started")
                             # Some Tk/AppKit combinations may not emit this
                             # notification for a popup. Fall back to a bounded
@@ -2591,7 +2595,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 popup_exited = threading.Event()
                 menu_tracking = threading.Event()
                 menu_keys_sent = threading.Event()
-                post_key(125, pump=False)  # Down opens; native menu receives further keys.
+                # The HID tap wakes the Tk event loop promptly (the root is the key
+                # window here); a per-pid Down can sit undispatched on Intel runners.
+                post_key(125, pump=False, system_wide=True)  # Down opens; native menu receives further keys.
                 send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
                 self.wait_for_ui(root, lambda: app.language_choice.get() == target_language,
