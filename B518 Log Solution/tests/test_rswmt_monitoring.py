@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -280,7 +281,10 @@ class RsWmtTests(unittest.TestCase):
         path = self.write_result()
         monitor.poll_once()
         self.seconds = 4
+        previous = path.stat().st_mtime_ns
         path.write_text(result_text(status='Fail'))
+        new = max(path.stat().st_mtime_ns, previous + 1_000_000)
+        os.utime(path, ns=(new, new))
         monitor.poll_once()
         self.seconds = 5
         monitor.poll_once()
