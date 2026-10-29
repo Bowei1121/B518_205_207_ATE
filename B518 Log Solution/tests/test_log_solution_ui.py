@@ -2642,6 +2642,12 @@ class LogSolutionUiTests(unittest.TestCase):
                 menu_keys_sent = threading.Event()
                 wait_for_root_key_window()
                 self.wait_for_ui(root, lambda: root.focus_get() is app.language_button)
+                # System-wide HID keys require an isolated desktop session.
+                native_app = NSApplication.sharedApplication()
+                key_window = native_app.keyWindow()
+                if not native_app.isActive() or key_window is None or key_window.title() != app_title:
+                    self.fail("root lost the key window before the closing Space; "
+                              "refusing to post a system-wide key")
                 # Same system-wide path as the Down reopen: a per-pid Space can sit undispatched.
                 post_key(49, pump=False, system_wide=True)
                 send_menu_keys("close", (53,))

@@ -2658,13 +2658,16 @@ class B518LogSolutionApp:
         try:
             is_active = bool(NSApplication.sharedApplication().isActive())
             if os.environ.get("B518_FOREGROUND_TRACE") == "1":
-                ordered = list(NSApplication.sharedApplication().orderedWindows() or ())
-                indexes = [ordered.index(w) if w in ordered else None
-                           for w in (previous_key_window, native_window)]
-                self._trace_foreground(
-                    "check", remaining=remaining, is_active=is_active,
-                    previous_index=indexes[0], native_index=indexes[1],
-                    windows=self._trace_windows())
+                try:
+                    ordered = list(NSApplication.sharedApplication().orderedWindows() or ())
+                    indexes = [ordered.index(w) if w in ordered else None
+                               for w in (previous_key_window, native_window)]
+                    self._trace_foreground(
+                        "check", remaining=remaining, is_active=is_active,
+                        previous_index=indexes[0], native_index=indexes[1],
+                        windows=self._trace_windows())
+                except Exception:
+                    pass
             if is_active:
                 self._trace_foreground("check-active")
                 self._schedule_ui("idle", self._finish_activation_raise,
