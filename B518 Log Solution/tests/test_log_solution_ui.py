@@ -6753,6 +6753,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(result_event["localized_message"]["message_id"],
                                                  "round.result")
                                 verify_round_event_language_refresh(result_event)
+                                pump_until(lambda: any("result: PASS" in line for line in app.event_lines), timeout=3)
                                 audit_bytes = (session_path / "audit.jsonl").read_bytes()
                                 state = app.rounds.snapshot()
                                 select_language("繁體中文")
