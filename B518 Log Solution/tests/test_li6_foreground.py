@@ -40,8 +40,50 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
             time.sleep(.01)
         self.fail("desktop condition did not become true")
 
+    def _settle_other_window_front(self, root, pid, main_window_title, timeout=3, stable_for=.25):
+        """Wait (bounded, never failing) until app activation and window order stop changing."""
+        other = "LI6 Other Local Window"
+
+        def sample():
+            application = NSApplication.sharedApplication()
+            key = application.keyWindow()
+            front = NSWorkspace.sharedWorkspace().frontmostApplication()
+            return (bool(application.isActive()),
+                    front.processIdentifier() if front else None,
+                    str(key.title()) if key else None,
+                    self._front_window_names(pid))
+
+        def ready(state):
+            names = state[3]
+            return (state[0] and state[1] == os.getpid() and state[2] == other and
+                    other in names and main_window_title in names and
+                    names.index(other) < names.index(main_window_title))
+
+        started = time.monotonic()
+        first = last = None
+        changes = 0
+        stable_since = None
+        stable = False
+        while time.monotonic() - started < timeout:
+            root.update()
+            state = sample()
+            if first is None:
+                first = state
+            if state != last:
+                if last is not None:
+                    changes += 1
+                last = state
+                stable_since = time.monotonic()
+            if ready(state) and time.monotonic() - stable_since >= stable_for:
+                stable = True
+                break
+            time.sleep(.01)
+        return {"elapsed": round(time.monotonic() - started, 3), "stable": stable,
+                "first": first, "last": last, "order_changes": changes}
+
     def test_round_events_raise_log_without_focus_and_without_topmost(self):
         with TemporaryDirectory() as temporary, \
+                patch.dict(os.environ, {"B518_FOREGROUND_TRACE": "1"}), \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
             root.title("B518 LI6 Foreground Test")
@@ -64,6 +106,9 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                 desk.lift()
                 entry.focus_force()
                 self._wait(root, lambda: root.focus_get() is entry)
+                setup = self._settle_other_window_front(root, os.getpid(), main_window_title)
+                print("LI6_SETUP " + json.dumps(setup, default=str), file=sys.stderr, flush=True)
+                observations.append({"setup_settle": setup})
                 names = self._front_window_names(os.getpid())
                 log_is_visible = main_window_title in names
                 observations.append({
@@ -90,8 +135,14 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                          "miniaturized": window.isMiniaturized(),
                          "key": window.isKeyWindow()}
                         for window in NSApplication.sharedApplication().windows()]
-                    self.fail("{} did not raise: stack={}, Tk state={}, native={}".format(
-                        label, self._front_window_names(os.getpid()), root.state(), native))
+                    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+                    self.fail("{} did not raise: stack={}, Tk state={}, native={}, "
+                              "isActive={}, frontmost pid={} (own pid={}), "
+                              "foreground trace={}".format(
+                                  label, self._front_window_names(os.getpid()), root.state(),
+                                  native, NSApplication.sharedApplication().isActive(),
+                                  front.processIdentifier() if front else None, os.getpid(),
+                                  getattr(app, "_foreground_trace", [])[-30:]))
                 try:
                     self._wait(root, lambda: root.focus_get() is entry, timeout=0.5)
                 except AssertionError:
@@ -255,6 +306,17 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                         "foreground_failure_diagnostic": fault_events[-1]["diagnostic"],
                     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             finally:
+                try:
+                    evidence_dir = os.environ.get("B518_TK_EVIDENCE_DIR")
+                    if evidence_dir:
+                        trace_dir = Path(evidence_dir)
+                        trace_dir.mkdir(parents=True, exist_ok=True)
+                        (trace_dir / "li6-foreground-trace.json").write_text(
+                            json.dumps(getattr(app, "_foreground_trace", []),
+                                       ensure_ascii=False, indent=2, default=str) + "\n",
+                            encoding="utf-8")
+                except Exception:
+                    pass
                 app.rounds.request_close()
                 self._wait(root, lambda: app.rounds.close_status().status == "complete")
                 app.hotkey.close()
