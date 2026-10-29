@@ -1,6 +1,7 @@
 import csv
 import json
 import log_monitoring
+import os
 import shutil
 import tempfile
 import threading
@@ -16,10 +17,14 @@ from language_catalog import make_bilingual_message
 
 def write_records(path, sn="", status="PASS"):
     path.parent.mkdir(parents=True, exist_ok=True)
+    previous_mtime = path.stat().st_mtime_ns if path.exists() else None
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["MLB_SN", "status"])
         writer.writeheader()
         writer.writerow({"MLB_SN": sn, "status": status})
+    if previous_mtime is not None:  # coarse-mtime filesystems: force a distinct signature
+        new_mtime = max(path.stat().st_mtime_ns, previous_mtime + 1_000_000)
+        os.utime(path, ns=(new_mtime, new_mtime))
 
 
 def write_bt(path, sn, status, unit):
