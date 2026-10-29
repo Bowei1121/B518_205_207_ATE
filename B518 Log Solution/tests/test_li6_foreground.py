@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from AppKit import NSApplication
+from AppKit import NSApplication, NSWorkspace
 
 import tkinter as tk
 from tkinter import ttk
@@ -195,11 +195,15 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                     "li6-restored-round", "FCT", RoundState.PREPARING, (), False, 0, (),
                     source_preparation_pending=True))
                 desk_record = put_other_window_in_front()
+                frontmost_before = NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier()
                 app._apply_round_snapshot(RoundSnapshot(
                     "li6-restored-round", "FCT", RoundState.RUNNING, (), False, 1, (),
                     source_ready=True))
                 self._wait(root, lambda: root.state() == "normal")
                 restore_record = assert_log_raises("minimize-restore")
+                self.assertEqual(
+                    NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier(),
+                    frontmost_before, "minimize-restore changed the frontmost application")
 
                 # An old round event must not reorder the window for the new round.
                 from log_monitoring import MonitorEvent

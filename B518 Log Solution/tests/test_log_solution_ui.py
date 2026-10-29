@@ -11400,6 +11400,61 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root.lift.assert_not_called()
         app.root.focus_force.assert_not_called()
 
+    def _run_minimized_restore(self, our_process_frontmost):
+        frontmost = MagicMock()
+        frontmost.processIdentifier.return_value = os.getpid() + (0 if our_process_frontmost else 1)
+        native_window, previous_window, entry = MagicMock(), MagicMock(), MagicMock()
+        native_window.isMiniaturized.return_value = True
+        previous_window.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        key = {"window": previous_window if our_process_frontmost else None}
+        focus = {"widget": entry}
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        native_window.deminiaturize_.side_effect = lambda _: (
+            key.update(window=native_window), focus.update(widget=app.root))
+        entry.focus_set.side_effect = lambda: focus.update(widget=entry)
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.side_effect = lambda: focus["widget"]
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._foreground_after_id = None
+        app._pending_foreground_round_id = None
+        app._pending_foreground_key_window = None
+        app._pending_foreground_app = None
+        app._native_main_window = lambda: native_window
+        app._record_foreground_failure = MagicMock()
+        app._schedule_ui = lambda delay, callback, *args: callback(*args)
+        with patch("b518_log_solution.NSApplication") as ns_app, \
+                patch("b518_log_solution.NSWorkspace") as workspace, \
+                patch("b518_log_solution.NSApplicationActivateIgnoringOtherApps", object()):
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.side_effect = lambda: key["window"]
+            workspace.sharedWorkspace.return_value.frontmostApplication.return_value = frontmost
+            app._queue_foreground_raise("r1")
+            self.assertIs(workspace.sharedWorkspace().frontmostApplication(), frontmost)
+        app._record_foreground_failure.assert_not_called()
+        self.assertIs(app.root.focus_get(), entry)
+        entry.focus_set.assert_called()
+        entry.focus_force.assert_not_called()
+        app.root.focus_force.assert_not_called()
+        frontmost.activateWithOptions_.assert_not_called()
+        shared.activateIgnoringOtherApps_.assert_not_called()
+        shared.activateWithOptions_.assert_not_called()
+        shared.activate.assert_not_called()
+        self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+        native_window.orderFrontRegardless.assert_called()
+        native_window.makeKeyWindow.assert_not_called()
+        return previous_window
+
+    def test_minimized_restore_returns_tk_focus_without_activating_any_app(self):
+        self._run_minimized_restore(our_process_frontmost=False)
+
+    def test_minimized_restore_returns_key_to_previous_local_window_without_activation(self):
+        previous_window = self._run_minimized_restore(our_process_frontmost=True)
+
+        previous_window.makeKeyWindow.assert_called_once()
+
     def test_timeout_event_returns_dashboard_to_timeout_stopped_state(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
