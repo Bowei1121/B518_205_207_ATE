@@ -4468,6 +4468,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.kvm_result_blocks[13].cget("background"),
                                  UNAVAILABLE_COLOUR)
 
+                root.update()
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and root.winfo_viewable())
                 evidence = capture_tk_window_evidence(
                     root, "main-page-capacity12", "en", {
                         "kvm": app.kvm_results,
