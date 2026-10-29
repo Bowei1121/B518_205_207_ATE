@@ -2473,20 +2473,23 @@ class LogSolutionUiTests(unittest.TestCase):
                 actual_popup = app.language_menu.tk_popup
 
                 def observed_popup(*args, **kwargs):
-                    popup_entered.set()
+                    entered, exited = popup_entered, popup_exited
+                    entered.set()
                     try:
                         return actual_popup(*args, **kwargs)
                     finally:
-                        popup_exited.set()
+                        exited.set()
 
                 popup_patcher = patch.object(app.language_menu, "tk_popup", observed_popup)
                 popup_patcher.start()
                 self.addCleanup(popup_patcher.stop)
 
                 def send_menu_keys(screenshot_tag, keycodes):
+                    entered, exited = popup_entered, popup_exited
+
                     def deliver():
                         try:
-                            if not popup_entered.wait(3):
+                            if not entered.wait(3):
                                 raise AssertionError("native menu popup never started")
                             time.sleep(.1)
                             capture_language_menu(screenshot_tag, delay=0,
@@ -2505,7 +2508,7 @@ class LogSolutionUiTests(unittest.TestCase):
                         except Exception as error:
                             capture_errors.append("{} keyboard input: {!r}".format(
                                 screenshot_tag, error))
-                        if popup_entered.wait(10) and not popup_exited.wait(5):
+                        if entered.wait(60) and not exited.wait(5):
                             for down in (True, False):
                                 event = Quartz.CGEventCreateKeyboardEvent(None, 53, down)
                                 Quartz.CGEventPostToPid(os.getpid(), event)
@@ -2536,8 +2539,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 target_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(index, "label") == target_name)
-                popup_entered.clear()
-                popup_exited.clear()
+                popup_entered = threading.Event()
+                popup_exited = threading.Event()
                 post_key(125, pump=False)  # Down opens; native menu receives further keys.
                 send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
@@ -2568,9 +2571,11 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_settings()
                 app.language_button.focus_force()
                 root.update()
+                popup_entered = threading.Event()
+                popup_exited = threading.Event()
                 post_key(49, pump=False)
                 send_menu_keys("close", (53,))
-                root.update()
+                self.wait_for_ui(root, popup_exited.is_set)
 
 
 
