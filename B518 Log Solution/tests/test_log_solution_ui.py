@@ -11447,6 +11447,65 @@ class LogSolutionUiTests(unittest.TestCase):
         native_window.makeKeyWindow.assert_not_called()
         return previous_window
 
+    def test_minimized_restore_waits_for_late_deminiaturize_before_returning_focus(self):
+        frontmost = MagicMock()
+        frontmost.processIdentifier.return_value = os.getpid()
+        native_window, previous_window, entry = MagicMock(), MagicMock(), MagicMock()
+        native_window.isMiniaturized.return_value = True
+        previous_window.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        key = {"window": previous_window}
+        focus = {"widget": entry}
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.side_effect = lambda: focus["widget"]
+        entry.focus_set.side_effect = lambda: focus.update(widget=entry)
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._foreground_after_id = None
+        app._pending_foreground_round_id = None
+        app._pending_foreground_key_window = None
+        app._pending_foreground_app = None
+        app._native_main_window = lambda: native_window
+        app._record_foreground_failure = MagicMock()
+        queue = []
+        app._schedule_ui = lambda delay, callback, *args: queue.append((callback, args))
+
+        def complete_restore(ticks=0):
+            if ticks < 7:
+                queue.append((complete_restore, (ticks + 1,)))
+            else:
+                native_window.isMiniaturized.return_value = False
+                app.root.state.return_value = "normal"
+                key["window"] = native_window
+                focus["widget"] = app.root
+
+        native_window.deminiaturize_.side_effect = lambda _: queue.append((complete_restore, ()))
+        with patch("b518_log_solution.NSApplication") as ns_app, \
+                patch("b518_log_solution.NSWorkspace") as workspace, \
+                patch("b518_log_solution.NSApplicationActivateIgnoringOtherApps", object()):
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.side_effect = lambda: key["window"]
+            workspace.sharedWorkspace.return_value.frontmostApplication.return_value = frontmost
+            app._queue_foreground_raise("r1")
+            for _ in range(200):
+                if not queue:
+                    break
+                callback, args = queue.pop(0)
+                callback(*args)
+            self.assertFalse(queue, "restore callbacks did not finish")
+            self.assertIs(app.root.focus_get(), entry)
+            previous_window.makeKeyWindow.assert_called_once()
+            entry.focus_force.assert_not_called()
+            app.root.focus_force.assert_not_called()
+            for target in (shared, frontmost):
+                target.activate.assert_not_called()
+                target.activateIgnoringOtherApps_.assert_not_called()
+                target.activateWithOptions_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+            app._record_foreground_failure.assert_not_called()
+
     def test_minimized_restore_returns_tk_focus_without_activating_any_app(self):
         self._run_minimized_restore(our_process_frontmost=False)
 
