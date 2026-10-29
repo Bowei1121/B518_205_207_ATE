@@ -2,12 +2,12 @@ name: Log Solution Intel macOS 15 tests
 
 on:
   push:
-    branches: [B518-Log-Solution]
+    branches: [B518-Log-Solution, demo/1104]
     paths:
       - 'B518 Log Solution/**'
       - '.github/workflows/log-solution-intel-macos15-tests.yml'
   pull_request:
-    branches: [B518-Log-Solution]
+    branches: [B518-Log-Solution, demo/1104]
     paths:
       - 'B518 Log Solution/**'
       - '.github/workflows/log-solution-intel-macos15-tests.yml'
