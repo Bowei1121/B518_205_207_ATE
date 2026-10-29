@@ -25,7 +25,9 @@ from unittest.mock import MagicMock, patch
 try:
     import Quartz
     from AppKit import (NSApplication, NSApplicationActivateIgnoringOtherApps,
-                        NSRunningApplication, NSApplicationActivationPolicyRegular)
+                        NSRunningApplication, NSApplicationActivationPolicyRegular,
+                        NSMenuDidBeginTrackingNotification)
+    from Foundation import NSNotificationCenter
 except ImportError:  # macOS desktop-only acceptance helper
     Quartz = None
     NSApplicationActivateIgnoringOtherApps = None
@@ -2470,6 +2472,12 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
+                menu_tracking = threading.Event()
+                notification_center = NSNotificationCenter.defaultCenter()
+                observer = notification_center.addObserverForName_object_queue_usingBlock_(
+                    NSMenuDidBeginTrackingNotification, None, None,
+                    lambda notification: menu_tracking.set())
+                self.addCleanup(notification_center.removeObserver_, observer)
                 actual_popup = app.language_menu.tk_popup
 
                 def observed_popup(*args, **kwargs):
@@ -2487,10 +2495,36 @@ class LogSolutionUiTests(unittest.TestCase):
                 def send_menu_keys(screenshot_tag, keycodes):
                     entered, exited = popup_entered, popup_exited
 
+                    tracking = menu_tracking
+
+                    def dismiss():
+                        for down in (True, False):
+                            event = Quartz.CGEventCreateKeyboardEvent(None, 53, down)
+                            if event is not None:
+                                Quartz.CGEventPostToPid(os.getpid(), event)
+                                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
+                    def watchdog():
+                        # root.update() can itself block inside the native menu loop.
+                        # Keep the deadline outside that loop and dismiss even when
+                        # tracking starts after the sender has timed out.
+                        if entered.wait(60) and not exited.wait(15):
+                            menu_watchdog_errors.append(
+                                "{}: native menu did not exit before deadline".format(
+                                    screenshot_tag))
+                            deadline = time.monotonic() + 10
+                            while not exited.is_set() and time.monotonic() < deadline:
+                                dismiss()
+                                exited.wait(.2)
+
                     def deliver():
                         try:
                             if not entered.wait(3):
                                 raise AssertionError("native menu popup never started")
+                            if not tracking.wait(3):
+                                raise AssertionError("native menu never began tracking")
+                            # The notification is posted during menu setup; allow the
+                            # tracking loop to receive events before injecting keys.
                             time.sleep(.1)
                             capture_language_menu(screenshot_tag, delay=0,
                                                   wait_for_capture=True)
@@ -2506,17 +2540,13 @@ class LogSolutionUiTests(unittest.TestCase):
                                 if index < len(keycodes) - 1:
                                     time.sleep(.18)
                         except Exception as error:
-                            capture_errors.append("{} keyboard input: {!r}".format(
+                            menu_watchdog_errors.append("{} keyboard input: {!r}".format(
                                 screenshot_tag, error))
-                        if entered.wait(60) and not exited.wait(5):
-                            for down in (True, False):
-                                event = Quartz.CGEventCreateKeyboardEvent(None, 53, down)
-                                Quartz.CGEventPostToPid(os.getpid(), event)
-                                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-                            menu_watchdog_errors.append(
-                                "{}: native menu still open; sent Escape to avoid hang".format(
-                                    screenshot_tag))
+                            dismiss()
 
+                    watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+                    input_threads.append(watchdog_thread)
+                    watchdog_thread.start()
                     thread = threading.Thread(target=deliver, daemon=True)
                     input_threads.append(thread)
                     thread.start()
@@ -2541,6 +2571,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     if app.language_menu.entrycget(index, "label") == target_name)
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
+                menu_tracking = threading.Event()
                 post_key(125, pump=False)  # Down opens; native menu receives further keys.
                 send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
@@ -2573,6 +2604,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 root.update()
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
+                menu_tracking = threading.Event()
                 post_key(49, pump=False)
                 send_menu_keys("close", (53,))
                 self.wait_for_ui(root, popup_exited.is_set)
