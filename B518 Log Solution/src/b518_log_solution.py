@@ -2568,12 +2568,9 @@ class B518LogSolutionApp:
             if state in {"iconic", "withdrawn"}:
                 if native_window is not None and native_window.isMiniaturized():
                     native_window.deminiaturize_(None)
-                    # Aqua reorders windows again when the minimize animation
-                    # completes, so order the restored window after that pass.
                     self._foreground_after_id = self._schedule_ui(
-                        250, self._finish_native_restore, round_id, native_window,
-                        previous_key_window, previous_app,
-                        previous_focus)
+                        50, self._wait_for_native_restore, round_id, native_window,
+                        previous_key_window, previous_app, previous_focus, 1)
                     return
                 else:
                     self.root.deiconify()
@@ -2582,6 +2579,27 @@ class B518LogSolutionApp:
                 native_window.orderFrontRegardless()
             else:
                 self.root.lift()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _wait_for_native_restore(self, round_id: str, native_window,
+                                 previous_key_window, previous_app,
+                                 previous_focus, attempt: int) -> None:
+        self._foreground_after_id = None
+        if self._ui_destroyed or round_id != self.active_round_id:
+            return
+        try:
+            complete = not native_window.isMiniaturized() and \
+                self.root.state() not in {"iconic", "withdrawn"}
+            if complete or attempt >= 50:
+                # Tk windowExpanded queues FocusIn; let it run before handing focus back.
+                self._foreground_after_id = self._schedule_ui(
+                    50, self._finish_native_restore, round_id, native_window,
+                    previous_key_window, previous_app, previous_focus)
+            else:
+                self._foreground_after_id = self._schedule_ui(
+                    50, self._wait_for_native_restore, round_id, native_window,
+                    previous_key_window, previous_app, previous_focus, attempt + 1)
         except Exception as error:
             self._record_foreground_failure(error)
 
