@@ -498,6 +498,7 @@ class B518LogSolutionApp:
         self._pending_foreground_round_id = None
         self._pending_foreground_key_window = None
         self._pending_foreground_app = None
+        self._pending_foreground_focus = None
         self.project = tk.StringVar(master=self.root, value=selected_project)
         self.station = tk.StringVar(master=self.root, value=selected_machine)
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
@@ -2539,6 +2540,10 @@ class B518LogSolutionApp:
                 self._pending_foreground_key_window = None
                 self._pending_foreground_app = None
         try:
+            self._pending_foreground_focus = self.root.focus_get()
+        except Exception:
+            self._pending_foreground_focus = None
+        try:
             self._foreground_after_id = self._schedule_ui(
                 "idle", self._raise_dashboard_for_pending_round)
         except Exception as error:
@@ -2553,6 +2558,8 @@ class B518LogSolutionApp:
         self._pending_foreground_key_window = None
         previous_app = self._pending_foreground_app
         self._pending_foreground_app = None
+        previous_focus = self._pending_foreground_focus
+        self._pending_foreground_focus = None
         if self._ui_destroyed or round_id != self.active_round_id:
             return
         try:
@@ -2565,7 +2572,8 @@ class B518LogSolutionApp:
                     # completes, so order the restored window after that pass.
                     self._foreground_after_id = self._schedule_ui(
                         250, self._finish_native_restore, round_id, native_window,
-                        previous_key_window, previous_app)
+                        previous_key_window, previous_app,
+                        previous_focus)
                     return
                 else:
                     self.root.deiconify()
@@ -2578,7 +2586,8 @@ class B518LogSolutionApp:
             self._record_foreground_failure(error)
 
     def _finish_native_restore(self, round_id: str, native_window,
-                               previous_key_window, previous_app) -> None:
+                               previous_key_window, previous_app,
+                               previous_focus=None) -> None:
         self._foreground_after_id = None
         if self._ui_destroyed or round_id != self.active_round_id:
             return
@@ -2592,12 +2601,16 @@ class B518LogSolutionApp:
                     if current_app.processIdentifier() == current_pid:
                         previous_app.activateWithOptions_(
                             NSApplicationActivateIgnoringOtherApps)
-                elif previous_key_window is not None and \
+                if previous_key_window is not None and \
                         previous_key_window is not native_window and \
                         previous_key_window.isVisible():
                     current_key = NSApplication.sharedApplication().keyWindow()
                     if current_key is native_window:
                         previous_key_window.makeKeyWindow()
+                if previous_focus is not None and \
+                        previous_focus.winfo_exists() and \
+                        previous_focus is not self.root.focus_get():
+                    previous_focus.focus_set()
                 # Restoring the prior key/application can reorder its windows;
                 # put the Log window in front again without making it key.
                 native_window.orderFrontRegardless()
