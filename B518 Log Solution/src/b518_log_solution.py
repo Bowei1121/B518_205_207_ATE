@@ -695,6 +695,7 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        self._clear_restore_handback()
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
             self._heartbeat_after_id = None
@@ -2530,6 +2531,7 @@ class B518LogSolutionApp:
         self._pending_foreground_round_id = round_id
         if self._foreground_after_id is not None:
             return
+        self._clear_restore_handback()
         if NSApplication is not None:
             try:
                 self._pending_foreground_key_window = \
@@ -2567,13 +2569,18 @@ class B518LogSolutionApp:
             native_window = self._native_main_window()
             if state in {"iconic", "withdrawn"}:
                 if native_window is not None and native_window.isMiniaturized():
+                    self._start_restore_handback(
+                        round_id, native_window, previous_key_window, previous_focus)
                     native_window.deminiaturize_(None)
                     self._foreground_after_id = self._schedule_ui(
                         50, self._wait_for_native_restore, round_id, native_window,
                         previous_key_window, previous_app, previous_focus, 1)
                     return
                 else:
+                    self._start_restore_handback(
+                        round_id, native_window, previous_key_window, previous_focus)
                     self.root.deiconify()
+                    self._settle_restore_handback()
             if native_window is not None:
                 # AppKit orders the window without making it key or changing focus.
                 native_window.orderFrontRegardless()
@@ -2632,16 +2639,99 @@ class B518LogSolutionApp:
                 # Restoring the prior key/application can reorder its windows;
                 # put the Log window in front again without making it key.
                 native_window.orderFrontRegardless()
+            self._settle_restore_handback()
         except Exception as error:
             self._record_foreground_failure(error)
+
+    def _clear_restore_handback(self):
+        pending = getattr(self, "_restore_handback", None)
+        self._restore_handback = None
+        if pending:
+            for sequence, binding in pending[4]:
+                try:
+                    self.root.unbind(sequence, binding)
+                except Exception:
+                    pass
+
+    def _start_restore_handback(self, round_id, native, previous, focus):
+        self._clear_restore_handback()
+        pending = [round_id, native, previous, focus, []]
+        self._restore_handback = pending
+        for sequence in ("<FocusIn>", "<Map>"):
+            binding = self.root.bind(sequence, self._restore_focus_event, add="+")
+            pending[4].append((sequence, binding))
+
+    def _restore_focus_event(self, event):
+        pending = getattr(self, "_restore_handback", None)
+        if not pending or getattr(self, "_ui_destroyed", False):
+            return
+        widget = getattr(event, "widget", None)
+        if widget is not self.root:
+            try:
+                if widget.winfo_toplevel() is not self.root:
+                    return
+            except Exception:
+                # Tk-internal widgets arrive as path strings; they are not the Log window.
+                return
+        try:
+            self._schedule_ui("idle", self._restore_handback_focus, pending)
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _restore_handback_focus(self, pending):
+        if (getattr(self, "_restore_handback", None) is not pending or
+                getattr(self, "_ui_destroyed", False) or pending[0] != self.active_round_id):
+            return
+        try:
+            _, native, previous, focus, _ = pending
+            if NSApplication is not None and native is not None and previous is not None and \
+                    previous is not native and previous.isVisible() and \
+                    NSApplication.sharedApplication().keyWindow() is native:
+                previous.makeKeyWindow()
+            if focus is not None and focus.winfo_exists() and focus is not self.root.focus_get():
+                focus.focus_set()
+            if native is not None:
+                native.orderFrontRegardless()
+            else:
+                self.root.lift()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _settle_restore_handback(self):
+        pending = getattr(self, "_restore_handback", None)
+        if pending:
+            self._schedule_ui(1800, self._end_restore_handback, pending)
+
+    def _end_restore_handback(self, pending):
+        if getattr(self, "_restore_handback", None) is pending:
+            self._clear_restore_handback()
 
     def _native_main_window(self):
         if NSApplication is None:
             return None
         app = NSApplication.sharedApplication()
         title = self.root.title()
-        return next((window for window in app.windows()
-                     if window.title() == title), None)
+        window_id = self.root.winfo_id()
+        fallback = []
+        has_tk_window = False
+        for window in app.windows():
+            if window.title() != title:
+                continue
+            try:
+                tk_window = getattr(window, "tkWindow", None)
+                if tk_window is None:
+                    fallback.append(window)
+                    continue
+                tk_id = tk_window()
+            except Exception:
+                fallback.append(window)
+                continue
+            has_tk_window = True
+            if tk_id == window_id and tk_id:
+                return window
+        if has_tk_window or not fallback:
+            return None
+        return next((window for window in fallback if window.isVisible()), fallback[0])
 
     def _record_foreground_failure(self, error: Exception) -> None:
         diagnostic = "{}: {}".format(type(error).__name__, error)

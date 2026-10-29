@@ -11511,6 +11511,119 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
             app._record_foreground_failure.assert_not_called()
 
+    def test_native_main_window_matches_tk_window_id(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.title.return_value = "Log"
+        app.root.winfo_id.return_value = 123
+        stale, current = MagicMock(), MagicMock()
+        stale.title.return_value = current.title.return_value = "Log"
+        stale.tkWindow.return_value = 0
+        current.tkWindow.return_value = 123
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.windows.return_value = [stale, current]
+            self.assertIs(app._native_main_window(), current)
+
+    def test_native_main_window_fallback_prefers_visible_and_rejects_known_mismatch(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.title.return_value = "Log"
+        app.root.winfo_id.return_value = 123
+        hidden = SimpleNamespace(title=lambda: "Log", isVisible=lambda: False)
+        visible = SimpleNamespace(title=lambda: "Log", isVisible=lambda: True)
+        other = SimpleNamespace(title=lambda: "Log", tkWindow=lambda: 456)
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            windows = ns_app.sharedApplication.return_value.windows
+            windows.return_value = [hidden, visible]
+            self.assertIs(app._native_main_window(), visible)
+            windows.return_value = [visible, other]
+            self.assertIsNone(app._native_main_window())
+
+    def test_restore_focus_without_native_application(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        entry = MagicMock()
+        entry.winfo_exists.return_value = True
+        pending = ["r1", None, MagicMock(), entry, []]
+        app._restore_handback = pending
+        with patch("b518_log_solution.NSApplication", None):
+            app._restore_handback_focus(pending)
+        entry.focus_set.assert_called_once()
+        app.root.lift.assert_called_once()
+        app._record_foreground_failure.assert_not_called()
+
+    def test_minimized_restore_deiconify_returns_focus(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.return_value = app.root
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._pending_foreground_round_id = "r1"
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        native.isMiniaturized.return_value = False
+        previous.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        app._pending_foreground_key_window = previous
+        app._pending_foreground_app = None
+        app._pending_foreground_focus = entry
+        app._native_main_window = lambda: native
+        app._record_foreground_failure = MagicMock()
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.return_value = native
+            app._raise_dashboard_for_pending_round()
+            app.root.deiconify.assert_called_once()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            idle = next(item for item in callbacks if item[0] == "idle")
+            idle[1](*idle[2])
+            previous.makeKeyWindow.assert_called_once()
+            entry.focus_set.assert_called_once()
+            entry.focus_force.assert_not_called()
+            app.root.focus_force.assert_not_called()
+            shared.activate.assert_not_called()
+            shared.activateIgnoringOtherApps_.assert_not_called()
+            shared.activateWithOptions_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+            app._record_foreground_failure.assert_not_called()
+
+    def test_restore_focus_event_reclaims_focus_until_settled(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        previous.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        app.root.focus_get.return_value = app.root
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.keyWindow.return_value = native
+            app._start_restore_handback("r1", native, previous, entry)
+            app._settle_restore_handback()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            idle = next(item for item in callbacks if item[0] == "idle")
+            idle[1](*idle[2])
+            previous.makeKeyWindow.assert_called_once()
+            entry.focus_set.assert_called_once()
+            native.orderFrontRegardless.assert_called()
+            settle = next(item for item in callbacks if item[0] == 1800)
+            entry.focus_set.reset_mock()
+            settle[1](*settle[2])
+            entry.focus_set.assert_not_called()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            self.assertEqual(len([item for item in callbacks if item[0] == "idle"]), 1)
+            entry.focus_set.assert_not_called()
+            entry.focus_force.assert_not_called()
+            ns_app.sharedApplication.return_value.activateIgnoringOtherApps_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+
     def test_minimized_restore_returns_tk_focus_without_activating_any_app(self):
         self._run_minimized_restore(our_process_frontmost=False)
 
