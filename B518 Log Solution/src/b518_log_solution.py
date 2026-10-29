@@ -2684,9 +2684,16 @@ class B518LogSolutionApp:
             return
         try:
             _, native, previous, focus, _ = pending
-            if NSApplication is not None and native is not None and previous is not None and \
-                    previous is not native and previous.isVisible() and \
-                    NSApplication.sharedApplication().keyWindow() is native:
+            if NSApplication is not None:
+                if native is None or NSApplication.sharedApplication().keyWindow() is not native:
+                    return
+            else:
+                current = self.root.focus_get()
+                if current is focus or (current is not None and current is not self.root and
+                                        current.winfo_toplevel() is not self.root):
+                    return
+            if NSApplication is not None and previous is not None and \
+                    previous is not native and previous.isVisible():
                 previous.makeKeyWindow()
             if focus is not None and focus.winfo_exists() and focus is not self.root.focus_get():
                 focus.focus_set()

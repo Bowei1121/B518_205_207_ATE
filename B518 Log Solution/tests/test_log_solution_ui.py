@@ -11542,6 +11542,7 @@ class LogSolutionUiTests(unittest.TestCase):
     def test_restore_focus_without_native_application(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
+        app.root.focus_get.return_value = app.root
         app.active_round_id = "r1"
         app._record_foreground_failure = MagicMock()
         entry = MagicMock()
@@ -11553,6 +11554,30 @@ class LogSolutionUiTests(unittest.TestCase):
         entry.focus_set.assert_called_once()
         app.root.lift.assert_called_once()
         app._record_foreground_failure.assert_not_called()
+
+    def test_restore_focus_event_leaves_previous_window_undisturbed(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        app.root.focus_get.return_value = entry
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.keyWindow.return_value = previous
+            app._start_restore_handback("r1", native, previous, entry)
+            app._settle_restore_handback()
+            for _ in ("<FocusIn>", "<Map>"):
+                app._restore_focus_event(SimpleNamespace(widget=app.root))
+            for delay, callback, args in callbacks:
+                if delay == "idle":
+                    callback(*args)
+            native.orderFrontRegardless.assert_not_called()
+            app.root.lift.assert_not_called()
+            entry.focus_set.assert_not_called()
+            previous.makeKeyWindow.assert_not_called()
+            app._record_foreground_failure.assert_not_called()
 
     def test_minimized_restore_deiconify_returns_focus(self):
         app = object.__new__(B518LogSolutionApp)
