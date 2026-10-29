@@ -695,6 +695,7 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        self._activation_raise_token = None
         self._clear_restore_handback()
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
@@ -2528,6 +2529,7 @@ class B518LogSolutionApp:
         """Coalesce all meaningful changes drained in one Tk event-loop turn."""
         if self._ui_destroyed or round_id != self.active_round_id:
             return
+        self._activation_raise_token = None
         self._pending_foreground_round_id = round_id
         if self._foreground_after_id is not None:
             return
@@ -2582,10 +2584,45 @@ class B518LogSolutionApp:
                     self.root.deiconify()
                     self._settle_restore_handback()
             if native_window is not None:
-                # AppKit orders the window without making it key or changing focus.
+                # Tk can reorder its key window when an inactive app becomes active.
+                inactive = (state not in {"iconic", "withdrawn"} and
+                            NSApplication is not None and
+                            not NSApplication.sharedApplication().isActive())
                 native_window.orderFrontRegardless()
+                if inactive:
+                    token = object()
+                    self._activation_raise_token = token
+                    self._schedule_ui(50, self._check_activation_raise,
+                                      round_id, native_window, token, 20)
             else:
                 self.root.lift()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _check_activation_raise(self, round_id, native_window, token, remaining):
+        if (getattr(self, "_activation_raise_token", None) is not token or
+                getattr(self, "_ui_destroyed", False) or round_id != self.active_round_id):
+            return
+        try:
+            if NSApplication.sharedApplication().isActive():
+                self._schedule_ui("idle", self._finish_activation_raise,
+                                  round_id, native_window, token)
+            elif remaining > 1:
+                self._schedule_ui(50, self._check_activation_raise,
+                                  round_id, native_window, token, remaining - 1)
+            else:
+                self._activation_raise_token = None
+        except Exception as error:
+            self._activation_raise_token = None
+            self._record_foreground_failure(error)
+
+    def _finish_activation_raise(self, round_id, native_window, token):
+        if (getattr(self, "_activation_raise_token", None) is not token or
+                getattr(self, "_ui_destroyed", False) or round_id != self.active_round_id):
+            return
+        self._activation_raise_token = None
+        try:
+            native_window.orderFrontRegardless()
         except Exception as error:
             self._record_foreground_failure(error)
 

@@ -11511,6 +11511,57 @@ class LogSolutionUiTests(unittest.TestCase):
             self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
             app._record_foreground_failure.assert_not_called()
 
+    def test_activation_followup_is_bounded_and_superseded(self):
+        for scenario in ("activates", "already_active", "inactive", "new_raise", "new_round", "destroy"):
+            with self.subTest(scenario=scenario), patch("b518_log_solution.NSApplication") as ns_app, \
+                    patch("b518_log_solution.NSWorkspace"):
+                app = object.__new__(B518LogSolutionApp)
+                app.root = MagicMock()
+                app.root.state.return_value = "normal"
+                app._ui_destroyed = False
+                app.active_round_id = "r1"
+                app._foreground_after_id = None
+                app._native_main_window = MagicMock(return_value=MagicMock())
+                app._record_foreground_failure = MagicMock()
+                callbacks = []
+                app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args)) or object()
+                shared = ns_app.sharedApplication.return_value
+                shared.isActive.return_value = scenario == "already_active"
+                app._queue_foreground_raise("r1")
+                delay, callback, args = callbacks.pop(0)
+                self.assertEqual(delay, "idle")
+                callback(*args)
+                native = app._native_main_window.return_value
+                self.assertEqual(native.orderFrontRegardless.call_count, 1)
+                if scenario == "new_raise":
+                    app._queue_foreground_raise("r1")
+                elif scenario == "new_round":
+                    app.active_round_id = "r2"
+                elif scenario == "destroy":
+                    app._ui_destroyed = True
+                if scenario in ("activates", "new_raise", "new_round", "destroy"):
+                    shared.isActive.return_value = True
+                count = 0
+                while callbacks and count < 100:
+                    delay, callback, args = callbacks.pop(0)
+                    if scenario == "new_raise" and delay == "idle":
+                        continue
+                    callback(*args)
+                    count += 1
+                self.assertFalse(callbacks, "activation checks did not stop")
+                self.assertEqual(native.orderFrontRegardless.call_count, 2 if scenario == "activates" else 1)
+                if scenario == "activates":
+                    self.assertGreaterEqual(count, 2)  # check, then idle
+                if scenario == "inactive":
+                    self.assertGreater(count, 1)
+                native.makeKeyWindow.assert_not_called()
+                app.root.focus_set.assert_not_called()
+                app.root.focus_force.assert_not_called()
+                self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+                for name in ("activate", "activateIgnoringOtherApps_", "activateWithOptions_"):
+                    getattr(shared, name).assert_not_called()
+                app._record_foreground_failure.assert_not_called()
+
     def test_native_main_window_matches_tk_window_id(self):
         app = object.__new__(B518LogSolutionApp)
         app.root = MagicMock()
