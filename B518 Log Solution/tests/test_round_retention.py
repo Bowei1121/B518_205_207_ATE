@@ -1567,6 +1567,8 @@ class RoundRetentionTests(unittest.TestCase):
 
             self.assertTrue(archive.path.exists())
             self.assertTrue(archive.path.parent.exists())
+            rounds.request_close()
+            self.wait_until(lambda: rounds.close_status().status in {"complete", "failed"})
 
     def test_successful_retention_setting_change_rechecks_all_trusted_rounds(self):
         with tempfile.TemporaryDirectory() as temporary:
