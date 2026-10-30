@@ -695,7 +695,6 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
-        self._activation_raise_token = None
         self._clear_restore_handback()
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
@@ -2555,9 +2554,6 @@ class B518LogSolutionApp:
         """Coalesce all meaningful changes drained in one Tk event-loop turn."""
         if self._ui_destroyed or round_id != self.active_round_id:
             return
-        if getattr(self, "_activation_raise_token", None) is not None:
-            self._trace_foreground("rearm-cancelled", round_id=round_id)
-        self._activation_raise_token = None
         self._pending_foreground_round_id = round_id
         if self._foreground_after_id is not None:
             return
@@ -2612,10 +2608,6 @@ class B518LogSolutionApp:
                     self.root.deiconify()
                     self._settle_restore_handback()
             if native_window is not None:
-                # Tk can reorder its key window when an inactive app becomes active.
-                inactive = (state not in {"iconic", "withdrawn"} and
-                            NSApplication is not None and
-                            not NSApplication.sharedApplication().isActive())
                 if os.environ.get("B518_FOREGROUND_TRACE") == "1":
                     try:
                         previous_title = (str(previous_key_window.title())
@@ -2624,84 +2616,14 @@ class B518LogSolutionApp:
                     except Exception:
                         previous_title = is_active = None
                     self._trace_foreground(
-                        "raise", state=state, inactive=inactive, is_active=is_active,
+                        "raise", state=state, is_active=is_active,
                         previous_key=previous_title,
-                        armed=bool(inactive and previous_key_window is not None and
-                                   previous_key_window != native_window),
                         windows=self._trace_windows())
+                # AppKit orders the window without making it key or changing focus.
                 native_window.orderFrontRegardless()
                 self._trace_foreground("raised", windows=self._trace_windows())
-                if inactive and previous_key_window is not None and \
-                        previous_key_window != native_window:
-                    token = object()
-                    self._activation_raise_token = token
-                    self._schedule_ui(50, self._check_activation_raise,
-                                      round_id, native_window, previous_key_window, token, 60)
             else:
                 self.root.lift()
-        except Exception as error:
-            self._activation_raise_token = None
-            self._record_foreground_failure(error)
-
-    def _stale_reason(self, round_id, token) -> str:
-        if getattr(self, "_activation_raise_token", None) is not token:
-            return "token-mismatch"
-        if getattr(self, "_ui_destroyed", False):
-            return "destroyed"
-        return "round-mismatch"
-
-    def _check_activation_raise(self, round_id, native_window, previous_key_window, token, remaining):
-        if (getattr(self, "_activation_raise_token", None) is not token or
-                getattr(self, "_ui_destroyed", False) or round_id != self.active_round_id):
-            self._trace_foreground("check-stale", reason=self._stale_reason(round_id, token))
-            return
-        try:
-            is_active = bool(NSApplication.sharedApplication().isActive())
-            if os.environ.get("B518_FOREGROUND_TRACE") == "1":
-                try:
-                    ordered = list(NSApplication.sharedApplication().orderedWindows() or ())
-                    indexes = [ordered.index(w) if w in ordered else None
-                               for w in (previous_key_window, native_window)]
-                    self._trace_foreground(
-                        "check", remaining=remaining, is_active=is_active,
-                        previous_index=indexes[0], native_index=indexes[1],
-                        windows=self._trace_windows())
-                except Exception:
-                    pass
-            if is_active:
-                self._trace_foreground("check-active")
-                self._schedule_ui("idle", self._finish_activation_raise,
-                                  round_id, native_window, token)
-            else:
-                windows = list(NSApplication.sharedApplication().orderedWindows() or ())
-                try:
-                    previous_index = windows.index(previous_key_window)
-                    native_index = windows.index(native_window)
-                except ValueError:
-                    previous_index = native_index = None
-                if (previous_index is not None and previous_index < native_index) or remaining <= 1:
-                    self._trace_foreground(
-                        "check-cancel",
-                        reason="previous-above" if previous_index is not None and
-                        previous_index < native_index else "exhausted")
-                    self._activation_raise_token = None
-                else:
-                    self._schedule_ui(50, self._check_activation_raise,
-                                      round_id, native_window, previous_key_window,
-                                      token, remaining - 1)
-        except Exception as error:
-            self._activation_raise_token = None
-            self._record_foreground_failure(error)
-
-    def _finish_activation_raise(self, round_id, native_window, token):
-        if (getattr(self, "_activation_raise_token", None) is not token or
-                getattr(self, "_ui_destroyed", False) or round_id != self.active_round_id):
-            self._trace_foreground("finish-stale", reason=self._stale_reason(round_id, token))
-            return
-        self._activation_raise_token = None
-        try:
-            native_window.orderFrontRegardless()
-            self._trace_foreground("finish", windows=self._trace_windows())
         except Exception as error:
             self._record_foreground_failure(error)
 
