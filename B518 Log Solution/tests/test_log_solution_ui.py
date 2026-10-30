@@ -3933,8 +3933,17 @@ class LogSolutionUiTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_ls6_real_tk_heartbeat_cycles_blocks_tracks_states_and_cleans_up(self):
+        heartbeat_ticks = []
+        original_advance_heartbeat = B518LogSolutionApp._advance_heartbeat
+
+        def record_heartbeat(app):
+            original_advance_heartbeat(app)
+            heartbeat_ticks.append((app._heartbeat_state, time.monotonic()))
+
         with TemporaryDirectory() as temporary, \
-                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(B518LogSolutionApp, "_advance_heartbeat", autospec=True,
+                             side_effect=record_heartbeat):
             root = tk.Tk()
             root.deiconify()
             app = B518LogSolutionApp(
@@ -3996,7 +4005,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 ]
                 observed_states = [initial_state, cycle_start_state]
                 observed_patterns = [initial_pattern, rendered_cells()]
-                transition_times = [time.monotonic()]
+                transition_times = [heartbeat_ticks[-1][1]]
                 expected_index = 0
                 deadline = time.monotonic() + 10
                 while (expected_index < len(expected_cycle_states) and
@@ -4006,7 +4015,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     if current == expected_cycle_states[expected_index]:
                         observed_states.append(current)
                         observed_patterns.append(rendered_cells())
-                        transition_times.append(time.monotonic())
+                        transition_times.append(heartbeat_ticks[-1][1])
                         expected_index += 1
                     time.sleep(.005)
                 self.assertEqual(observed_states, [initial_state, cycle_start_state] +
