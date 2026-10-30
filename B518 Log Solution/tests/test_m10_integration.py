@@ -60,6 +60,19 @@ class M10SourceIntegrationTests(unittest.TestCase):
         # Tk thread before a later writer can trigger background collection.
         self.addCleanup(gc.collect)
 
+    def after_notice_viewable(self, root, title, callback, timeout=5):
+        deadline = time.monotonic() + timeout
+
+        def wait_for_notice():
+            notice = next((child for child in root.winfo_children()
+                           if isinstance(child, tk.Toplevel) and child.title() == title), None)
+            if (notice is not None and notice.winfo_viewable()) or time.monotonic() >= deadline:
+                callback()
+            else:
+                root.after(50, wait_for_notice)
+
+        root.after(50, wait_for_notice)
+
     def pump(self, root, predicate, timeout=20):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -525,7 +538,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                             child.destroy()
 
             try:
-                root.after(50, inspect)
+                self.after_notice_viewable(root, "語言設定未保存", inspect)
                 failure.start()
                 with patch("tkinter.messagebox.showerror") as legacy_modal:
                     app.language_menu.invoke(1)
@@ -680,7 +693,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                             child.destroy()
 
             try:
-                root.after(50, inspect_and_acknowledge)
+                self.after_notice_viewable(root, "Configuration Error", inspect_and_acknowledge)
                 # Suppress only the legacy OS modal on the red version. The green
                 # implementation must display real Tk and never call this boundary.
                 with patch("tkinter.messagebox.showerror") as legacy_modal:
@@ -792,7 +805,7 @@ class M10SourceIntegrationTests(unittest.TestCase):
                 # A removed source path exercises the real synchronous profile/path
                 # validation branch after the old round has been visibly completed.
                 shutil.rmtree(source)
-                root.after(50, inspect_failure)
+                self.after_notice_viewable(root, "Configuration Error", inspect_failure)
                 with patch("tkinter.messagebox.showerror") as legacy_modal:
                     app.start_button.invoke()
                     self.pump(root, lambda: failures or errors)
