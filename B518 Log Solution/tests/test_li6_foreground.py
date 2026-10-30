@@ -51,12 +51,15 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
             return (bool(application.isActive()),
                     front.processIdentifier() if front else None,
                     str(key.title()) if key else None,
-                    self._front_window_names(pid))
+                    self._front_window_names(pid), root.state())
 
         def ready(state):
             names = state[3]
-            return (state[0] and state[1] == os.getpid() and state[2] == other and
-                    other in names and main_window_title in names and
+            if not (state[0] and state[1] == pid and state[2] == other and other in names):
+                return False
+            if state[4] in {"iconic", "withdrawn"}:
+                return main_window_title not in names
+            return (main_window_title in names and
                     names.index(other) < names.index(main_window_title))
 
         started = time.monotonic()
@@ -79,7 +82,8 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                 break
             time.sleep(.01)
         return {"elapsed": round(time.monotonic() - started, 3), "stable": stable,
-                "first": first, "last": last, "order_changes": changes}
+                "first": first, "last": last, "order_changes": changes,
+                "log_state": last[4] if last is not None else None}
 
     def test_round_events_raise_log_without_focus_and_without_topmost(self):
         with TemporaryDirectory() as temporary, \
