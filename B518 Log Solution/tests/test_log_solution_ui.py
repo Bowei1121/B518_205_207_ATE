@@ -7032,7 +7032,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.active_round_id = started.round_id
                 pump_until(lambda: sources and app.rounds.snapshot()
                            and app.rounds.snapshot().results
-                           and app.rounds.snapshot().results[0].status == "PASS")
+                           and app.rounds.snapshot().results[0].status == "PASS"
+                           and app.rounds.snapshot().source_ready
+                           and app.rounds.snapshot().results[1].status == "TESTING")
                 self.assertEqual(sources[0].offer_candidate(
                     1, "SN-CANDIDATE", "FAIL", "/controlled/slot1/candidate.csv",
                     "candidate", "2026-10-08T10:01:00"), "defer")
