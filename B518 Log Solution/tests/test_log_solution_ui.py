@@ -25,7 +25,9 @@ from unittest.mock import MagicMock, patch
 try:
     import Quartz
     from AppKit import (NSApplication, NSApplicationActivateIgnoringOtherApps,
-                        NSRunningApplication, NSApplicationActivationPolicyRegular)
+                        NSRunningApplication, NSApplicationActivationPolicyRegular,
+                        NSMenuDidBeginTrackingNotification)
+    from Foundation import NSNotificationCenter
 except ImportError:  # macOS desktop-only acceptance helper
     Quartz = None
     NSApplicationActivateIgnoringOtherApps = None
@@ -2304,6 +2306,7 @@ class LogSolutionUiTests(unittest.TestCase):
             callback_errors = []
             input_threads = []
             capture_errors = []
+            menu_watchdog_errors = []
             evidence_value = os.environ.get("B518_TK_EVIDENCE_DIR")
             root.report_callback_exception = lambda *error: callback_errors.append(error)
             try:
@@ -2319,15 +2322,25 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.update()
                     time.sleep(.01)
 
-                def post_key(keycode, shift=False, pump=True):
-                    flags = Quartz.kCGEventFlagMaskShift if shift else 0
+                def post_key(keycode, shift=False, pump=True, system_wide=False):
+                    modifiers = (Quartz.kCGEventFlagMaskAlphaShift | Quartz.kCGEventFlagMaskShift |
+                                 Quartz.kCGEventFlagMaskControl | Quartz.kCGEventFlagMaskAlternate |
+                                 Quartz.kCGEventFlagMaskCommand)
                     for down in (True, False):
                         event = Quartz.CGEventCreateKeyboardEvent(None, keycode, down)
                         self.assertIsNotNone(
                             event, "Quartz could not create key event {} ({})".format(
                                 keycode, "down" if down else "up"))
+                        # Drop live modifier state but keep key-intrinsic bits (arrow NumericPad/SecondaryFn).
+                        flags = Quartz.CGEventGetFlags(event) & ~modifiers
+                        if shift:
+                            flags |= Quartz.kCGEventFlagMaskShift
                         Quartz.CGEventSetFlags(event, flags)
-                        Quartz.CGEventPostToPid(os.getpid(), event)
+                        # Exactly one path per event so a key is never delivered twice.
+                        if system_wide:
+                            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                        else:
+                            Quartz.CGEventPostToPid(os.getpid(), event)
                     if pump:
                         deadline = time.monotonic() + .08
                         while time.monotonic() < deadline:
@@ -2469,24 +2482,62 @@ class LogSolutionUiTests(unittest.TestCase):
 
                 popup_entered = threading.Event()
                 popup_exited = threading.Event()
+                menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
+                notification_center = NSNotificationCenter.defaultCenter()
+                observer = notification_center.addObserverForName_object_queue_usingBlock_(
+                    NSMenuDidBeginTrackingNotification, None, None,
+                    lambda notification: menu_tracking.set())
+                self.addCleanup(notification_center.removeObserver_, observer)
                 actual_popup = app.language_menu.tk_popup
 
                 def observed_popup(*args, **kwargs):
-                    popup_entered.set()
+                    entered, exited = popup_entered, popup_exited
+                    entered.set()
                     try:
                         return actual_popup(*args, **kwargs)
                     finally:
-                        popup_exited.set()
+                        exited.set()
 
                 popup_patcher = patch.object(app.language_menu, "tk_popup", observed_popup)
                 popup_patcher.start()
                 self.addCleanup(popup_patcher.stop)
 
                 def send_menu_keys(screenshot_tag, keycodes):
+                    entered, exited = popup_entered, popup_exited
+
+                    tracking, keys_sent = menu_tracking, menu_keys_sent
+
+                    def dismiss():
+                        for down in (True, False):
+                            event = Quartz.CGEventCreateKeyboardEvent(None, 53, down)
+                            if event is not None:
+                                Quartz.CGEventPostToPid(os.getpid(), event)
+                                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
+                    def watchdog():
+                        # root.update() can itself block inside the native menu loop.
+                        # Keep the deadline outside that loop and dismiss even when
+                        # tracking starts after the sender has timed out.
+                        if entered.wait(60) and not exited.wait(15):
+                            menu_watchdog_errors.append(
+                                "{}: native menu did not exit before deadline".format(
+                                    screenshot_tag))
+                            deadline = time.monotonic() + 10
+                            while not exited.is_set() and time.monotonic() < deadline:
+                                dismiss()
+                                exited.wait(.2)
+
                     def deliver():
                         try:
-                            if not popup_entered.wait(3):
+                            if not entered.wait(15):
                                 raise AssertionError("native menu popup never started")
+                            # Some Tk/AppKit combinations may not emit this
+                            # notification for a popup. Fall back to a bounded
+                            # delay rather than suppressing keyboard input.
+                            tracking.wait(1)
+                            # The notification is posted during menu setup; allow the
+                            # tracking loop to receive events before injecting keys.
                             time.sleep(.1)
                             capture_language_menu(screenshot_tag, delay=0,
                                                   wait_for_capture=True)
@@ -2502,9 +2553,15 @@ class LogSolutionUiTests(unittest.TestCase):
                                 if index < len(keycodes) - 1:
                                     time.sleep(.18)
                         except Exception as error:
-                            capture_errors.append("{} keyboard input: {!r}".format(
+                            menu_watchdog_errors.append("{} keyboard input: {!r}".format(
                                 screenshot_tag, error))
+                            dismiss()
+                        finally:
+                            keys_sent.set()
 
+                    watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+                    input_threads.append(watchdog_thread)
+                    watchdog_thread.start()
                     thread = threading.Thread(target=deliver, daemon=True)
                     input_threads.append(thread)
                     thread.start()
@@ -2522,17 +2579,37 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.current_language, current_language)
                 self.assertEqual(app.language_choice.get(), current_language)
 
+                # Tk focus alone does not establish that AppKit has finished
+                # returning keyboard input to the root after menu tracking.
+                def wait_for_root_key_window():
+                    self.wait_for_ui(root, lambda: (
+                        NSApplication.sharedApplication().isActive()
+                        and NSApplication.sharedApplication().keyWindow() is not None
+                        and NSApplication.sharedApplication().keyWindow().title() == app_title))
+                    settle_deadline = time.monotonic() + .2
+                    while time.monotonic() < settle_deadline:
+                        root.update()
+                        time.sleep(.01)
+
+                self.wait_for_ui(root, menu_keys_sent.is_set)
+                wait_for_root_key_window()
+
                 target_language = ENGLISH if current_language == TRADITIONAL_CHINESE else TRADITIONAL_CHINESE
                 target_name = "English" if target_language == ENGLISH else "繁體中文"
                 target_index = next(
                     index for index in range(app.language_menu.index("end") + 1)
                     if app.language_menu.entrycget(index, "label") == target_name)
-                popup_entered.clear()
-                popup_exited.clear()
-                post_key(125, pump=False)  # Down opens; native menu receives further keys.
+                popup_entered = threading.Event()
+                popup_exited = threading.Event()
+                menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
+                # The HID tap wakes the Tk event loop promptly (the root is the key
+                # window here); a per-pid Down can sit undispatched on Intel runners.
+                post_key(125, pump=False, system_wide=True)  # Down opens; native menu receives further keys.
                 send_menu_keys("return", (115,) + (125,) * target_index + (36,))
                 root.update()
-                self.wait_for_ui(root, lambda: app.language_choice.get() == target_language)
+                self.wait_for_ui(root, lambda: app.language_choice.get() == target_language,
+                                 timeout=10)
                 self.assertEqual(app.language_choice.get(), target_language)
                 self.assertIs(root.focus_get(), app.language_button)
                 write_tk_bounds_evidence("st2-language-native-keyboard", {
@@ -2559,9 +2636,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 app._close_settings()
                 app.language_button.focus_force()
                 root.update()
-                post_key(49, pump=False)
+                popup_entered = threading.Event()
+                popup_exited = threading.Event()
+                menu_tracking = threading.Event()
+                menu_keys_sent = threading.Event()
+                wait_for_root_key_window()
+                self.wait_for_ui(root, lambda: root.focus_get() is app.language_button)
+                # System-wide HID keys require an isolated desktop session.
+                native_app = NSApplication.sharedApplication()
+                key_window = native_app.keyWindow()
+                if not native_app.isActive() or key_window is None or key_window.title() != app_title:
+                    self.fail("root lost the key window before the closing Space; "
+                              "refusing to post a system-wide key")
+                # Same system-wide path as the Down reopen: a per-pid Space can sit undispatched.
+                post_key(49, pump=False, system_wide=True)
                 send_menu_keys("close", (53,))
-                root.update()
+                self.wait_for_ui(root, popup_exited.is_set)
 
 
 
@@ -2577,6 +2667,8 @@ class LogSolutionUiTests(unittest.TestCase):
             if evidence_value:
                 self.assertEqual(capture_errors, [],
                                  "native language-menu evidence/input failed")
+            self.assertEqual(menu_watchdog_errors, [],
+                             "native language menu had to be force-closed")
 
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
@@ -3841,8 +3933,17 @@ class LogSolutionUiTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("B518_TK_TESTS") == "1",
                          "requires an accessible macOS Tk desktop session")
     def test_ls6_real_tk_heartbeat_cycles_blocks_tracks_states_and_cleans_up(self):
+        heartbeat_ticks = []
+        original_advance_heartbeat = B518LogSolutionApp._advance_heartbeat
+
+        def record_heartbeat(app):
+            original_advance_heartbeat(app)
+            heartbeat_ticks.append((app._heartbeat_state, time.monotonic()))
+
         with TemporaryDirectory() as temporary, \
-                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"), \
+                patch.object(B518LogSolutionApp, "_advance_heartbeat", autospec=True,
+                             side_effect=record_heartbeat):
             root = tk.Tk()
             root.deiconify()
             app = B518LogSolutionApp(
@@ -3904,7 +4005,7 @@ class LogSolutionUiTests(unittest.TestCase):
                 ]
                 observed_states = [initial_state, cycle_start_state]
                 observed_patterns = [initial_pattern, rendered_cells()]
-                transition_times = [time.monotonic()]
+                transition_times = [heartbeat_ticks[-1][1]]
                 expected_index = 0
                 deadline = time.monotonic() + 10
                 while (expected_index < len(expected_cycle_states) and
@@ -3914,7 +4015,7 @@ class LogSolutionUiTests(unittest.TestCase):
                     if current == expected_cycle_states[expected_index]:
                         observed_states.append(current)
                         observed_patterns.append(rendered_cells())
-                        transition_times.append(time.monotonic())
+                        transition_times.append(heartbeat_ticks[-1][1])
                         expected_index += 1
                     time.sleep(.005)
                 self.assertEqual(observed_states, [initial_state, cycle_start_state] +
@@ -4468,6 +4569,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertEqual(app.kvm_result_blocks[13].cget("background"),
                                  UNAVAILABLE_COLOUR)
 
+                root.update()
+                self.wait_for_ui(root, lambda: root.winfo_ismapped() and root.winfo_viewable())
                 evidence = capture_tk_window_evidence(
                     root, "main-page-capacity12", "en", {
                         "kvm": app.kvm_results,
@@ -6753,6 +6856,7 @@ class LogSolutionUiTests(unittest.TestCase):
                                 self.assertEqual(result_event["localized_message"]["message_id"],
                                                  "round.result")
                                 verify_round_event_language_refresh(result_event)
+                                pump_until(lambda: any("result: PASS" in line for line in app.event_lines), timeout=3)
                                 audit_bytes = (session_path / "audit.jsonl").read_bytes()
                                 state = app.rounds.snapshot()
                                 select_language("繁體中文")
@@ -6928,7 +7032,9 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.active_round_id = started.round_id
                 pump_until(lambda: sources and app.rounds.snapshot()
                            and app.rounds.snapshot().results
-                           and app.rounds.snapshot().results[0].status == "PASS")
+                           and app.rounds.snapshot().results[0].status == "PASS"
+                           and app.rounds.snapshot().source_ready
+                           and app.rounds.snapshot().results[1].status == "TESTING")
                 self.assertEqual(sources[0].offer_candidate(
                     1, "SN-CANDIDATE", "FAIL", "/controlled/slot1/candidate.csv",
                     "candidate", "2026-10-08T10:01:00"), "defer")
@@ -11385,6 +11491,258 @@ class LogSolutionUiTests(unittest.TestCase):
         app.root.deiconify.assert_not_called()
         app.root.lift.assert_not_called()
         app.root.focus_force.assert_not_called()
+
+    def _run_minimized_restore(self, our_process_frontmost):
+        frontmost = MagicMock()
+        frontmost.processIdentifier.return_value = os.getpid() + (0 if our_process_frontmost else 1)
+        native_window, previous_window, entry = MagicMock(), MagicMock(), MagicMock()
+        native_window.isMiniaturized.return_value = True
+        previous_window.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        key = {"window": previous_window if our_process_frontmost else None}
+        focus = {"widget": entry}
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        native_window.deminiaturize_.side_effect = lambda _: (
+            key.update(window=native_window), focus.update(widget=app.root))
+        entry.focus_set.side_effect = lambda: focus.update(widget=entry)
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.side_effect = lambda: focus["widget"]
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._foreground_after_id = None
+        app._pending_foreground_round_id = None
+        app._pending_foreground_key_window = None
+        app._pending_foreground_app = None
+        app._native_main_window = lambda: native_window
+        app._record_foreground_failure = MagicMock()
+        app._schedule_ui = lambda delay, callback, *args: callback(*args)
+        with patch("b518_log_solution.NSApplication") as ns_app, \
+                patch("b518_log_solution.NSWorkspace") as workspace, \
+                patch("b518_log_solution.NSApplicationActivateIgnoringOtherApps", object()):
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.side_effect = lambda: key["window"]
+            workspace.sharedWorkspace.return_value.frontmostApplication.return_value = frontmost
+            app._queue_foreground_raise("r1")
+            self.assertIs(workspace.sharedWorkspace().frontmostApplication(), frontmost)
+        app._record_foreground_failure.assert_not_called()
+        self.assertIs(app.root.focus_get(), entry)
+        entry.focus_set.assert_called()
+        entry.focus_force.assert_not_called()
+        app.root.focus_force.assert_not_called()
+        frontmost.activateWithOptions_.assert_not_called()
+        shared.activateIgnoringOtherApps_.assert_not_called()
+        shared.activateWithOptions_.assert_not_called()
+        shared.activate.assert_not_called()
+        self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+        native_window.orderFrontRegardless.assert_called()
+        native_window.makeKeyWindow.assert_not_called()
+        return previous_window
+
+    def test_minimized_restore_waits_for_late_deminiaturize_before_returning_focus(self):
+        frontmost = MagicMock()
+        frontmost.processIdentifier.return_value = os.getpid()
+        native_window, previous_window, entry = MagicMock(), MagicMock(), MagicMock()
+        native_window.isMiniaturized.return_value = True
+        previous_window.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        key = {"window": previous_window}
+        focus = {"widget": entry}
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.side_effect = lambda: focus["widget"]
+        entry.focus_set.side_effect = lambda: focus.update(widget=entry)
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._foreground_after_id = None
+        app._pending_foreground_round_id = None
+        app._pending_foreground_key_window = None
+        app._pending_foreground_app = None
+        app._native_main_window = lambda: native_window
+        app._record_foreground_failure = MagicMock()
+        queue = []
+        app._schedule_ui = lambda delay, callback, *args: queue.append((callback, args))
+
+        def complete_restore(ticks=0):
+            if ticks < 7:
+                queue.append((complete_restore, (ticks + 1,)))
+            else:
+                native_window.isMiniaturized.return_value = False
+                app.root.state.return_value = "normal"
+                key["window"] = native_window
+                focus["widget"] = app.root
+
+        native_window.deminiaturize_.side_effect = lambda _: queue.append((complete_restore, ()))
+        with patch("b518_log_solution.NSApplication") as ns_app, \
+                patch("b518_log_solution.NSWorkspace") as workspace, \
+                patch("b518_log_solution.NSApplicationActivateIgnoringOtherApps", object()):
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.side_effect = lambda: key["window"]
+            workspace.sharedWorkspace.return_value.frontmostApplication.return_value = frontmost
+            app._queue_foreground_raise("r1")
+            for _ in range(200):
+                if not queue:
+                    break
+                callback, args = queue.pop(0)
+                callback(*args)
+            self.assertFalse(queue, "restore callbacks did not finish")
+            self.assertIs(app.root.focus_get(), entry)
+            previous_window.makeKeyWindow.assert_called_once()
+            entry.focus_force.assert_not_called()
+            app.root.focus_force.assert_not_called()
+            for target in (shared, frontmost):
+                target.activate.assert_not_called()
+                target.activateIgnoringOtherApps_.assert_not_called()
+                target.activateWithOptions_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+            app._record_foreground_failure.assert_not_called()
+
+    def test_native_main_window_matches_tk_window_id(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.title.return_value = "Log"
+        app.root.winfo_id.return_value = 123
+        stale, current = MagicMock(), MagicMock()
+        stale.title.return_value = current.title.return_value = "Log"
+        stale.tkWindow.return_value = 0
+        current.tkWindow.return_value = 123
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.windows.return_value = [stale, current]
+            self.assertIs(app._native_main_window(), current)
+
+    def test_native_main_window_fallback_prefers_visible_and_rejects_known_mismatch(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.title.return_value = "Log"
+        app.root.winfo_id.return_value = 123
+        hidden = SimpleNamespace(title=lambda: "Log", isVisible=lambda: False)
+        visible = SimpleNamespace(title=lambda: "Log", isVisible=lambda: True)
+        other = SimpleNamespace(title=lambda: "Log", tkWindow=lambda: 456)
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            windows = ns_app.sharedApplication.return_value.windows
+            windows.return_value = [hidden, visible]
+            self.assertIs(app._native_main_window(), visible)
+            windows.return_value = [visible, other]
+            self.assertIsNone(app._native_main_window())
+
+    def test_restore_focus_without_native_application(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.focus_get.return_value = app.root
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        entry = MagicMock()
+        entry.winfo_exists.return_value = True
+        pending = ["r1", None, MagicMock(), entry, []]
+        app._restore_handback = pending
+        with patch("b518_log_solution.NSApplication", None):
+            app._restore_handback_focus(pending)
+        entry.focus_set.assert_called_once()
+        app.root.lift.assert_called_once()
+        app._record_foreground_failure.assert_not_called()
+
+    def test_restore_focus_event_leaves_previous_window_undisturbed(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        app.root.focus_get.return_value = entry
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.keyWindow.return_value = previous
+            app._start_restore_handback("r1", native, previous, entry)
+            app._settle_restore_handback()
+            for _ in ("<FocusIn>", "<Map>"):
+                app._restore_focus_event(SimpleNamespace(widget=app.root))
+            for delay, callback, args in callbacks:
+                if delay == "idle":
+                    callback(*args)
+            native.orderFrontRegardless.assert_not_called()
+            app.root.lift.assert_not_called()
+            entry.focus_set.assert_not_called()
+            previous.makeKeyWindow.assert_not_called()
+            app._record_foreground_failure.assert_not_called()
+
+    def test_minimized_restore_deiconify_returns_focus(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app.root.state.return_value = "iconic"
+        app.root.focus_get.return_value = app.root
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._pending_foreground_round_id = "r1"
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        native.isMiniaturized.return_value = False
+        previous.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        app._pending_foreground_key_window = previous
+        app._pending_foreground_app = None
+        app._pending_foreground_focus = entry
+        app._native_main_window = lambda: native
+        app._record_foreground_failure = MagicMock()
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            shared = ns_app.sharedApplication.return_value
+            shared.keyWindow.return_value = native
+            app._raise_dashboard_for_pending_round()
+            app.root.deiconify.assert_called_once()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            idle = next(item for item in callbacks if item[0] == "idle")
+            idle[1](*idle[2])
+            previous.makeKeyWindow.assert_called_once()
+            entry.focus_set.assert_called_once()
+            entry.focus_force.assert_not_called()
+            app.root.focus_force.assert_not_called()
+            shared.activate.assert_not_called()
+            shared.activateIgnoringOtherApps_.assert_not_called()
+            shared.activateWithOptions_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+            app._record_foreground_failure.assert_not_called()
+
+    def test_restore_focus_event_reclaims_focus_until_settled(self):
+        app = object.__new__(B518LogSolutionApp)
+        app.root = MagicMock()
+        app._ui_destroyed = False
+        app.active_round_id = "r1"
+        app._record_foreground_failure = MagicMock()
+        native, previous, entry = MagicMock(), MagicMock(), MagicMock()
+        previous.isVisible.return_value = True
+        entry.winfo_exists.return_value = True
+        app.root.focus_get.return_value = app.root
+        callbacks = []
+        app._schedule_ui = lambda delay, callback, *args: callbacks.append((delay, callback, args))
+        with patch("b518_log_solution.NSApplication") as ns_app:
+            ns_app.sharedApplication.return_value.keyWindow.return_value = native
+            app._start_restore_handback("r1", native, previous, entry)
+            app._settle_restore_handback()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            idle = next(item for item in callbacks if item[0] == "idle")
+            idle[1](*idle[2])
+            previous.makeKeyWindow.assert_called_once()
+            entry.focus_set.assert_called_once()
+            native.orderFrontRegardless.assert_called()
+            settle = next(item for item in callbacks if item[0] == 1800)
+            entry.focus_set.reset_mock()
+            settle[1](*settle[2])
+            entry.focus_set.assert_not_called()
+            app._restore_focus_event(SimpleNamespace(widget=app.root))
+            self.assertEqual(len([item for item in callbacks if item[0] == "idle"]), 1)
+            entry.focus_set.assert_not_called()
+            entry.focus_force.assert_not_called()
+            ns_app.sharedApplication.return_value.activateIgnoringOtherApps_.assert_not_called()
+            self.assertFalse(any("-topmost" in call.args for call in app.root.attributes.call_args_list))
+
+    def test_minimized_restore_returns_tk_focus_without_activating_any_app(self):
+        self._run_minimized_restore(our_process_frontmost=False)
+
+    def test_minimized_restore_returns_key_to_previous_local_window_without_activation(self):
+        previous_window = self._run_minimized_restore(our_process_frontmost=True)
+
+        previous_window.makeKeyWindow.assert_called_once()
 
     def test_timeout_event_returns_dashboard_to_timeout_stopped_state(self):
         app = object.__new__(B518LogSolutionApp)

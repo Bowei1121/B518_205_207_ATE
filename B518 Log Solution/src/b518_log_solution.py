@@ -498,6 +498,7 @@ class B518LogSolutionApp:
         self._pending_foreground_round_id = None
         self._pending_foreground_key_window = None
         self._pending_foreground_app = None
+        self._pending_foreground_focus = None
         self.project = tk.StringVar(master=self.root, value=selected_project)
         self.station = tk.StringVar(master=self.root, value=selected_machine)
         self.status_rows: Dict[int, Dict[str, tk.Label]] = {}
@@ -694,6 +695,7 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        self._clear_restore_handback()
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
             self._heartbeat_after_id = None
@@ -2522,6 +2524,32 @@ class B518LogSolutionApp:
                 snapshot.state.value in {"COMPLETED", "STOPPED"}:
             self._queue_foreground_raise(snapshot.round_id)
 
+    def _trace_windows(self):
+        if os.environ.get("B518_FOREGROUND_TRACE") != "1":
+            return None
+        try:
+            app = NSApplication.sharedApplication()
+            return [(str(window.title()), bool(window.isKeyWindow()),
+                     bool(window.isVisible()))
+                    for window in list(app.orderedWindows() or ())]
+        except Exception:
+            return None
+
+    def _trace_foreground(self, event: str, **fields) -> None:
+        if os.environ.get("B518_FOREGROUND_TRACE") != "1":
+            return
+        try:
+            entry = {"t": round(time.monotonic(), 3), "event": event, **fields}
+            trace = getattr(self, "_foreground_trace", None)
+            if trace is None:
+                trace = self._foreground_trace = []
+            trace.append(entry)
+            del trace[:-200]
+            print("B518_FOREGROUND_TRACE " + json.dumps(entry, default=str),
+                  file=sys.stderr, flush=True)
+        except Exception:
+            pass
+
     def _queue_foreground_raise(self, round_id: str) -> None:
         """Coalesce all meaningful changes drained in one Tk event-loop turn."""
         if self._ui_destroyed or round_id != self.active_round_id:
@@ -2529,6 +2557,7 @@ class B518LogSolutionApp:
         self._pending_foreground_round_id = round_id
         if self._foreground_after_id is not None:
             return
+        self._clear_restore_handback()
         if NSApplication is not None:
             try:
                 self._pending_foreground_key_window = \
@@ -2538,6 +2567,10 @@ class B518LogSolutionApp:
             except Exception:
                 self._pending_foreground_key_window = None
                 self._pending_foreground_app = None
+        try:
+            self._pending_foreground_focus = self.root.focus_get()
+        except Exception:
+            self._pending_foreground_focus = None
         try:
             self._foreground_after_id = self._schedule_ui(
                 "idle", self._raise_dashboard_for_pending_round)
@@ -2553,6 +2586,8 @@ class B518LogSolutionApp:
         self._pending_foreground_key_window = None
         previous_app = self._pending_foreground_app
         self._pending_foreground_app = None
+        previous_focus = self._pending_foreground_focus
+        self._pending_foreground_focus = None
         if self._ui_destroyed or round_id != self.active_round_id:
             return
         try:
@@ -2560,25 +2595,62 @@ class B518LogSolutionApp:
             native_window = self._native_main_window()
             if state in {"iconic", "withdrawn"}:
                 if native_window is not None and native_window.isMiniaturized():
+                    self._start_restore_handback(
+                        round_id, native_window, previous_key_window, previous_focus)
                     native_window.deminiaturize_(None)
-                    # Aqua reorders windows again when the minimize animation
-                    # completes, so order the restored window after that pass.
                     self._foreground_after_id = self._schedule_ui(
-                        250, self._finish_native_restore, round_id, native_window,
-                        previous_key_window, previous_app)
+                        50, self._wait_for_native_restore, round_id, native_window,
+                        previous_key_window, previous_app, previous_focus, 1)
                     return
                 else:
+                    self._start_restore_handback(
+                        round_id, native_window, previous_key_window, previous_focus)
                     self.root.deiconify()
+                    self._settle_restore_handback()
             if native_window is not None:
+                if os.environ.get("B518_FOREGROUND_TRACE") == "1":
+                    try:
+                        previous_title = (str(previous_key_window.title())
+                                          if previous_key_window is not None else None)
+                        is_active = bool(NSApplication.sharedApplication().isActive())
+                    except Exception:
+                        previous_title = is_active = None
+                    self._trace_foreground(
+                        "raise", state=state, is_active=is_active,
+                        previous_key=previous_title,
+                        windows=self._trace_windows())
                 # AppKit orders the window without making it key or changing focus.
                 native_window.orderFrontRegardless()
+                self._trace_foreground("raised", windows=self._trace_windows())
             else:
                 self.root.lift()
         except Exception as error:
             self._record_foreground_failure(error)
 
+    def _wait_for_native_restore(self, round_id: str, native_window,
+                                 previous_key_window, previous_app,
+                                 previous_focus, attempt: int) -> None:
+        self._foreground_after_id = None
+        if self._ui_destroyed or round_id != self.active_round_id:
+            return
+        try:
+            complete = not native_window.isMiniaturized() and \
+                self.root.state() not in {"iconic", "withdrawn"}
+            if complete or attempt >= 50:
+                # Tk windowExpanded queues FocusIn; let it run before handing focus back.
+                self._foreground_after_id = self._schedule_ui(
+                    50, self._finish_native_restore, round_id, native_window,
+                    previous_key_window, previous_app, previous_focus)
+            else:
+                self._foreground_after_id = self._schedule_ui(
+                    50, self._wait_for_native_restore, round_id, native_window,
+                    previous_key_window, previous_app, previous_focus, attempt + 1)
+        except Exception as error:
+            self._record_foreground_failure(error)
+
     def _finish_native_restore(self, round_id: str, native_window,
-                               previous_key_window, previous_app) -> None:
+                               previous_key_window, previous_app,
+                               previous_focus=None) -> None:
         self._foreground_after_id = None
         if self._ui_destroyed or round_id != self.active_round_id:
             return
@@ -2592,25 +2664,119 @@ class B518LogSolutionApp:
                     if current_app.processIdentifier() == current_pid:
                         previous_app.activateWithOptions_(
                             NSApplicationActivateIgnoringOtherApps)
-                elif previous_key_window is not None and \
+                if previous_key_window is not None and \
                         previous_key_window is not native_window and \
                         previous_key_window.isVisible():
                     current_key = NSApplication.sharedApplication().keyWindow()
                     if current_key is native_window:
                         previous_key_window.makeKeyWindow()
+                if previous_focus is not None and \
+                        previous_focus.winfo_exists() and \
+                        previous_focus is not self.root.focus_get():
+                    previous_focus.focus_set()
                 # Restoring the prior key/application can reorder its windows;
                 # put the Log window in front again without making it key.
                 native_window.orderFrontRegardless()
+            self._settle_restore_handback()
         except Exception as error:
             self._record_foreground_failure(error)
+
+    def _clear_restore_handback(self):
+        pending = getattr(self, "_restore_handback", None)
+        self._restore_handback = None
+        if pending:
+            for sequence, binding in pending[4]:
+                try:
+                    self.root.unbind(sequence, binding)
+                except Exception:
+                    pass
+
+    def _start_restore_handback(self, round_id, native, previous, focus):
+        self._clear_restore_handback()
+        pending = [round_id, native, previous, focus, []]
+        self._restore_handback = pending
+        for sequence in ("<FocusIn>", "<Map>"):
+            binding = self.root.bind(sequence, self._restore_focus_event, add="+")
+            pending[4].append((sequence, binding))
+
+    def _restore_focus_event(self, event):
+        pending = getattr(self, "_restore_handback", None)
+        if not pending or getattr(self, "_ui_destroyed", False):
+            return
+        widget = getattr(event, "widget", None)
+        if widget is not self.root:
+            try:
+                if widget.winfo_toplevel() is not self.root:
+                    return
+            except Exception:
+                # Tk-internal widgets arrive as path strings; they are not the Log window.
+                return
+        try:
+            self._schedule_ui("idle", self._restore_handback_focus, pending)
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _restore_handback_focus(self, pending):
+        if (getattr(self, "_restore_handback", None) is not pending or
+                getattr(self, "_ui_destroyed", False) or pending[0] != self.active_round_id):
+            return
+        try:
+            _, native, previous, focus, _ = pending
+            if NSApplication is not None:
+                if native is None or NSApplication.sharedApplication().keyWindow() is not native:
+                    return
+            else:
+                current = self.root.focus_get()
+                if current is focus or (current is not None and current is not self.root and
+                                        current.winfo_toplevel() is not self.root):
+                    return
+            if NSApplication is not None and previous is not None and \
+                    previous is not native and previous.isVisible():
+                previous.makeKeyWindow()
+            if focus is not None and focus.winfo_exists() and focus is not self.root.focus_get():
+                focus.focus_set()
+            if native is not None:
+                native.orderFrontRegardless()
+            else:
+                self.root.lift()
+        except Exception as error:
+            self._record_foreground_failure(error)
+
+    def _settle_restore_handback(self):
+        pending = getattr(self, "_restore_handback", None)
+        if pending:
+            self._schedule_ui(1800, self._end_restore_handback, pending)
+
+    def _end_restore_handback(self, pending):
+        if getattr(self, "_restore_handback", None) is pending:
+            self._clear_restore_handback()
 
     def _native_main_window(self):
         if NSApplication is None:
             return None
         app = NSApplication.sharedApplication()
         title = self.root.title()
-        return next((window for window in app.windows()
-                     if window.title() == title), None)
+        window_id = self.root.winfo_id()
+        fallback = []
+        has_tk_window = False
+        for window in app.windows():
+            if window.title() != title:
+                continue
+            try:
+                tk_window = getattr(window, "tkWindow", None)
+                if tk_window is None:
+                    fallback.append(window)
+                    continue
+                tk_id = tk_window()
+            except Exception:
+                fallback.append(window)
+                continue
+            has_tk_window = True
+            if tk_id == window_id and tk_id:
+                return window
+        if has_tk_window or not fallback:
+            return None
+        return next((window for window in fallback if window.isVisible()), fallback[0])
 
     def _record_foreground_failure(self, error: Exception) -> None:
         diagnostic = "{}: {}".format(type(error).__name__, error)

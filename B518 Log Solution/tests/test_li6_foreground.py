@@ -13,10 +13,11 @@ from tkinter import ttk
 
 try:
     import Quartz
-    from AppKit import NSApplication
+    from AppKit import NSApplication, NSWorkspace
 except ImportError:  # macOS desktop-only acceptance test
     Quartz = None
     NSApplication = None
+    NSWorkspace = None
 
 from b518_log_solution import B518LogSolutionApp
 from monitoring_round import RoundResult, RoundSnapshot, RoundState
@@ -32,6 +33,12 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
         return [window.get(Quartz.kCGWindowName, "") for window in windows
                 if window.get(Quartz.kCGWindowOwnerPID) == pid]
 
+    def _front_windows(self, pid):
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+        return [(window.get(Quartz.kCGWindowNumber), window.get(Quartz.kCGWindowName, ""))
+                for window in windows if window.get(Quartz.kCGWindowOwnerPID) == pid]
+
     def _wait(self, root, predicate, timeout=2):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -41,8 +48,74 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
             time.sleep(.01)
         self.fail("desktop condition did not become true")
 
+    def _settle_other_window_front(self, root, pid, app, timeout=3, stable_for=.25):
+        """Wait (bounded, never failing) until app activation and window order stop changing."""
+        other = "LI6 Other Local Window"
+
+        log_window_number = None
+
+        def sample():
+            nonlocal log_window_number
+            log_window_number = None
+            try:
+                native = app._native_main_window()
+                log_window_number = native.windowNumber() if native is not None else None
+                application = NSApplication.sharedApplication()
+                key = application.keyWindow()
+                front = NSWorkspace.sharedWorkspace().frontmostApplication()
+                windows = self._front_windows(pid)
+                names = [name for _, name in windows]
+                log_index = next((i for i, (number, _) in enumerate(windows)
+                                  if log_window_number is not None and number == log_window_number), None)
+                other_index = next((i for i, (_, name) in enumerate(windows)
+                                    if name == other), None)
+                return (bool(application.isActive()),
+                        front.processIdentifier() if front else None,
+                        str(key.title()) if key else None, names, root.state(),
+                        log_index, other_index)
+            except Exception:
+                log_window_number = None
+                return (False, None, None, [], None, None, None)
+
+        def ready(state):
+            if not (log_window_number is not None and state[0] and state[1] == pid
+                    and state[2] == other and state[6] is not None):
+                return False
+            if state[4] in {"iconic", "withdrawn"}:
+                return state[5] is None
+            return state[5] is not None and state[6] < state[5]
+
+        started = time.monotonic()
+        first = last = None
+        changes = 0
+        stable_since = None
+        stable = False
+        while time.monotonic() - started < timeout:
+            try:
+                root.update()
+                state = sample()
+            except Exception:
+                log_window_number = None
+                state = (False, None, None, [], None, None, None)
+            if first is None:
+                first = state
+            if state != last:
+                if last is not None:
+                    changes += 1
+                last = state
+                stable_since = time.monotonic()
+            if ready(state) and time.monotonic() - stable_since >= stable_for:
+                stable = True
+                break
+            time.sleep(.01)
+        return {"elapsed": round(time.monotonic() - started, 3), "stable": stable,
+                "first": first, "last": last, "order_changes": changes,
+                "log_state": last[4] if last is not None else None,
+                "log_window_number": log_window_number}
+
     def test_round_events_raise_log_without_focus_and_without_topmost(self):
         with TemporaryDirectory() as temporary, \
+                patch.dict(os.environ, {"B518_FOREGROUND_TRACE": "1"}), \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
             root = tk.Tk()
             root.title("B518 LI6 Foreground Test")
@@ -65,6 +138,9 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                 desk.lift()
                 entry.focus_force()
                 self._wait(root, lambda: root.focus_get() is entry)
+                setup = self._settle_other_window_front(root, os.getpid(), app)
+                print("LI6_SETUP " + json.dumps(setup, default=str), file=sys.stderr, flush=True)
+                observations.append({"setup_settle": setup})
                 names = self._front_window_names(os.getpid())
                 log_is_visible = main_window_title in names
                 observations.append({
@@ -91,8 +167,14 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                          "miniaturized": window.isMiniaturized(),
                          "key": window.isKeyWindow()}
                         for window in NSApplication.sharedApplication().windows()]
-                    self.fail("{} did not raise: stack={}, Tk state={}, native={}".format(
-                        label, self._front_window_names(os.getpid()), root.state(), native))
+                    front = NSWorkspace.sharedWorkspace().frontmostApplication()
+                    self.fail("{} did not raise: stack={}, Tk state={}, native={}, "
+                              "isActive={}, frontmost pid={} (own pid={}), "
+                              "foreground trace={}".format(
+                                  label, self._front_window_names(os.getpid()), root.state(),
+                                  native, NSApplication.sharedApplication().isActive(),
+                                  front.processIdentifier() if front else None, os.getpid(),
+                                  getattr(app, "_foreground_trace", [])[-30:]))
                 try:
                     self._wait(root, lambda: root.focus_get() is entry, timeout=0.5)
                 except AssertionError:
@@ -196,11 +278,15 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                     "li6-restored-round", "FCT", RoundState.PREPARING, (), False, 0, (),
                     source_preparation_pending=True))
                 desk_record = put_other_window_in_front()
+                frontmost_before = NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier()
                 app._apply_round_snapshot(RoundSnapshot(
                     "li6-restored-round", "FCT", RoundState.RUNNING, (), False, 1, (),
                     source_ready=True))
                 self._wait(root, lambda: root.state() == "normal")
                 restore_record = assert_log_raises("minimize-restore")
+                self.assertEqual(
+                    NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier(),
+                    frontmost_before, "minimize-restore changed the frontmost application")
 
                 # An old round event must not reorder the window for the new round.
                 from log_monitoring import MonitorEvent
@@ -252,6 +338,17 @@ class LI6ForegroundAcceptanceTests(unittest.TestCase):
                         "foreground_failure_diagnostic": fault_events[-1]["diagnostic"],
                     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             finally:
+                try:
+                    evidence_dir = os.environ.get("B518_TK_EVIDENCE_DIR")
+                    if evidence_dir:
+                        trace_dir = Path(evidence_dir)
+                        trace_dir.mkdir(parents=True, exist_ok=True)
+                        (trace_dir / "li6-foreground-trace.json").write_text(
+                            json.dumps(getattr(app, "_foreground_trace", []),
+                                       ensure_ascii=False, indent=2, default=str) + "\n",
+                            encoding="utf-8")
+                except Exception:
+                    pass
                 app.rounds.request_close()
                 self._wait(root, lambda: app.rounds.close_status().status == "complete")
                 app.hotkey.close()
