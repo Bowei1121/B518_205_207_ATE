@@ -151,6 +151,8 @@ PYTHON_BIN="$PWD/.venv-python31210/bin/python" ./scripts/run_macos_desktop.sh
 B518_TK_TESTS=1 .venv-python31210/bin/python scripts/run_tests.py
 ```
 
+`B518_TK_TESTS=1` 的桌面測試會用 HID tap 送出系統層級按鍵，只能在隔離的桌面 session（例如 CI runner 或沒有其他人操作的專用帳號）執行，執行期間不要操作鍵盤或切換 App。
+
 檢查會列出實際執行檔、Python 修訂版、目前／目標架構、是否位於虛擬環境，以及 requirements 檔（包含 `-r` 引入檔）中的每個固定套件版本。環境不符時會在桌面或完整測試開始前失敗；不會修改系統權限。這些檢查不取代 macOS 15 arm64 bundle 或目標機驗收，也不調整 macOS 10.14／26 的交付目標。
 
 

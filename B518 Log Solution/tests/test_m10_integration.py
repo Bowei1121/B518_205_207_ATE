@@ -594,7 +594,18 @@ class M10SourceIntegrationTests(unittest.TestCase):
                             child.destroy()
 
             try:
-                root.after(350, inspect)
+                deadline = time.monotonic() + 5
+
+                def wait_for_notice():
+                    notice = next((child for child in root.winfo_children()
+                                   if isinstance(child, tk.Toplevel) and
+                                   child.title() == "Start Failed"), None)
+                    if (notice is not None and notice.winfo_viewable()) or time.monotonic() >= deadline:
+                        inspect()
+                    else:
+                        root.after(50, wait_for_notice)
+
+                root.after(50, wait_for_notice)
                 with patch("b518_log_solution.DEFAULT_PLATFORM_REGISTRY.create_monitor",
                            side_effect=PermissionError("source access denied")), \
                         patch("tkinter.messagebox.showerror") as legacy_modal:
