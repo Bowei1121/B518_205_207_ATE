@@ -1,0 +1,139 @@
+name: Log Solution Intel macOS 15 tests
+
+on:
+  push:
+    branches: [B518-Log-Solution, demo/1104]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-intel-macos15-tests.yml'
+  pull_request:
+    branches: [B518-Log-Solution, demo/1104]
+    paths:
+      - 'B518 Log Solution/**'
+      - '.github/workflows/log-solution-intel-macos15-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b518-intel-macos15-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop-tests:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: B518 Log Solution
+    env:
+      PYTHON_BIN: /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12
+      PYTHONUNBUFFERED: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+      - name: Checkout tested revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Initialize evidence directory
+        run: |
+          evidence="$RUNNER_TEMP/b518-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$evidence"
+          echo "B518_TK_EVIDENCE_DIR=$evidence" >> "$GITHUB_ENV"
+
+      - name: Install Python.org 3.12.10 with Tk
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/python-3.12.10-macos11.pkg"
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg \
+            --output "$package"
+          echo "8373e58da4ea146b3eb1c1f9834f19a319440b6b679b06050b1f9ee3237aa8e4  $package" | shasum -a 256 -c -
+          pkgutil --check-signature "$package"
+          sudo installer -pkg "$package" -target /
+
+      - name: Verify Intel macOS 15 desktop
+        run: |
+          set -euo pipefail
+          mkdir -p "$B518_TK_EVIDENCE_DIR"
+          exec > >(tee "$B518_TK_EVIDENCE_DIR/host.log") 2>&1
+          sw_vers
+          echo "CPU: $(sysctl -n machdep.cpu.brand_string)"
+          [[ "$(uname -m)" == x86_64 ]] || {
+            echo 'Requires a native Intel (x86_64) runner.'; exit 1;
+          }
+          [[ "$(sw_vers -productVersion)" == 15.* ]] || {
+            echo 'This workflow requires macOS 15.x.'; exit 1;
+          }
+          [[ "$(stat -f '%Su' /dev/console)" == "$(id -un)" ]] || {
+            echo 'Runner must belong to the logged-in desktop user.'; exit 1;
+          }
+          "$PYTHON_BIN" scripts/check_macos_build_python.py --exact-version 3.12.10 --architecture x86_64
+
+      - name: Configure desktop resolution for window acceptance
+        run: |
+          set -euo pipefail
+          swift - <<'SWIFT' 2>&1 | tee "$B518_TK_EVIDENCE_DIR/display.log"
+          import CoreGraphics
+          import Foundation
+
+          let display = CGMainDisplayID()
+          let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
+          let modes = CGDisplayCopyAllDisplayModes(display, options) as? [CGDisplayMode] ?? []
+          for mode in modes {
+              print("available: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
+          }
+          let candidates = modes.filter { $0.width >= 1920 && $0.height >= 1080 }
+              .sorted { $0.width * $0.height < $1.width * $1.height }
+          guard let mode = candidates.first else {
+              fatalError("Desktop acceptance requires at least 1920x1080 logical pixels")
+          }
+          var configuration: CGDisplayConfigRef?
+          guard CGBeginDisplayConfiguration(&configuration) == .success,
+                let configuration = configuration else {
+              fatalError("Cannot begin display configuration")
+          }
+          let result = CGConfigureDisplayWithDisplayMode(configuration, display, mode, nil)
+          guard result == .success else {
+              CGCancelDisplayConfiguration(configuration)
+              fatalError("Cannot set display mode: \(result)")
+          }
+          guard CGCompleteDisplayConfiguration(configuration, .forSession) == .success else {
+              fatalError("Cannot retain display mode for the desktop session")
+          }
+          print("selected: \(mode.width)x\(mode.height), pixels: \(mode.pixelWidth)x\(mode.pixelHeight)")
+          SWIFT
+          "$PYTHON_BIN" - <<'PY' 2>&1 | tee -a "$B518_TK_EVIDENCE_DIR/display.log"
+          import tkinter as tk
+          root = tk.Tk()
+          try:
+              size = (root.winfo_screenwidth(), root.winfo_screenheight())
+              print("Tk desktop after configuration process exits:", size)
+              assert size[0] >= 1920 and size[1] >= 1080, size
+          finally:
+              root.destroy()
+          PY
+
+      - name: Run full desktop test suite
+        run: |
+          set -euo pipefail
+          "$PYTHON_BIN" -m venv .venv-macos15-x86_64-tests
+          python=.venv-macos15-x86_64-tests/bin/python
+          "$python" -m pip install -r requirements/requirements-macos-desktop-tests.txt
+          "$python" -m pip freeze | tee "$B518_TK_EVIDENCE_DIR/pip-freeze.txt"
+          B518_TK_TESTS=1 "$python" scripts/run_tests.py \
+            2>&1 | tee "$B518_TK_EVIDENCE_DIR/desktop-tests.log"
+
+      - name: Upload test evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: B518-intel-test-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.B518_TK_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
