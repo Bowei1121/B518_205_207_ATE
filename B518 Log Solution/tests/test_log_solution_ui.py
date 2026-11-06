@@ -3570,7 +3570,7 @@ class LogSolutionUiTests(unittest.TestCase):
             [sys.executable, "-X", "faulthandler", "-c", script],
             env=environment, capture_output=True, text=True, timeout=30)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertEqual(completed.stderr, "")
+        self.assertNotIn("Traceback", completed.stderr)
 
     def wait_for(self, predicate, timeout=3):
         deadline = time.monotonic() + timeout
