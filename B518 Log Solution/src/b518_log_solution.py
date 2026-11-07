@@ -322,8 +322,8 @@ class _LocalizedControlHint:
         self._schedule(event)
 
     def _on_pointer_motion(self, event) -> None:
-        if not self._pointer_inside:
-            self._on_enter(event)
+        if self._window is None and self._after_id is None:
+            self._schedule(event)
 
     def _on_global_motion(self, event=None) -> None:
         """Allow pointer hints on disabled ttk controls, which omit Enter events."""

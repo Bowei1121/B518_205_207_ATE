@@ -2182,6 +2182,15 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNone(settings_hint._window)
 
                 app.settings_button.event_generate("<Motion>", x=4, y=4)
+                app.settings_button.event_generate("<Leave>")
+                settled.clear()
+                root.after(550, lambda: settled.append(True))
+                self.wait_for_ui(root, lambda: settled)
+                self.assertIsNone(settings_hint._window)
+
+                # Simulate Aqua losing the previous hover's Leave event.
+                settings_hint._pointer_inside = True
+                app.settings_button.event_generate("<Motion>", x=4, y=4)
                 self.wait_for_ui(root, lambda: settings_hint._window is not None)
                 self.assertIs(root.focus_get(), app.settings_button,
                               "showing a hover hint must not move keyboard focus")
