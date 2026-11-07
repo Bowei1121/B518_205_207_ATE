@@ -4583,12 +4583,33 @@ class B518LogSolutionApp:
         return ", ".join("{}:{}".format(source, display) for source, display in mapping)
 
     def _choose_profile_editor_path(self, field: str) -> None:
-        path = filedialog.askdirectory(
-            parent=self.settings_window, mustexist=True,
-            title=self._t("app.settings.profile.path.title"))
+        title = self._t("app.settings.profile.path.title")
+        path = self._choose_macos_directory(title) if sys.platform == "darwin" else None
+        if path is None:
+            path = filedialog.askdirectory(
+                parent=self.settings_window, mustexist=True, title=title)
         if path:
             self.profile_editor_paths[field].set(path)
             self._record_app_event("app.settings.event.profile.path_selected", {"path": path})
+
+    @staticmethod
+    def _choose_macos_directory(title: str) -> Optional[str]:
+        script = """
+on run argv
+    try
+        return POSIX path of (choose folder with prompt (item 1 of argv) invisibles true)
+    on error number -128
+        return ""
+    end try
+end run
+"""
+        try:
+            result = subprocess.run(
+                ["/usr/bin/osascript", "-e", script, title],
+                capture_output=True, text=True, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return result.stdout.removesuffix("\n")
 
     def _profile_editor_draft(self) -> Optional[MachineProfile]:
         try:

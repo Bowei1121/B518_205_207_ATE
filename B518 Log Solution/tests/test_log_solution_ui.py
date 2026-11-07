@@ -9179,13 +9179,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.start_button.invoke()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
+            diagnostic = (
+                "B518 / DFU：Atlas 即時 Log 路徑無法使用（未設定）。"
+                "請確認路徑指向可讀取的資料夾，並在設定中套用此配置。"
+            )
             self.assertEqual(show_error.call_args.args[:2], (
                 "Configuration Error",
                 "The selected configuration is invalid: See the original diagnostic below.\n\n"
-                "Original diagnostic: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
+                "Original diagnostic: " + diagnostic,
             ))
-            self.assert_start_failure_blocks_until_explicit_reset(
-                app, root, "請設定存在且可讀取的Atlas 即時 Log 路徑。")
+            self.assert_start_failure_blocks_until_explicit_reset(app, root, diagnostic)
             monitor_type.assert_not_called()
         finally:
             cleanup_deadline = time.monotonic() + 5
@@ -10871,7 +10874,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNotNone(import_button)
                 self.assertIsNotNone(export_button)
 
-                with patch("b518_log_solution.filedialog.askdirectory", return_value="") as chooser:
+                with patch.object(app, "_choose_macos_directory", return_value=None), \
+                        patch("b518_log_solution.filedialog.askdirectory", return_value="") as chooser:
                     choose_button.invoke()
                 self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
                 self.assertTrue(chooser.call_args.kwargs["mustexist"])
@@ -11238,14 +11242,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_project.set("DRAFT-PROJECT")
                 app.profile_editor_paths["active"].set("/before/chooser")
                 original_dialog_path = app.profile_editor_paths["active"].get()
-                with patch("b518_log_solution.filedialog.askdirectory",
+                with patch.object(app, "_choose_macos_directory", return_value=None), \
+                        patch("b518_log_solution.filedialog.askdirectory",
                            return_value="/selected/logs") as chooser:
                     choose.invoke()
                 self.assertEqual(chooser.call_args.kwargs["parent"], window)
                 self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
                 self.assertEqual(chooser.call_args.kwargs["mustexist"], True)
                 self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
-                with patch("b518_log_solution.filedialog.askdirectory", return_value=""):
+                with patch.object(app, "_choose_macos_directory", return_value=None), \
+                        patch("b518_log_solution.filedialog.askdirectory", return_value=""):
                     choose.invoke()
                 self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
                 selected_dialog_path = app.profile_editor_paths["active"].get()
