@@ -2124,7 +2124,10 @@ class LogSolutionUiTests(unittest.TestCase):
                 )
                 for widget, hint, expected in tooltip_expectations:
                     widget.configure(state="normal")
-                    widget.event_generate("<Enter>")
+                    if widget is app.settings_button:
+                        widget.event_generate("<Motion>", x=4, y=4)
+                    else:
+                        widget.event_generate("<Enter>")
                     deadline = time.monotonic() + 1
                     while hint._window is None and time.monotonic() < deadline:
                         root.update()
@@ -2172,17 +2175,22 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.settings_button.focus_force()
                 app.settings_button.event_generate("<FocusIn>")
                 root.update()
-                deadline = time.monotonic() + 1
-                while settings_hint._window is None and time.monotonic() < deadline:
-                    root.update()
-                    time.sleep(0.01)
-                self.assertIsNotNone(settings_hint._window)
+                app.settings_button.event_generate("<Enter>")
+                settled = []
+                root.after(550, lambda: settled.append(True))
+                self.wait_for_ui(root, lambda: settled)
+                self.assertIsNone(settings_hint._window)
+
+                app.settings_button.event_generate("<Motion>", x=4, y=4)
+                self.wait_for_ui(root, lambda: settings_hint._window is not None)
                 self.assertIs(root.focus_get(), app.settings_button,
-                              "showing a focus hint must not move keyboard focus")
+                              "showing a hover hint must not move keyboard focus")
                 self.assertEqual(
                     settings_hint._window.winfo_children()[0].cget("text"),
                     "Open settings to edit engineer configuration, review events and Sessions, and manage retention.")
-                settings_hint._hide()
+                app.settings_button.event_generate("<Leave>")
+                root.update()
+                self.assertIsNone(settings_hint._window)
 
                 app.language_button.focus_force()
                 root.update()
