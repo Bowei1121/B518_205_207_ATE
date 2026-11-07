@@ -456,6 +456,7 @@ class B518LogSolutionApp:
         self._notification_reminder_after_id = None
         self._notification_reminder_bright = True
         self._close_after_id = None
+        self._macos_directory_chooser = None
         self._fixed_visible_detail_rows = 1
         self._fixed_main_window_geometry = None
         self._main_screen_metrics = None
@@ -703,6 +704,7 @@ class B518LogSolutionApp:
         if event.widget is not self.root or self._ui_destroyed:
             return
         self._ui_destroyed = True
+        self._cancel_macos_directory_chooser()
         self._clear_restore_handback()
         if self._heartbeat_after_id is not None:
             self._cancel_ui_timer(self._heartbeat_after_id)
@@ -4584,16 +4586,23 @@ class B518LogSolutionApp:
 
     def _choose_profile_editor_path(self, field: str) -> None:
         title = self._t("app.settings.profile.path.title")
-        path = self._choose_macos_directory(title) if sys.platform == "darwin" else None
-        if path is None:
-            path = filedialog.askdirectory(
-                parent=self.settings_window, mustexist=True, title=title)
+        if sys.platform == "darwin" and self._start_macos_directory_chooser(field, title):
+            return
+        self._choose_profile_editor_path_tk(field, title)
+
+    def _choose_profile_editor_path_tk(self, field: str, title: str) -> None:
+        path = filedialog.askdirectory(
+            parent=self.settings_window, mustexist=True, title=title)
+        self._set_profile_editor_path(field, path)
+
+    def _set_profile_editor_path(self, field: str, path: str) -> None:
         if path:
             self.profile_editor_paths[field].set(path)
             self._record_app_event("app.settings.event.profile.path_selected", {"path": path})
 
-    @staticmethod
-    def _choose_macos_directory(title: str) -> Optional[str]:
+    def _start_macos_directory_chooser(self, field: str, title: str) -> bool:
+        if self._macos_directory_chooser is not None:
+            return True
         script = """
 on run argv
     try
@@ -4604,12 +4613,39 @@ on run argv
 end run
 """
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 ["/usr/bin/osascript", "-e", script, title],
-                capture_output=True, text=True, check=True)
-        except (OSError, subprocess.CalledProcessError):
-            return None
-        return result.stdout.removesuffix("\n")
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, encoding="utf-8")
+        except OSError:
+            return False
+        self._macos_directory_chooser = process
+        self._schedule_ui(100, self._poll_macos_directory_chooser, process, field, title)
+        return True
+
+    def _poll_macos_directory_chooser(self, process, field: str, title: str) -> None:
+        if self._macos_directory_chooser is not process:
+            return
+        if process.poll() is None:
+            self._schedule_ui(100, self._poll_macos_directory_chooser, process, field, title)
+            return
+        self._macos_directory_chooser = None
+        output, _ = process.communicate()
+        if process.returncode:
+            self._choose_profile_editor_path_tk(field, title)
+            return
+        path = output.removesuffix("\n")
+        if path:
+            self._set_profile_editor_path(field, path.rstrip("/") or "/")
+
+    def _cancel_macos_directory_chooser(self) -> None:
+        process = self._macos_directory_chooser
+        if process is None:
+            return
+        self._macos_directory_chooser = None
+        process.terminate()
+        # Reap the child without waiting in the Tk event loop.
+        threading.Thread(target=process.communicate, daemon=True).start()
 
     def _profile_editor_draft(self) -> Optional[MachineProfile]:
         try:
@@ -5766,6 +5802,7 @@ end run
     def _clear_settings_window(self, window) -> None:
         if self.settings_window is not window:
             return
+        self._cancel_macos_directory_chooser()
         unregister = self._unregister_settings_language_receiver
         self._unregister_settings_language_receiver = None
         if unregister is not None:
@@ -5798,6 +5835,7 @@ end run
         if self._closing_ui:
             return
         self._cancel_historical_event_query()
+        self._cancel_macos_directory_chooser()
         try:
             self._save_preferences()
         except (OSError, ProfileError) as error:
