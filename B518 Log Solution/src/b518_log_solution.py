@@ -133,7 +133,8 @@ class _LocalizedControlHint:
 
     _visible_hint = None
 
-    def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None):
+    def __init__(self, widget: tk.Widget, text_provider, menu: Optional[tk.Menu] = None,
+                 *, require_pointer_motion: bool = False):
         self._widget = widget
         self._text_provider = text_provider
         self._menu = menu
@@ -144,9 +145,11 @@ class _LocalizedControlHint:
         self._global_motion_binding = None
         self._pointer_poll_id = None
         self._polled_inside = False
-        for sequence, callback in (
-                ("<Enter>", self._on_enter), ("<FocusIn>", self._on_focus_in),
-                ("<Leave>", self._on_leave), ("<FocusOut>", self._on_focus_out)):
+        triggers = (("<Motion>", self._on_pointer_motion), ("<Unmap>", self._on_leave))
+        if not require_pointer_motion:
+            triggers = (("<Enter>", self._on_enter), ("<FocusIn>", self._on_focus_in),
+                        ("<FocusOut>", self._on_focus_out))
+        for sequence, callback in (*triggers, ("<Leave>", self._on_leave)):
             binding_id = widget.bind(sequence, callback, add="+")
             self._bindings.append((sequence, binding_id))
         self._pointer_inside = False
@@ -157,10 +160,11 @@ class _LocalizedControlHint:
                 binding_id = widget.bind(sequence, self._hide, add="+")
                 self._bindings.append((sequence, binding_id))
         self._destroy_binding = widget.bind("<Destroy>", self._on_destroy, add="+")
-        self._global_motion_binding = widget.bind_all("<Motion>", self._on_global_motion,
-                                                       add="+")
-        if widget.tk.call("tk", "windowingsystem") == "aqua":
-            self._pointer_poll_id = widget.after(100, self._poll_pointer)
+        if not require_pointer_motion:
+            self._global_motion_binding = widget.bind_all(
+                "<Motion>", self._on_global_motion, add="+")
+            if widget.tk.call("tk", "windowingsystem") == "aqua":
+                self._pointer_poll_id = widget.after(100, self._poll_pointer)
 
     def _poll_pointer(self) -> None:
         """Track Aqua hover when native view changes omit Enter/Motion."""
@@ -316,6 +320,10 @@ class _LocalizedControlHint:
     def _on_enter(self, event=None) -> None:
         self._pointer_inside = True
         self._schedule(event)
+
+    def _on_pointer_motion(self, event) -> None:
+        if self._window is None and self._after_id is None:
+            self._schedule(event)
 
     def _on_global_motion(self, event=None) -> None:
         """Allow pointer hints on disabled ttk controls, which omit Enter events."""
@@ -854,8 +862,9 @@ class B518LogSolutionApp:
             command=self.open_settings, style="Toolbar.TButton", takefocus=True,
         )
         self.settings_button.pack(side="left", padx=(0, 3))
-        self._toolbar_hints.append(_LocalizedControlHint(self.settings_button,
-                                                 lambda: self._t("main.hint.settings")))
+        self._toolbar_hints.append(_LocalizedControlHint(
+            self.settings_button, lambda: self._t("main.hint.settings"),
+            require_pointer_motion=True))
         self._build_company_identity(header)
         tk.Frame(header, background=LIGHT_BACKGROUND).pack(side="left", fill="x", expand=True)
         self.review_group = tk.Frame(header, background=LIGHT_BACKGROUND)
