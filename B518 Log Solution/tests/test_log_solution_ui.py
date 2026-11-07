@@ -9179,13 +9179,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.start_button.invoke()
             monitor_type.assert_not_called()
             show_error.assert_called_once()
+            diagnostic = (
+                "B518 / DFU：Atlas 即時 Log 路徑無法使用（未設定）。"
+                "請確認路徑指向可讀取的資料夾，並在設定中套用此配置。"
+            )
             self.assertEqual(show_error.call_args.args[:2], (
                 "Configuration Error",
                 "The selected configuration is invalid: See the original diagnostic below.\n\n"
-                "Original diagnostic: 請設定存在且可讀取的Atlas 即時 Log 路徑。",
+                "Original diagnostic: " + diagnostic,
             ))
-            self.assert_start_failure_blocks_until_explicit_reset(
-                app, root, "請設定存在且可讀取的Atlas 即時 Log 路徑。")
+            self.assert_start_failure_blocks_until_explicit_reset(app, root, diagnostic)
             monitor_type.assert_not_called()
         finally:
             cleanup_deadline = time.monotonic() + 5
@@ -10841,6 +10844,81 @@ class LogSolutionUiTests(unittest.TestCase):
                     root.destroy()
                 self.assertTrue(audit.flush())
 
+    def test_macos_folder_picker_keeps_heartbeat_running_and_handles_outcomes(self):
+        with TemporaryDirectory() as temporary, \
+                patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
+            root = tk.Tk()
+            app = B518LogSolutionApp(
+                root, hotkey_factory=FakeHotkey,
+                session_root=Path(temporary) / "sessions",
+                app_event_path=Path(temporary) / "app-events.json",
+            )
+            try:
+                app.open_settings()
+                active = app.profile_editor_paths["active"]
+                active.set("/draft/active")
+                process = MagicMock(returncode=0)
+                process.poll.return_value = None
+                process.communicate.return_value = ("/Users/op/.atlas logs/\n", None)
+                with patch("b518_log_solution.sys.platform", "darwin"), \
+                        patch("b518_log_solution.subprocess.Popen", return_value=process) as spawn, \
+                        patch("b518_log_solution.filedialog.askdirectory") as fallback, \
+                        patch.object(app, "_record_app_event", wraps=app._record_app_event) as record:
+                    heartbeat = app._heartbeat_state
+                    app._choose_profile_editor_path("active")
+                    app._choose_profile_editor_path("active")
+                    spawn.assert_called_once()
+                    script = spawn.call_args.args[0][2]
+                    self.assertIn("invisibles true", script)
+                    self.assertIn("on error number -128", script)
+                    self.wait_for_ui(root, lambda: app._heartbeat_state != heartbeat)
+                    process.poll.assert_called()
+                    process.communicate.assert_not_called()
+                    self.assertEqual(active.get(), "/draft/active")
+
+                    process.poll.return_value = 0
+                    self.wait_for_ui(root, lambda: active.get() == "/Users/op/.atlas logs")
+                    record.assert_any_call("app.settings.event.profile.path_selected",
+                                           {"path": "/Users/op/.atlas logs"})
+
+                    process.communicate.return_value = ("\n", None)
+                    app._choose_profile_editor_path("active")
+                    self.wait_for_ui(root, lambda: app._macos_directory_chooser is None)
+                    self.assertEqual(active.get(), "/Users/op/.atlas logs")
+                    fallback.assert_not_called()
+
+                    fallback.return_value = "/fallback"
+                    process.returncode = 1
+                    process.poll.return_value = 1
+                    app._choose_profile_editor_path("active")
+                    self.wait_for_ui(root, lambda: active.get() == "/fallback")
+                    fallback.assert_called_once()
+
+                    spawn.side_effect = OSError("cannot launch")
+                    fallback.return_value = "/fallback-after-launch-error"
+                    app._choose_profile_editor_path("active")
+                    self.assertEqual(active.get(), "/fallback-after-launch-error")
+                    self.assertEqual(fallback.call_count, 2)
+
+                    spawn.side_effect = None
+                    process.poll.return_value = None
+                    app._choose_profile_editor_path("active")
+                    app._close_settings()
+                    process.terminate.assert_called_once()
+                    self.assertIsNone(app._macos_directory_chooser)
+                    self.assertEqual(active.get(), "/fallback-after-launch-error")
+            finally:
+                app._close_settings()
+                app.rounds.request_close()
+                self.wait_for(lambda: app.rounds.close_status().status == "complete")
+                self.wait_for(lambda: app.rounds.app_event_status().complete)
+                self.wait_for(lambda: app.rounds.retention_cleanup_status().status in
+                              {"complete", "failed"})
+                self.wait_for_archive_checks(app.rounds)
+                app.hotkey.close()
+                app.app_events.stop()
+                root.destroy()
+
     def test_file_dialog_buttons_use_current_language_and_cancel_without_changes(self):
         with TemporaryDirectory() as temporary, \
                 patch("b518_log_solution.PREFS_PATH", Path(temporary) / "preferences.json"):
@@ -10871,7 +10949,8 @@ class LogSolutionUiTests(unittest.TestCase):
                 self.assertIsNotNone(import_button)
                 self.assertIsNotNone(export_button)
 
-                with patch("b518_log_solution.filedialog.askdirectory", return_value="") as chooser:
+                with patch.object(app, "_start_macos_directory_chooser", return_value=False), \
+                        patch("b518_log_solution.filedialog.askdirectory", return_value="") as chooser:
                     choose_button.invoke()
                 self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
                 self.assertTrue(chooser.call_args.kwargs["mustexist"])
@@ -11238,14 +11317,16 @@ class LogSolutionUiTests(unittest.TestCase):
                 app.profile_editor_project.set("DRAFT-PROJECT")
                 app.profile_editor_paths["active"].set("/before/chooser")
                 original_dialog_path = app.profile_editor_paths["active"].get()
-                with patch("b518_log_solution.filedialog.askdirectory",
+                with patch.object(app, "_start_macos_directory_chooser", return_value=False), \
+                        patch("b518_log_solution.filedialog.askdirectory",
                            return_value="/selected/logs") as chooser:
                     choose.invoke()
                 self.assertEqual(chooser.call_args.kwargs["parent"], window)
                 self.assertEqual(chooser.call_args.kwargs["title"], "Choose Configuration Path")
                 self.assertEqual(chooser.call_args.kwargs["mustexist"], True)
                 self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
-                with patch("b518_log_solution.filedialog.askdirectory", return_value=""):
+                with patch.object(app, "_start_macos_directory_chooser", return_value=False), \
+                        patch("b518_log_solution.filedialog.askdirectory", return_value=""):
                     choose.invoke()
                 self.assertEqual(app.profile_editor_paths["active"].get(), "/selected/logs")
                 selected_dialog_path = app.profile_editor_paths["active"].get()

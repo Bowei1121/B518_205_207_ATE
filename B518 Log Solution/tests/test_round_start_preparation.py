@@ -44,6 +44,24 @@ class RoundStartPreparationTests(unittest.TestCase):
 
             self.assertEqual(prepared.capacity, 1)
 
+    def test_dfu_hidden_directory_can_be_used_and_invalid_path_is_reported(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active = root / ".atlas logs"
+            profile = MachineProfile(
+                "B518", "DFU", "atlas", 1,
+                {"active": str(active), "final": str(root)}, ((1, 1),),
+                {"start": 120, "test": 480, "round": 7200},
+            )
+            preparation = RoundStartPreparation()
+            with self.assertRaises(ProfileError) as failure:
+                preparation.prepare(profile, root / "sessions")
+            self.assertIn("B518 / DFU", str(failure.exception))
+            self.assertIn(str(active), str(failure.exception))
+
+            active.mkdir()
+            preparation.prepare(profile, root / "sessions")
+
     def test_selected_b518_fct_profile_freezes_its_configured_start_deadline(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

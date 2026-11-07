@@ -23,10 +23,10 @@ def configured_directory(value: str) -> Optional[Path]:
     text = value.strip()
     if not text:
         return None
-    path = Path(text).expanduser()
     try:
+        path = Path(text).expanduser()
         return path if path.is_dir() and os.access(str(path), os.R_OK | os.X_OK) else None
-    except OSError:
+    except (OSError, RuntimeError):
         return None
 
 
@@ -165,19 +165,16 @@ class RoundStartPreparation:
         definition = self._registry.get(fixed_profile.platform)
         resolved_paths = {}
 
-        for field in definition.required_paths:
-            directory = configured_directory(fixed_profile.paths.get(field, ""))
-            if directory is None:
+        for field in (*definition.required_paths, *definition.optional_paths):
+            configured = fixed_profile.paths.get(field, "").strip()
+            directory = configured_directory(configured)
+            if directory is None and (configured or field in definition.required_paths):
                 label = definition.path_labels.get(field, field)
-                raise RoundStartPathError("請設定存在且可讀取的{}。".format(label))
-            resolved_paths[field] = directory
-
-        for field in definition.optional_paths:
-            configured = fixed_profile.paths.get(field, "")
-            directory = configured_directory(configured) if configured.strip() else None
-            if configured.strip() and directory is None:
-                label = definition.path_labels.get(field, field)
-                raise RoundStartPathError("{} 不存在或無法讀取。".format(label))
+                raise RoundStartPathError(
+                    "{} / {}：{}無法使用（{}）。請確認路徑指向可讀取的資料夾，"
+                    "並在設定中套用此配置。".format(
+                        fixed_profile.project, fixed_profile.machine, label,
+                        repr(configured) if configured else "未設定"))
             resolved_paths[field] = directory
 
         return PreparedRoundStart(
