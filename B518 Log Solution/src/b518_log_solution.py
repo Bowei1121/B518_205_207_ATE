@@ -4643,9 +4643,30 @@ end run
         if process is None:
             return
         self._macos_directory_chooser = None
-        process.terminate()
+        try:
+            process.terminate()
+        except OSError:
+            # The child may have exited between the last poll and cancellation.
+            pass
         # Reap the child without waiting in the Tk event loop.
-        threading.Thread(target=process.communicate, daemon=True).start()
+        def reap():
+            try:
+                try:
+                    process.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+                    process.communicate()
+            except (OSError, ValueError):
+                # Even failed pipe cleanup must not escape the reaper thread.
+                try:
+                    process.wait()
+                except OSError:
+                    pass
+
+        threading.Thread(target=reap, daemon=True).start()
 
     def _profile_editor_draft(self) -> Optional[MachineProfile]:
         try:
