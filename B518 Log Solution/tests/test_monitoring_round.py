@@ -9,6 +9,7 @@ import time
 import unittest
 import weakref
 from unittest.mock import patch
+from types import SimpleNamespace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -168,6 +169,39 @@ class DeadlineMonitor:
 
 
 class MonitoringRoundTests(unittest.TestCase):
+    def test_close_diagnostics_identify_blocked_app_event_flush(self):
+        entered, release = threading.Event(), threading.Event()
+
+        class BlockedStore:
+            records = ()
+
+            def status(self):
+                return SimpleNamespace(complete=release.is_set(), status="saving",
+                                       pending_count=1, error="")
+
+            def flush(self, timeout):
+                entered.set()
+                return release.wait(timeout)
+
+        rounds = RoundCoordinator()
+        rounds.register_app_event_store(BlockedStore())
+        try:
+            rounds.request_close()
+            self.assertTrue(entered.wait(3))
+            status = rounds.close_status()
+            self.assertEqual(status.wait_stage, "app_event_flush")
+            self.assertEqual(status.wait_resource, "app_event_store")
+            self.assertEqual(status.status, "waiting")
+            self.assertEqual(status.app_event_pending, 1)
+        finally:
+            release.set()
+        deadline = time.monotonic() + 3
+        while rounds.close_status().status != "complete" and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(rounds.close_status().status, "complete")
+        self.assertEqual(rounds.close_status().wait_stage, "complete")
+        self.assertEqual(rounds.close_status().wait_resource, "")
+
     def test_stopping_after_deadline_preserves_the_deadline_reason_and_frozen_time(self):
         elapsed = [40.0]
         with tempfile.TemporaryDirectory() as temporary:
