@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import logging
 import inspect
 import json
 import os
@@ -61,6 +62,13 @@ from kvm_display_contract import (
     STATE_MARKER_ORIGIN, state_for_round_snapshot,
     LAYOUT_MARKER_ORIGIN, LAYOUT_MARKER_SIZE, LAYOUT_MARKER_PATTERNS,
 )
+
+
+# Independent budgets give both queues progress and yield regularly to Tk.
+# 32 updates amortize rendering; 4 hotkeys bound repeated start admission work.
+EVENT_BATCH_LIMIT = 32
+HOTKEY_BATCH_LIMIT = 4
+_LOGGER = logging.getLogger(__name__)
 
 
 def _invoke_historical_query_with_supported_options(sessions, app_path, date_range, **kwargs):
@@ -1972,19 +1980,41 @@ class B518LogSolutionApp:
         pattern = HEARTBEAT_PATTERNS[self._heartbeat_state]
         self._render_marker_cells(marker, pattern, "heartbeat")
 
+    def _periodic_ui_stopped(self) -> bool:
+        # _closing_ui is a cancellable save dialog: keep its display alive.
+        return (self._ui_destroyed or getattr(self, "_closing", False) or
+                getattr(self, "_destroyed", False))
+
+    def _periodic_ui_error(self, loop: str, error: Exception) -> None:
+        _LOGGER.exception("%s callback failed", loop)
+        if isinstance(error, tk.TclError):
+            try:
+                alive = self.root.winfo_exists()
+            except tk.TclError:
+                alive = False
+            if not alive:
+                self._ui_destroyed = True
+
     def _schedule_heartbeat_tick(self) -> None:
-        if self._ui_destroyed or self._heartbeat_after_id is not None:
+        if self._periodic_ui_stopped() or self._heartbeat_after_id is not None:
             return
-        self._heartbeat_after_id = self._schedule_ui(
-            HEARTBEAT_INTERVAL_MS, self._advance_heartbeat)
+        try:
+            self._heartbeat_after_id = self._schedule_ui(
+                HEARTBEAT_INTERVAL_MS, self._advance_heartbeat)
+        except Exception as error:
+            self._periodic_ui_error("heartbeat scheduling", error)
 
     def _advance_heartbeat(self) -> None:
         self._heartbeat_after_id = None
-        if self._ui_destroyed:
+        if self._periodic_ui_stopped():
             return
-        self._heartbeat_state = (self._heartbeat_state + 1) % len(HEARTBEAT_PATTERNS)
-        self._render_heartbeat_marker()
-        self._schedule_heartbeat_tick()
+        try:
+            self._heartbeat_state = (self._heartbeat_state + 1) % len(HEARTBEAT_PATTERNS)
+            self._render_heartbeat_marker()
+        except Exception as error:
+            self._periodic_ui_error("heartbeat", error)
+        finally:
+            self._schedule_heartbeat_tick()
 
     def _render_layout_marker(self, capacity: int) -> None:
         rows = 2 if capacity > KVM_COLUMN_COUNT else 1
@@ -2481,22 +2511,41 @@ class B518LogSolutionApp:
             self.settings_log.configure(state="disabled")
 
     def _drain_events(self) -> None:
-        if self._ui_destroyed:
+        if self._periodic_ui_stopped():
             return
+        try:
+            self._drain_event_batch()
+        except Exception as error:
+            self._periodic_ui_error("event drain", error)
+        finally:
+            if not self._periodic_ui_stopped():
+                try:
+                    self._schedule_ui(150, self._drain_events)
+                except Exception as error:
+                    self._periodic_ui_error("event drain scheduling", error)
+
+    def _drain_event_batch(self) -> None:
         round_snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         if round_snapshot and round_snapshot.source_preparation_pending:
             self.rounds.poll_once()
-        try:
-            while True:
-                self._handle_event(self.events.get_nowait())
-        except queue.Empty:
-            pass
-        try:
-            while True:
-                self.hotkey_events.get_nowait()
-                self._start_from_hotkey()
-        except queue.Empty:
-            pass
+        for events, limit, handle in (
+                (self.events, EVENT_BATCH_LIMIT, self._handle_event),
+                (self.hotkey_events, HOTKEY_BATCH_LIMIT, lambda _: self._start_from_hotkey())):
+            for _ in range(limit):
+                if self._periodic_ui_stopped():
+                    return
+                try:
+                    event = events.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    handle(event)
+                except Exception as error:
+                    self._periodic_ui_error("event dispatch", error)
+                    if self._periodic_ui_stopped():
+                        return
+        if self._periodic_ui_stopped():
+            return
         snapshot = self.rounds.snapshot() if hasattr(self, "rounds") else None
         self._apply_round_snapshot(snapshot)
         self._refresh_app_event_status()
@@ -2505,7 +2554,6 @@ class B518LogSolutionApp:
         self._refresh_retention_cleanup_status()
         self._refresh_conflict_review()
         self._refresh_round_alarm()
-        self._schedule_ui(150, self._drain_events)
 
     @staticmethod
     def _foreground_result_signature(snapshot):
