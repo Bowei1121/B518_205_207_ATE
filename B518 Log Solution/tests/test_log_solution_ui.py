@@ -472,6 +472,141 @@ def write_tk_bounds_evidence(key, value):
                       encoding="utf-8")
 
 
+class PeriodicUiResilienceTests(unittest.TestCase):
+    def make_app(self):
+        import queue
+        app = B518LogSolutionApp.__new__(B518LogSolutionApp)
+        app._ui_destroyed = False
+        app._heartbeat_after_id = None
+        app._heartbeat_state = 0
+        app.events = queue.Queue()
+        app.hotkey_events = queue.Queue()
+        app.root = MagicMock()
+        app.root.winfo_exists.return_value = True
+        app.rounds = MagicMock()
+        app.rounds.snapshot.return_value = None
+        app.profile_store = SimpleNamespace(retention_days=30)
+        for name in ("_handle_event", "_start_from_hotkey", "_apply_round_snapshot",
+                     "_refresh_app_event_status", "_refresh_app_event_records",
+                     "_refresh_retention_cleanup_status", "_refresh_conflict_review",
+                     "_refresh_round_alarm", "_render_heartbeat_marker"):
+            setattr(app, name, MagicMock())
+        app._schedule_ui = MagicMock(return_value="timer")
+        return app
+
+    def test_flood_batches_are_fifo_fair_and_yield_to_heartbeat(self):
+        import heapq
+        from b518_log_solution import EVENT_BATCH_LIMIT, HOTKEY_BATCH_LIMIT
+        app = self.make_app()
+        pending, normal, hotkeys, beats = [], [], [], []
+        clock = [0, 0]
+        def schedule(delay, callback):
+            clock[1] += 1
+            heapq.heappush(pending, (clock[0] + delay, clock[1], callback))
+            return str(clock[1])
+        app._schedule_ui.side_effect = schedule
+        app._handle_event.side_effect = normal.append
+        # Observe the actual consumed hotkey order without changing dispatch.
+        original_get = app.hotkey_events.get_nowait
+        def get_hotkey():
+            value = original_get()
+            hotkeys.append(value)
+            return value
+        app.hotkey_events.get_nowait = get_hotkey
+        app._render_heartbeat_marker.side_effect = lambda: beats.append(clock[0])
+        for value in range(EVENT_BATCH_LIMIT * 10 + 1):
+            app.events.put(value)
+        for value in range(HOTKEY_BATCH_LIMIT * 10 + 1):
+            app.hotkey_events.put(value)
+        app._schedule_heartbeat_tick()
+        app._schedule_heartbeat_tick()  # Already scheduled: no duplicate timer.
+        self.assertEqual(len(pending), 1)
+        app._drain_events()
+        self.assertEqual(normal, list(range(EVENT_BATCH_LIMIT)))
+        self.assertEqual(hotkeys, list(range(HOTKEY_BATCH_LIMIT)))
+        while not app.events.empty() or not app.hotkey_events.empty():
+            when, _, callback = heapq.heappop(pending)
+            clock[0] = when
+            before = (len(normal), len(hotkeys))
+            callback()
+            self.assertLessEqual(len(normal) - before[0], EVENT_BATCH_LIMIT)
+            self.assertLessEqual(len(hotkeys) - before[1], HOTKEY_BATCH_LIMIT)
+        self.assertEqual(normal, list(range(EVENT_BATCH_LIMIT * 10 + 1)))
+        self.assertEqual(hotkeys, list(range(HOTKEY_BATCH_LIMIT * 10 + 1)))
+        self.assertEqual(beats, [500, 1000, 1500])
+        self.assertEqual(app._heartbeat_state, 3)
+        app._drain_events()  # Empty queues still schedule the next tick.
+        self.assertTrue(pending)
+
+    def test_callback_failures_log_tracebacks_and_recover(self):
+        for method, target, delay in (
+                ("_drain_events", "_handle_event", 150),
+                ("_drain_events", "_refresh_round_alarm", 150),
+                ("_drain_events", "_drain_event_batch", 150),
+                ("_advance_heartbeat", "_render_heartbeat_marker", 500)):
+            with self.subTest(target=target):
+                app = self.make_app()
+                app.events.put("bad")
+                app.events.put("good")
+                app.hotkey_events.put(True)
+                failing = MagicMock(side_effect=ValueError("injected"))
+                setattr(app, target, failing)
+                with self.assertLogs("b518_log_solution", level="ERROR") as logs:
+                    getattr(app, method)()
+                self.assertTrue(all(record.exc_info for record in logs.records))
+                self.assertIn("injected", "\n".join(logs.output))
+                self.assertEqual(app._schedule_ui.call_args.args[0], delay)
+                if target == "_handle_event":
+                    self.assertEqual(failing.call_count, 2)
+                    app._start_from_hotkey.assert_called_once()
+                failing.side_effect = None
+                getattr(app, method)()
+                self.assertEqual(app._schedule_ui.call_count, 2)
+
+    def test_stopped_and_destroyed_root_do_not_reschedule(self):
+        for method in ("_drain_events", "_advance_heartbeat", "_schedule_heartbeat_tick"):
+            for flag in ("_ui_destroyed", "_closing", "_destroyed"):
+                with self.subTest(method=method, flag=flag):
+                    app = self.make_app()
+                    setattr(app, flag, True)
+                    getattr(app, method)()
+                    app._schedule_ui.assert_not_called()
+        for method, target in (("_drain_events", "_handle_event"),
+                               ("_advance_heartbeat", "_render_heartbeat_marker"),
+                               ("_schedule_heartbeat_tick", "_schedule_ui")):
+            for root_state in (False, tk.TclError("destroyed")):
+                with self.subTest(method=method, root_state=root_state):
+                    app = self.make_app()
+                    app.events.put("event")
+                    if isinstance(root_state, Exception):
+                        app.root.winfo_exists.side_effect = root_state
+                    else:
+                        app.root.winfo_exists.return_value = root_state
+                    setattr(app, target, MagicMock(side_effect=tk.TclError("destroyed")))
+                    with self.assertLogs("b518_log_solution", level="ERROR"):
+                        getattr(app, method)()
+                    self.assertTrue(app._ui_destroyed)
+                    self.assertEqual(app._schedule_ui.call_count,
+                                     1 if target == "_schedule_ui" else 0)
+
+    def test_live_widget_tcl_error_and_mid_callback_close(self):
+        for method, target in (("_drain_events", "_refresh_round_alarm"),
+                               ("_advance_heartbeat", "_render_heartbeat_marker")):
+            app = self.make_app()
+            getattr(app, target).side_effect = tk.TclError("widget error")
+            with self.assertLogs("b518_log_solution", level="ERROR"):
+                getattr(app, method)()
+            app._schedule_ui.assert_called_once()
+            app._schedule_ui.reset_mock()
+            def close_then_fail():
+                app._ui_destroyed = True
+                raise RuntimeError("closed during callback")
+            getattr(app, target).side_effect = close_then_fail
+            with self.assertLogs("b518_log_solution", level="ERROR"):
+                getattr(app, method)()
+            app._schedule_ui.assert_not_called()
+
+
 class LogSolutionUiTests(unittest.TestCase):
     def test_monitoring_elapsed_format_keeps_full_minutes(self):
         cases = ((None, "00:00"), (59.9, "00:59"), (60, "01:00"),
