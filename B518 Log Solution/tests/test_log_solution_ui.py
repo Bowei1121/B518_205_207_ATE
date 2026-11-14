@@ -472,6 +472,106 @@ def write_tk_bounds_evidence(key, value):
                       encoding="utf-8")
 
 
+class MacosDirectoryChooserCancellationTests(unittest.TestCase):
+    """Exercise real close/cancel methods without requiring a desktop Tk session."""
+
+    def _check_macos_folder_picker_cancel_races(self, close_app):
+        for scenario in ("already_exited", "terminate_lookup_error", "terminate_os_error",
+                         "kill_lookup_error", "kill_os_error", "pipe_error"):
+            with self.subTest(scenario=scenario):
+                app = B518LogSolutionApp.__new__(B518LogSolutionApp)
+                app.settings_window = MagicMock()
+                app._unregister_settings_language_receiver = MagicMock()
+                app._closing_ui = False
+                app.rounds = MagicMock()
+                for name in ("_cancel_historical_event_query", "_save_preferences",
+                             "_refresh_language_entry", "_set_monitor_controls",
+                             "_round_is_active", "_show_close_progress", "_schedule_close_poll"):
+                    setattr(app, name, MagicMock())
+                entered = threading.Event()
+                release = threading.Event()
+                workers = []
+                real_thread = threading.Thread
+
+                def track_thread(*args, **kwargs):
+                    worker = real_thread(*args, **kwargs)
+                    if getattr(kwargs.get("target"), "__name__", "") == "reap":
+                        workers.append(worker)
+                    return worker
+
+                process = MagicMock(returncode=0 if scenario == "already_exited" else None)
+                process.poll.return_value = process.returncode
+                if scenario.startswith("terminate_"):
+                    process.terminate.side_effect = (
+                        ProcessLookupError("child exited") if "lookup" in scenario
+                        else OSError("terminate failed"))
+                if scenario.startswith("kill_"):
+                    process.kill.side_effect = (
+                        ProcessLookupError("child exited") if "lookup" in scenario
+                        else OSError("kill failed"))
+
+                def communicate(*args, **kwargs):
+                    self.assertIsNot(threading.current_thread(), threading.main_thread())
+                    entered.set()
+                    if not release.wait(5):
+                        raise AssertionError("close blocked on chooser cleanup")
+                    if scenario.startswith("kill_") and kwargs.get("timeout"):
+                        raise subprocess.TimeoutExpired("osascript", 1)
+                    if scenario == "pipe_error":
+                        raise OSError("pipe cleanup failed")
+                    return ("/stale/selection/\n", None)
+
+                process.communicate.side_effect = communicate
+                try:
+                    app.profile_editor_paths = {"active": MagicMock()}
+                    app._set_profile_editor_path = MagicMock()
+                    window = app.settings_window
+                    app._macos_directory_chooser = process
+                    with patch("b518_log_solution.threading.Thread", side_effect=track_thread):
+                        if close_app:
+                            app.close()
+                            self.assertTrue(app._closing_ui)
+                        else:
+                            app._close_settings()
+                            self.assertIsNone(app.settings_window)
+                            window.destroy.assert_called_once()
+                            self.assertIsNone(app._unregister_settings_language_receiver)
+                    self.assertTrue(entered.wait(2))
+                    self.assertIsNone(app._macos_directory_chooser)
+                    app._cancel_macos_directory_chooser()
+                    process.terminate.assert_called_once()
+                    # A pending old callback cannot consume output or change a new chooser.
+                    replacement = MagicMock()
+                    app._macos_directory_chooser = replacement
+                    app._poll_macos_directory_chooser(process, "active", "Choose folder")
+                    self.assertIs(app._macos_directory_chooser, replacement)
+                    app._set_profile_editor_path.assert_not_called()
+                    app._macos_directory_chooser = None
+                    release.set()
+                    self.assertEqual(len(workers), 1)
+                    workers[0].join(2)
+                    self.assertFalse(workers[0].is_alive())
+                    if scenario.startswith("kill_"):
+                        process.kill.assert_called_once()
+                        self.assertEqual(process.communicate.call_count, 2)
+                    if scenario == "pipe_error":
+                        process.wait.assert_called_once()
+                    if close_app:
+                        app.rounds.request_close.assert_called_once()
+                        app._schedule_close_poll.assert_called_once_with(
+                            app.rounds.request_close.return_value.generation)
+                finally:
+                    release.set()
+                    for worker in workers:
+                        worker.join(2)
+
+    def test_macos_folder_picker_cancel_races_during_settings_close(self):
+        self._check_macos_folder_picker_cancel_races(close_app=False)
+
+    def test_macos_folder_picker_cancel_races_during_app_close(self):
+        self._check_macos_folder_picker_cancel_races(close_app=True)
+
+
 class LogSolutionUiTests(unittest.TestCase):
     def test_monitoring_elapsed_format_keeps_full_minutes(self):
         cases = ((None, "00:00"), (59.9, "00:59"), (60, "01:00"),
