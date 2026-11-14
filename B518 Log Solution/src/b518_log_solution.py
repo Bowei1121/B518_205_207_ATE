@@ -1982,8 +1982,7 @@ class B518LogSolutionApp:
 
     def _periodic_ui_stopped(self) -> bool:
         # _closing_ui is a cancellable save dialog: keep its display alive.
-        return (self._ui_destroyed or getattr(self, "_closing", False) or
-                getattr(self, "_destroyed", False))
+        return self._ui_destroyed
 
     def _periodic_ui_error(self, loop: str, error: Exception) -> None:
         _LOGGER.exception("%s callback failed", loop)

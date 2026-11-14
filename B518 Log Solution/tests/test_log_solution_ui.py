@@ -563,14 +563,52 @@ class PeriodicUiResilienceTests(unittest.TestCase):
                 getattr(app, method)()
                 self.assertEqual(app._schedule_ui.call_count, 2)
 
-    def test_stopped_and_destroyed_root_do_not_reschedule(self):
-        for method in ("_drain_events", "_advance_heartbeat", "_schedule_heartbeat_tick"):
-            for flag in ("_ui_destroyed", "_closing", "_destroyed"):
-                with self.subTest(method=method, flag=flag):
+    def test_closing_ui_keeps_periodic_loops_running(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail):
+                app = self.make_app()
+                app._closing_ui = True
+                app.events.put("event")
+                app.hotkey_events.put(True)
+                if fail:
+                    app._handle_event.side_effect = ValueError("event failure")
+                    app._render_heartbeat_marker.side_effect = ValueError("render failure")
+                    with self.assertLogs("b518_log_solution", level="ERROR"):
+                        app._drain_events()
+                        app._advance_heartbeat()
+                else:
+                    app._drain_events()
+                    app._advance_heartbeat()
+                app._handle_event.assert_called_once_with("event")
+                app._start_from_hotkey.assert_called_once_with()
+                self.assertTrue(app.events.empty())
+                self.assertTrue(app.hotkey_events.empty())
+                self.assertEqual(app._heartbeat_state, 1)
+                app._render_heartbeat_marker.assert_called_once_with()
+                self.assertEqual(app._schedule_ui.call_args_list, [
+                    unittest.mock.call(150, app._drain_events),
+                    unittest.mock.call(500, app._advance_heartbeat)])
+                self.assertEqual(app._heartbeat_after_id, "timer")
+
+    def test_unused_flags_do_not_stop_periodic_loops(self):
+        for flag in ("_closing", "_destroyed"):
+            for method, delay in (("_drain_events", 150),
+                                  ("_advance_heartbeat", 500),
+                                  ("_schedule_heartbeat_tick", 500)):
+                with self.subTest(flag=flag, method=method):
                     app = self.make_app()
                     setattr(app, flag, True)
                     getattr(app, method)()
-                    app._schedule_ui.assert_not_called()
+                    app._schedule_ui.assert_called_once_with(
+                        delay, app._drain_events if delay == 150 else app._advance_heartbeat)
+
+    def test_stopped_and_destroyed_root_do_not_reschedule(self):
+        for method in ("_drain_events", "_advance_heartbeat", "_schedule_heartbeat_tick"):
+            with self.subTest(method=method):
+                app = self.make_app()
+                app._ui_destroyed = True
+                getattr(app, method)()
+                app._schedule_ui.assert_not_called()
         for method, target in (("_drain_events", "_handle_event"),
                                ("_advance_heartbeat", "_render_heartbeat_marker"),
                                ("_schedule_heartbeat_tick", "_schedule_ui")):
