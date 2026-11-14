@@ -170,6 +170,8 @@ class CloseSnapshot:
     round_ids: Tuple[str, ...] = ()
     message: str = ""
     app_event_pending: int = 0
+    wait_stage: str = "idle"
+    wait_resource: str = ""
 
 
 def _round_close_complete(round_: "MonitoringRound", snapshot: RoundSnapshot) -> bool:
@@ -2045,7 +2047,7 @@ class RoundCoordinator:
             self._closing = True
             generation = self._close_status.generation + 1
             round_ids = self._close_round_ids_locked()
-            self._close_status = CloseSnapshot("saving", generation, round_ids)
+            self._close_status = CloseSnapshot("saving", generation, round_ids, wait_stage="queued")
             self._start_close_worker_locked(generation)
             return self._close_status
 
@@ -2191,7 +2193,7 @@ class RoundCoordinator:
             self._closing = True
             generation = self._close_status.generation + 1
             self._close_status = CloseSnapshot(
-                "saving", generation, self._close_round_ids_locked())
+                "saving", generation, self._close_round_ids_locked(), wait_stage="queued")
             failed = tuple(round_ for round_ in self._tracked_rounds.values()
                            if round_.snapshot().save_state == "failed")
             failed_reset_journals = tuple(
@@ -2221,7 +2223,7 @@ class RoundCoordinator:
             self._closing = False
             self._close_status = CloseSnapshot(
                 "cancelled", self._close_status.generation + 1,
-                self._close_round_ids_locked(), self._close_status.message)
+                self._close_round_ids_locked(), self._close_status.message, wait_stage="cancelled")
             if self._retention_trigger_pending and not self._retention_worker_active:
                 self._retention_worker_active = True
                 threading.Thread(target=self._run_retention_worker, daemon=True).start()
@@ -2247,6 +2249,7 @@ class RoundCoordinator:
             round_ids = self._close_round_ids_locked()
         failures = []
         for round_id, journal in journals:
+            self._set_close_stage(generation, "reset_audit", round_id)
             if journal.error is not None:
                 journal.retry()
             if journal.flush(timeout=None):
@@ -2273,11 +2276,13 @@ class RoundCoordinator:
                     round_ids = self._close_round_ids_locked()
                 if not cleanup_active:
                     break
+                self._set_close_stage(generation, "retention", "retention_worker")
                 self._set_close_waiting(generation, round_ids, "等待已開始的背景清理安全完成")
                 threading.Event().wait(0.05)
             with self._lock:
                 current = self._current
             if current is not None:
+                self._set_close_stage(generation, "stop", current.round_id)
                 current.stop()
             while True:
                 if not self._close_attempt_is_current(generation):
@@ -2289,17 +2294,23 @@ class RoundCoordinator:
                     return
                 waiting_for_preparation = False
                 for _round_id, round_ in rounds:
+                    self._set_close_stage(generation, "preparation", _round_id)
                     if not round_.wait_until_prepared(0.05):
                         waiting_for_preparation = True
                         break
                     if not self._close_attempt_is_current(generation):
                         return
+                    self._set_close_stage(generation, "session_flush", _round_id)
                     round_.flush_session(timeout=None)
+                    self._set_close_stage(generation, "audit_flush", _round_id)
                     round_.flush_audit(timeout=None)
                 if waiting_for_preparation:
                     self._set_close_waiting(generation, round_ids, "等待來源準備及停止交接完成")
                     continue
-                snapshots = tuple(round_.finalize_close_snapshot() for _round_id, round_ in rounds)
+                snapshots = []
+                for _round_id, round_ in rounds:
+                    self._set_close_stage(generation, "finalize", _round_id)
+                    snapshots.append(round_.finalize_close_snapshot())
                 incomplete = tuple(
                     snapshot for (_round_id, round_), snapshot in zip(rounds, snapshots)
                     if not _round_close_complete(round_, snapshot))
@@ -2307,6 +2318,7 @@ class RoundCoordinator:
                     archive_failures = []
                     if self._audit_root is not None:
                         for round_id in round_ids:
+                            self._set_close_stage(generation, "archive", round_id)
                             with self._lock:
                                 round_ = self._tracked_rounds.get(round_id)
                                 location = self._archive_locations.get(round_id)
@@ -2356,25 +2368,30 @@ class RoundCoordinator:
                         if archive_work_pending:
                             self._close_status = CloseSnapshot(
                                 "waiting", generation, round_ids,
-                                "等待輪次封存驗證工作完成")
+                                "等待輪次封存驗證工作完成",
+                                wait_stage="archive_worker", wait_resource="archive_queue")
                             should_wait_for_app = False
                         else:
                             app_store = self._app_event_store
+                            self._set_close_stage(generation, "app_event_status", "app_event_store")
                             app_status = app_store.status() if app_store is not None else None
                             if app_status is not None and not app_status.complete:
                                 if app_status.status == "failed":
                                     self._close_status = CloseSnapshot(
                                         "failed", generation, round_ids,
                                         "App 診斷紀錄尚未完整保存：{}".format(app_status.error),
-                                        app_status.pending_count)
+                                        app_status.pending_count,
+                                        wait_stage="app_event_status", wait_resource="app_event_store")
                                     return
                                 self._close_status = CloseSnapshot(
                                     "waiting", generation, round_ids,
-                                    "等待 App 診斷紀錄完成保存", app_status.pending_count)
+                                    "等待 App 診斷紀錄完成保存", app_status.pending_count,
+                                    wait_stage="app_event_flush", wait_resource="app_event_store")
                                 should_wait_for_app = True
                             else:
                                 should_wait_for_app = False
-                                self._close_status = CloseSnapshot("complete", generation, round_ids)
+                                self._close_status = CloseSnapshot(
+                                    "complete", generation, round_ids, wait_stage="complete")
                     if archive_work_pending:
                         threading.Event().wait(0.05)
                         continue
@@ -2411,9 +2428,13 @@ class RoundCoordinator:
                                 snapshot.round_alarm is not None and
                                 not snapshot.round_alarm.acknowledged_at),
                         ) for snapshot in operator_pending)
+                    self._set_close_stage(generation, "operator_resolution",
+                                          ",".join(item.round_id for item in operator_pending))
                     self._set_close_waiting(generation, round_ids, details)
                     threading.Event().wait(0.05)
                     continue
+                self._set_close_stage(generation, "save_completion",
+                                      ",".join(item.round_id for item in incomplete))
                 threading.Event().wait(0.05)
         except Exception as error:
             with self._lock:
@@ -2429,15 +2450,24 @@ class RoundCoordinator:
         with self._lock:
             return self._closing and self._close_status.generation == generation
 
+    def _set_close_stage(self, generation: int, stage: str, resource: str = "") -> None:
+        """Expose the next blocking boundary without changing save/resolve policy."""
+        with self._lock:
+            if self._closing and self._close_status.generation == generation:
+                self._close_status = replace(
+                    self._close_status, wait_stage=stage, wait_resource=resource)
+
     def _set_close_failure(self, generation: int, round_ids: Tuple[str, ...], error: str) -> None:
         with self._lock:
             if self._closing and self._close_status.generation == generation:
-                self._close_status = CloseSnapshot("failed", generation, round_ids, error)
+                self._close_status = replace(
+                    self._close_status, status="failed", round_ids=round_ids, message=error)
 
     def _set_close_waiting(self, generation: int, round_ids: Tuple[str, ...], detail: str) -> None:
         with self._lock:
             if self._closing and self._close_status.generation == generation:
-                self._close_status = CloseSnapshot("waiting", generation, round_ids, detail)
+                self._close_status = replace(
+                    self._close_status, status="waiting", round_ids=round_ids, message=detail)
 
     def unsaved_rounds(self) -> Tuple[RoundSnapshot, ...]:
         """Return current-run rounds that still need durable saving or protection."""

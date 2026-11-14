@@ -45,6 +45,55 @@ class AppEventStoreTests(unittest.TestCase):
             os.close(directory)
         self.assertEqual((Path(self.temp.name) / "private-journal").read_bytes(), b"private journal")
 
+    def test_cleanup_preserves_sequences_allocated_during_disk_read(self):
+        from app_event_store import _read_at
+
+        for scenario in ("no_expiry", "already_retired", "expired"):
+            with self.subTest(scenario=scenario):
+                store = AppEventStore(Path(self.temp.name) / (scenario + ".json"),
+                                      clock=lambda: self.now[0])
+                self.addCleanup(store.stop)
+                first = store.record("app.hotkey.unavailable")
+                self.assertTrue(store.flush())
+                if scenario == "already_retired":
+                    result = store.cleanup_expired(self.now[0], Path(self.temp.name))
+                    self.assertEqual(result.deleted_sequences, (first.sequence,))
+
+                release_worker = threading.Event()
+                worker = store._write_worker
+                captured = []
+
+                def gated_worker():
+                    release_worker.wait()
+                    worker()
+
+                def capture_during_read(*args):
+                    snapshot = _read_at(*args)
+                    # Cleanup has checked quiescence and holds _io_lock, but
+                    # record() can allocate while the disk snapshot is read.
+                    captured.append(store.record("app.hotkey.unavailable"))
+                    return snapshot
+
+                try:
+                    with patch.object(store, "_write_worker", side_effect=gated_worker):
+                        with patch("app_event_store._read_at", side_effect=capture_during_read):
+                            cutoff = (self.now[0] if scenario == "expired" else
+                                      self.now[0] - timedelta(days=1))
+                            result = store.cleanup_expired(cutoff, Path(self.temp.name))
+                        self.assertEqual(result.status, "complete")
+                        following = store.record("app.hotkey.unavailable")
+                        self.assertEqual([captured[0].sequence, following.sequence], [2, 3])
+                finally:
+                    release_worker.set()
+                self.assertTrue(store.flush(), store.status())
+                payload = read_app_event_store(store.path)
+                expected = ([first] if scenario == "no_expiry" else []) + captured + [following]
+                self.assertEqual(payload["events"], [event.as_record() for event in expected])
+                rebuilt = AppEventStore(store.path, clock=lambda: self.now[0])
+                self.addCleanup(rebuilt.stop)
+                self.assertEqual(rebuilt.record("app.hotkey.unavailable").sequence, 4)
+                self.assertTrue(rebuilt.flush(), rebuilt.status())
+
     def test_app_event_is_one_versioned_bilingual_record_without_round_identity(self):
         parameters = {"profile": "ATE", "nested": {"path": "/tmp/a"}}
         event = self.store.record("app.hotkey.unavailable", parameters, "OS permission denied")

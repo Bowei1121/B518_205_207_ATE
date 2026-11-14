@@ -842,6 +842,10 @@ class AppEventStore:
                     next_sequence = payload.get("next_sequence", max(
                         (item["sequence"] for item in payload["events"]), default=0) + 1)
                     with self._condition:
+                        # _io_lock protects the persisted snapshot, not record():
+                        # events may have been allocated since the idle check.
+                        # Keep their allocation frontier while refreshing disk state.
+                        next_sequence = max(self._next_sequence, next_sequence)
                         if (self._events != payload["events"] or
                                 self._retired_sequences != payload.get("retired_sequences", []) or
                                 self._next_sequence != next_sequence):
